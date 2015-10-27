@@ -138,6 +138,37 @@ type ImageImportDirectory struct {
 	rvaImportAddressTable uint32
 }
 
+func (env *Environment) loadPESection(mod *LoadedModule, section *pe.Section) error {
+	h := section.SectionHeader
+
+	fmt.Printf("section: %s\n", section.SectionHeader.Name)
+	fmt.Printf("  virtual address: 0x%x\n", section.SectionHeader.VirtualAddress)
+	fmt.Printf("  virtual size: 0x%x\n", section.SectionHeader.VirtualSize)
+	fmt.Printf("  file offset: 0x%x\n", section.SectionHeader.Offset)
+	fmt.Printf("  file size: 0x%x\n", section.SectionHeader.Size)
+
+	secStart := mod.VA(uint64(h.VirtualAddress))
+	secLength := roundUpToPage(uint64(h.VirtualSize))
+	e := env.u.MemMap(secStart, secLength)
+	check(e)
+
+	d, e := section.Data()
+	check(e)
+
+	e = mod.MemWrite(env, uint64(h.VirtualAddress), d)
+	check(e)
+
+	// TODO: apply permissions
+
+	region := MemoryRegion{
+		Address: secStart,
+		Length:  secLength,
+	}
+	env.memoryRegions = append(env.memoryRegions, region)
+
+	return nil
+}
+
 func (env *Environment) LoadPE(name string, f *pe.File) (*LoadedModule, error) {
 	var imageBase uint64
 	var addressOfEntryPoint uint64
@@ -158,30 +189,8 @@ func (env *Environment) LoadPE(name string, f *pe.File) (*LoadedModule, error) {
 	}
 
 	for _, section := range f.Sections {
-		h := section.SectionHeader
-
-		fmt.Printf("section: %s\n", section.SectionHeader.Name)
-		fmt.Printf("  virtual address: 0x%x\n", section.SectionHeader.VirtualAddress)
-		fmt.Printf("  virtual size: 0x%x\n", section.SectionHeader.VirtualSize)
-		fmt.Printf("  file offset: 0x%x\n", section.SectionHeader.Offset)
-		fmt.Printf("  file size: 0x%x\n", section.SectionHeader.Size)
-
-		secStart := mod.VA(uint64(h.VirtualAddress))
-		secLength := roundUpToPage(uint64(h.VirtualSize))
-		e := env.u.MemMap(secStart, secLength)
+		e := env.loadPESection(&mod, section)
 		check(e)
-
-		d, e := section.Data()
-		check(e)
-
-		e = mod.MemWrite(env, uint64(h.VirtualAddress), d)
-		check(e)
-
-		region := MemoryRegion{
-			Address: secStart,
-			Length:  secLength,
-		}
-		env.memoryRegions = append(env.memoryRegions, region)
 	}
 
 	// since we always map at ImageBase, we don't need to apply (32bit) relocs
