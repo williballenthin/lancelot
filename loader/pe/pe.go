@@ -10,6 +10,7 @@ import (
 	"github.com/bnagy/gapstone"
 	"github.com/codegangsta/cli"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
+	//"github.com/williballenthin/CrystalTiger/utils/hexdump"
 	"io"
 	"log"
 	"os"
@@ -90,6 +91,18 @@ func (m LoadedModule) MemRead(env *Environment, rva uint64, length uint64) ([]by
 	return env.u.MemRead(m.VA(rva), length)
 }
 
+func (m LoadedModule) MemReadPtr(env *Environment, rva uint64) (uint64, error) {
+	var data uint32
+	d, e := m.MemRead(env, rva, 0x4)
+	if e != nil {
+		return 0, e
+	}
+
+	p := bytes.NewBuffer(d)
+	binary.Read(p, binary.LittleEndian, &data)
+	return uint64(data), nil
+}
+
 func (m LoadedModule) MemWrite(env *Environment, rva uint64, data []byte) error {
 	return env.u.MemWrite(m.VA(rva), data)
 }
@@ -131,11 +144,11 @@ func NewEnvironment(arch Arch, mode Mode) (*Environment, error) {
 }
 
 type ImageImportDirectory struct {
-	rvaImportLookupTable  uint32
+	rvaOriginalThunkTable uint32
 	TimeDateStamp         uint32
 	ForwarderChain        uint32
 	rvaModuleName         uint32
-	rvaImportAddressTable uint32
+	rvaThunkTable         uint32
 }
 
 func (env *Environment) loadPESection(mod *LoadedModule, section *pe.Section) error {
@@ -169,6 +182,94 @@ func (env *Environment) loadPESection(mod *LoadedModule, section *pe.Section) er
 	return nil
 }
 
+type ImageImportByName struct {
+	Hint uint16
+	Name string
+}
+
+var FLAG_IMPORT_BY_ORDINAL = 1 << 31
+
+func (env *Environment) readThunkTable(mod *LoadedModule, rvaTable uint64) error {
+	var offset uint64 = rvaTable
+	for {
+		rvaImport, e := mod.MemReadPtr(env, offset)
+		check(e)
+
+		if rvaImport == 0x0 {
+			break
+		}
+
+		if rvaImport&uint64(FLAG_IMPORT_BY_ORDINAL) > 0 {
+			fmt.Printf("  import by ordinal: %03x\n", rvaImport&uint64(0x7FFFFFFF))
+			// TODO: replace thunk with handler
+			// notes:
+			//    32: PUSH 0xAABBCCDD --> 68 DD CC BB AA
+			//        JMP  0xAABBCCDD --> E9 D9 CC BB AA  ugh, relative jump. do a push/ret instead.
+			//        RET             --> C3
+			//
+		} else {
+			d, e := mod.MemRead(env, uint64(rvaImport), 0x100)
+			check(e)
+
+			p := bytes.NewBuffer(d)
+			var importByName ImageImportByName
+			binary.Read(p, binary.LittleEndian, &importByName.Hint)
+
+			importByName.Name, e = readAscii(d[2:])
+			check(e)
+
+			fmt.Printf("  import by name: %s\n", importByName.Name)
+			// TODO: replace thunk with handler
+		}
+
+		offset += 4
+	}
+	return nil
+}
+
+func (env *Environment) resolveImports(mod *LoadedModule, dataDirectory [16]pe.DataDirectory) error {
+	// since we always map at ImageBase, we don't need to apply (32bit) relocs
+	// TODO: check 64bit reloc types
+
+	importDirectory := dataDirectory[1]
+	importRva := importDirectory.VirtualAddress
+	importSize := importDirectory.Size
+	fmt.Printf("import rva: 0x%x\n", importRva)
+	fmt.Printf("import size: 0x%x\n", importSize)
+
+	d, e := mod.MemRead(env, uint64(importDirectory.VirtualAddress), uint64(importDirectory.Size))
+	check(e)
+
+	p := bytes.NewBuffer(d)
+	for {
+		var dir ImageImportDirectory
+		binary.Read(p, binary.LittleEndian, &dir.rvaOriginalThunkTable)
+		fmt.Printf("rva import lookup table: 0x%x\n", dir.rvaOriginalThunkTable)
+		if dir.rvaOriginalThunkTable == 0 {
+			break
+		}
+		binary.Read(p, binary.LittleEndian, &dir.TimeDateStamp)
+		fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
+
+		binary.Read(p, binary.LittleEndian, &dir.ForwarderChain)
+		fmt.Printf("forwarder chain: 0x%x\n", dir.ForwarderChain)
+
+		binary.Read(p, binary.LittleEndian, &dir.rvaModuleName)
+
+		moduleNameBuf, e := mod.MemRead(env, uint64(dir.rvaModuleName), 0x100)
+		check(e)
+		moduleName, e := readAscii(moduleNameBuf)
+		check(e)
+
+		fmt.Printf("module name: %s\n", string(moduleName))
+
+		binary.Read(p, binary.LittleEndian, &dir.rvaThunkTable)
+		env.resolveThunkTable(mod, uint64(dir.rvaThunkTable))
+	}
+
+	return nil
+}
+
 func (env *Environment) LoadPE(name string, f *pe.File) (*LoadedModule, error) {
 	var imageBase uint64
 	var addressOfEntryPoint uint64
@@ -193,45 +294,8 @@ func (env *Environment) LoadPE(name string, f *pe.File) (*LoadedModule, error) {
 		check(e)
 	}
 
-	// since we always map at ImageBase, we don't need to apply (32bit) relocs
-	// TODO: check 64bit reloc types
-
-	importDirectory := dataDirectory[1]
-	importRva := importDirectory.VirtualAddress
-	importSize := importDirectory.Size
-	fmt.Printf("import rva: 0x%x\n", importRva)
-	fmt.Printf("import size: 0x%x\n", importSize)
-
-	// TODO: check ranges
-	d, e := mod.MemRead(env, uint64(importDirectory.VirtualAddress), uint64(importDirectory.Size))
+	e := env.resolveImports(&mod, dataDirectory)
 	check(e)
-
-	p := bytes.NewBuffer(d)
-	for {
-		var dir ImageImportDirectory
-		binary.Read(p, binary.LittleEndian, &dir.rvaImportLookupTable)
-		fmt.Printf("rva import lookup table: 0x%x\n", dir.rvaImportLookupTable)
-		if dir.rvaImportLookupTable == 0 {
-			break
-		}
-		binary.Read(p, binary.LittleEndian, &dir.TimeDateStamp)
-		fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
-
-		binary.Read(p, binary.LittleEndian, &dir.ForwarderChain)
-		fmt.Printf("forwarder chain: 0x%x\n", dir.ForwarderChain)
-
-		binary.Read(p, binary.LittleEndian, &dir.rvaModuleName)
-		fmt.Printf("rva module name: 0x%x\n", dir.rvaModuleName)
-
-		moduleNameBuf, e := mod.MemRead(env, uint64(dir.rvaModuleName), 0x100)
-		check(e)
-		moduleName, e := readAscii(moduleNameBuf)
-		check(e)
-
-		fmt.Printf("module name: %s\n", string(moduleName))
-
-		binary.Read(p, binary.LittleEndian, &dir.rvaImportAddressTable)
-	}
 
 	env.loadedModules = append(env.loadedModules, mod)
 	return &mod, nil
