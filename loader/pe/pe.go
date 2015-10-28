@@ -1,5 +1,11 @@
 package main
 
+// TODO:
+//   - higher level maps api
+//     - track allocations
+//     - snapshot, revert, commit
+//  - then, forward-emulate one instruction (via code hook) to get next insn
+
 import (
 	"bufio"
 	"bytes"
@@ -189,7 +195,7 @@ type ImageImportByName struct {
 
 var FLAG_IMPORT_BY_ORDINAL = 1 << 31
 
-func (env *Environment) readThunkTable(mod *LoadedModule, rvaTable uint64) error {
+func (env *Environment) resolveThunkTable(mod *LoadedModule, rvaTable uint64) error {
 	var offset uint64 = rvaTable
 	for {
 		rvaImport, e := mod.MemReadPtr(env, offset)
@@ -335,13 +341,18 @@ var GAPSTONE_MODE_MAP = map[Mode]uint{
 	MODE_32: gapstone.CS_MODE_32,
 }
 
-func (env *Environment) disassembleBytes(data []byte, address uint64, w io.Writer) error {
-	// TODO: cache the engine on the Environment?
-
+func (env *Environment) getDisassembler() (*gapstone.Engine, error) {
 	engine, e := gapstone.New(
 		GAPSTONE_ARCH_MAP[env.Arch],
 		GAPSTONE_MODE_MAP[env.Mode],
 	)
+	return &engine, e
+}
+
+func (env *Environment) disassembleBytes(data []byte, address uint64, w io.Writer) error {
+	// TODO: cache the engine on the Environment?
+
+	engine, e := env.getDisassembler()
 	check(e)
 	defer engine.Close()
 
@@ -362,6 +373,176 @@ func (env *Environment) Disassemble(address uint64, length uint64, w io.Writer) 
 	return env.disassembleBytes(d, address, w)
 }
 
+func (env *Environment) DisassembleInstruction(address uint64) (string, error) {
+	engine, e := env.getDisassembler()
+	check(e)
+	defer engine.Close()
+
+	MAX_INSN_SIZE := 0x10
+	d, e := env.u.MemRead(address, uint64(MAX_INSN_SIZE))
+	check(e)
+
+	insns, e := engine.Disasm(d, address, 1)
+	check(e)
+
+	for _, insn := range insns {
+		return fmt.Sprintf("0x%x: %s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
+	}
+	return "", nil
+}
+
+func (env *Environment) GetInstructionLength(address uint64) (uint64, error) {
+	engine, e := env.getDisassembler()
+	check(e)
+	defer engine.Close()
+
+	MAX_INSN_SIZE := 0x10
+	d, e := env.u.MemRead(address, uint64(MAX_INSN_SIZE))
+	check(e)
+
+	insns, e := engine.Disasm(d, address, 1)
+	check(e)
+
+	for _, insn := range insns {
+		return uint64(insn.Size), nil
+	}
+	return 0, nil
+}
+
+func getLine() (string, error) {
+	bio := bufio.NewReader(os.Stdin)
+	line, _, e := bio.ReadLine()
+	check(e)
+	return string(line), e
+}
+
+func (env *Environment) Emulate(start uint64, end uint64) error {
+	stackAddress := uint64(0x69690000)
+	stackSize := uint64(0x4000)
+	e := env.u.MemMap(stackAddress-(stackSize/2), stackSize)
+	check(e)
+
+	defer func() {
+		e := env.u.MemUnmap(stackAddress-(stackSize/2), stackSize)
+		check(e)
+	}()
+
+	e = env.u.RegWrite(uc.X86_REG_ESP, stackAddress)
+	check(e)
+
+	esp, e := env.u.RegRead(uc.X86_REG_ESP)
+	check(e)
+	fmt.Printf("esp: 0x%x\n", esp)
+
+	env.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
+		//fmt.Printf("Block: 0x%x, 0x%x\n", addr, size)
+	})
+
+	env.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+		insn, e := env.DisassembleInstruction(addr)
+		check(e)
+		fmt.Printf("%s", insn)
+	})
+
+	env.u.HookAdd(uc.HOOK_MEM_READ|uc.HOOK_MEM_WRITE,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+			if access == uc.MEM_WRITE {
+				fmt.Printf("Mem write")
+			} else {
+				fmt.Printf("Mem read")
+			}
+			fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
+		})
+
+	invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
+	env.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+		switch access {
+		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
+			fmt.Printf("invalid write")
+		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
+			fmt.Printf("invalid read")
+		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
+			fmt.Printf("invalid fetch")
+		default:
+			fmt.Printf("unknown memory error")
+		}
+		fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
+		return false
+	})
+
+	env.u.HookAdd(uc.HOOK_INSN, func(mu uc.Unicorn) {
+		rax, _ := mu.RegRead(uc.X86_REG_RAX)
+		fmt.Printf("Syscall: %d\n", rax)
+	}, uc.X86_INS_SYSCALL)
+
+	done := false
+	address := start
+	e = env.u.RegWrite(uc.X86_REG_EIP, address)
+	check(e)
+	for !done {
+		fmt.Printf("%08x >", address)
+		line, e := getLine()
+		check(e)
+
+		insnLength, e := env.GetInstructionLength(address)
+		check(e)
+
+		switch line {
+		case "q":
+			done = true
+		case "t":
+			e = env.u.Start(address, address+insnLength)
+			check(e)
+			address, e = env.u.RegRead(uc.X86_REG_EIP)
+			check(e)
+			break
+		case "p":
+			e = env.u.Start(address, address+insnLength)
+			check(e)
+			address, e = env.u.RegRead(uc.X86_REG_EIP)
+			check(e)
+			break
+		case "r":
+			eax, e := env.u.RegRead(uc.X86_REG_EAX)
+			check(e)
+			ebx, e := env.u.RegRead(uc.X86_REG_EBX)
+			check(e)
+			ecx, e := env.u.RegRead(uc.X86_REG_ECX)
+			check(e)
+			edx, e := env.u.RegRead(uc.X86_REG_EDX)
+			check(e)
+			esi, e := env.u.RegRead(uc.X86_REG_ESI)
+			check(e)
+			edi, e := env.u.RegRead(uc.X86_REG_EDI)
+			check(e)
+			ebp, e := env.u.RegRead(uc.X86_REG_EBP)
+			check(e)
+			esp, e := env.u.RegRead(uc.X86_REG_ESP)
+			check(e)
+			eip, e := env.u.RegRead(uc.X86_REG_EIP)
+			check(e)
+			fmt.Printf("eax: 0x%08x\n", eax)
+			fmt.Printf("ebx: 0x%08x\n", ebx)
+			fmt.Printf("ecx: 0x%08x\n", ecx)
+			fmt.Printf("edx: 0x%08x\n", edx)
+			fmt.Printf("esi: 0x%08x\n", esi)
+			fmt.Printf("edi: 0x%08x\n", edi)
+			fmt.Printf("ebp: 0x%08x\n", ebp)
+			fmt.Printf("esp: 0x%08x\n", esp)
+			fmt.Printf("eip: 0x%08x\n", eip)
+			// TODO: show flags
+			break
+		case "u":
+			insn, e := env.DisassembleInstruction(address)
+			check(e)
+			fmt.Printf(insn)
+			break
+		}
+	}
+
+	return nil
+}
+
 func doit(path string) error {
 	f, e := pe.Open(path)
 	check(e)
@@ -373,6 +554,9 @@ func doit(path string) error {
 	check(e)
 
 	e = env.Disassemble(m.EntryPoint, 0x20, os.Stdout)
+	check(e)
+
+	e = env.Emulate(m.EntryPoint, m.EntryPoint+0x7)
 	check(e)
 
 	return nil
