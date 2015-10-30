@@ -1,4 +1,4 @@
-package main
+package pe
 
 // TODO:
 //   - higher level maps api
@@ -14,31 +14,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnagy/gapstone"
-	"github.com/codegangsta/cli"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
-	//"github.com/williballenthin/CrystalTiger/utils/hexdump"
-	"github.com/williballenthin/CrystalTiger/utils"
 	"io"
-	"os"
 	"unicode/utf16"
 )
 
 var PAGE_SIZE uint64 = 0x1000
-
-var inputFlag = cli.StringFlag{
-	Name:  "input_file",
-	Usage: "file to decode",
-}
-
-var outputFlag = cli.StringFlag{
-	Name:  "output_file",
-	Usage: "where to write decoded data",
-}
-
-var verboseFlag = cli.BoolFlag{
-	Name:  "verbose",
-	Usage: "print debugging output",
-}
 
 func check(e error) {
 	if e != nil {
@@ -393,13 +374,6 @@ func (env *Environment) GetInstructionLength(address uint64) (uint64, error) {
 	return 0, nil
 }
 
-func getLine() (string, error) {
-	bio := bufio.NewReader(os.Stdin)
-	line, _, e := bio.ReadLine()
-	check(e)
-	return string(line), e
-}
-
 func (env *Environment) Emulate(start uint64, end uint64) error {
 	stackAddress := uint64(0x69690000)
 	stackSize := uint64(0x4000)
@@ -459,111 +433,5 @@ func (env *Environment) Emulate(start uint64, end uint64) error {
 		fmt.Printf("Syscall: %d\n", rax)
 	}, uc.X86_INS_SYSCALL)
 
-	done := false
-	address := start
-	e = env.u.RegWrite(uc.X86_REG_EIP, address)
-	check(e)
-	for !done {
-		fmt.Printf("%08x >", address)
-		line, e := getLine()
-		check(e)
-
-		insnLength, e := env.GetInstructionLength(address)
-		check(e)
-
-		switch line {
-		case "q":
-			done = true
-		case "t":
-			e = env.u.Start(address, address+insnLength)
-			check(e)
-			address, e = env.u.RegRead(uc.X86_REG_EIP)
-			check(e)
-			break
-		case "p":
-			e = env.u.Start(address, address+insnLength)
-			check(e)
-			address, e = env.u.RegRead(uc.X86_REG_EIP)
-			check(e)
-			break
-		case "r":
-			eax, e := env.u.RegRead(uc.X86_REG_EAX)
-			check(e)
-			ebx, e := env.u.RegRead(uc.X86_REG_EBX)
-			check(e)
-			ecx, e := env.u.RegRead(uc.X86_REG_ECX)
-			check(e)
-			edx, e := env.u.RegRead(uc.X86_REG_EDX)
-			check(e)
-			esi, e := env.u.RegRead(uc.X86_REG_ESI)
-			check(e)
-			edi, e := env.u.RegRead(uc.X86_REG_EDI)
-			check(e)
-			ebp, e := env.u.RegRead(uc.X86_REG_EBP)
-			check(e)
-			esp, e := env.u.RegRead(uc.X86_REG_ESP)
-			check(e)
-			eip, e := env.u.RegRead(uc.X86_REG_EIP)
-			check(e)
-			fmt.Printf("eax: 0x%08x\n", eax)
-			fmt.Printf("ebx: 0x%08x\n", ebx)
-			fmt.Printf("ecx: 0x%08x\n", ecx)
-			fmt.Printf("edx: 0x%08x\n", edx)
-			fmt.Printf("esi: 0x%08x\n", esi)
-			fmt.Printf("edi: 0x%08x\n", edi)
-			fmt.Printf("ebp: 0x%08x\n", ebp)
-			fmt.Printf("esp: 0x%08x\n", esp)
-			fmt.Printf("eip: 0x%08x\n", eip)
-			// TODO: show flags
-			break
-		case "u":
-			insn, e := env.DisassembleInstruction(address)
-			check(e)
-			fmt.Printf(insn)
-			break
-		}
-	}
-
 	return nil
-}
-
-func doit(path string) error {
-	f, e := pe.Open(path)
-	check(e)
-
-	env, e := NewEnvironment(ARCH_X86, MODE_32)
-	check(e)
-
-	m, e := env.LoadPE(path, f)
-	check(e)
-
-	e = env.Disassemble(m.EntryPoint, 0x20, os.Stdout)
-	check(e)
-
-	e = env.Emulate(m.EntryPoint, m.EntryPoint+0x7)
-	check(e)
-
-	return nil
-}
-
-func main() {
-	app := cli.NewApp()
-	app.Version = "0.1"
-	app.Name = "crystal-tiger-pe-loader"
-	app.Usage = "Load PE files."
-	app.Commands = []cli.Command{
-		{
-			Name:    "load",
-			Aliases: []string{"l"},
-			Usage:   "load a pe file",
-			Flags:   []cli.Flag{inputFlag, verboseFlag},
-			Action: func(c *cli.Context) {
-				if utils.CheckRequiredArgs(c, []cli.StringFlag{inputFlag}) != nil {
-					return
-				}
-				check(doit(c.String("input_file")))
-			},
-		},
-	}
-	app.Run(os.Args)
 }
