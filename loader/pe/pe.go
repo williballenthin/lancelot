@@ -17,8 +17,8 @@ import (
 	"github.com/codegangsta/cli"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	//"github.com/williballenthin/CrystalTiger/utils/hexdump"
+	"github.com/williballenthin/CrystalTiger/utils"
 	"io"
-	"log"
 	"os"
 	"unicode/utf16"
 )
@@ -38,22 +38,6 @@ var outputFlag = cli.StringFlag{
 var verboseFlag = cli.BoolFlag{
 	Name:  "verbose",
 	Usage: "print debugging output",
-}
-
-var RequiredFlagNotProvidedError = errors.New("Required flag not provided.")
-
-func checkRequiredArgs(c *cli.Context, requiredFlags []cli.StringFlag) error {
-	for _, flag := range requiredFlags {
-		if c.GlobalString(flag.Name) != "" {
-			continue
-		}
-		if c.String(flag.Name) != "" {
-			continue
-		}
-		log.Printf(fmt.Sprintf("Error: '%s' value required", flag.Name))
-		return RequiredFlagNotProvidedError
-	}
-	return nil
 }
 
 func check(e error) {
@@ -574,7 +558,7 @@ func main() {
 			Usage:   "load a pe file",
 			Flags:   []cli.Flag{inputFlag, verboseFlag},
 			Action: func(c *cli.Context) {
-				if checkRequiredArgs(c, []cli.StringFlag{inputFlag}) != nil {
+				if utils.CheckRequiredArgs(c, []cli.StringFlag{inputFlag}) != nil {
 					return
 				}
 				check(doit(c.String("input_file")))
