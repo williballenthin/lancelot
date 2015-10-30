@@ -44,6 +44,7 @@ type Mode string
 
 const ARCH_X86 Arch = "x86"
 const MODE_32 Mode = "32"
+const MODE_64 Mode = "64"
 
 var GAPSTONE_ARCH_MAP = map[Arch]int{
 	ARCH_X86: gapstone.CS_ARCH_X86,
@@ -56,43 +57,68 @@ var GAPSTONE_MODE_MAP = map[Mode]uint{
 var InvalidArchError = errors.New("Invalid ARCH provided.")
 var InvalidModeError = errors.New("Invalid MODE provided.")
 
+type VA uint64
+type RVA uint64
+
+func (rva RVA) VA(baseAddress VA) VA {
+	return VA(uint64(rva) + uint64(baseAddress))
+}
+
 type LoadedModule struct {
 	Name        string
-	BaseAddress uint64 // VA (*not* RVA)
-	EntryPoint  uint64 // VA (*not* RVA)
+	BaseAddress VA
+	EntryPoint  VA
 }
 
-func (m LoadedModule) VA(rva uint64) uint64 {
-	return m.BaseAddress + rva
+func (m LoadedModule) VA(rva RVA) VA {
+	return rva.VA(m.BaseAddress)
 }
 
-func (m LoadedModule) MemRead(ws *Workspace, rva uint64, length uint64) ([]byte, error) {
-	return ws.u.MemRead(m.VA(rva), length)
+// note: relative to the module
+func (m LoadedModule) MemRead(ws *Workspace, rva RVA, length uint64) ([]byte, error) {
+	return ws.MemRead(m.VA(rva), length)
 }
 
-func (m LoadedModule) MemReadPtr(ws *Workspace, rva uint64) (uint64, error) {
-	var data uint32
-	d, e := m.MemRead(ws, rva, 0x4)
-	if e != nil {
-		return 0, e
+// note: relative to the module
+func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
+	if ws.Mode == MODE_32 {
+		var data uint32
+		d, e := m.MemRead(ws, rva, 0x4)
+		if e != nil {
+			return 0, e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return VA(uint64(data)), nil
+	} else if ws.Mode == MODE_64 {
+		var data uint64
+		d, e := m.MemRead(ws, rva, 0x8)
+		if e != nil {
+			return 0, e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return VA(uint64(data)), nil
+	} else {
+		return 0, InvalidModeError
 	}
-
-	p := bytes.NewBuffer(d)
-	binary.Read(p, binary.LittleEndian, &data)
-	return uint64(data), nil
 }
 
-func (m LoadedModule) MemWrite(ws *Workspace, rva uint64, data []byte) error {
-	return ws.u.MemWrite(m.VA(rva), data)
+// note: relative to the module
+func (m LoadedModule) MemWrite(ws *Workspace, rva RVA, data []byte) error {
+	return ws.MemWrite(m.VA(rva), data)
 }
 
 type MemoryRegion struct {
-	Address uint64 // VA
+	Address VA
 	Length  uint64
 	Name    string
 }
 
 type Workspace struct {
+	// we cheat and use u as the address space
 	u             uc.Unicorn
 	Arch          Arch
 	Mode          Mode
@@ -101,11 +127,10 @@ type Workspace struct {
 }
 
 func New(arch Arch, mode Mode) (*Workspace, error) {
-
 	if arch != ARCH_X86 {
 		return nil, InvalidArchError
 	}
-	if mode != MODE_32 {
+	if !(mode == MODE_32 || mode == MODE_64) {
 		return nil, InvalidModeError
 	}
 
@@ -123,21 +148,33 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 	}, nil
 }
 
-func (ws *Workspace) MemRead(va uint64, length uint64) ([]byte, error) {
-	return ws.u.MemRead(va, length)
+func (ws *Workspace) MemRead(va VA, length uint64) ([]byte, error) {
+	return ws.u.MemRead(uint64(va), length)
 }
 
-func (ws *Workspace) MemWrite(va uint64, data []byte) error {
-	return ws.u.MemWrite(va, data)
+func (ws *Workspace) MemWrite(va VA, data []byte) error {
+	return ws.u.MemWrite(uint64(va), data)
 }
 
-func (ws *Workspace) MemMap(va uint64, length uint64, name string) error {
-	e := ws.u.MemMap(va, length)
+func (ws *Workspace) MemMap(va VA, length uint64, name string) error {
+	e := ws.u.MemMap(uint64(va), length)
 	if e != nil {
 		return e
 	}
 
 	ws.memoryRegions = append(ws.memoryRegions, MemoryRegion{va, length, name})
+
+	return nil
+}
+
+func (ws *Workspace) MemUnmap(va VA, length uint64) error {
+	e := ws.u.MemUnmap(uint64(va), length)
+	if e != nil {
+		return e
+	}
+
+	// TODO: remove from map
+	//ws.memoryRegions = append(ws.memoryRegions, MemoryRegion{va, length, name})
 
 	return nil
 }
@@ -155,14 +192,14 @@ func (ws *Workspace) getDisassembler() (*gapstone.Engine, error) {
 	return &engine, e
 }
 
-func (ws *Workspace) disassembleBytes(data []byte, address uint64, w io.Writer) error {
+func (ws *Workspace) disassembleBytes(data []byte, address VA, w io.Writer) error {
 	// TODO: cache the engine on the Workspace?
 
 	engine, e := ws.getDisassembler()
 	check(e)
 	defer engine.Close()
 
-	insns, e := engine.Disasm([]byte(data), address, 0 /* all instructions */)
+	insns, e := engine.Disasm([]byte(data), uint64(address), 0 /* all instructions */)
 	check(e)
 
 	w.Write([]byte(fmt.Sprintf("Disasm:\n")))
@@ -173,63 +210,81 @@ func (ws *Workspace) disassembleBytes(data []byte, address uint64, w io.Writer) 
 	return nil
 }
 
-func (ws *Workspace) Disassemble(address uint64, length uint64, w io.Writer) error {
-	d, e := ws.u.MemRead(address, length)
+func (ws *Workspace) Disassemble(address VA, length uint64, w io.Writer) error {
+	d, e := ws.MemRead(address, length)
 	check(e)
 	return ws.disassembleBytes(d, address, w)
 }
 
-func (ws *Workspace) DisassembleInstruction(address uint64) (string, error) {
+var FailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
+
+func (ws *Workspace) DisassembleInstruction(address VA) (string, error) {
 	engine, e := ws.getDisassembler()
 	check(e)
 	defer engine.Close()
 
 	MAX_INSN_SIZE := 0x10
-	d, e := ws.u.MemRead(address, uint64(MAX_INSN_SIZE))
+	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
-	insns, e := engine.Disasm(d, address, 1)
+	insns, e := engine.Disasm(d, uint64(address), 1)
 	check(e)
 
 	for _, insn := range insns {
 		return fmt.Sprintf("0x%x: %s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
 	}
-	return "", nil
+	return "", FailedToDisassembleInstruction
 }
 
-func (ws *Workspace) GetInstructionLength(address uint64) (uint64, error) {
+func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
 	engine, e := ws.getDisassembler()
 	check(e)
 	defer engine.Close()
 
 	MAX_INSN_SIZE := 0x10
-	d, e := ws.u.MemRead(address, uint64(MAX_INSN_SIZE))
+	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
-	insns, e := engine.Disasm(d, address, 1)
+	insns, e := engine.Disasm(d, uint64(address), 1)
 	check(e)
 
 	for _, insn := range insns {
+		// return the first one
 		return uint64(insn.Size), nil
 	}
-	return 0, nil
+	return 0, FailedToDisassembleInstruction
 }
 
-func (ws *Workspace) Emulate(start uint64, end uint64) error {
-	stackAddress := uint64(0x69690000)
+// TODO: make Emulator object and use that
+func (ws *Workspace) SetStackPointer(address VA) error {
+	// TODO: switch on arch
+	return ws.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+}
+
+func (ws *Workspace) GetStackPointer() (VA, error) {
+	// TODO: switch on arch
+	r, e := ws.u.RegRead(uc.X86_REG_ESP)
+	if e != nil {
+		return 0, e
+	}
+	return VA(r), e
+}
+
+func (ws *Workspace) Emulate(start VA, end VA) error {
+	stackAddress := VA(0x69690000)
 	stackSize := uint64(0x4000)
-	e := ws.u.MemMap(stackAddress-(stackSize/2), stackSize)
+	e := ws.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
 	check(e)
 
 	defer func() {
-		e := ws.u.MemUnmap(stackAddress-(stackSize/2), stackSize)
+		e := ws.MemUnmap(VA(uint64(stackAddress)-(stackSize/2)), stackSize)
 		check(e)
 	}()
 
-	e = ws.u.RegWrite(uc.X86_REG_ESP, stackAddress)
+	e = ws.SetStackPointer(stackAddress)
 	check(e)
 
-	esp, e := ws.u.RegRead(uc.X86_REG_ESP)
+	esp, e := ws.GetStackPointer()
 	check(e)
 	fmt.Printf("esp: 0x%x\n", esp)
 
@@ -238,7 +293,7 @@ func (ws *Workspace) Emulate(start uint64, end uint64) error {
 	})
 
 	ws.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-		insn, e := ws.DisassembleInstruction(addr)
+		insn, e := ws.DisassembleInstruction(VA(addr))
 		check(e)
 		fmt.Printf("%s", insn)
 	})
