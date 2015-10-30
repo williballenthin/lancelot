@@ -13,6 +13,7 @@ import (
 	"github.com/codegangsta/cli"
 	peloader "github.com/williballenthin/CrystalTiger/loader/pe"
 	"github.com/williballenthin/CrystalTiger/utils"
+	"github.com/williballenthin/CrystalTiger/workspace"
 	"log"
 	"os"
 )
@@ -179,16 +180,19 @@ func doit(path string) error {
 	f, e := pe.Open(path)
 	check(e)
 
-	env, e := peloader.NewEnvironment(peloader.ARCH_X86, peloader.MODE_32)
+	ws, e := workspace.New(workspace.ARCH_X86, workspace.MODE_32)
 	check(e)
 
-	m, e := env.LoadPE(path, f)
+	loader, e := peloader.New(path, f)
 	check(e)
 
-	e = env.Disassemble(m.EntryPoint, 0x20, os.Stdout)
+	m, e := loader.Load(ws)
 	check(e)
 
-	e = env.Emulate(m.EntryPoint, m.EntryPoint+0x7)
+	e = ws.Disassemble(m.EntryPoint, 0x20, os.Stdout)
+	check(e)
+
+	e = ws.Emulate(m.EntryPoint, m.EntryPoint+0x7)
 	check(e)
 
 	return nil
