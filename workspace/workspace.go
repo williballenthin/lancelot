@@ -377,27 +377,28 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 	e = emu.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
 	check(e)
 
-	e = emu.SetStackPointer(stackAddress)
-	check(e)
+	emu.SetStackPointer(stackAddress)
 
 	return emu, nil
 }
 
-func (emu *Emulator) SetStackPointer(address VA) error {
+func (emu *Emulator) SetStackPointer(address VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			return emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+			emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+			return
 		} else if emu.ws.Mode == MODE_64 {
-			return emu.u.RegWrite(uc.X86_REG_RSP, uint64(address))
+			emu.u.RegWrite(uc.X86_REG_RSP, uint64(address))
+			return
 		} else {
-			return InvalidModeError
+			panic(InvalidModeError)
 		}
 	} else {
-		return InvalidArchError
+		panic(InvalidArchError)
 	}
 }
 
-func (emu *Emulator) GetStackPointer() (VA, error) {
+func (emu *Emulator) GetStackPointer() VA {
 	var r uint64
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
@@ -406,29 +407,34 @@ func (emu *Emulator) GetStackPointer() (VA, error) {
 		} else if emu.ws.Mode == MODE_64 {
 			r, e = emu.u.RegRead(uc.X86_REG_RSP)
 		} else {
-			return 0, InvalidModeError
+			panic(InvalidModeError)
 		}
 	} else {
-		return 0, InvalidArchError
+		panic(InvalidArchError)
 	}
-	return VA(r), e
+	if e != nil {
+		panic(e)
+	}
+	return VA(r)
 }
 
-func (emu *Emulator) SetInstructionPointer(address VA) error {
+func (emu *Emulator) SetInstructionPointer(address VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			return emu.u.RegWrite(uc.X86_REG_EIP, uint64(address))
+			emu.u.RegWrite(uc.X86_REG_EIP, uint64(address))
+			return
 		} else if emu.ws.Mode == MODE_64 {
-			return emu.u.RegWrite(uc.X86_REG_RIP, uint64(address))
+			emu.u.RegWrite(uc.X86_REG_RIP, uint64(address))
+			return
 		} else {
-			return InvalidModeError
+			panic(InvalidModeError)
 		}
 	} else {
-		return InvalidArchError
+		panic(InvalidArchError)
 	}
 }
 
-func (emu *Emulator) GetInstructionPointer() (VA, error) {
+func (emu *Emulator) GetInstructionPointer() VA {
 	var r uint64
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
@@ -437,12 +443,15 @@ func (emu *Emulator) GetInstructionPointer() (VA, error) {
 		} else if emu.ws.Mode == MODE_64 {
 			r, e = emu.u.RegRead(uc.X86_REG_RIP)
 		} else {
-			return 0, InvalidModeError
+			panic(InvalidModeError)
 		}
 	} else {
-		return 0, InvalidArchError
+		panic(InvalidArchError)
 	}
-	return VA(r), e
+	if e != nil {
+		panic(e)
+	}
+	return VA(r)
 }
 
 // utility method for handling the uint64 casting
@@ -450,21 +459,66 @@ func (emu *Emulator) start(begin VA, until VA) error {
 	return emu.u.Start(uint64(begin), uint64(until))
 }
 
+var InvalidMemoryWriteError error = errors.New("Invalid memory write error")
+var InvalidMemoryReadError error = errors.New("Invalid memory read error")
+var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
+var UnknownMemoryError error = errors.New("Unknown memory error")
+
 func (emu *Emulator) RunTo(address VA) error {
-	ip, e := emu.GetInstructionPointer()
-	check(e)
+	ip := emu.GetInstructionPointer()
 
 	// TODO: install error handling hooks
 
+	invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
+	var invalidAccess int = 0
+	invalidMemHook, e := emu.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+		switch access {
+		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
+			fmt.Printf("invalid write")
+		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
+			fmt.Printf("invalid read")
+		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
+			fmt.Printf("invalid fetch")
+		default:
+			fmt.Printf("unknown memory error")
+		}
+		fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
+		invalidAccess = access
+		return false
+	})
+	check(e)
+	if e != nil {
+		return e
+	}
+	defer func() {
+		e := emu.u.HookDel(invalidMemHook)
+		check(e)
+	}()
+
 	e = emu.start(ip, address)
 	check(e)
+	if e != nil {
+		return e
+	}
 
-	return e
+	if invalidAccess != 0 {
+		switch invalidAccess {
+		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
+			return InvalidMemoryWriteError
+		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
+			return InvalidMemoryReadError
+		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
+			return InvalidMemoryExecError
+		default:
+			return UnknownMemoryError
+		}
+	}
+
+	return nil
 }
 
 func (emu *Emulator) Emulate(start VA, end VA) error {
-	esp, e := emu.GetStackPointer()
-	check(e)
+	esp := emu.GetStackPointer()
 	fmt.Printf("esp: 0x%x\n", esp)
 
 	emu.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
