@@ -15,6 +15,7 @@ import (
 	"github.com/bnagy/gapstone"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"io"
+	"log"
 )
 
 func check(e error) {
@@ -144,8 +145,8 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		u:             u,
 		Arch:          arch,
 		Mode:          mode,
-		loadedModules: make([]*LoadedModule, 1),
-		memoryRegions: make([]MemoryRegion, 5),
+		loadedModules: make([]*LoadedModule, 0),
+		memoryRegions: make([]MemoryRegion, 0),
 		disassembler:  disassembler,
 	}, nil
 }
@@ -284,7 +285,7 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 		ws:            ws,
 		u:             u,
 		disassembler:  disassembler,
-		memoryRegions: make([]MemoryRegion, 5),
+		memoryRegions: make([]MemoryRegion, 0),
 	}, nil
 }
 
@@ -329,6 +330,16 @@ func (emu *Emulator) MemUnmap(va VA, length uint64) error {
 		}
 	}
 
+	return nil
+}
+
+func (ws Workspace) dumpMemoryRegions() error {
+	log.Printf("=== memory map ===")
+	for _, region := range ws.memoryRegions {
+		log.Printf("  name: %s", region.Name)
+		log.Printf("    address: %x", region.Address)
+		log.Printf("    length: %x", region.Length)
+	}
 	return nil
 }
 
