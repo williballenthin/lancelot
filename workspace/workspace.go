@@ -361,6 +361,14 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 		}
 	}
 
+	stackAddress := VA(0x69690000)
+	stackSize := uint64(0x40000)
+	e = emu.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
+	check(e)
+
+	e = emu.SetStackPointer(stackAddress)
+	check(e)
+
 	return emu, nil
 }
 
