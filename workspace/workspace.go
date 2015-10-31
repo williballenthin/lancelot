@@ -403,20 +403,55 @@ func (emu *Emulator) GetStackPointer() (VA, error) {
 	return VA(r), e
 }
 
+func (emu *Emulator) SetInstructionPointer(address VA) error {
+	if emu.ws.Arch == ARCH_X86 {
+		if emu.ws.Mode == MODE_32 {
+			return emu.u.RegWrite(uc.X86_REG_EIP, uint64(address))
+		} else if emu.ws.Mode == MODE_64 {
+			return emu.u.RegWrite(uc.X86_REG_RIP, uint64(address))
+		} else {
+			return InvalidModeError
+		}
+	} else {
+		return InvalidArchError
+	}
+}
+
+func (emu *Emulator) GetInstructionPointer() (VA, error) {
+	var r uint64
+	var e error
+	if emu.ws.Arch == ARCH_X86 {
+		if emu.ws.Mode == MODE_32 {
+			r, e = emu.u.RegRead(uc.X86_REG_EIP)
+		} else if emu.ws.Mode == MODE_64 {
+			r, e = emu.u.RegRead(uc.X86_REG_RIP)
+		} else {
+			return 0, InvalidModeError
+		}
+	} else {
+		return 0, InvalidArchError
+	}
+	return VA(r), e
+}
+
+// utility method for handling the uint64 casting
+func (emu *Emulator) start(begin VA, until VA) error {
+	return emu.u.Start(uint64(begin), uint64(until))
+}
+
+func (emu *Emulator) RunTo(address VA) error {
+	ip, e := emu.GetInstructionPointer()
+	check(e)
+
+	// TODO: install error handling hooks
+
+	e = emu.start(ip, address)
+	check(e)
+
+	return e
+}
+
 func (emu *Emulator) Emulate(start VA, end VA) error {
-	stackAddress := VA(0x69690000)
-	stackSize := uint64(0x4000)
-	e := emu.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
-	check(e)
-
-	defer func() {
-		e := emu.MemUnmap(VA(uint64(stackAddress)-(stackSize/2)), stackSize)
-		check(e)
-	}()
-
-	e = emu.SetStackPointer(stackAddress)
-	check(e)
-
 	esp, e := emu.GetStackPointer()
 	check(e)
 	fmt.Printf("esp: 0x%x\n", esp)
