@@ -83,7 +83,14 @@ type ImageImportByName struct {
 	Name string
 }
 
-var FLAG_IMPORT_BY_ORDINAL = 1 << 31
+type Flag64 uint64
+type Flags64 uint64
+
+var FLAG_IMPORT_BY_ORDINAL Flag64 = 1 << 31
+
+func (i Flags64) isSet(j Flag64) bool {
+	return uint64(i)&uint64(j) > 0
+}
 
 func (loader *PELoader) resolveThunkTable(
 	ws *workspace.Workspace,
@@ -101,7 +108,7 @@ func (loader *PELoader) resolveThunkTable(
 			break
 		}
 
-		if uint64(rvaImport)&uint64(FLAG_IMPORT_BY_ORDINAL) > 0 {
+		if Flags64(rvaImport).isSet(FLAG_IMPORT_BY_ORDINAL) {
 			fmt.Printf("  import by ordinal: %03x\n", uint64(rvaImport)&uint64(0x7FFFFFFF))
 			// TODO: replace thunk with handler
 			// notes:
