@@ -373,15 +373,32 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 }
 
 func (emu *Emulator) SetStackPointer(address VA) error {
-	// TODO: switch on arch
-	return emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+	if emu.ws.Arch == ARCH_X86 {
+		if emu.ws.Mode == MODE_32 {
+			return emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+		} else if emu.ws.Mode == MODE_64 {
+			return emu.u.RegWrite(uc.X86_REG_RSP, uint64(address))
+		} else {
+			return InvalidModeError
+		}
+	} else {
+		return InvalidArchError
+	}
 }
 
 func (emu *Emulator) GetStackPointer() (VA, error) {
-	// TODO: switch on arch
-	r, e := emu.u.RegRead(uc.X86_REG_ESP)
-	if e != nil {
-		return 0, e
+	var r uint64
+	var e error
+	if emu.ws.Arch == ARCH_X86 {
+		if emu.ws.Mode == MODE_32 {
+			r, e = emu.u.RegRead(uc.X86_REG_ESP)
+		} else if emu.ws.Mode == MODE_64 {
+			r, e = emu.u.RegRead(uc.X86_REG_RSP)
+		} else {
+			return 0, InvalidModeError
+		}
+	} else {
+		return 0, InvalidArchError
 	}
 	return VA(r), e
 }
