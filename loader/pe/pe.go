@@ -1,11 +1,5 @@
 package pe
 
-// TODO:
-//   - higher level maps api
-//     - track allocations
-//     - snapshot, revert, commit
-//  - then, forward-emulate one instruction (via code hook) to get next insn
-
 import (
 	"bufio"
 	"bytes"
@@ -54,8 +48,11 @@ type ImageImportDirectory struct {
 	rvaThunkTable         uint32
 }
 
-// TODO: should workspace and loadedmodule be separate?
-func (loader *PELoader) loadPESection(ws *workspace.Workspace, mod *workspace.LoadedModule, section *pe.Section) error {
+func (loader *PELoader) loadPESection(
+	ws *workspace.Workspace,
+	mod *workspace.LoadedModule,
+	section *pe.Section) error {
+
 	h := section.SectionHeader
 
 	fmt.Printf("section: %s\n", section.SectionHeader.Name)
@@ -64,7 +61,8 @@ func (loader *PELoader) loadPESection(ws *workspace.Workspace, mod *workspace.Lo
 	fmt.Printf("  file offset: 0x%x\n", section.SectionHeader.Offset)
 	fmt.Printf("  file size: 0x%x\n", section.SectionHeader.Size)
 
-	secStart := mod.VA(uint64(h.VirtualAddress))
+	rvaSecStart := workspace.RVA(h.VirtualAddress)
+	secStart := mod.VA(rvaSecStart)
 	secLength := roundUpToPage(uint64(h.VirtualSize))
 	e := ws.MemMap(secStart, secLength, fmt.Sprintf("%s/%s", mod.Name, section.SectionHeader.Name))
 	check(e)
@@ -72,7 +70,7 @@ func (loader *PELoader) loadPESection(ws *workspace.Workspace, mod *workspace.Lo
 	d, e := section.Data()
 	check(e)
 
-	e = mod.MemWrite(ws, uint64(h.VirtualAddress), d)
+	e = mod.MemWrite(ws, rvaSecStart, d)
 	check(e)
 
 	// TODO: apply permissions
@@ -87,18 +85,24 @@ type ImageImportByName struct {
 
 var FLAG_IMPORT_BY_ORDINAL = 1 << 31
 
-func (loader *PELoader) resolveThunkTable(ws *workspace.Workspace, mod *workspace.LoadedModule, rvaTable uint64) error {
-	var offset uint64 = rvaTable
+func (loader *PELoader) resolveThunkTable(
+	ws *workspace.Workspace,
+	mod *workspace.LoadedModule,
+	rvaTable workspace.RVA) error {
+
+	var offset workspace.RVA = rvaTable
 	for {
-		rvaImport, e := mod.MemReadPtr(ws, offset)
+		rva, e := mod.MemReadPtr(ws, offset)
+		check(e)
+		rvaImport := workspace.RVA(rva)
 		check(e)
 
 		if rvaImport == 0x0 {
 			break
 		}
 
-		if rvaImport&uint64(FLAG_IMPORT_BY_ORDINAL) > 0 {
-			fmt.Printf("  import by ordinal: %03x\n", rvaImport&uint64(0x7FFFFFFF))
+		if uint64(rvaImport)&uint64(FLAG_IMPORT_BY_ORDINAL) > 0 {
+			fmt.Printf("  import by ordinal: %03x\n", uint64(rvaImport)&uint64(0x7FFFFFFF))
 			// TODO: replace thunk with handler
 			// notes:
 			//    32: PUSH 0xAABBCCDD --> 68 DD CC BB AA
@@ -106,7 +110,7 @@ func (loader *PELoader) resolveThunkTable(ws *workspace.Workspace, mod *workspac
 			//        RET             --> C3
 			//
 		} else {
-			d, e := mod.MemRead(ws, uint64(rvaImport), 0x100)
+			d, e := mod.MemRead(ws, rvaImport, 0x100)
 			check(e)
 
 			p := bytes.NewBuffer(d)
@@ -125,17 +129,22 @@ func (loader *PELoader) resolveThunkTable(ws *workspace.Workspace, mod *workspac
 	return nil
 }
 
-func (loader *PELoader) resolveImports(ws *workspace.Workspace, mod *workspace.LoadedModule, dataDirectory [16]pe.DataDirectory) error {
+func (loader *PELoader) resolveImports(
+	ws *workspace.Workspace,
+	mod *workspace.LoadedModule,
+	dataDirectory [16]pe.DataDirectory) error {
+
 	// since we always map at ImageBase, we don't need to apply (32bit) relocs
 	// TODO: check 64bit reloc types
 
 	importDirectory := dataDirectory[1]
-	importRva := importDirectory.VirtualAddress
+	importRva := workspace.RVA(importDirectory.VirtualAddress)
 	importSize := importDirectory.Size
+
 	fmt.Printf("import rva: 0x%x\n", importRva)
 	fmt.Printf("import size: 0x%x\n", importSize)
 
-	d, e := mod.MemRead(ws, uint64(importDirectory.VirtualAddress), uint64(importDirectory.Size))
+	d, e := mod.MemRead(ws, workspace.RVA(importDirectory.VirtualAddress), uint64(importDirectory.Size))
 	check(e)
 
 	p := bytes.NewBuffer(d)
@@ -154,7 +163,7 @@ func (loader *PELoader) resolveImports(ws *workspace.Workspace, mod *workspace.L
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaModuleName)
 
-		moduleNameBuf, e := mod.MemRead(ws, uint64(dir.rvaModuleName), 0x100)
+		moduleNameBuf, e := mod.MemRead(ws, workspace.RVA(dir.rvaModuleName), 0x100)
 		check(e)
 		moduleName, e := readAscii(moduleNameBuf)
 		check(e)
@@ -162,20 +171,20 @@ func (loader *PELoader) resolveImports(ws *workspace.Workspace, mod *workspace.L
 		fmt.Printf("module name: %s\n", string(moduleName))
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaThunkTable)
-		loader.resolveThunkTable(ws, mod, uint64(dir.rvaThunkTable))
+		loader.resolveThunkTable(ws, mod, workspace.RVA(dir.rvaThunkTable))
 	}
 
 	return nil
 }
 
 func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, error) {
-	var imageBase uint64
-	var addressOfEntryPoint uint64
+	var imageBase workspace.VA
+	var addressOfEntryPoint workspace.RVA
 	var dataDirectory [16]pe.DataDirectory
 
 	if optionalHeader, ok := loader.file.OptionalHeader.(*pe.OptionalHeader32); ok {
-		imageBase = uint64(optionalHeader.ImageBase)
-		addressOfEntryPoint = uint64(optionalHeader.AddressOfEntryPoint)
+		imageBase = workspace.VA(optionalHeader.ImageBase)
+		addressOfEntryPoint = workspace.RVA(optionalHeader.AddressOfEntryPoint)
 		dataDirectory = optionalHeader.DataDirectory
 	} else {
 		return nil, workspace.InvalidModeError
@@ -184,7 +193,7 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 	mod := &workspace.LoadedModule{
 		Name:        loader.name,
 		BaseAddress: imageBase,
-		EntryPoint:  imageBase + addressOfEntryPoint,
+		EntryPoint:  addressOfEntryPoint.VA(imageBase),
 	}
 
 	for _, section := range loader.file.Sections {

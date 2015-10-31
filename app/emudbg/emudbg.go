@@ -1,9 +1,6 @@
 package main
 
 // TODO:
-//   - higher level maps api
-//     - track allocations
-//     - snapshot, revert, commit
 //  - then, forward-emulate one instruction (via code hook) to get next insn
 
 import (
