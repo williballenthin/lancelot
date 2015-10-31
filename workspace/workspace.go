@@ -101,6 +101,13 @@ type MemoryRegion struct {
 	Name    string
 }
 
+type AddressSpace interface {
+	MemRead(va VA, length uint64) ([]byte, error)
+	MemWrite(va VA, data []byte) error
+	MemMap(va VA, length uint64, name string) error
+	MemUnmap(va VA, length uint64) error
+}
+
 type Workspace struct {
 	// we cheat and use u as the address space
 	u             uc.Unicorn
