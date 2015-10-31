@@ -2,8 +2,6 @@ package workspace
 
 // TODO:
 //   - AddressSpace interface
-//   - RVA type
-//   - VA type
 //   - higher level maps api
 //     - track allocations
 //     - snapshot, revert, commit
@@ -19,24 +17,10 @@ import (
 	"io"
 )
 
-var PAGE_SIZE uint64 = 0x1000
-
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-}
-
-func roundUp(i uint64, base uint64) uint64 {
-	if i%base == 0x0 {
-		return i
-	} else {
-		return i + base - (i % base)
-	}
-}
-
-func roundUpToPage(i uint64) uint64 {
-	return roundUp(i, PAGE_SIZE)
 }
 
 type Arch string
@@ -124,17 +108,27 @@ type Workspace struct {
 	Mode          Mode
 	loadedModules []*LoadedModule
 	memoryRegions []MemoryRegion
+	disassembler  gapstone.Engine
 }
 
 func New(arch Arch, mode Mode) (*Workspace, error) {
 	if arch != ARCH_X86 {
 		return nil, InvalidArchError
 	}
+	// TODO: pick mode
 	if !(mode == MODE_32 || mode == MODE_64) {
 		return nil, InvalidModeError
 	}
 
 	u, e := uc.NewUnicorn(uc.ARCH_X86, uc.MODE_32)
+	if e != nil {
+		return nil, e
+	}
+
+	disassembler, e := gapstone.New(
+		GAPSTONE_ARCH_MAP[arch],
+		GAPSTONE_MODE_MAP[mode],
+	)
 	if e != nil {
 		return nil, e
 	}
@@ -145,7 +139,13 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		Mode:          mode,
 		loadedModules: make([]*LoadedModule, 1),
 		memoryRegions: make([]MemoryRegion, 5),
+		disassembler:  disassembler,
 	}, nil
+}
+
+func (ws *Workspace) Close() error {
+	ws.disassembler.Close()
+	return nil
 }
 
 func (ws *Workspace) MemRead(va VA, length uint64) ([]byte, error) {
@@ -167,14 +167,24 @@ func (ws *Workspace) MemMap(va VA, length uint64, name string) error {
 	return nil
 }
 
+var InvalidArgumentError = errors.New("Invalid argument")
+
 func (ws *Workspace) MemUnmap(va VA, length uint64) error {
 	e := ws.u.MemUnmap(uint64(va), length)
 	if e != nil {
 		return e
 	}
 
-	// TODO: remove from map
-	//ws.memoryRegions = append(ws.memoryRegions, MemoryRegion{va, length, name})
+	for i, region := range ws.memoryRegions {
+		if region.Address == va {
+			if region.Length != length {
+				return InvalidArgumentError
+			}
+
+			ws.memoryRegions = append(ws.memoryRegions[:i], ws.memoryRegions[i+1:]...)
+			break
+		}
+	}
 
 	return nil
 }
@@ -184,22 +194,8 @@ func (ws *Workspace) AddLoadedModule(mod *LoadedModule) error {
 	return nil
 }
 
-func (ws *Workspace) getDisassembler() (*gapstone.Engine, error) {
-	engine, e := gapstone.New(
-		GAPSTONE_ARCH_MAP[ws.Arch],
-		GAPSTONE_MODE_MAP[ws.Mode],
-	)
-	return &engine, e
-}
-
 func (ws *Workspace) disassembleBytes(data []byte, address VA, w io.Writer) error {
-	// TODO: cache the engine on the Workspace?
-
-	engine, e := ws.getDisassembler()
-	check(e)
-	defer engine.Close()
-
-	insns, e := engine.Disasm([]byte(data), uint64(address), 0 /* all instructions */)
+	insns, e := ws.disassembler.Disasm([]byte(data), uint64(address), 0 /* all instructions */)
 	check(e)
 
 	w.Write([]byte(fmt.Sprintf("Disasm:\n")))
@@ -219,33 +215,26 @@ func (ws *Workspace) Disassemble(address VA, length uint64, w io.Writer) error {
 var FailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
 
 func (ws *Workspace) DisassembleInstruction(address VA) (string, error) {
-	engine, e := ws.getDisassembler()
-	check(e)
-	defer engine.Close()
-
 	MAX_INSN_SIZE := 0x10
 	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
-	insns, e := engine.Disasm(d, uint64(address), 1)
+	insns, e := ws.disassembler.Disasm(d, uint64(address), 1)
 	check(e)
 
 	for _, insn := range insns {
+		// return the first one
 		return fmt.Sprintf("0x%x: %s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
 	}
 	return "", FailedToDisassembleInstruction
 }
 
 func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
-	engine, e := ws.getDisassembler()
-	check(e)
-	defer engine.Close()
-
 	MAX_INSN_SIZE := 0x10
 	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
-	insns, e := engine.Disasm(d, uint64(address), 1)
+	insns, e := ws.disassembler.Disasm(d, uint64(address), 1)
 	check(e)
 
 	for _, insn := range insns {
@@ -255,50 +244,162 @@ func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
 	return 0, FailedToDisassembleInstruction
 }
 
-// TODO: make Emulator object and use that
-func (ws *Workspace) SetStackPointer(address VA) error {
-	// TODO: switch on arch
-	return ws.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+type Emulator struct {
+	ws            *Workspace
+	u             uc.Unicorn
+	disassembler  gapstone.Engine
+	memoryRegions []MemoryRegion
 }
 
-func (ws *Workspace) GetStackPointer() (VA, error) {
+func newEmulator(ws *Workspace) (*Emulator, error) {
+	if ws.Arch != ARCH_X86 {
+		return nil, InvalidArchError
+	}
+	if !(ws.Mode == MODE_32 || ws.Mode == MODE_64) {
+		return nil, InvalidModeError
+	}
+
+	// TODO: pick mode
+	u, e := uc.NewUnicorn(uc.ARCH_X86, uc.MODE_32)
+	if e != nil {
+		return nil, e
+	}
+
+	disassembler, e := gapstone.New(
+		GAPSTONE_ARCH_MAP[ws.Arch],
+		GAPSTONE_MODE_MAP[ws.Mode],
+	)
+	if e != nil {
+		return nil, e
+	}
+
+	return &Emulator{
+		ws:            ws,
+		u:             u,
+		disassembler:  disassembler,
+		memoryRegions: make([]MemoryRegion, 5),
+	}, nil
+}
+
+func (emu *Emulator) Close() error {
+	emu.disassembler.Close()
+	return nil
+}
+
+func (emu *Emulator) MemRead(va VA, length uint64) ([]byte, error) {
+	return emu.u.MemRead(uint64(va), length)
+}
+
+func (emu *Emulator) MemWrite(va VA, data []byte) error {
+	return emu.u.MemWrite(uint64(va), data)
+}
+
+func (emu *Emulator) MemMap(va VA, length uint64, name string) error {
+	e := emu.u.MemMap(uint64(va), length)
+	if e != nil {
+		return e
+	}
+
+	emu.memoryRegions = append(emu.memoryRegions, MemoryRegion{va, length, name})
+
+	return nil
+}
+
+func (emu *Emulator) MemUnmap(va VA, length uint64) error {
+	e := emu.u.MemUnmap(uint64(va), length)
+	if e != nil {
+		return e
+	}
+
+	for i, region := range emu.memoryRegions {
+		if region.Address == va {
+			if region.Length != length {
+				return InvalidArgumentError
+			}
+
+			emu.memoryRegions = append(emu.memoryRegions[:i], emu.memoryRegions[i+1:]...)
+			break
+		}
+	}
+
+	return nil
+}
+
+func (ws *Workspace) GetEmulator() (*Emulator, error) {
+	emu, e := newEmulator(ws)
+	if e != nil {
+		return nil, e
+	}
+
+	for _, region := range ws.memoryRegions {
+		e := emu.MemMap(region.Address, region.Length, region.Name)
+		check(e)
+		if e != nil {
+			emu.Close()
+			return nil, e
+		}
+
+		d, e := ws.MemRead(region.Address, region.Length)
+		check(e)
+		if e != nil {
+			emu.Close()
+			return nil, e
+		}
+
+		e = emu.MemWrite(region.Address, d)
+		check(e)
+		if e != nil {
+			emu.Close()
+			return nil, e
+		}
+	}
+
+	return emu, nil
+}
+
+func (emu *Emulator) SetStackPointer(address VA) error {
 	// TODO: switch on arch
-	r, e := ws.u.RegRead(uc.X86_REG_ESP)
+	return emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+}
+
+func (emu *Emulator) GetStackPointer() (VA, error) {
+	// TODO: switch on arch
+	r, e := emu.u.RegRead(uc.X86_REG_ESP)
 	if e != nil {
 		return 0, e
 	}
 	return VA(r), e
 }
 
-func (ws *Workspace) Emulate(start VA, end VA) error {
+func (emu *Emulator) Emulate(start VA, end VA) error {
 	stackAddress := VA(0x69690000)
 	stackSize := uint64(0x4000)
-	e := ws.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
+	e := emu.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
 	check(e)
 
 	defer func() {
-		e := ws.MemUnmap(VA(uint64(stackAddress)-(stackSize/2)), stackSize)
+		e := emu.MemUnmap(VA(uint64(stackAddress)-(stackSize/2)), stackSize)
 		check(e)
 	}()
 
-	e = ws.SetStackPointer(stackAddress)
+	e = emu.SetStackPointer(stackAddress)
 	check(e)
 
-	esp, e := ws.GetStackPointer()
+	esp, e := emu.GetStackPointer()
 	check(e)
 	fmt.Printf("esp: 0x%x\n", esp)
 
-	ws.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
+	emu.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
 		//fmt.Printf("Block: 0x%x, 0x%x\n", addr, size)
 	})
 
-	ws.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-		insn, e := ws.DisassembleInstruction(VA(addr))
-		check(e)
-		fmt.Printf("%s", insn)
+	emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+		//insn, e := emu.DisassembleInstruction(VA(addr))
+		//check(e)
+		//fmt.Printf("%s", insn)
 	})
 
-	ws.u.HookAdd(uc.HOOK_MEM_READ|uc.HOOK_MEM_WRITE,
+	emu.u.HookAdd(uc.HOOK_MEM_READ|uc.HOOK_MEM_WRITE,
 		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
 			if access == uc.MEM_WRITE {
 				fmt.Printf("Mem write")
@@ -309,7 +410,7 @@ func (ws *Workspace) Emulate(start VA, end VA) error {
 		})
 
 	invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
-	ws.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+	emu.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 		switch access {
 		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
 			fmt.Printf("invalid write")
@@ -324,7 +425,7 @@ func (ws *Workspace) Emulate(start VA, end VA) error {
 		return false
 	})
 
-	ws.u.HookAdd(uc.HOOK_INSN, func(mu uc.Unicorn) {
+	emu.u.HookAdd(uc.HOOK_INSN, func(mu uc.Unicorn) {
 		rax, _ := mu.RegRead(uc.X86_REG_RAX)
 		fmt.Printf("Syscall: %d\n", rax)
 	}, uc.X86_INS_SYSCALL)

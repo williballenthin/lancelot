@@ -189,7 +189,10 @@ func doit(path string) error {
 	e = ws.Disassemble(m.EntryPoint, 0x20, os.Stdout)
 	check(e)
 
-	e = ws.Emulate(m.EntryPoint, m.EntryPoint+0x7)
+	emu, e := ws.GetEmulator()
+	check(e)
+
+	e = emu.Emulate(m.EntryPoint, m.EntryPoint+0x7)
 	check(e)
 
 	return nil
