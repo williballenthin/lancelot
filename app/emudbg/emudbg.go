@@ -197,7 +197,10 @@ func doit(path string) error {
 	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
 	e = emu.RunTo(m.EntryPoint + 0x7)
 	check(e)
-	log.Printf("emudbg: end: 0x%x", emu.GetInstructionPointer())
+	log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
+	e = emu.StepInto()
+	check(e)
+	log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
 
 	return nil
 }

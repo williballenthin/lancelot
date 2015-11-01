@@ -24,6 +24,8 @@ func check(e error) {
 	}
 }
 
+const MAX_INSN_SIZE = 0x10
+
 type Arch string
 type Mode string
 
@@ -140,6 +142,11 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 	if e != nil {
 		return nil, e
 	}
+	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
+	check(e)
+	if e != nil {
+		return nil, e
+	}
 
 	return &Workspace{
 		u:             u,
@@ -202,6 +209,7 @@ func (ws *Workspace) AddLoadedModule(mod *LoadedModule) error {
 	return nil
 }
 
+// TODO: remove this?
 func (ws *Workspace) disassembleBytes(data []byte, address VA, w io.Writer) error {
 	insns, e := ws.disassembler.Disasm([]byte(data), uint64(address), 0 /* all instructions */)
 	check(e)
@@ -214,16 +222,18 @@ func (ws *Workspace) disassembleBytes(data []byte, address VA, w io.Writer) erro
 	return nil
 }
 
+// TODO: remove this?
 func (ws *Workspace) Disassemble(address VA, length uint64, w io.Writer) error {
 	d, e := ws.MemRead(address, length)
 	check(e)
 	return ws.disassembleBytes(d, address, w)
 }
 
+// TODO: remove this?
 var FailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
 
+// TODO: remove this?
 func (ws *Workspace) DisassembleInstruction(address VA) (string, error) {
-	MAX_INSN_SIZE := 0x10
 	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
@@ -238,7 +248,6 @@ func (ws *Workspace) DisassembleInstruction(address VA) (string, error) {
 }
 
 func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
-	MAX_INSN_SIZE := 0x10
 	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
 	check(e)
 
@@ -464,13 +473,17 @@ var InvalidMemoryReadError error = errors.New("Invalid memory read error")
 var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
 var UnknownMemoryError error = errors.New("Unknown memory error")
 
+func (emu *Emulator) removeHook(h uc.Hook) error {
+	return emu.u.HookDel(h)
+}
+
 type CloseableHook struct {
-	u uc.Unicorn
-	h uc.Hook
+	emu *Emulator
+	h   uc.Hook
 }
 
 func (hook *CloseableHook) Close() error {
-	return hook.u.HookDel(hook.h)
+	return hook.emu.removeHook(hook.h)
 }
 
 func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
@@ -504,15 +517,13 @@ func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
 		return nil, e
 	}
 
-	return &CloseableHook{u: emu.u, h: h}, nil
+	return &CloseableHook{emu: emu, h: h}, nil
 }
 
 func (emu *Emulator) RunTo(address VA) error {
 	ip := emu.GetInstructionPointer()
 
-	// TODO: install error handling hooks
-
-	var memErr error
+	var memErr error = nil
 	memHook, e := emu.hookInvalidMemory(&memErr)
 	check(e)
 	defer memHook.Close()
@@ -523,57 +534,83 @@ func (emu *Emulator) RunTo(address VA) error {
 		return e
 	}
 	check(memErr)
-	if e != nil {
-		return e
+	if memErr != nil {
+		return memErr
 	}
 
 	return nil
 }
 
-func (emu *Emulator) Emulate(start VA, end VA) error {
-	esp := emu.GetStackPointer()
-	fmt.Printf("esp: 0x%x\n", esp)
+func (emu *Emulator) StepInto() error {
+	var memErr error = nil
 
-	emu.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
-		//fmt.Printf("Block: 0x%x, 0x%x\n", addr, size)
+	memHook, e := emu.hookInvalidMemory(&memErr)
+	check(e)
+	defer memHook.Close()
+
+	// always stop after one instruction
+	h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+		emu.u.Stop()
 	})
+	check(e)
+	defer emu.removeHook(h)
 
-	emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-		//insn, e := emu.DisassembleInstruction(VA(addr))
-		//check(e)
-		//fmt.Printf("%s", insn)
-	})
-
-	emu.u.HookAdd(uc.HOOK_MEM_READ|uc.HOOK_MEM_WRITE,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			if access == uc.MEM_WRITE {
-				fmt.Printf("Mem write")
-			} else {
-				fmt.Printf("Mem read")
-			}
-			fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
-		})
-
-	invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
-	emu.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-		switch access {
-		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
-			fmt.Printf("invalid write")
-		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
-			fmt.Printf("invalid read")
-		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
-			fmt.Printf("invalid fetch")
-		default:
-			fmt.Printf("unknown memory error")
-		}
-		fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
-		return false
-	})
-
-	emu.u.HookAdd(uc.HOOK_INSN, func(mu uc.Unicorn) {
-		rax, _ := mu.RegRead(uc.X86_REG_RAX)
-		fmt.Printf("Syscall: %d\n", rax)
-	}, uc.X86_INS_SYSCALL)
+	ip := emu.GetInstructionPointer()
+	e = emu.start(ip, ip+MAX_INSN_SIZE)
+	check(e)
+	if e != nil {
+		return e
+	}
+	check(memErr)
+	if memErr != nil {
+		return memErr
+	}
 
 	return nil
+}
+
+func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
+	ip := emu.GetInstructionPointer()
+
+	d, e := emu.MemRead(ip, uint64(MAX_INSN_SIZE))
+	check(e)
+	if e != nil {
+		return gapstone.Instruction{}, InvalidMemoryReadError
+	}
+
+	insns, e := emu.disassembler.Disasm(d, uint64(ip), 1)
+	check(e)
+	if e != nil {
+		return gapstone.Instruction{}, FailedToDisassembleInstruction
+	}
+
+	if len(insns) == 0 {
+		return gapstone.Instruction{}, FailedToDisassembleInstruction
+	}
+
+	insn := insns[0]
+	return insn, nil
+}
+
+func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
+	for _, group := range i.Groups {
+		if group == group {
+			return true
+		}
+	}
+	return false
+}
+
+func (emu *Emulator) StepOver() error {
+	insn, e := emu.GetCurrentInstruction()
+	check(e)
+	if e != nil {
+		return e
+	}
+
+	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+		return emu.RunTo(VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size)))
+	} else {
+		return emu.StepInto()
+	}
 }
