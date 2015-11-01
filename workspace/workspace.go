@@ -464,54 +464,67 @@ var InvalidMemoryReadError error = errors.New("Invalid memory read error")
 var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
 var UnknownMemoryError error = errors.New("Unknown memory error")
 
+type CloseableHook struct {
+	u uc.Unicorn
+	h uc.Hook
+}
+
+func (hook *CloseableHook) Close() error {
+	return hook.u.HookDel(hook.h)
+}
+
+func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
+	h, e := emu.u.HookAdd(
+		uc.HOOK_MEM_READ_INVALID|uc.HOOK_MEM_WRITE_INVALID|uc.HOOK_MEM_FETCH_INVALID,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+
+			switch access {
+			case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
+				log.Printf("WARN: invalid write")
+				*err = InvalidMemoryWriteError
+			case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
+				log.Printf("WARN: invalid read")
+				*err = InvalidMemoryReadError
+			case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
+				log.Printf("WARN: invalid fetch")
+				*err = InvalidMemoryExecError
+			default:
+				log.Printf("WARN: unknown memory error")
+				*err = UnknownMemoryError
+			}
+			log.Printf("WARN: @0x%x [0x%x] = 0x%x\n", addr, size, value)
+
+			emu.u.Stop()
+
+			return false
+		})
+
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	return &CloseableHook{u: emu.u, h: h}, nil
+}
+
 func (emu *Emulator) RunTo(address VA) error {
 	ip := emu.GetInstructionPointer()
 
 	// TODO: install error handling hooks
 
-	invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
-	var invalidAccess int = 0
-	invalidMemHook, e := emu.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-		switch access {
-		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
-			fmt.Printf("invalid write")
-		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
-			fmt.Printf("invalid read")
-		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
-			fmt.Printf("invalid fetch")
-		default:
-			fmt.Printf("unknown memory error")
-		}
-		fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
-		invalidAccess = access
-		return false
-	})
+	var memErr error
+	memHook, e := emu.hookInvalidMemory(&memErr)
 	check(e)
-	if e != nil {
-		return e
-	}
-	defer func() {
-		e := emu.u.HookDel(invalidMemHook)
-		check(e)
-	}()
+	defer memHook.Close()
 
 	e = emu.start(ip, address)
 	check(e)
 	if e != nil {
 		return e
 	}
-
-	if invalidAccess != 0 {
-		switch invalidAccess {
-		case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
-			return InvalidMemoryWriteError
-		case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
-			return InvalidMemoryReadError
-		case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
-			return InvalidMemoryExecError
-		default:
-			return UnknownMemoryError
-		}
+	check(memErr)
+	if e != nil {
+		return e
 	}
 
 	return nil

@@ -192,8 +192,12 @@ func doit(path string) error {
 	emu, e := ws.GetEmulator()
 	check(e)
 
-	e = emu.Emulate(m.EntryPoint, m.EntryPoint+0x7)
+	emu.SetInstructionPointer(m.EntryPoint)
+
+	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
+	e = emu.RunTo(m.EntryPoint + 0x7)
 	check(e)
+	log.Printf("emudbg: end: 0x%x", emu.GetInstructionPointer())
 
 	return nil
 }
