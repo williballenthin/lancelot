@@ -8,6 +8,7 @@ import (
 	"debug/pe"
 	"fmt"
 	"github.com/codegangsta/cli"
+	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	peloader "github.com/williballenthin/CrystalTiger/loader/pe"
 	"github.com/williballenthin/CrystalTiger/utils"
 	"github.com/williballenthin/CrystalTiger/workspace"
@@ -38,140 +39,73 @@ func check(e error) {
 
 func getLine() (string, error) {
 	bio := bufio.NewReader(os.Stdin)
+	// TODO: there might be really long lines here that we should handle
 	line, _, e := bio.ReadLine()
 	check(e)
 	return string(line), e
 }
 
-/*
-func (env *peloader.Environment) Emulate(start uint64, end uint64) error {
-	/*
-		stackAddress := uint64(0x69690000)
-		stackSize := uint64(0x4000)
-		e := env.u.MemMap(stackAddress-(stackSize/2), stackSize)
+func doloop(emu *workspace.Emulator) error {
+	done := false
+	for !done {
+		fmt.Printf("%08x >", emu.GetInstructionPointer())
+		line, e := getLine()
 		check(e)
 
-		defer func() {
-			e := env.u.MemUnmap(stackAddress-(stackSize/2), stackSize)
+		switch line {
+		case "q":
+			done = true
+		case "?":
+			fmt.Printf("help:\n")
+			fmt.Printf("  q - quit\n")
+			fmt.Printf("  ? - help\n")
+			fmt.Printf("  t - step into\n")
+			fmt.Printf("  p - step over\n")
+			fmt.Printf("  r - show register(s)\n")
+			fmt.Printf("  u - disassemble\n")
+			break
+		case "t":
+			e = emu.StepInto()
 			check(e)
-		}()
-
-		e = env.u.RegWrite(uc.X86_REG_ESP, stackAddress)
-		check(e)
-
-		esp, e := env.u.RegRead(uc.X86_REG_ESP)
-		check(e)
-		fmt.Printf("esp: 0x%x\n", esp)
-
-		env.u.HookAdd(uc.HOOK_BLOCK, func(mu uc.Unicorn, addr uint64, size uint32) {
-			//fmt.Printf("Block: 0x%x, 0x%x\n", addr, size)
-		})
-
-		env.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-			insn, e := env.DisassembleInstruction(addr)
+			break
+		case "p":
+			e = emu.StepOver()
 			check(e)
-			fmt.Printf("%s", insn)
-		})
-
-		env.u.HookAdd(uc.HOOK_MEM_READ|uc.HOOK_MEM_WRITE,
-			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-				if access == uc.MEM_WRITE {
-					fmt.Printf("Mem write")
-				} else {
-					fmt.Printf("Mem read")
-				}
-				fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
-			})
-
-		invalid := uc.HOOK_MEM_READ_INVALID | uc.HOOK_MEM_WRITE_INVALID | uc.HOOK_MEM_FETCH_INVALID
-		env.u.HookAdd(invalid, func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-			switch access {
-			case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
-				fmt.Printf("invalid write")
-			case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
-				fmt.Printf("invalid read")
-			case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
-				fmt.Printf("invalid fetch")
-			default:
-				fmt.Printf("unknown memory error")
-			}
-			fmt.Printf(": @0x%x, 0x%x = 0x%x\n", addr, size, value)
-			return false
-		})
-
-		env.u.HookAdd(uc.HOOK_INSN, func(mu uc.Unicorn) {
-			rax, _ := mu.RegRead(uc.X86_REG_RAX)
-			fmt.Printf("Syscall: %d\n", rax)
-		}, uc.X86_INS_SYSCALL)
-
-		done := false
-		address := start
-		e = env.u.RegWrite(uc.X86_REG_EIP, address)
-		check(e)
-		for !done {
-			fmt.Printf("%08x >", address)
-			line, e := getLine()
+			break
+		case "r":
+			eax, e := emu.RegRead(uc.X86_REG_EAX)
+			ebx, e := emu.RegRead(uc.X86_REG_EBX)
+			ecx, e := emu.RegRead(uc.X86_REG_ECX)
+			edx, e := emu.RegRead(uc.X86_REG_EDX)
+			esi, e := emu.RegRead(uc.X86_REG_ESI)
+			edi, e := emu.RegRead(uc.X86_REG_EDI)
+			ebp, e := emu.RegRead(uc.X86_REG_EBP)
+			esp, e := emu.RegRead(uc.X86_REG_ESP)
+			eip, e := emu.RegRead(uc.X86_REG_EIP)
 			check(e)
 
-			insnLength, e := env.GetInstructionLength(address)
+			fmt.Printf("eax: 0x%08x\n", eax)
+			fmt.Printf("ebx: 0x%08x\n", ebx)
+			fmt.Printf("ecx: 0x%08x\n", ecx)
+			fmt.Printf("edx: 0x%08x\n", edx)
+			fmt.Printf("esi: 0x%08x\n", esi)
+			fmt.Printf("edi: 0x%08x\n", edi)
+			fmt.Printf("ebp: 0x%08x\n", ebp)
+			fmt.Printf("esp: 0x%08x\n", esp)
+			fmt.Printf("eip: 0x%08x\n", eip)
+			// TODO: show flags
+			break
+		case "u":
+			insn, e := emu.GetCurrentInstruction()
 			check(e)
-
-			switch line {
-			case "q":
-				done = true
-			case "t":
-				e = env.u.Start(address, address+insnLength)
-				check(e)
-				address, e = env.u.RegRead(uc.X86_REG_EIP)
-				check(e)
-				break
-			case "p":
-				e = env.u.Start(address, address+insnLength)
-				check(e)
-				address, e = env.u.RegRead(uc.X86_REG_EIP)
-				check(e)
-				break
-			case "r":
-				eax, e := env.u.RegRead(uc.X86_REG_EAX)
-				check(e)
-				ebx, e := env.u.RegRead(uc.X86_REG_EBX)
-				check(e)
-				ecx, e := env.u.RegRead(uc.X86_REG_ECX)
-				check(e)
-				edx, e := env.u.RegRead(uc.X86_REG_EDX)
-				check(e)
-				esi, e := env.u.RegRead(uc.X86_REG_ESI)
-				check(e)
-				edi, e := env.u.RegRead(uc.X86_REG_EDI)
-				check(e)
-				ebp, e := env.u.RegRead(uc.X86_REG_EBP)
-				check(e)
-				esp, e := env.u.RegRead(uc.X86_REG_ESP)
-				check(e)
-				eip, e := env.u.RegRead(uc.X86_REG_EIP)
-				check(e)
-				fmt.Printf("eax: 0x%08x\n", eax)
-				fmt.Printf("ebx: 0x%08x\n", ebx)
-				fmt.Printf("ecx: 0x%08x\n", ecx)
-				fmt.Printf("edx: 0x%08x\n", edx)
-				fmt.Printf("esi: 0x%08x\n", esi)
-				fmt.Printf("edi: 0x%08x\n", edi)
-				fmt.Printf("ebp: 0x%08x\n", ebp)
-				fmt.Printf("esp: 0x%08x\n", esp)
-				fmt.Printf("eip: 0x%08x\n", eip)
-				// TODO: show flags
-				break
-			case "u":
-				insn, e := env.DisassembleInstruction(address)
-				check(e)
-				fmt.Printf(insn)
-				break
-			}
+			s, e := emu.FormatInstruction(insn)
+			fmt.Printf(s)
+			break
 		}
+	}
 
 	return nil
 }
-*/
 
 func doit(path string) error {
 	f, e := pe.Open(path)
@@ -195,12 +129,21 @@ func doit(path string) error {
 	emu.SetInstructionPointer(m.EntryPoint)
 
 	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
-	e = emu.RunTo(m.EntryPoint + 0x7)
+
+	/*
+		e = emu.RunTo(m.EntryPoint + 0x7)
+		check(e)
+		log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
+		e = emu.StepInto()
+		check(e)
+		log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
+		e = emu.StepInto()
+		check(e)
+		log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
+	*/
+
+	e = doloop(emu)
 	check(e)
-	log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
-	e = emu.StepInto()
-	check(e)
-	log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
 
 	return nil
 }
