@@ -64,20 +64,21 @@ func doloop(emu *workspace.Emulator) error {
 			break
 		case "q":
 			done = true
-		case "?":
+			break
+		case "?", "h", "help":
 			fmt.Printf("help:\n")
 			fmt.Printf("  q - quit\n")
-			fmt.Printf("  ? - help\n")
-			fmt.Printf("  t - step into\n")
-			fmt.Printf("  p - step over\n")
+			fmt.Printf("  ?/h/help - help\n")
+			fmt.Printf("  t/stepo - step into\n")
+			fmt.Printf("  p/stepi - step over\n")
 			fmt.Printf("  r - show register(s)\n")
 			fmt.Printf("  u - disassemble\n")
 			break
-		case "t":
+		case "t", "stepi":
 			e = emu.StepInto()
 			check(e)
 			break
-		case "p":
+		case "p", "stepo":
 			e = emu.StepOver()
 			check(e)
 			break
@@ -139,9 +140,10 @@ func doit(path string) error {
 
 	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
 
+	//e = emu.RunTo(m.EntryPoint + 0x7)
+	e = emu.RunTo(m.EntryPoint + 0xe)
+	check(e)
 	/*
-		e = emu.RunTo(m.EntryPoint + 0x7)
-		check(e)
 		log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
 		e = emu.StepInto()
 		check(e)
