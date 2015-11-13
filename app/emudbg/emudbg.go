@@ -41,7 +41,6 @@ func getLine() (string, error) {
 	bio := bufio.NewReader(os.Stdin)
 	// TODO: there might be really long lines here that we should handle
 	line, _, e := bio.ReadLine()
-	check(e)
 	return string(line), e
 }
 
@@ -50,9 +49,14 @@ func doloop(emu *workspace.Emulator) error {
 	for !done {
 		fmt.Printf("%08x >", emu.GetInstructionPointer())
 		line, e := getLine()
-		check(e)
+		if e != nil {
+			line = ""
+			done = true
+		}
 
 		switch line {
+		case "":
+			break
 		case "q":
 			done = true
 		case "?":
@@ -120,7 +124,7 @@ func doit(path string) error {
 	m, e := loader.Load(ws)
 	check(e)
 
-	e = ws.Disassemble(m.EntryPoint, 0x20, os.Stdout)
+	e = ws.Disassemble(m.EntryPoint, 0x30, os.Stdout)
 	check(e)
 
 	emu, e := ws.GetEmulator()
