@@ -47,6 +47,11 @@ func getLine() (string, error) {
 func doloop(emu *workspace.Emulator) error {
 	done := false
 	for !done {
+		insn, e := emu.GetCurrentInstruction()
+		check(e)
+		s, e := emu.FormatInstruction(insn)
+		fmt.Printf("next: " + s)
+
 		fmt.Printf("%08x >", emu.GetInstructionPointer())
 		line, e := getLine()
 		if e != nil {
