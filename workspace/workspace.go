@@ -391,13 +391,21 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 	return emu, nil
 }
 
+func (emu *Emulator) RegRead(reg int) (uint64, error) {
+	return emu.u.RegRead(reg)
+}
+
+func (emu *Emulator) RegWrite(reg int, value uint64) error {
+	return emu.u.RegWrite(reg, value)
+}
+
 func (emu *Emulator) SetStackPointer(address VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			emu.u.RegWrite(uc.X86_REG_ESP, uint64(address))
+			emu.RegWrite(uc.X86_REG_ESP, uint64(address))
 			return
 		} else if emu.ws.Mode == MODE_64 {
-			emu.u.RegWrite(uc.X86_REG_RSP, uint64(address))
+			emu.RegWrite(uc.X86_REG_RSP, uint64(address))
 			return
 		} else {
 			panic(InvalidModeError)
@@ -412,9 +420,9 @@ func (emu *Emulator) GetStackPointer() VA {
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			r, e = emu.u.RegRead(uc.X86_REG_ESP)
+			r, e = emu.RegRead(uc.X86_REG_ESP)
 		} else if emu.ws.Mode == MODE_64 {
-			r, e = emu.u.RegRead(uc.X86_REG_RSP)
+			r, e = emu.RegRead(uc.X86_REG_RSP)
 		} else {
 			panic(InvalidModeError)
 		}
@@ -430,10 +438,10 @@ func (emu *Emulator) GetStackPointer() VA {
 func (emu *Emulator) SetInstructionPointer(address VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			emu.u.RegWrite(uc.X86_REG_EIP, uint64(address))
+			emu.RegWrite(uc.X86_REG_EIP, uint64(address))
 			return
 		} else if emu.ws.Mode == MODE_64 {
-			emu.u.RegWrite(uc.X86_REG_RIP, uint64(address))
+			emu.RegWrite(uc.X86_REG_RIP, uint64(address))
 			return
 		} else {
 			panic(InvalidModeError)
@@ -448,9 +456,9 @@ func (emu *Emulator) GetInstructionPointer() VA {
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
-			r, e = emu.u.RegRead(uc.X86_REG_EIP)
+			r, e = emu.RegRead(uc.X86_REG_EIP)
 		} else if emu.ws.Mode == MODE_64 {
-			r, e = emu.u.RegRead(uc.X86_REG_RIP)
+			r, e = emu.RegRead(uc.X86_REG_RIP)
 		} else {
 			panic(InvalidModeError)
 		}
@@ -474,7 +482,10 @@ var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
 var UnknownMemoryError error = errors.New("Unknown memory error")
 
 func (emu *Emulator) removeHook(h uc.Hook) error {
-	return emu.u.HookDel(h)
+	//log.Printf("DEBUG: remove hook: %v", h)
+	e := emu.u.HookDel(h)
+	check(e)
+	return e
 }
 
 type CloseableHook struct {
