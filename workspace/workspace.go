@@ -552,22 +552,37 @@ func (emu *Emulator) RunTo(address VA) error {
 	return nil
 }
 
+var EmulatorEscapedError = errors.New("Emulator failed to stop as requested.")
+
 func (emu *Emulator) StepInto() error {
 	var memErr error = nil
+	var codeErr error = nil
+
+	//log.Printf("DEBUG: step into")
 
 	memHook, e := emu.hookInvalidMemory(&memErr)
 	check(e)
 	defer memHook.Close()
 
 	// always stop after one instruction
+	hitCount := 0
 	h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-		emu.u.Stop()
+		if hitCount == 0 {
+			// pass
+		} else if hitCount == 1 {
+			emu.u.Stop()
+		} else {
+			codeErr = EmulatorEscapedError
+		}
+		hitCount += 1
 	})
 	check(e)
 	defer emu.removeHook(h)
 
+	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()
-	e = emu.start(ip, ip+MAX_INSN_SIZE)
+	end := VA(uint64(ip) + uint64(insn.Size))
+	e = emu.start(ip, end)
 	check(e)
 	if e != nil {
 		return e
@@ -575,6 +590,10 @@ func (emu *Emulator) StepInto() error {
 	check(memErr)
 	if memErr != nil {
 		return memErr
+	}
+	check(codeErr)
+	if codeErr != nil {
+		return codeErr
 	}
 
 	return nil
