@@ -644,3 +644,7 @@ func (emu *Emulator) StepOver() error {
 		return emu.StepInto()
 	}
 }
+
+func (emu *Emulator) FormatInstruction(insn gapstone.Instruction) (string, error) {
+	return fmt.Sprintf("0x%x:\t%s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
+}
