@@ -57,6 +57,22 @@ func parseNumber(s string) (uint64, error) {
 	return strconv.ParseUint(s, 0x10, 64)
 }
 
+func resolveNumber(emu *workspace.Emulator, s string) (uint64, error) {
+	// using '.' refers to the current PC value
+	if s == "." {
+		return uint64(emu.GetInstructionPointer()), nil
+	} else if s == "esp" {
+		return uint64(emu.GetStackPointer()), nil
+	} else if s == "eip" {
+		return uint64(emu.GetInstructionPointer()), nil
+	} else {
+		// otherwise, parse int
+		addrInt, e := parseNumber(s)
+		check(e)
+		return addrInt, nil
+	}
+}
+
 func doloop(emu *workspace.Emulator) error {
 	done := false
 	for !done {
@@ -126,22 +142,18 @@ func doloop(emu *workspace.Emulator) error {
 			// TODO: show flags
 			break
 		case "u":
-			// usage: u [addr|. [length]]
+			// usage: u [addr|. [num instructions]]
 			addr := emu.GetInstructionPointer()
 			length := uint64(3)
 
 			if len(words) > 1 {
-				// using '.' refers to the current PC value
-				if words[1] != "." {
-					// otherwise, parse int
-					addrInt, e := parseNumber(words[1])
-					check(e)
-					addr = workspace.VA(addrInt)
-				}
+				addrInt, e := resolveNumber(emu, words[1])
+				check(e)
+				addr = workspace.VA(addrInt)
 			}
 
 			if len(words) > 2 {
-				length, e = parseNumber(words[2])
+				length, e = resolveNumber(emu, words[2])
 				check(e)
 			}
 
@@ -153,22 +165,18 @@ func doloop(emu *workspace.Emulator) error {
 			}
 			break
 		case "dc":
-			// usage: dc [addr|. [length]]
+			// usage: dc [addr|. [num bytes]]
 			addr := emu.GetInstructionPointer()
 			length := uint64(0x40)
 
 			if len(words) > 1 {
-				// using '.' refers to the current PC value
-				if words[1] != "." {
-					// otherwise, parse int
-					addrInt, e := parseNumber(words[1])
-					check(e)
-					addr = workspace.VA(addrInt)
-				}
+				addrInt, e := resolveNumber(emu, words[1])
+				check(e)
+				addr = workspace.VA(addrInt)
 			}
 
 			if len(words) > 2 {
-				length, e = parseNumber(words[2])
+				length, e = resolveNumber(emu, words[2])
 				check(e)
 			}
 
