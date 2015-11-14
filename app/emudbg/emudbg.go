@@ -7,13 +7,17 @@ import (
 	"bufio"
 	"debug/pe"
 	"fmt"
+	"github.com/anmitsu/go-shlex"
 	"github.com/codegangsta/cli"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	peloader "github.com/williballenthin/CrystalTiger/loader/pe"
 	"github.com/williballenthin/CrystalTiger/utils"
+	"github.com/williballenthin/CrystalTiger/utils/hexdump"
 	"github.com/williballenthin/CrystalTiger/workspace"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 )
 
 var inputFlag = cli.StringFlag{
@@ -44,6 +48,15 @@ func getLine() (string, error) {
 	return string(line), e
 }
 
+// parse a string containing a hexidecimal number.
+// may have prefix '0x', or not
+func parseNumber(s string) (uint64, error) {
+	if strings.HasPrefix(s, "0x") {
+		s = s[2:]
+	}
+	return strconv.ParseUint(s, 0x10, 64)
+}
+
 func doloop(emu *workspace.Emulator) error {
 	done := false
 	for !done {
@@ -58,8 +71,13 @@ func doloop(emu *workspace.Emulator) error {
 			line = ""
 			done = true
 		}
+		words, e := shlex.Split(line, true)
+		check(e)
+		if e != nil {
+			return e
+		}
 
-		switch line {
+		switch words[0] {
 		case "":
 			break
 		case "q":
@@ -110,6 +128,33 @@ func doloop(emu *workspace.Emulator) error {
 			check(e)
 			s, e := emu.FormatInstruction(insn)
 			fmt.Printf(s)
+			break
+		case "dc":
+			// usage: dc [addr|. [length]]
+			addr := emu.GetInstructionPointer()
+			length := uint64(0x40)
+
+			if len(words) > 1 {
+				// using '.' refers to the current PC value
+				if words[1] != "." {
+					// otherwise, parse int
+					addrInt, e := parseNumber(words[1])
+					check(e)
+					addr = workspace.VA(addrInt)
+				}
+			}
+
+			if len(words) > 2 {
+				length, e = parseNumber(words[2])
+				check(e)
+			}
+
+			b, e := emu.MemRead(addr, length)
+			check(e)
+
+			e = hexdump.DumpFromOffset(b, uint64(addr), os.Stdout)
+			check(e)
+
 			break
 		}
 	}
