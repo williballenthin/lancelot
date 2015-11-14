@@ -60,10 +60,9 @@ func parseNumber(s string) (uint64, error) {
 func doloop(emu *workspace.Emulator) error {
 	done := false
 	for !done {
-		insn, e := emu.GetCurrentInstruction()
+		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 		check(e)
-		s, e := emu.FormatInstruction(insn)
-		fmt.Printf("next: " + s)
+		fmt.Printf("next:\n" + s)
 
 		fmt.Printf("%08x >", emu.GetInstructionPointer())
 		line, e := getLine()
@@ -75,6 +74,9 @@ func doloop(emu *workspace.Emulator) error {
 		check(e)
 		if e != nil {
 			return e
+		}
+		if len(words) == 0 {
+			words = []string{""}
 		}
 
 		switch words[0] {
@@ -124,10 +126,31 @@ func doloop(emu *workspace.Emulator) error {
 			// TODO: show flags
 			break
 		case "u":
-			insn, e := emu.GetCurrentInstruction()
-			check(e)
-			s, e := emu.FormatInstruction(insn)
-			fmt.Printf(s)
+			// usage: u [addr|. [length]]
+			addr := emu.GetInstructionPointer()
+			length := uint64(3)
+
+			if len(words) > 1 {
+				// using '.' refers to the current PC value
+				if words[1] != "." {
+					// otherwise, parse int
+					addrInt, e := parseNumber(words[1])
+					check(e)
+					addr = workspace.VA(addrInt)
+				}
+			}
+
+			if len(words) > 2 {
+				length, e = parseNumber(words[2])
+				check(e)
+			}
+
+			for i := uint64(0); i < length; i++ {
+				s, read, e := emu.FormatAddress(addr)
+				check(e)
+				fmt.Printf(s)
+				addr = workspace.VA(uint64(addr) + read)
+			}
 			break
 		case "dc":
 			// usage: dc [addr|. [length]]
