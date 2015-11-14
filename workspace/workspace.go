@@ -16,6 +16,7 @@ import (
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	"io"
 	"log"
+	"strings"
 )
 
 func check(e error) {
@@ -111,14 +112,19 @@ type AddressSpace interface {
 	MemUnmap(va VA, length uint64) error
 }
 
+type DisplayOptions struct {
+	NumOpcodeBytes uint
+}
+
 type Workspace struct {
 	// we cheat and use u as the address space
-	u             uc.Unicorn
-	Arch          Arch
-	Mode          Mode
-	loadedModules []*LoadedModule
-	memoryRegions []MemoryRegion
-	disassembler  gapstone.Engine
+	u              uc.Unicorn
+	Arch           Arch
+	Mode           Mode
+	loadedModules  []*LoadedModule
+	memoryRegions  []MemoryRegion
+	disassembler   gapstone.Engine
+	displayOptions DisplayOptions
 }
 
 func New(arch Arch, mode Mode) (*Workspace, error) {
@@ -155,6 +161,9 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		loadedModules: make([]*LoadedModule, 0),
 		memoryRegions: make([]MemoryRegion, 0),
 		disassembler:  disassembler,
+		displayOptions: DisplayOptions{
+			NumOpcodeBytes: 8,
+		},
 	}, nil
 }
 
@@ -558,30 +567,34 @@ func (emu *Emulator) StepInto() error {
 	var memErr error = nil
 	var codeErr error = nil
 
-	//log.Printf("DEBUG: step into")
+	log.Printf("DEBUG: step into")
 
 	memHook, e := emu.hookInvalidMemory(&memErr)
 	check(e)
 	defer memHook.Close()
 
-	// always stop after one instruction
-	hitCount := 0
-	h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-		if hitCount == 0 {
-			// pass
-		} else if hitCount == 1 {
-			emu.u.Stop()
-		} else {
-			codeErr = EmulatorEscapedError
-		}
-		hitCount += 1
-	})
-	check(e)
-	defer emu.removeHook(h)
+	/*
+		// always stop after one instruction
+		hitCount := 0
+		h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+			log.Printf("hit %d: 0x%x", hitCount, emu.GetInstructionPointer())
+			if hitCount == 0 {
+				// pass
+			} else if hitCount == 1 {
+				emu.u.Stop()
+			} else {
+				codeErr = EmulatorEscapedError
+			}
+			hitCount += 1
+		})
+		check(e)
+		defer emu.removeHook(h)
+	*/
 
 	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()
 	end := VA(uint64(ip) + uint64(insn.Size))
+	log.Printf("start 0x%x 0x%x", ip, end+1)
 	e = emu.start(ip, end)
 	check(e)
 	if e != nil {
@@ -599,16 +612,14 @@ func (emu *Emulator) StepInto() error {
 	return nil
 }
 
-func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
-	ip := emu.GetInstructionPointer()
-
-	d, e := emu.MemRead(ip, uint64(MAX_INSN_SIZE))
+func (emu *Emulator) ReadInstruction(va VA) (gapstone.Instruction, error) {
+	d, e := emu.MemRead(va, uint64(MAX_INSN_SIZE))
 	check(e)
 	if e != nil {
 		return gapstone.Instruction{}, InvalidMemoryReadError
 	}
 
-	insns, e := emu.disassembler.Disasm(d, uint64(ip), 1)
+	insns, e := emu.disassembler.Disasm(d, uint64(va), 1)
 	check(e)
 	if e != nil {
 		return gapstone.Instruction{}, FailedToDisassembleInstruction
@@ -620,6 +631,11 @@ func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
 
 	insn := insns[0]
 	return insn, nil
+}
+
+func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
+	ip := emu.GetInstructionPointer()
+	return emu.ReadInstruction(ip)
 }
 
 func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
@@ -645,6 +661,37 @@ func (emu *Emulator) StepOver() error {
 	}
 }
 
-func (emu *Emulator) FormatInstruction(insn gapstone.Instruction) (string, error) {
-	return fmt.Sprintf("0x%x:\t%s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
+func min(a uint64, b uint64) uint64 {
+	if a < b {
+		return a
+	} else {
+		return b
+	}
+}
+
+// return: data at va formatted appropriately, number of bytes for va formatted, error
+func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
+	// assume everything is code right now
+
+	insn, e := emu.ReadInstruction(va)
+	check(e)
+
+	// fetch either instruction length, or max configured bytes, amount of data
+	numBytes := uint64(emu.ws.displayOptions.NumOpcodeBytes)
+	d, e := emu.MemRead(va, min(uint64(insn.Size), numBytes))
+	check(e)
+
+	// format each of those as hex
+	bytesPrefix := make([]string, 0)
+	for _, b := range d {
+		bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
+	}
+	// and fill in padding space
+	for i := uint64(len(d)); i < numBytes; i++ {
+		bytesPrefix = append(bytesPrefix, "  ")
+	}
+	prefix := strings.Join(bytesPrefix, " ")
+
+	ret := fmt.Sprintf("0x%x: %s %s\t%s\n", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
+	return ret, uint64(insn.Size), nil
 }
