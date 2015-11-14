@@ -187,6 +187,36 @@ func doloop(emu *workspace.Emulator) error {
 			check(e)
 
 			break
+		case "dps":
+			// usage: dps [addr|. [num pointers]]
+			addr := emu.GetInstructionPointer()
+			length := uint64(0x8)
+
+			if len(words) > 1 {
+				addrInt, e := resolveNumber(emu, words[1])
+				check(e)
+				addr = workspace.VA(addrInt)
+			}
+
+			if len(words) > 2 {
+				length, e = resolveNumber(emu, words[2])
+				check(e)
+			}
+
+			for i := uint64(0); i < length; i++ {
+				va, e := emu.MemReadPtr(addr)
+				check(e)
+
+				fmt.Printf("%08x: %08x\n", uint64(addr), uint64(va))
+
+				if emu.GetMode() == workspace.MODE_32 {
+					addr += 0x4
+				} else if emu.GetMode() == workspace.MODE_64 {
+					addr += 0x8
+				}
+			}
+
+			break
 		}
 	}
 
