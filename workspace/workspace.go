@@ -351,6 +351,37 @@ func (emu *Emulator) MemUnmap(va VA, length uint64) error {
 	return nil
 }
 
+// read a pointer-sized number from the given address
+func (emu *Emulator) MemReadPtr(va VA) (VA, error) {
+	if emu.ws.Mode == MODE_32 {
+		var data uint32
+		d, e := emu.MemRead(va, 0x4)
+		if e != nil {
+			return 0, e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return VA(uint64(data)), nil
+	} else if emu.ws.Mode == MODE_64 {
+		var data uint64
+		d, e := emu.MemRead(va, 0x8)
+		if e != nil {
+			return 0, e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return VA(uint64(data)), nil
+	} else {
+		return 0, InvalidModeError
+	}
+}
+
+func (emu Emulator) GetMode() Mode {
+	return emu.ws.Mode
+}
+
 func (ws Workspace) dumpMemoryRegions() error {
 	log.Printf("=== memory map ===")
 	for _, region := range ws.memoryRegions {
