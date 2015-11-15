@@ -107,8 +107,11 @@ func doloop(emu *workspace.Emulator) error {
 			fmt.Printf("  ?/h/help - help\n")
 			fmt.Printf("  t/stepo - step into\n")
 			fmt.Printf("  p/stepi - step over\n")
+			fmt.Printf("  g/go - run until\n")
 			fmt.Printf("  r - show register(s)\n")
 			fmt.Printf("  u - disassemble\n")
+			fmt.Printf("  dc - hexdump\n")
+			fmt.Printf("  dps - dump pointers\n")
 			break
 		case "t", "stepi":
 			e = emu.StepInto()
@@ -118,16 +121,27 @@ func doloop(emu *workspace.Emulator) error {
 			e = emu.StepOver()
 			check(e)
 			break
+		case "g", "go":
+			if len(words) != 2 {
+				fmt.Printf("error: `go` requires one argument\n")
+			} else {
+				addrInt, e := resolveNumber(emu, words[1])
+				check(e)
+				addr := workspace.VA(addrInt)
+				e = emu.RunTo(addr)
+				check(e)
+			}
+			break
 		case "r":
-			eax, e := emu.RegRead(uc.X86_REG_EAX)
-			ebx, e := emu.RegRead(uc.X86_REG_EBX)
-			ecx, e := emu.RegRead(uc.X86_REG_ECX)
-			edx, e := emu.RegRead(uc.X86_REG_EDX)
-			esi, e := emu.RegRead(uc.X86_REG_ESI)
-			edi, e := emu.RegRead(uc.X86_REG_EDI)
-			ebp, e := emu.RegRead(uc.X86_REG_EBP)
-			esp, e := emu.RegRead(uc.X86_REG_ESP)
-			eip, e := emu.RegRead(uc.X86_REG_EIP)
+			eax, _ := emu.RegRead(uc.X86_REG_EAX)
+			ebx, _ := emu.RegRead(uc.X86_REG_EBX)
+			ecx, _ := emu.RegRead(uc.X86_REG_ECX)
+			edx, _ := emu.RegRead(uc.X86_REG_EDX)
+			esi, _ := emu.RegRead(uc.X86_REG_ESI)
+			edi, _ := emu.RegRead(uc.X86_REG_EDI)
+			ebp, _ := emu.RegRead(uc.X86_REG_EBP)
+			esp, _ := emu.RegRead(uc.X86_REG_ESP)
+			eip, _ := emu.RegRead(uc.X86_REG_EIP)
 			cf := emu.RegReadEflag(workspace.EFLAG_CF)
 			pf := emu.RegReadEflag(workspace.EFLAG_PF)
 			af := emu.RegReadEflag(workspace.EFLAG_AF)
@@ -137,7 +151,6 @@ func doloop(emu *workspace.Emulator) error {
 			if_ := emu.RegReadEflag(workspace.EFLAG_IF)
 			df := emu.RegReadEflag(workspace.EFLAG_DF)
 			of := emu.RegReadEflag(workspace.EFLAG_OF)
-			check(e)
 
 			fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
 			fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
