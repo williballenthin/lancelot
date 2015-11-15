@@ -128,17 +128,76 @@ func doloop(emu *workspace.Emulator) error {
 			ebp, e := emu.RegRead(uc.X86_REG_EBP)
 			esp, e := emu.RegRead(uc.X86_REG_ESP)
 			eip, e := emu.RegRead(uc.X86_REG_EIP)
+			cf := emu.RegReadEflag(workspace.EFLAG_CF)
+			pf := emu.RegReadEflag(workspace.EFLAG_PF)
+			af := emu.RegReadEflag(workspace.EFLAG_AF)
+			zf := emu.RegReadEflag(workspace.EFLAG_ZF)
+			sf := emu.RegReadEflag(workspace.EFLAG_SF)
+			tf := emu.RegReadEflag(workspace.EFLAG_TF)
+			if_ := emu.RegReadEflag(workspace.EFLAG_IF)
+			df := emu.RegReadEflag(workspace.EFLAG_DF)
+			of := emu.RegReadEflag(workspace.EFLAG_OF)
 			check(e)
 
-			fmt.Printf("eax: 0x%08x\n", eax)
-			fmt.Printf("ebx: 0x%08x\n", ebx)
-			fmt.Printf("ecx: 0x%08x\n", ecx)
-			fmt.Printf("edx: 0x%08x\n", edx)
-			fmt.Printf("esi: 0x%08x\n", esi)
-			fmt.Printf("edi: 0x%08x\n", edi)
-			fmt.Printf("ebp: 0x%08x\n", ebp)
-			fmt.Printf("esp: 0x%08x\n", esp)
-			fmt.Printf("eip: 0x%08x\n", eip)
+			/*
+				const EFLAG_CF = 1 << 0
+				const EFLAG_R1 = 1 << 1
+				const EFLAG_PF = 1 << 2
+				const EFLAG_R3 = 1 << 3
+				const EFLAG_AF = 1 << 4
+				const EFLAG_R5 = 1 << 5
+				const EFLAG_ZF = 1 << 6
+				const EFLAG_SF = 1 << 7
+				const EFLAG_TF = 1 << 8
+				const EFLAG_IF = 1 << 9
+				const EFLAG_DF = 1 << 10
+				const EFLAG_OF = 1 << 11
+				const EFLAG_IOPL0 = 1 << 12
+				const EFLAG_IOPL1 = 1 << 13
+				const EFLAG_NT = 1 << 14
+				const EFLAG_R16 = 1 << 15
+				const EFLAG_RF = 1 << 16
+				const EFLAG_VM = 1 << 17
+				const EFLAG_AC = 1 << 18
+				const EFLAG_VIF = 1 << 19
+				const EFLAG_VIP = 1 << 20
+				const EFLAG_ID = 1 << 21
+			*/
+
+			fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
+			fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
+			fmt.Printf("ecx: 0x%08x  AF: %v\n", ecx, af)
+			fmt.Printf("edx: 0x%08x  ZF: %v\n", edx, zf)
+			fmt.Printf("esi: 0x%08x  SF: %v\n", esi, sf)
+			fmt.Printf("edi: 0x%08x  TF: %v\n", edi, tf)
+			fmt.Printf("ebp: 0x%08x  IF: %v\n", ebp, if_)
+			fmt.Printf("esp: 0x%08x  DF: %v\n", esp, df)
+			fmt.Printf("eip: 0x%08x  OF: %v\n", eip, of)
+			/*
+				       via: https://en.wikipedia.org/wiki/FLAGS_register
+							   0 	CF 	Carry flag 	Status
+							   1 		Reserved
+							   2 	PF 	Parity flag 	Status
+							   3 		Reserved
+							   4 	AF 	Adjust flag 	Status
+							   5 		Reserved
+							   6 	ZF 	Zero flag 	Status
+							   7 	SF 	Sign flag 	Status
+							   8 	TF 	Trap flag (single step) 	Control
+							   9 	IF 	Interrupt enable flag 	Control
+							   10 	DF 	Direction flag 	Control
+							   11 	OF 	Overflow flag 	Status
+							   12-13 	IOPL 	I/O privilege level (286+ only), always 1 on 8086 and 186 	System
+							   14 	NT 	Nested task flag (286+ only), always 1 on 8086 and 186 	System
+							   15 		Reserved, always 1 on 8086 and 186, always 0 on later models
+				         16 	RF 	Resume flag (386+ only) 	System
+				         17 	VM 	Virtual 8086 mode flag (386+ only) 	System
+				         18 	AC 	Alignment check (486SX+ only) 	System
+				         19 	VIF 	Virtual interrupt flag (Pentium+) 	System
+				         20 	VIP 	Virtual interrupt pending (Pentium+) 	System
+				         21 	ID 	Able to use CPUID instruction (Pentium+) 	System
+			*/
+
 			// TODO: show flags
 			break
 		case "u":
@@ -247,8 +306,8 @@ func doit(path string) error {
 	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
 
 	//e = emu.RunTo(m.EntryPoint + 0x7)
-	e = emu.RunTo(m.EntryPoint + 0xe)
-	check(e)
+	//e = emu.RunTo(m.EntryPoint + 0xe)
+	//check(e)
 	/*
 		log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
 		e = emu.StepInto()
