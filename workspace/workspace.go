@@ -435,8 +435,59 @@ func (emu *Emulator) RegRead(reg int) (uint64, error) {
 	return emu.u.RegRead(reg)
 }
 
+const EFLAG_CF = 1 << 0
+const EFLAG_R1 = 1 << 1
+const EFLAG_PF = 1 << 2
+const EFLAG_R3 = 1 << 3
+const EFLAG_AF = 1 << 4
+const EFLAG_R5 = 1 << 5
+const EFLAG_ZF = 1 << 6
+const EFLAG_SF = 1 << 7
+const EFLAG_TF = 1 << 8
+const EFLAG_IF = 1 << 9
+const EFLAG_DF = 1 << 10
+const EFLAG_OF = 1 << 11
+const EFLAG_IOPL0 = 1 << 12
+const EFLAG_IOPL1 = 1 << 13
+const EFLAG_NT = 1 << 14
+const EFLAG_R16 = 1 << 15
+const EFLAG_RF = 1 << 16
+const EFLAG_VM = 1 << 17
+const EFLAG_AC = 1 << 18
+const EFLAG_VIF = 1 << 19
+const EFLAG_VIP = 1 << 20
+const EFLAG_ID = 1 << 21
+
+func (emu *Emulator) RegReadEflag(eflag uint64) bool {
+	if v, _ := emu.RegRead(uc.X86_REG_EFLAGS); v&eflag > 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
 func (emu *Emulator) RegWrite(reg int, value uint64) error {
 	return emu.u.RegWrite(reg, value)
+}
+
+func (emu *Emulator) RegSetEflag(eflag uint64) {
+	v, _ := emu.RegRead(uc.X86_REG_EFLAGS)
+	v |= eflag
+	emu.RegWrite(uc.X86_REG_EFLAGS, v)
+}
+
+func (emu *Emulator) RegUnsetEflag(eflag uint64) {
+	v, _ := emu.RegRead(uc.X86_REG_EFLAGS)
+	v &^= (eflag)
+	emu.RegWrite(uc.X86_REG_EFLAGS, v)
+}
+
+func (emu *Emulator) RegToggleEflag(eflag uint64) {
+	if emu.RegReadEflag(eflag) {
+		emu.RegUnsetEflag(eflag)
+	} else {
+		emu.RegSetEflag(eflag)
+	}
 }
 
 func (emu *Emulator) SetStackPointer(address VA) {
