@@ -644,6 +644,14 @@ func (emu *Emulator) RunTo(address VA) error {
 	check(e)
 	defer memHook.Close()
 
+	memReadHook, e := emu.hookMemRead()
+	check(e)
+	defer memReadHook.Close()
+
+	memWriteHook, e := emu.hookMemWrite()
+	check(e)
+	defer memWriteHook.Close()
+
 	e = emu.start(ip, address)
 	check(e)
 	if e != nil {
@@ -749,6 +757,7 @@ func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
 }
 
 func (emu *Emulator) StepOver() error {
+
 	insn, e := emu.GetCurrentInstruction()
 	check(e)
 	if e != nil {
