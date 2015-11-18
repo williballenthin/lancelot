@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/codegangsta/cli"
-	"github.com/williballenthin/CrystalTiger/utils/hexdump"
+	"github.com/williballenthin/Lancelot/utils/hexdump"
 	"io/ioutil"
 	"log"
 	"os"

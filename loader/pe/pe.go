@@ -6,7 +6,7 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
-	"github.com/williballenthin/CrystalTiger/workspace"
+	"github.com/williballenthin/Lancelot/workspace"
 	"unicode/utf16"
 )
 

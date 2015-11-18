@@ -10,10 +10,10 @@ import (
 	"github.com/anmitsu/go-shlex"
 	"github.com/codegangsta/cli"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
-	peloader "github.com/williballenthin/CrystalTiger/loader/pe"
-	"github.com/williballenthin/CrystalTiger/utils"
-	"github.com/williballenthin/CrystalTiger/utils/hexdump"
-	"github.com/williballenthin/CrystalTiger/workspace"
+	peloader "github.com/williballenthin/Lancelot/loader/pe"
+	"github.com/williballenthin/Lancelot/utils"
+	"github.com/williballenthin/Lancelot/utils/hexdump"
+	"github.com/williballenthin/Lancelot/workspace"
 	"log"
 	"os"
 	"strconv"
@@ -80,12 +80,14 @@ func doloop(emu *workspace.Emulator) error {
 		check(e)
 		fmt.Printf("next:\n" + s)
 
-		fmt.Printf("%08x >", emu.GetInstructionPointer())
+		fmt.Printf("%08x > ", emu.GetInstructionPointer())
+		// TODO: use a readline like lib here
 		line, e := getLine()
 		if e != nil {
 			line = ""
 			done = true
 		}
+
 		words, e := shlex.Split(line, true)
 		check(e)
 		if e != nil {
