@@ -570,6 +570,7 @@ func (emu *Emulator) start(begin VA, until VA) error {
 var InvalidMemoryWriteError error = errors.New("Invalid memory write error")
 var InvalidMemoryReadError error = errors.New("Invalid memory read error")
 var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
+var UnmappedMemoryError error = errors.New("Unmapped memory error")
 var UnknownMemoryError error = errors.New("Unknown memory error")
 
 func (emu *Emulator) removeHook(h uc.Hook) error {
@@ -590,28 +591,41 @@ func (hook *CloseableHook) Close() error {
 
 func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
 	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_READ_INVALID|uc.HOOK_MEM_WRITE_INVALID|uc.HOOK_MEM_FETCH_INVALID,
+		uc.HOOK_MEM_UNMAPPED,
 		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-
-			switch access {
-			case uc.MEM_WRITE_UNMAPPED | uc.MEM_WRITE_PROT:
-				log.Printf("WARN: invalid write")
-				*err = InvalidMemoryWriteError
-			case uc.MEM_READ_UNMAPPED | uc.MEM_READ_PROT:
-				log.Printf("WARN: invalid read")
-				*err = InvalidMemoryReadError
-			case uc.MEM_FETCH_UNMAPPED | uc.MEM_FETCH_PROT:
-				log.Printf("WARN: invalid fetch")
-				*err = InvalidMemoryExecError
-			default:
-				log.Printf("WARN: unknown memory error")
-				*err = UnknownMemoryError
-			}
-			log.Printf("WARN: @0x%x [0x%x] = 0x%x\n", addr, size, value)
-
-			emu.u.Stop()
-
+			log.Printf("error: unmapped: 0x%x %x", addr, size)
+			*err = UnmappedMemoryError
 			return false
+		})
+
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	return &CloseableHook{emu: emu, h: h}, nil
+}
+
+func (emu *Emulator) hookMemRead() (*CloseableHook, error) {
+	h, e := emu.u.HookAdd(
+		uc.HOOK_MEM_READ,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+			log.Printf("read: @0x%x [0x%x] = 0x%x", addr, size, value)
+		})
+
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	return &CloseableHook{emu: emu, h: h}, nil
+}
+
+func (emu *Emulator) hookMemWrite() (*CloseableHook, error) {
+	h, e := emu.u.HookAdd(
+		uc.HOOK_MEM_WRITE,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+			log.Printf("write: @0x%x [0x%x] = 0x%x", addr, size, value)
 		})
 
 	check(e)
@@ -651,32 +665,37 @@ func (emu *Emulator) StepInto() error {
 
 	log.Printf("DEBUG: step into")
 
+	memReadHook, e := emu.hookMemRead()
+	check(e)
+	defer memReadHook.Close()
+
+	memWriteHook, e := emu.hookMemWrite()
+	check(e)
+	defer memWriteHook.Close()
+
 	memHook, e := emu.hookInvalidMemory(&memErr)
 	check(e)
 	defer memHook.Close()
 
-	/*
-		// always stop after one instruction
-		hitCount := 0
-		h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
-			log.Printf("hit %d: 0x%x", hitCount, emu.GetInstructionPointer())
-			if hitCount == 0 {
-				// pass
-			} else if hitCount == 1 {
-				emu.u.Stop()
-			} else {
-				codeErr = EmulatorEscapedError
-			}
-			hitCount += 1
-		})
-		check(e)
-		defer emu.removeHook(h)
-	*/
+	// always stop after one instruction
+	hitCount := 0
+	h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+		if hitCount == 0 {
+			// pass
+		} else if hitCount == 1 {
+			emu.u.Stop()
+		} else {
+			codeErr = EmulatorEscapedError
+		}
+		hitCount += 1
+	})
+	check(e)
+	defer emu.removeHook(h)
 
 	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()
 	end := VA(uint64(ip) + uint64(insn.Size))
-	log.Printf("start 0x%x 0x%x", ip, end+1)
+	log.Printf("start 0x%x 0x%x", ip, end)
 	e = emu.start(ip, end)
 	check(e)
 	if e != nil {
