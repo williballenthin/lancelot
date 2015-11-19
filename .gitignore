@@ -2,6 +2,7 @@
 *.o
 *.a
 *.so
+*.out
 
 # Folders
 _obj
@@ -22,3 +23,17 @@ _testmain.go
 *.exe
 *.test
 *.prof
+
+# editor files
+*~
+
+# misc
+*.bin
+
+# binaries
+CrystalTiger
+pe
+emudbg
+hexdump
+cli
+
