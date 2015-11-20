@@ -506,3 +506,106 @@ func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
 	ret := fmt.Sprintf("0x%x: %s %s\t%s\n", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
 	return ret, uint64(insn.Size), nil
 }
+
+// naturally, x86 specific. mode-agnostic.
+type RegisterSnapshot struct {
+	regs [uc.X86_REG_ENDING - uc.X86_REG_INVALID]uint64
+}
+
+func (emu *Emulator) SnapshotRegisters() (*RegisterSnapshot, error) {
+	var regs RegisterSnapshot
+	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
+		r, e := emu.u.RegRead(i)
+		if e != nil {
+			return nil, e
+		}
+		regs.regs[i] = r
+	}
+	return &regs, nil
+}
+
+func (emu *Emulator) RestoreRegisterSnapshot(regs *RegisterSnapshot) error {
+	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
+		e := emu.u.RegWrite(i, regs.regs[i])
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func (emu *Emulator) SnapshotMemory() (*MemorySnapshot, error) {
+	return CreateMemorySnapshot(emu)
+}
+
+// until i figure out how this is best used,
+// the currentAddressSpace of `snapshot` *must* be be this emu.
+func (emu *Emulator) RestoreMemorySnapshot(as *MemorySnapshot) error {
+	e := as.RevertAddressSpace(emu)
+	if e != nil {
+		return e
+	}
+
+	e = as.Revert()
+	check(e)
+
+	return nil
+}
+
+// x86 specific. mode-agnostic.
+type Snapshot struct {
+	hook      *CloseableHook
+	emu       *Emulator
+	memory    *MemorySnapshot
+	registers *RegisterSnapshot
+}
+
+func (emu *Emulator) Snapshot() (*Snapshot, error) {
+	regs, e := emu.SnapshotRegisters()
+	if e != nil {
+		return nil, e
+	}
+
+	mem, e := emu.SnapshotMemory()
+	if e != nil {
+		return nil, e
+	}
+
+	// TODO: can't have more than one of these hooks
+	hook, e := emu.u.HookAdd(
+		uc.HOOK_MEM_WRITE,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+			for i := addr; i < addr+uint64(size); i += PAGE_SIZE {
+				mem.MarkDirty(VA(i))
+			}
+		})
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	return &Snapshot{
+		hook:      &CloseableHook{emu: emu, h: hook},
+		memory:    mem,
+		registers: regs,
+	}, nil
+}
+
+func (emu *Emulator) RestoreSnapshot(snap *Snapshot) error {
+	e := emu.RestoreRegisterSnapshot(snap.registers)
+	check(e)
+	if e != nil {
+		// we're in a bad state here
+		return e
+	}
+	e = emu.RestoreMemorySnapshot(snap.memory)
+	if e != nil {
+		// we're in a bad state here
+		return e
+	}
+	return nil
+}
+
+func (snap *Snapshot) Close() error {
+	return snap.hook.Close()
+}
