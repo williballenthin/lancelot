@@ -74,6 +74,8 @@ func resolveNumber(emu *workspace.Emulator, s string) (uint64, error) {
 }
 
 func doloop(emu *workspace.Emulator) error {
+	var snap *workspace.Snapshot
+
 	done := false
 	for !done {
 		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
@@ -97,6 +99,7 @@ func doloop(emu *workspace.Emulator) error {
 			words = []string{""}
 		}
 
+		// TODO: use 'cli' to handle and delegate cmdlines
 		switch words[0] {
 		case "":
 			break
@@ -240,6 +243,50 @@ func doloop(emu *workspace.Emulator) error {
 			}
 
 			break
+		case "snapshot":
+			if len(words) == 1 {
+				fmt.Printf("Error: 'snapshot' requires at least one parameter.\n")
+			} else {
+				switch words[1] {
+				case "create":
+					if snap != nil {
+						fmt.Printf("Error: snapshot already active.\n")
+					} else {
+						snap, e = emu.Snapshot()
+						check(e)
+						fmt.Printf("Snapshot taken.\n")
+					}
+					break
+				case "revert":
+					if snap == nil {
+						fmt.Printf("Error: no snapshot active.\n")
+					} else {
+						e := emu.RestoreSnapshot(snap)
+						check(e)
+						fmt.Printf("Snapshot restored.\n")
+					}
+
+					break
+				case "destroy":
+					if snap == nil {
+						fmt.Printf("Error: no snapshot active.\n")
+					} else {
+						snap.Close()
+						snap = nil
+						fmt.Printf("Snapshot destroyed.\n")
+					}
+				case "list":
+					// TODO: show stack of snapshots
+					break
+				case "diff":
+					// TODO: show reg, mem diff from most recent snapshot
+					break
+				default:
+					fmt.Printf("unknown 'snapshot' command: %s\n", words[1])
+					break
+				}
+			}
+			break
 		}
 	}
 
@@ -268,19 +315,6 @@ func doit(path string) error {
 	emu.SetInstructionPointer(m.EntryPoint)
 
 	log.Printf("emudbg: start: 0x%x", emu.GetInstructionPointer())
-
-	//e = emu.RunTo(m.EntryPoint + 0x7)
-	//e = emu.RunTo(m.EntryPoint + 0xe)
-	//check(e)
-	/*
-		log.Printf("emudbg: run: 0x%x", emu.GetInstructionPointer())
-		e = emu.StepInto()
-		check(e)
-		log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
-		e = emu.StepInto()
-		check(e)
-		log.Printf("emudbg: step into: 0x%x", emu.GetInstructionPointer())
-	*/
 
 	e = doloop(emu)
 	check(e)
