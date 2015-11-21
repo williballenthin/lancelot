@@ -74,15 +74,301 @@ func resolveNumber(emu *workspace.Emulator, s string) (uint64, error) {
 }
 
 func doloop(emu *workspace.Emulator) error {
-	var snap *workspace.Snapshot
-
+	snaps := make([]*workspace.Snapshot, 0)
 	done := false
+
+	app := cli.NewApp()
+	app.Name = "cli"
+	app.Usage = ""
+	app.Commands = []cli.Command{
+		{
+			Name:    "quit",
+			Aliases: []string{"exit", "q"},
+			Usage:   "quit the emulator shell",
+			//			Subcommands: []cli.Command{},
+			Action: func(c *cli.Context) {
+				fmt.Printf("quit.\n")
+				done = true
+			},
+		},
+		{
+			Name:    "help",
+			Aliases: []string{"h", "?"},
+			Usage:   "show help",
+			//			Subcommands: []cli.Command{},
+			Action: func(c *cli.Context) {
+				if !c.Args().Present() {
+					cli.ShowAppHelp(c)
+				} else {
+					cli.ShowCommandHelp(c, c.Args().First())
+				}
+			},
+		},
+		{
+			Name:    "stepi",
+			Aliases: []string{"t"},
+			Usage:   "single step an instruction, emulating into function calls",
+			Action: func(c *cli.Context) {
+				e := emu.StepInto()
+				check(e)
+			},
+		},
+		{
+			Name:    "stepo",
+			Aliases: []string{"p"},
+			Usage:   "single step an instruction, emulating over function calls",
+			Action: func(c *cli.Context) {
+				e := emu.StepOver()
+				check(e)
+			},
+		},
+		{
+			Name:    "go",
+			Aliases: []string{"g"},
+			Usage:   "emulate multiple instructions",
+			Action: func(c *cli.Context) {
+				if c.Args().Present() {
+					addrInt, e := resolveNumber(emu, c.Args().First())
+					check(e)
+					addr := workspace.VA(addrInt)
+					e = emu.RunTo(addr)
+					check(e)
+				} else {
+					fmt.Printf("error: `go` requires one argument\n")
+				}
+			},
+		},
+
+		{
+			Name:    "registers",
+			Aliases: []string{"reg", "r"},
+			Usage:   "show, edit registers",
+			Action: func(c *cli.Context) {
+				eax, _ := emu.RegRead(uc.X86_REG_EAX)
+				ebx, _ := emu.RegRead(uc.X86_REG_EBX)
+				ecx, _ := emu.RegRead(uc.X86_REG_ECX)
+				edx, _ := emu.RegRead(uc.X86_REG_EDX)
+				esi, _ := emu.RegRead(uc.X86_REG_ESI)
+				edi, _ := emu.RegRead(uc.X86_REG_EDI)
+				ebp, _ := emu.RegRead(uc.X86_REG_EBP)
+				esp, _ := emu.RegRead(uc.X86_REG_ESP)
+				eip, _ := emu.RegRead(uc.X86_REG_EIP)
+				cf := emu.RegReadEflag(workspace.EFLAG_CF)
+				pf := emu.RegReadEflag(workspace.EFLAG_PF)
+				af := emu.RegReadEflag(workspace.EFLAG_AF)
+				zf := emu.RegReadEflag(workspace.EFLAG_ZF)
+				sf := emu.RegReadEflag(workspace.EFLAG_SF)
+				tf := emu.RegReadEflag(workspace.EFLAG_TF)
+				if_ := emu.RegReadEflag(workspace.EFLAG_IF)
+				df := emu.RegReadEflag(workspace.EFLAG_DF)
+				of := emu.RegReadEflag(workspace.EFLAG_OF)
+
+				fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
+				fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
+				fmt.Printf("ecx: 0x%08x  AF: %v\n", ecx, af)
+				fmt.Printf("edx: 0x%08x  ZF: %v\n", edx, zf)
+				fmt.Printf("esi: 0x%08x  SF: %v\n", esi, sf)
+				fmt.Printf("edi: 0x%08x  TF: %v\n", edi, tf)
+				fmt.Printf("ebp: 0x%08x  IF: %v\n", ebp, if_)
+				fmt.Printf("esp: 0x%08x  DF: %v\n", esp, df)
+				fmt.Printf("eip: 0x%08x  OF: %v\n", eip, of)
+			},
+		},
+		{
+			Name:    "unassemble",
+			Aliases: []string{"u", "dis", "disassemble"},
+			Usage:   "disassemble instructions",
+			Action: func(c *cli.Context) {
+				// usage: u [addr|. [num instructions]]
+				var e error
+				addr := emu.GetInstructionPointer()
+				length := uint64(3)
+
+				if c.Args().Get(1) != "" {
+					addrInt, e := resolveNumber(emu, c.Args().Get(1))
+					check(e)
+					addr = workspace.VA(addrInt)
+				}
+
+				if c.Args().Get(2) != "" {
+					length, e = resolveNumber(emu, c.Args().Get(2))
+					check(e)
+				}
+
+				for i := uint64(0); i < length; i++ {
+					s, read, e := emu.FormatAddress(addr)
+					check(e)
+					fmt.Printf(s)
+					addr = workspace.VA(uint64(addr) + read)
+				}
+			},
+		},
+		{
+			Name:    "hexdump",
+			Aliases: []string{"dc"},
+			Usage:   "disassemble instructions",
+			Action: func(c *cli.Context) {
+				// usage: dps [addr|. [num bytes]]
+				var e error
+				addr := emu.GetInstructionPointer()
+				length := uint64(0x40)
+
+				if c.Args().Get(1) != "" {
+					addrInt, e := resolveNumber(emu, c.Args().Get(1))
+					check(e)
+					addr = workspace.VA(addrInt)
+				}
+
+				if c.Args().Get(2) != "" {
+					length, e = resolveNumber(emu, c.Args().Get(2))
+					check(e)
+				}
+
+				b, e := emu.MemRead(addr, length)
+				check(e)
+
+				e = hexdump.DumpFromOffset(b, uint64(addr), os.Stdout)
+				check(e)
+			},
+		},
+		{
+			Name:    "dps",
+			Aliases: []string{},
+			Usage:   "dump pointers to symbols",
+			Action: func(c *cli.Context) {
+				// usage: dps [addr|. [num pointers]]
+				var e error
+				addr := emu.GetInstructionPointer()
+				length := uint64(0x8)
+
+				if c.Args().Get(1) != "" {
+					addrInt, e := resolveNumber(emu, c.Args().Get(1))
+					check(e)
+					addr = workspace.VA(addrInt)
+				}
+
+				if c.Args().Get(2) != "" {
+					length, e = resolveNumber(emu, c.Args().Get(2))
+					check(e)
+				}
+
+				for i := uint64(0); i < length; i++ {
+					va, e := emu.MemReadPtr(addr)
+					check(e)
+
+					fmt.Printf("%08x: %08x\n", uint64(addr), uint64(va))
+
+					if emu.GetMode() == workspace.MODE_32 {
+						addr += 0x4
+					} else if emu.GetMode() == workspace.MODE_64 {
+						addr += 0x8
+					}
+				}
+			},
+		},
+		{
+			Name:    "snapshot",
+			Aliases: []string{"s"},
+			Usage:   "manipulate snapshots",
+			Subcommands: []cli.Command{
+				{
+					Name:    "create",
+					Aliases: []string{"c"},
+					Usage:   "create new snapshot",
+					Action: func(c *cli.Context) {
+						if len(snaps) > 0 {
+							// pause the previous current snapshot's memory tracking
+							e := emu.UnhookSnapshot(snaps[len(snaps)-1])
+							check(e)
+						}
+						// push our new snapshot onto the stack of snapshots
+						snap, e := emu.Snapshot()
+						check(e)
+						fmt.Printf("Snapshot taken.\n")
+						snaps = append(snaps, snap)
+					},
+				},
+				{
+					Name:    "revert",
+					Aliases: []string{"r"},
+					Usage:   "revert to current snapshot",
+					Action: func(c *cli.Context) {
+						if len(snaps) == 0 {
+							fmt.Printf("Error: no snapshot active.\n")
+							return
+						}
+
+						snap := snaps[len(snaps)-1]
+						e := emu.RestoreSnapshot(snap)
+						check(e)
+						fmt.Printf("Snapshot restored.\n")
+					},
+				},
+				{
+					Name:    "list",
+					Aliases: []string{"l"},
+					Usage:   "list snapshots",
+					Action: func(c *cli.Context) {
+						fmt.Printf("snapshots:\n")
+						for i := len(snaps) - 1; i >= 0; i-- {
+							snap := snaps[i]
+							if i == len(snaps)-1 {
+								fmt.Printf("  > %s\n", snap.String())
+							} else {
+								fmt.Printf("  - %s\n", snap.String())
+							}
+						}
+					},
+				},
+				{
+					Name:    "diff",
+					Aliases: []string{"s"},
+					Usage:   "diff reg, mem from current snapshot",
+					Action: func(c *cli.Context) {
+						fmt.Printf("unsupported.\n")
+					},
+				},
+				{
+					Name:    "destroy",
+					Aliases: []string{"d"},
+					Usage:   "destroy current snapshot",
+					Action: func(c *cli.Context) {
+						if len(snaps) == 0 {
+							fmt.Printf("Error: no snapshot active.\n")
+						} else {
+							// TODO: ensure emu.pc == snap.pc
+							snap := snaps[len(snaps)-1]
+							e := emu.UnhookSnapshot(snap)
+							check(e)
+							fmt.Printf("Snapshot destroyed: %s\n", snap.String())
+
+							snaps = snaps[:len(snaps)-1]
+
+							if len(snaps) > 0 {
+								oldsnap := snaps[len(snaps)-1]
+								e := emu.HookSnapshot(oldsnap)
+								// TODO: need to merge changes from `snap` into `oldsnap`
+								check(e)
+								fmt.Printf("Continuing with snapshot: %s\n", oldsnap.String())
+							}
+						}
+					},
+				},
+			},
+		},
+	}
+
 	for !done {
+		// TODO: make this gray
 		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 		check(e)
 		fmt.Printf("next:\n" + s)
 
+		// TODO: make prompt blue or something
 		fmt.Printf("%08x > ", emu.GetInstructionPointer())
+
+		// TODO: reset style
+
 		// TODO: use a readline like lib here
 		line, e := getLine()
 		if e != nil {
@@ -90,204 +376,16 @@ func doloop(emu *workspace.Emulator) error {
 			done = true
 		}
 
-		words, e := shlex.Split(line, true)
+		words, e := shlex.Split("cli "+line, true)
 		check(e)
 		if e != nil {
 			return e
 		}
-		if len(words) == 0 {
-			words = []string{""}
+		if len(words) == 1 {
+			continue
 		}
 
-		// TODO: use 'cli' to handle and delegate cmdlines
-		switch words[0] {
-		case "":
-			break
-		case "q":
-			done = true
-			break
-		case "?", "h", "help":
-			fmt.Printf("help:\n")
-			fmt.Printf("  q - quit\n")
-			fmt.Printf("  ?/h/help - help\n")
-			fmt.Printf("  t/stepo - step into\n")
-			fmt.Printf("  p/stepi - step over\n")
-			fmt.Printf("  g/go - run until\n")
-			fmt.Printf("  r - show register(s)\n")
-			fmt.Printf("  u - disassemble\n")
-			fmt.Printf("  dc - hexdump\n")
-			fmt.Printf("  dps - dump pointers\n")
-			break
-		case "t", "stepi":
-			e = emu.StepInto()
-			check(e)
-			break
-		case "p", "stepo":
-			e = emu.StepOver()
-			check(e)
-			break
-		case "g", "go":
-			if len(words) != 2 {
-				fmt.Printf("error: `go` requires one argument\n")
-			} else {
-				addrInt, e := resolveNumber(emu, words[1])
-				check(e)
-				addr := workspace.VA(addrInt)
-				e = emu.RunTo(addr)
-				check(e)
-			}
-			break
-		case "r":
-			eax, _ := emu.RegRead(uc.X86_REG_EAX)
-			ebx, _ := emu.RegRead(uc.X86_REG_EBX)
-			ecx, _ := emu.RegRead(uc.X86_REG_ECX)
-			edx, _ := emu.RegRead(uc.X86_REG_EDX)
-			esi, _ := emu.RegRead(uc.X86_REG_ESI)
-			edi, _ := emu.RegRead(uc.X86_REG_EDI)
-			ebp, _ := emu.RegRead(uc.X86_REG_EBP)
-			esp, _ := emu.RegRead(uc.X86_REG_ESP)
-			eip, _ := emu.RegRead(uc.X86_REG_EIP)
-			cf := emu.RegReadEflag(workspace.EFLAG_CF)
-			pf := emu.RegReadEflag(workspace.EFLAG_PF)
-			af := emu.RegReadEflag(workspace.EFLAG_AF)
-			zf := emu.RegReadEflag(workspace.EFLAG_ZF)
-			sf := emu.RegReadEflag(workspace.EFLAG_SF)
-			tf := emu.RegReadEflag(workspace.EFLAG_TF)
-			if_ := emu.RegReadEflag(workspace.EFLAG_IF)
-			df := emu.RegReadEflag(workspace.EFLAG_DF)
-			of := emu.RegReadEflag(workspace.EFLAG_OF)
-
-			fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
-			fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
-			fmt.Printf("ecx: 0x%08x  AF: %v\n", ecx, af)
-			fmt.Printf("edx: 0x%08x  ZF: %v\n", edx, zf)
-			fmt.Printf("esi: 0x%08x  SF: %v\n", esi, sf)
-			fmt.Printf("edi: 0x%08x  TF: %v\n", edi, tf)
-			fmt.Printf("ebp: 0x%08x  IF: %v\n", ebp, if_)
-			fmt.Printf("esp: 0x%08x  DF: %v\n", esp, df)
-			fmt.Printf("eip: 0x%08x  OF: %v\n", eip, of)
-			break
-		case "u":
-			// usage: u [addr|. [num instructions]]
-			addr := emu.GetInstructionPointer()
-			length := uint64(3)
-
-			if len(words) > 1 {
-				addrInt, e := resolveNumber(emu, words[1])
-				check(e)
-				addr = workspace.VA(addrInt)
-			}
-
-			if len(words) > 2 {
-				length, e = resolveNumber(emu, words[2])
-				check(e)
-			}
-
-			for i := uint64(0); i < length; i++ {
-				s, read, e := emu.FormatAddress(addr)
-				check(e)
-				fmt.Printf(s)
-				addr = workspace.VA(uint64(addr) + read)
-			}
-			break
-		case "dc":
-			// usage: dc [addr|. [num bytes]]
-			addr := emu.GetInstructionPointer()
-			length := uint64(0x40)
-
-			if len(words) > 1 {
-				addrInt, e := resolveNumber(emu, words[1])
-				check(e)
-				addr = workspace.VA(addrInt)
-			}
-
-			if len(words) > 2 {
-				length, e = resolveNumber(emu, words[2])
-				check(e)
-			}
-
-			b, e := emu.MemRead(addr, length)
-			check(e)
-
-			e = hexdump.DumpFromOffset(b, uint64(addr), os.Stdout)
-			check(e)
-
-			break
-		case "dps":
-			// usage: dps [addr|. [num pointers]]
-			addr := emu.GetInstructionPointer()
-			length := uint64(0x8)
-
-			if len(words) > 1 {
-				addrInt, e := resolveNumber(emu, words[1])
-				check(e)
-				addr = workspace.VA(addrInt)
-			}
-
-			if len(words) > 2 {
-				length, e = resolveNumber(emu, words[2])
-				check(e)
-			}
-
-			for i := uint64(0); i < length; i++ {
-				va, e := emu.MemReadPtr(addr)
-				check(e)
-
-				fmt.Printf("%08x: %08x\n", uint64(addr), uint64(va))
-
-				if emu.GetMode() == workspace.MODE_32 {
-					addr += 0x4
-				} else if emu.GetMode() == workspace.MODE_64 {
-					addr += 0x8
-				}
-			}
-
-			break
-		case "snapshot":
-			if len(words) == 1 {
-				fmt.Printf("Error: 'snapshot' requires at least one parameter.\n")
-			} else {
-				switch words[1] {
-				case "create":
-					if snap != nil {
-						fmt.Printf("Error: snapshot already active.\n")
-					} else {
-						snap, e = emu.Snapshot()
-						check(e)
-						fmt.Printf("Snapshot taken.\n")
-					}
-					break
-				case "revert":
-					if snap == nil {
-						fmt.Printf("Error: no snapshot active.\n")
-					} else {
-						e := emu.RestoreSnapshot(snap)
-						check(e)
-						fmt.Printf("Snapshot restored.\n")
-					}
-
-					break
-				case "destroy":
-					if snap == nil {
-						fmt.Printf("Error: no snapshot active.\n")
-					} else {
-						snap.Close()
-						snap = nil
-						fmt.Printf("Snapshot destroyed.\n")
-					}
-				case "list":
-					// TODO: show stack of snapshots
-					break
-				case "diff":
-					// TODO: show reg, mem diff from most recent snapshot
-					break
-				default:
-					fmt.Printf("unknown 'snapshot' command: %s\n", words[1])
-					break
-				}
-			}
-			break
-		}
+		app.Run(words)
 	}
 
 	return nil

@@ -365,3 +365,5 @@ func (snap *MemorySnapshot) MarkDirty(va VA) error {
 	snap.dirtyPageNumbers[VA(roundDownToPage(uint64(va)))] = true
 	return nil
 }
+
+// TODO: MemorySnapshot.Merge, that syncs dirtyPages from src to dst MemorySnapshots
