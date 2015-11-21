@@ -560,6 +560,42 @@ type Snapshot struct {
 	registers *RegisterSnapshot
 }
 
+var SnapshotHookAlreadyActive = errors.New("Snapshot hook already active")
+
+func (emu *Emulator) HookSnapshot(snap *Snapshot) error {
+	if snap.hook != nil {
+		return SnapshotHookAlreadyActive
+	}
+
+	// TODO: can't have more than one of these hooks
+	hook, e := emu.u.HookAdd(
+		uc.HOOK_MEM_WRITE,
+		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+			for i := addr; i < addr+uint64(size); i += PAGE_SIZE {
+				snap.memory.MarkDirty(VA(i))
+			}
+		})
+	check(e)
+	if e != nil {
+		return e
+	}
+
+	snap.hook = &CloseableHook{emu: emu, h: hook}
+	return nil
+}
+
+var SnapshotHookNotActive = errors.New("Snapshot hook not active")
+
+func (emu *Emulator) UnhookSnapshot(snap *Snapshot) error {
+	if snap.hook == nil {
+		return SnapshotHookNotActive
+	}
+
+	e := snap.hook.Close()
+	snap.hook = nil
+	return e
+}
+
 func (emu *Emulator) Snapshot() (*Snapshot, error) {
 	regs, e := emu.SnapshotRegisters()
 	if e != nil {
@@ -571,24 +607,18 @@ func (emu *Emulator) Snapshot() (*Snapshot, error) {
 		return nil, e
 	}
 
-	// TODO: can't have more than one of these hooks
-	hook, e := emu.u.HookAdd(
-		uc.HOOK_MEM_WRITE,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			for i := addr; i < addr+uint64(size); i += PAGE_SIZE {
-				mem.MarkDirty(VA(i))
-			}
-		})
-	check(e)
+	snap := &Snapshot{
+		hook:      nil,
+		memory:    mem,
+		registers: regs,
+	}
+
+	e = emu.HookSnapshot(snap)
 	if e != nil {
 		return nil, e
 	}
 
-	return &Snapshot{
-		hook:      &CloseableHook{emu: emu, h: hook},
-		memory:    mem,
-		registers: regs,
-	}, nil
+	return snap, nil
 }
 
 func (emu *Emulator) RestoreSnapshot(snap *Snapshot) error {
@@ -606,6 +636,6 @@ func (emu *Emulator) RestoreSnapshot(snap *Snapshot) error {
 	return nil
 }
 
-func (snap *Snapshot) Close() error {
-	return snap.hook.Close()
+func (snap Snapshot) String() string {
+	return fmt.Sprintf("snapshot: eip=0x%x", snap.registers.regs[uc.X86_REG_EIP])
 }
