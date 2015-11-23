@@ -123,39 +123,40 @@ func IsCF(i gapstone.Instruction) bool {
 }
 
 type EmuDbg struct {
-	emu   *workspace.Emulator
+	// TODO: use struct embedding?
+	*workspace.Emulator
 	snaps []*workspace.Snapshot
 }
 
 func New(emu *workspace.Emulator) (*EmuDbg, error) {
 	return &EmuDbg{
-		emu:   emu,
-		snaps: make([]*workspace.Snapshot, 0),
+		Emulator: emu,
+		snaps:    make([]*workspace.Snapshot, 0),
 	}, nil
 }
 
-func GetNextInstruction(edb *EmuDbg) (workspace.VA, error) {
-	if len(edb.snaps) > 0 {
-		snap := edb.snaps[len(edb.snaps)-1]
-		edb.emu.UnhookSnapshot(snap)
+func GetNextInstruction(emu *EmuDbg) (workspace.VA, error) {
+	if len(emu.snaps) > 0 {
+		snap := emu.snaps[len(emu.snaps)-1]
+		emu.UnhookSnapshot(snap)
 	}
 
-	tsnap, e := edb.emu.Snapshot()
+	tsnap, e := emu.Snapshot()
 	check(e)
 
-	e = edb.emu.StepInto()
+	e = emu.StepInto()
 	check(e)
 
-	nextPc := edb.emu.GetInstructionPointer()
-	e = edb.emu.RestoreSnapshot(tsnap)
+	nextPc := emu.GetInstructionPointer()
+	e = emu.RestoreSnapshot(tsnap)
 	check(e)
 
-	e = edb.emu.UnhookSnapshot(tsnap)
+	e = emu.UnhookSnapshot(tsnap)
 	check(e)
 
-	if len(edb.snaps) > 0 {
-		snap := edb.snaps[len(edb.snaps)-1]
-		edb.emu.HookSnapshot(snap)
+	if len(emu.snaps) > 0 {
+		snap := emu.snaps[len(emu.snaps)-1]
+		emu.HookSnapshot(snap)
 	}
 	return nextPc, nil
 }
@@ -197,7 +198,7 @@ func doloop(emu *workspace.Emulator) error {
 			Aliases: []string{"t"},
 			Usage:   "single step an instruction, emulating into function calls",
 			Action: func(c *cli.Context) {
-				e := edb.emu.StepInto()
+				e := emu.StepInto()
 				check(e)
 			},
 		},
@@ -206,7 +207,7 @@ func doloop(emu *workspace.Emulator) error {
 			Aliases: []string{"p"},
 			Usage:   "single step an instruction, emulating over function calls",
 			Action: func(c *cli.Context) {
-				e := edb.emu.StepOver()
+				e := emu.StepOver()
 				check(e)
 			},
 		},
@@ -219,7 +220,7 @@ func doloop(emu *workspace.Emulator) error {
 					addrInt, e := resolveNumber(emu, c.Args().First())
 					check(e)
 					addr := workspace.VA(addrInt)
-					e = edb.emu.RunTo(addr)
+					e = emu.RunTo(addr)
 					check(e)
 				} else {
 					fmt.Printf("error: `go` requires one argument\n")
@@ -254,7 +255,7 @@ func doloop(emu *workspace.Emulator) error {
 							return
 						}
 
-						e = edb.emu.RegWrite(reg, val)
+						e = emu.RegWrite(reg, val)
 						check(e)
 					} else {
 						reg, e := getRegFromString(regStr)
@@ -262,30 +263,30 @@ func doloop(emu *workspace.Emulator) error {
 							fmt.Printf("error: invalid register name: %s\n", regStr)
 							return
 						}
-						r, e := edb.emu.RegRead(reg)
+						r, e := emu.RegRead(reg)
 						check(e)
 
 						fmt.Printf("%s: 0x%08x\n", strings.ToLower(regStr), r)
 					}
 				} else {
-					eax, _ := edb.emu.RegRead(uc.X86_REG_EAX)
-					ebx, _ := edb.emu.RegRead(uc.X86_REG_EBX)
-					ecx, _ := edb.emu.RegRead(uc.X86_REG_ECX)
-					edx, _ := edb.emu.RegRead(uc.X86_REG_EDX)
-					esi, _ := edb.emu.RegRead(uc.X86_REG_ESI)
-					edi, _ := edb.emu.RegRead(uc.X86_REG_EDI)
-					ebp, _ := edb.emu.RegRead(uc.X86_REG_EBP)
-					esp, _ := edb.emu.RegRead(uc.X86_REG_ESP)
-					eip, _ := edb.emu.RegRead(uc.X86_REG_EIP)
-					cf := edb.emu.RegReadEflag(workspace.EFLAG_CF)
-					pf := edb.emu.RegReadEflag(workspace.EFLAG_PF)
-					af := edb.emu.RegReadEflag(workspace.EFLAG_AF)
-					zf := edb.emu.RegReadEflag(workspace.EFLAG_ZF)
-					sf := edb.emu.RegReadEflag(workspace.EFLAG_SF)
-					tf := edb.emu.RegReadEflag(workspace.EFLAG_TF)
-					if_ := edb.emu.RegReadEflag(workspace.EFLAG_IF)
-					df := edb.emu.RegReadEflag(workspace.EFLAG_DF)
-					of := edb.emu.RegReadEflag(workspace.EFLAG_OF)
+					eax, _ := emu.RegRead(uc.X86_REG_EAX)
+					ebx, _ := emu.RegRead(uc.X86_REG_EBX)
+					ecx, _ := emu.RegRead(uc.X86_REG_ECX)
+					edx, _ := emu.RegRead(uc.X86_REG_EDX)
+					esi, _ := emu.RegRead(uc.X86_REG_ESI)
+					edi, _ := emu.RegRead(uc.X86_REG_EDI)
+					ebp, _ := emu.RegRead(uc.X86_REG_EBP)
+					esp, _ := emu.RegRead(uc.X86_REG_ESP)
+					eip, _ := emu.RegRead(uc.X86_REG_EIP)
+					cf := emu.RegReadEflag(workspace.EFLAG_CF)
+					pf := emu.RegReadEflag(workspace.EFLAG_PF)
+					af := emu.RegReadEflag(workspace.EFLAG_AF)
+					zf := emu.RegReadEflag(workspace.EFLAG_ZF)
+					sf := emu.RegReadEflag(workspace.EFLAG_SF)
+					tf := emu.RegReadEflag(workspace.EFLAG_TF)
+					if_ := emu.RegReadEflag(workspace.EFLAG_IF)
+					df := emu.RegReadEflag(workspace.EFLAG_DF)
+					of := emu.RegReadEflag(workspace.EFLAG_OF)
 
 					fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
 					fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
@@ -306,7 +307,7 @@ func doloop(emu *workspace.Emulator) error {
 			Action: func(c *cli.Context) {
 				// usage: u [addr|. [num instructions]]
 				var e error
-				addr := edb.emu.GetInstructionPointer()
+				addr := emu.GetInstructionPointer()
 				length := uint64(3)
 
 				if c.Args().Get(0) != "" {
@@ -321,7 +322,7 @@ func doloop(emu *workspace.Emulator) error {
 				}
 
 				for i := uint64(0); i < length; i++ {
-					s, read, e := edb.emu.FormatAddress(addr)
+					s, read, e := emu.FormatAddress(addr)
 					check(e)
 					fmt.Printf(s + "\n")
 					addr = workspace.VA(uint64(addr) + read)
@@ -335,7 +336,7 @@ func doloop(emu *workspace.Emulator) error {
 			Action: func(c *cli.Context) {
 				// usage: dps [addr|. [num bytes]]
 				var e error
-				addr := edb.emu.GetInstructionPointer()
+				addr := emu.GetInstructionPointer()
 				length := uint64(0x40)
 
 				if c.Args().Get(1) != "" {
@@ -349,7 +350,7 @@ func doloop(emu *workspace.Emulator) error {
 					check(e)
 				}
 
-				b, e := edb.emu.MemRead(addr, length)
+				b, e := emu.MemRead(addr, length)
 				check(e)
 
 				e = hexdump.DumpFromOffset(b, uint64(addr), os.Stdout)
@@ -363,7 +364,7 @@ func doloop(emu *workspace.Emulator) error {
 			Action: func(c *cli.Context) {
 				// usage: dps [addr|. [num pointers]]
 				var e error
-				addr := edb.emu.GetInstructionPointer()
+				addr := emu.GetInstructionPointer()
 				length := uint64(0x8)
 
 				if c.Args().Get(0) != "" {
@@ -378,14 +379,14 @@ func doloop(emu *workspace.Emulator) error {
 				}
 
 				for i := uint64(0); i < length; i++ {
-					va, e := edb.emu.MemReadPtr(addr)
+					va, e := emu.MemReadPtr(addr)
 					check(e)
 
 					fmt.Printf("%08x: %08x\n", uint64(addr), uint64(va))
 
-					if edb.emu.GetMode() == workspace.MODE_32 {
+					if emu.GetMode() == workspace.MODE_32 {
 						addr += 0x4
-					} else if edb.emu.GetMode() == workspace.MODE_64 {
+					} else if emu.GetMode() == workspace.MODE_64 {
 						addr += 0x8
 					}
 				}
@@ -403,11 +404,11 @@ func doloop(emu *workspace.Emulator) error {
 					Action: func(c *cli.Context) {
 						if len(edb.snaps) > 0 {
 							// pause the previous current snapshot's memory tracking
-							e := edb.emu.UnhookSnapshot(edb.snaps[len(edb.snaps)-1])
+							e := emu.UnhookSnapshot(edb.snaps[len(edb.snaps)-1])
 							check(e)
 						}
 						// push our new snapshot onto the stack of snapshots
-						snap, e := edb.emu.Snapshot()
+						snap, e := emu.Snapshot()
 						check(e)
 						fmt.Printf("Snapshot taken.\n")
 						edb.snaps = append(edb.snaps, snap)
@@ -424,7 +425,7 @@ func doloop(emu *workspace.Emulator) error {
 						}
 
 						snap := edb.snaps[len(edb.snaps)-1]
-						e := edb.emu.RestoreSnapshot(snap)
+						e := emu.RestoreSnapshot(snap)
 						check(e)
 						fmt.Printf("Snapshot restored.\n")
 					},
@@ -461,9 +462,9 @@ func doloop(emu *workspace.Emulator) error {
 						if len(edb.snaps) == 0 {
 							fmt.Printf("Error: no snapshot active.\n")
 						} else {
-							// TODO: ensure edb.emu.pc == snap.pc
+							// TODO: ensure emu.pc == snap.pc
 							snap := edb.snaps[len(edb.snaps)-1]
-							e := edb.emu.UnhookSnapshot(snap)
+							e := emu.UnhookSnapshot(snap)
 							check(e)
 							fmt.Printf("Snapshot destroyed: %s\n", snap.String())
 
@@ -471,7 +472,7 @@ func doloop(emu *workspace.Emulator) error {
 
 							if len(edb.snaps) > 0 {
 								oldsnap := edb.snaps[len(edb.snaps)-1]
-								e := edb.emu.HookSnapshot(oldsnap)
+								e := emu.HookSnapshot(oldsnap)
 								// TODO: need to merge changes from `snap` into `oldsnap`
 								check(e)
 								fmt.Printf("Continuing with snapshot: %s\n", oldsnap.String())
@@ -485,10 +486,10 @@ func doloop(emu *workspace.Emulator) error {
 
 	for !done {
 
-		insn, e := edb.emu.GetCurrentInstruction()
+		insn, e := emu.GetCurrentInstruction()
 		check(e)
 
-		s, _, e := edb.emu.FormatAddress(edb.emu.GetInstructionPointer())
+		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 		check(e)
 		color.Set(color.FgHiBlack)
 		fmt.Printf("next:\n" + s)
@@ -498,7 +499,7 @@ func doloop(emu *workspace.Emulator) error {
 			nextPc, e := GetNextInstruction(edb)
 			check(e)
 
-			if nextPc == workspace.VA(uint64(edb.emu.GetInstructionPointer())+uint64(insn.Size)) {
+			if nextPc == workspace.VA(uint64(emu.GetInstructionPointer())+uint64(insn.Size)) {
 				fmt.Printf(" (jump not taken)")
 			} else {
 				fmt.Printf(" (jump taken, to: 0x%08x)", uint64(nextPc))
@@ -508,7 +509,7 @@ func doloop(emu *workspace.Emulator) error {
 		color.Unset()
 
 		color.Set(color.FgBlue)
-		fmt.Printf("0x%08x > ", edb.emu.GetInstructionPointer())
+		fmt.Printf("0x%08x > ", emu.GetInstructionPointer())
 		color.Unset()
 
 		// TODO: use a readline like lib here
