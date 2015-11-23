@@ -44,6 +44,11 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 	if e != nil {
 		return nil, e
 	}
+	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
+	check(e)
+	if e != nil {
+		return nil, e
+	}
 
 	emu := &Emulator{
 		ws:           ws,
@@ -500,7 +505,7 @@ func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
 	}
 	prefix := strings.Join(bytesPrefix, " ")
 
-	ret := fmt.Sprintf("0x%x: %s %s\t%s\n", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
+	ret := fmt.Sprintf("0x%x: %s %s\t%s", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
 	return ret, uint64(insn.Size), nil
 }
 
