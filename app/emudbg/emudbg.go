@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/anmitsu/go-shlex"
 	"github.com/codegangsta/cli"
+	"github.com/fatih/color"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	"github.com/williballenthin/Lancelot/utils"
@@ -433,15 +434,15 @@ func doloop(emu *workspace.Emulator) error {
 	}
 
 	for !done {
-		// TODO: make this gray
 		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 		check(e)
+		color.Set(color.FgHiBlack)
 		fmt.Printf("next:\n" + s)
+		color.Unset()
 
-		// TODO: make prompt blue or something
+		color.Set(color.FgBlue)
 		fmt.Printf("%08x > ", emu.GetInstructionPointer())
-
-		// TODO: reset style
+		color.Unset()
 
 		// TODO: use a readline like lib here
 		line, e := getLine()
