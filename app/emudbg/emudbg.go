@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"debug/pe"
+	"errors"
 	"fmt"
 	"github.com/anmitsu/go-shlex"
 	"github.com/codegangsta/cli"
@@ -22,12 +23,7 @@ import (
 
 var inputFlag = cli.StringFlag{
 	Name:  "input_file",
-	Usage: "file to decode",
-}
-
-var outputFlag = cli.StringFlag{
-	Name:  "output_file",
-	Usage: "where to write decoded data",
+	Usage: "file to emulate",
 }
 
 var verboseFlag = cli.BoolFlag{
@@ -57,21 +53,62 @@ func parseNumber(s string) (uint64, error) {
 	return strconv.ParseUint(s, 0x10, 64)
 }
 
+func getRegFromString(s string) (int, error) {
+	m := map[string]int{
+		"eax": uc.X86_REG_EAX,
+		"ebx": uc.X86_REG_EBX,
+		"ecx": uc.X86_REG_ECX,
+		"edx": uc.X86_REG_EDX,
+		"esi": uc.X86_REG_ESI,
+		"edi": uc.X86_REG_EDI,
+		"ebp": uc.X86_REG_EBP,
+		"esp": uc.X86_REG_ESP,
+		"eip": uc.X86_REG_EIP,
+	}
+	r, ok := m[strings.ToLower(s)]
+	if !ok {
+		return 0, InvalidRegisterNameError
+	}
+	return r, nil
+}
+
+func getFlagFromString(s string) (int, error) {
+	m := map[string]int{
+		"cf": workspace.EFLAG_CF,
+		"pf": workspace.EFLAG_PF,
+		"af": workspace.EFLAG_AF,
+		"zf": workspace.EFLAG_ZF,
+		"sf": workspace.EFLAG_SF,
+		"tf": workspace.EFLAG_TF,
+		"if": workspace.EFLAG_IF,
+		"df": workspace.EFLAG_DF,
+		"of": workspace.EFLAG_OF,
+	}
+	r, ok := m[strings.ToLower(s)]
+	if !ok {
+		return 0, InvalidRegisterNameError
+	}
+	return r, nil
+}
+
 func resolveNumber(emu *workspace.Emulator, s string) (uint64, error) {
 	// using '.' refers to the current PC value
 	if s == "." {
 		return uint64(emu.GetInstructionPointer()), nil
-	} else if s == "esp" {
-		return uint64(emu.GetStackPointer()), nil
-	} else if s == "eip" {
-		return uint64(emu.GetInstructionPointer()), nil
-	} else {
-		// otherwise, parse int
-		addrInt, e := parseNumber(s)
-		check(e)
-		return addrInt, nil
 	}
+
+	reg, e := getRegFromString(s)
+	if e == nil {
+		r, e := emu.RegRead(reg)
+		return uint64(r), e
+	}
+	// otherwise, parse int
+	addrInt, e := parseNumber(s)
+	check(e)
+	return addrInt, nil
 }
+
+var InvalidRegisterNameError = errors.New("Invalid register name")
 
 func doloop(emu *workspace.Emulator) error {
 	snaps := make([]*workspace.Snapshot, 0)
@@ -144,34 +181,71 @@ func doloop(emu *workspace.Emulator) error {
 			Aliases: []string{"reg", "r"},
 			Usage:   "show, edit registers",
 			Action: func(c *cli.Context) {
-				eax, _ := emu.RegRead(uc.X86_REG_EAX)
-				ebx, _ := emu.RegRead(uc.X86_REG_EBX)
-				ecx, _ := emu.RegRead(uc.X86_REG_ECX)
-				edx, _ := emu.RegRead(uc.X86_REG_EDX)
-				esi, _ := emu.RegRead(uc.X86_REG_ESI)
-				edi, _ := emu.RegRead(uc.X86_REG_EDI)
-				ebp, _ := emu.RegRead(uc.X86_REG_EBP)
-				esp, _ := emu.RegRead(uc.X86_REG_ESP)
-				eip, _ := emu.RegRead(uc.X86_REG_EIP)
-				cf := emu.RegReadEflag(workspace.EFLAG_CF)
-				pf := emu.RegReadEflag(workspace.EFLAG_PF)
-				af := emu.RegReadEflag(workspace.EFLAG_AF)
-				zf := emu.RegReadEflag(workspace.EFLAG_ZF)
-				sf := emu.RegReadEflag(workspace.EFLAG_SF)
-				tf := emu.RegReadEflag(workspace.EFLAG_TF)
-				if_ := emu.RegReadEflag(workspace.EFLAG_IF)
-				df := emu.RegReadEflag(workspace.EFLAG_DF)
-				of := emu.RegReadEflag(workspace.EFLAG_OF)
+				if c.Args().Present() {
+					regStr := c.Args().First()
+					if strings.Contains(regStr, "=") {
+						parts := strings.Split(regStr, "=")
+						if len(parts) != 2 {
+							fmt.Printf("error: bad register assignment\n")
+							return
+						}
+						regStr := parts[0]
+						reg, e := getRegFromString(regStr)
+						if e != nil {
+							fmt.Printf("error: invalid register name: %s\n", regStr)
+							return
+						}
 
-				fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
-				fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
-				fmt.Printf("ecx: 0x%08x  AF: %v\n", ecx, af)
-				fmt.Printf("edx: 0x%08x  ZF: %v\n", edx, zf)
-				fmt.Printf("esi: 0x%08x  SF: %v\n", esi, sf)
-				fmt.Printf("edi: 0x%08x  TF: %v\n", edi, tf)
-				fmt.Printf("ebp: 0x%08x  IF: %v\n", ebp, if_)
-				fmt.Printf("esp: 0x%08x  DF: %v\n", esp, df)
-				fmt.Printf("eip: 0x%08x  OF: %v\n", eip, of)
+						valStr := parts[1]
+						val, e := resolveNumber(emu, valStr)
+						if e != nil {
+							fmt.Printf("error: invalid value: %s\n", valStr)
+							return
+						}
+
+						e = emu.RegWrite(reg, val)
+						check(e)
+					} else {
+						reg, e := getRegFromString(regStr)
+						if e != nil {
+							fmt.Printf("error: invalid register name: %s\n", regStr)
+							return
+						}
+						r, e := emu.RegRead(reg)
+						check(e)
+
+						fmt.Printf("%s: 0x%08x\n", strings.ToLower(regStr), r)
+					}
+				} else {
+					eax, _ := emu.RegRead(uc.X86_REG_EAX)
+					ebx, _ := emu.RegRead(uc.X86_REG_EBX)
+					ecx, _ := emu.RegRead(uc.X86_REG_ECX)
+					edx, _ := emu.RegRead(uc.X86_REG_EDX)
+					esi, _ := emu.RegRead(uc.X86_REG_ESI)
+					edi, _ := emu.RegRead(uc.X86_REG_EDI)
+					ebp, _ := emu.RegRead(uc.X86_REG_EBP)
+					esp, _ := emu.RegRead(uc.X86_REG_ESP)
+					eip, _ := emu.RegRead(uc.X86_REG_EIP)
+					cf := emu.RegReadEflag(workspace.EFLAG_CF)
+					pf := emu.RegReadEflag(workspace.EFLAG_PF)
+					af := emu.RegReadEflag(workspace.EFLAG_AF)
+					zf := emu.RegReadEflag(workspace.EFLAG_ZF)
+					sf := emu.RegReadEflag(workspace.EFLAG_SF)
+					tf := emu.RegReadEflag(workspace.EFLAG_TF)
+					if_ := emu.RegReadEflag(workspace.EFLAG_IF)
+					df := emu.RegReadEflag(workspace.EFLAG_DF)
+					of := emu.RegReadEflag(workspace.EFLAG_OF)
+
+					fmt.Printf("eax: 0x%08x  CF: %v\n", eax, cf)
+					fmt.Printf("ebx: 0x%08x  PF: %v\n", ebx, pf)
+					fmt.Printf("ecx: 0x%08x  AF: %v\n", ecx, af)
+					fmt.Printf("edx: 0x%08x  ZF: %v\n", edx, zf)
+					fmt.Printf("esi: 0x%08x  SF: %v\n", esi, sf)
+					fmt.Printf("edi: 0x%08x  TF: %v\n", edi, tf)
+					fmt.Printf("ebp: 0x%08x  IF: %v\n", ebp, if_)
+					fmt.Printf("esp: 0x%08x  DF: %v\n", esp, df)
+					fmt.Printf("eip: 0x%08x  OF: %v\n", eip, of)
+				}
 			},
 		},
 		{
