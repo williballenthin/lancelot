@@ -259,14 +259,14 @@ func doloop(emu *workspace.Emulator) error {
 				addr := emu.GetInstructionPointer()
 				length := uint64(3)
 
-				if c.Args().Get(1) != "" {
-					addrInt, e := resolveNumber(emu, c.Args().Get(1))
+				if c.Args().Get(0) != "" {
+					addrInt, e := resolveNumber(emu, c.Args().Get(0))
 					check(e)
 					addr = workspace.VA(addrInt)
 				}
 
-				if c.Args().Get(2) != "" {
-					length, e = resolveNumber(emu, c.Args().Get(2))
+				if c.Args().Get(1) != "" {
+					length, e = resolveNumber(emu, c.Args().Get(1))
 					check(e)
 				}
 
@@ -316,14 +316,14 @@ func doloop(emu *workspace.Emulator) error {
 				addr := emu.GetInstructionPointer()
 				length := uint64(0x8)
 
-				if c.Args().Get(1) != "" {
-					addrInt, e := resolveNumber(emu, c.Args().Get(1))
+				if c.Args().Get(0) != "" {
+					addrInt, e := resolveNumber(emu, c.Args().Get(0))
 					check(e)
 					addr = workspace.VA(addrInt)
 				}
 
-				if c.Args().Get(2) != "" {
-					length, e = resolveNumber(emu, c.Args().Get(2))
+				if c.Args().Get(1) != "" {
+					length, e = resolveNumber(emu, c.Args().Get(1))
 					check(e)
 				}
 

@@ -382,8 +382,6 @@ func (emu *Emulator) StepInto() error {
 	var memErr error = nil
 	var codeErr error = nil
 
-	log.Printf("DEBUG: step into")
-
 	memReadHook, e := emu.hookMemRead()
 	check(e)
 	defer memReadHook.Close()
@@ -414,7 +412,6 @@ func (emu *Emulator) StepInto() error {
 	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()
 	end := VA(uint64(ip) + uint64(insn.Size))
-	log.Printf("start 0x%x 0x%x", ip, end)
 	e = emu.start(ip, end)
 	check(e)
 	if e != nil {
