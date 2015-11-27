@@ -409,7 +409,7 @@ func (emu *Emulator) StepInto() error {
 		} else {
 			codeErr = EmulatorEscapedError
 		}
-		hitCount += 1
+		hitCount++
 	})
 	check(e)
 	defer emu.removeHook(h)
