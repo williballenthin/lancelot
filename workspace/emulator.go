@@ -283,11 +283,11 @@ func (emu *Emulator) start(begin VA, until VA) error {
 	return emu.u.Start(uint64(begin), uint64(until))
 }
 
-var InvalidMemoryWriteError error = errors.New("Invalid memory write error")
-var InvalidMemoryReadError error = errors.New("Invalid memory read error")
-var InvalidMemoryExecError error = errors.New("Invalid memory exec error")
-var UnmappedMemoryError error = errors.New("Unmapped memory error")
-var UnknownMemoryError error = errors.New("Unknown memory error")
+var ErrInvalidMemoryWrite error = errors.New("Invalid memory write error")
+var ErrInvalidMemoryRead error = errors.New("Invalid memory read error")
+var ErrInvalidMemoryExec error = errors.New("Invalid memory exec error")
+var ErrUnmappedMemory error = errors.New("Unmapped memory error")
+var ErrUnknownMemory error = errors.New("Unknown memory error")
 
 func (emu *Emulator) removeHook(h uc.Hook) error {
 	//log.Printf("DEBUG: remove hook: %v", h)
@@ -310,7 +310,7 @@ func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
 		uc.HOOK_MEM_UNMAPPED,
 		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 			log.Printf("error: unmapped: 0x%x %x", addr, size)
-			*err = UnmappedMemoryError
+			*err = ErrUnmappedMemory
 			return false
 		})
 
@@ -438,7 +438,7 @@ func (emu *Emulator) ReadInstruction(va VA) (gapstone.Instruction, error) {
 	d, e := emu.MemRead(va, uint64(MAX_INSN_SIZE))
 	check(e)
 	if e != nil {
-		return gapstone.Instruction{}, InvalidMemoryReadError
+		return gapstone.Instruction{}, ErrInvalidMemoryRead
 	}
 
 	insns, e := emu.disassembler.Disasm(d, uint64(va), 1)
