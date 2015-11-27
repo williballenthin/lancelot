@@ -575,7 +575,7 @@ func main() {
 		}
 
 		inputFile := c.String("input_file")
-		if !utils.doesPathExist(inputFile) {
+		if !utils.DoesPathExist(inputFile) {
 			log.Printf("Error: file %s must exist", inputFile)
 			return
 		}

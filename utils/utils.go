@@ -22,7 +22,7 @@ func CheckRequiredArgs(c *cli.Context, requiredFlags []cli.StringFlag) error {
 	return nil
 }
 
-func doesPathExist(p string) bool {
+func DoesPathExist(p string) bool {
 	_, e := os.Stat(p)
 	if e == nil {
 		return true
