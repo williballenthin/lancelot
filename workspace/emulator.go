@@ -460,6 +460,11 @@ func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
 	return emu.ReadInstruction(ip)
 }
 
+func IsCall(insn gapstone.Instruction) bool {
+	// x86 specific :-/
+	return insn.Mnemonic == "call"
+}
+
 func (emu *Emulator) StepOver() error {
 	insn, e := emu.GetCurrentInstruction()
 	check(e)
@@ -467,7 +472,8 @@ func (emu *Emulator) StepOver() error {
 		return e
 	}
 
-	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+	//	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+	if IsCall(insn) {
 		return emu.RunTo(VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size)))
 	} else {
 		return emu.StepInto()
