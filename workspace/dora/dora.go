@@ -30,9 +30,18 @@ func (dora *Dora) ExploreFunction(va W.VA) error {
 	emu.SetInstructionPointer(va)
 	check(e)
 
-	e = emu.RunTo(W.VA(0x0))
-	if e != nil {
-		log.Printf("error: %s", e.Error())
+	for {
+		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
+		check(e)
+		color.Set(color.FgHiBlack)
+		log.Printf("ip:" + s)
+		color.Unset()
+
+		e = emu.StepOver()
+		if e != nil {
+			log.Printf("error: %s", e.Error())
+			break
+		}
 	}
 
 	/*
