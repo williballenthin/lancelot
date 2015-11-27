@@ -143,7 +143,7 @@ func (sas *SimpleAddressSpace) findData(va VA, length uint64) ([]byte, error) {
 		}
 	}
 	if !found {
-		return nil, UnmappedMemoryError
+		return nil, ErrUnmappedMemory
 	}
 	data := sas.data[region.Address]
 	offset := uint64(va) - uint64(region.Address)
