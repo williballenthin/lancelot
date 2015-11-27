@@ -1,6 +1,7 @@
 package dora
 
 import (
+	"github.com/fatih/color"
 	W "github.com/williballenthin/Lancelot/workspace"
 	"log"
 )
