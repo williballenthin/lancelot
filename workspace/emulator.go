@@ -418,11 +418,24 @@ func (emu *Emulator) StepInto() error {
 	ip := emu.GetInstructionPointer()
 	end := VA(uint64(ip) + uint64(insn.Size))
 	e = emu.start(ip, end)
-	check(e)
 	if e != nil {
+		switch e := e.(type) {
+		case uc.UcError:
+			// TODO: nested switch here
+			// TODO: split out into utility function??
+			if e == uc.ERR_FETCH_UNMAPPED {
+				return ErrInvalidMemoryExec
+			} else if e == uc.ERR_READ_UNMAPPED {
+				return ErrInvalidMemoryRead
+			} else if e == uc.ERR_WRITE_UNMAPPED {
+				return ErrInvalidMemoryWrite
+			}
+			break
+		default:
+			break
+		}
 		return e
 	}
-	check(memErr)
 	if memErr != nil {
 		return memErr
 	}
