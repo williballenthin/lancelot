@@ -4,6 +4,7 @@ import "github.com/codegangsta/cli"
 import "errors"
 import "log"
 import "fmt"
+import "os"
 
 var RequiredFlagNotProvidedError = errors.New("Required flag not provided.")
 
@@ -19,4 +20,15 @@ func CheckRequiredArgs(c *cli.Context, requiredFlags []cli.StringFlag) error {
 		return RequiredFlagNotProvidedError
 	}
 	return nil
+}
+
+func doesPathExist(p string) bool {
+	_, e := os.Stat(p)
+	if e == nil {
+		return true
+	}
+	if os.IsNotExist(e) {
+		return false
+	}
+	return true
 }

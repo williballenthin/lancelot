@@ -563,17 +563,6 @@ func doit(path string) error {
 	return nil
 }
 
-func doesPathExist(p string) bool {
-	_, e := os.Stat(p)
-	if e == nil {
-		return true
-	}
-	if os.IsNotExist(e) {
-		return false
-	}
-	return true
-}
-
 func main() {
 	app := cli.NewApp()
 	app.Version = "0.1"
@@ -586,7 +575,7 @@ func main() {
 		}
 
 		inputFile := c.String("input_file")
-		if !doesPathExist(inputFile) {
+		if !utils.doesPathExist(inputFile) {
 			log.Printf("Error: file %s must exist", inputFile)
 			return
 		}
