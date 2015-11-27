@@ -66,7 +66,7 @@ func getRegFromString(s string) (int, error) {
 	}
 	r, ok := m[strings.ToLower(s)]
 	if !ok {
-		return 0, InvalidRegisterNameError
+		return 0, ErrInvalidRegisterName
 	}
 	return r, nil
 }
@@ -85,7 +85,7 @@ func getFlagFromString(s string) (int, error) {
 	}
 	r, ok := m[strings.ToLower(s)]
 	if !ok {
-		return 0, InvalidRegisterNameError
+		return 0, ErrInvalidRegisterName
 	}
 	return r, nil
 }
@@ -107,7 +107,7 @@ func resolveNumber(emu *workspace.Emulator, s string) (uint64, error) {
 	return addrInt, nil
 }
 
-var InvalidRegisterNameError = errors.New("Invalid register name")
+var ErrInvalidRegisterName = errors.New("Invalid register name")
 
 func IsCF(i gapstone.Instruction) bool {
 	if workspace.DoesInstructionHaveGroup(i, gapstone.X86_GRP_JUMP) {
