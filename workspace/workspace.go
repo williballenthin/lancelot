@@ -278,8 +278,8 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 }
 
 func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
-	for _, group := range i.Groups {
-		if group == group {
+	for _, g := range i.Groups {
+		if group == g {
 			return true
 		}
 	}
