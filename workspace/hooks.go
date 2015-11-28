@@ -28,9 +28,11 @@ type CodeHandler func(addr VA, size uint32)
 /************ internal ****************************/
 /* need to be careful with typing, so do not expose Interface{} */
 
-// possible values:
+// intended possible concrete types:
 //   MemReadHandler
 //   MemWriteHandler
+//   MemUnmappedHandler
+//   CodeHandler
 type Handler interface{}
 
 type hookMultiplexer struct {
