@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"errors"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
+	"log"
 )
 
 type CloseableHook interface {
@@ -20,86 +22,129 @@ func (hook *UnicornCloseableHook) Close() error {
 type Cookie uint64
 type MemReadHandler func(access int, addr VA, size int, value int64)
 type MemWriteHandler func(access int, addr VA, size int, value int64)
+type MemUnmappedHandler func(access int, addr VA, size int, value int64) bool
 
-/************ MEM READ ****************************/
+/************ internal ****************************/
+/* need to be careful with typing, so do not expose Interface{} */
 
-type MemReadHookMultiplexer struct {
-	h       *CloseableHook
+// possible values:
+//   MemReadHandler
+//   MemWriteHandler
+type Handler interface{}
+
+type hookMultiplexer struct {
+	h       CloseableHook
 	counter uint64
-	entries map[Cookie]MemReadHandler
+	entries map[Cookie]Handler
 }
 
-func NewMemReadHookMultiplexer() (*MemReadHookMultiplexer, error) {
-	return &MemReadHookMultiplexer{
+func newHookMultiplexer() (*hookMultiplexer, error) {
+	return &hookMultiplexer{
 		counter: 0,
-		entries: make(map[Cookie]MemReadHandler),
+		entries: make(map[Cookie]Handler),
 	}, nil
 }
 
-func (m *MemReadHookMultiplexer) AddHook(f MemReadHandler) (Cookie, error) {
+type multiplexerCloseableHook struct {
+	m *hookMultiplexer
+	c Cookie
+}
+
+func (h *multiplexerCloseableHook) Close() error {
+	return h.m.removeHook(h.c)
+}
+
+func (m *hookMultiplexer) AddHook(f Handler) (CloseableHook, error) {
 	cookie := Cookie(m.counter)
 	m.counter++
 	m.entries[cookie] = f
-	return cookie, nil
+	return &multiplexerCloseableHook{m: m, c: cookie}, nil
 }
 
-func (m *MemReadHookMultiplexer) RemoveHook(c Cookie) error {
+func (m *hookMultiplexer) removeHook(c Cookie) error {
 	// TODO: check if c exists
 	delete(m.entries, c)
 	return nil
 }
 
-func (m *MemReadHookMultiplexer) Install(emu *Emulator) error {
+var ErrInvalidArgument = errors.New("Invalid argument")
+var ErrAlreadyHooked = errors.New("Multiplexer already hooked")
+
+func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 	// TODO: ensure multiplexer not already installed
-	// TODO: ensure emu not already hooked
-
-	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_READ,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			for _, f := range m.entries {
-				f(access, VA(addr), size, value)
-			}
-		})
-
-	check(e)
-	if e != nil {
-		return e
+	if m.h != nil {
+		return ErrAlreadyHooked
 	}
 
-	m.h = &CloseableHook{emu: emu, h: h}
-	return nil
+	switch hookType {
+	case uc.HOOK_MEM_READ:
+		h, e := emu.u.HookAdd(
+			uc.HOOK_MEM_READ,
+			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+				for _, f := range m.entries {
+					if f, ok := f.(MemReadHandler); ok {
+						f(access, VA(addr), size, value)
+					} else {
+						log.Printf("error: failed to convert handler to mem read handler")
+					}
+				}
+			})
+
+		check(e)
+		if e != nil {
+			return e
+		}
+
+		m.h = &UnicornCloseableHook{emu: emu, h: h}
+		return nil
+	case uc.HOOK_MEM_WRITE:
+		h, e := emu.u.HookAdd(
+			uc.HOOK_MEM_WRITE,
+			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
+				for _, f := range m.entries {
+					if f, ok := f.(MemWriteHandler); ok {
+						f(access, VA(addr), size, value)
+					} else {
+						log.Printf("error: failed to convert handler to mem write handler")
+					}
+				}
+			})
+
+		check(e)
+		if e != nil {
+			return e
+		}
+
+		m.h = &UnicornCloseableHook{emu: emu, h: h}
+		return nil
+	case uc.HOOK_MEM_UNMAPPED:
+		h, e := emu.u.HookAdd(
+			uc.HOOK_MEM_UNMAPPED,
+			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
+				for _, f := range m.entries {
+					if f, ok := f.(MemUnmappedHandler); ok {
+						if !f(access, VA(addr), size, value) {
+							return false
+						}
+					} else {
+						log.Printf("error: failed to convert handler to mem unmapped handler")
+					}
+				}
+				return true
+			})
+
+		check(e)
+		if e != nil {
+			return e
+		}
+
+		m.h = &UnicornCloseableHook{emu: emu, h: h}
+		return nil
+	default:
+		return ErrInvalidArgument
+	}
 }
 
-func (m *MemReadHookMultiplexer) Close() error {
+func (m *hookMultiplexer) Close() error {
 	return m.h.Close()
-}
-
-type MemReadCloseableHook struct {
-	m *MemReadHookMultiplexer
-	c Cookie
-}
-
-func (h *MemReadCloseableHook) Close() error {
-	return h.m.RemoveHook(h.c)
-}
-
-func (emu *Emulator) HookMemRead(f MemReadHandler) (*CloseableHook, error) {
-	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_READ,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			f(access, VA(addr), size, value)
-		})
-
-	check(e)
-	if e != nil {
-		return nil, e
-	}
-
-	return &MemReadCloseableHook{emu: emu, h: h}, nil
-}
-
-/************ MEM WRITE ****************************/
-
-func (emu *Emulator) HookMemWrite(f func(access int, addr W.VA, size int, value int64)) (*CloseableHook, error) {
-
 }

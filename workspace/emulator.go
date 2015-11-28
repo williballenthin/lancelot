@@ -11,11 +11,18 @@ import (
 	"strings"
 )
 
+type hooks struct {
+	memRead     *hookMultiplexer
+	memWrite    *hookMultiplexer
+	memUnmapped *hookMultiplexer
+}
+
 type Emulator struct {
 	ws           *Workspace
 	u            uc.Unicorn
 	disassembler gapstone.Engine
 	maps         []MemoryRegion
+	hooks        hooks
 }
 
 func newEmulator(ws *Workspace) (*Emulator, error) {
@@ -55,6 +62,7 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 		u:            u,
 		disassembler: disassembler,
 		maps:         make([]MemoryRegion, 0),
+		hooks:        hooks{},
 	}
 
 	e = CopyAddressSpace(emu, ws)
@@ -295,66 +303,86 @@ func (emu *Emulator) removeHook(h uc.Hook) error {
 	check(e)
 	return e
 }
-func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
-	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_UNMAPPED,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
-			log.Printf("error: unmapped: 0x%x %x", addr, size)
-			*err = ErrUnmappedMemory
-			return false
-		})
 
-	check(e)
-	if e != nil {
-		return nil, e
+func (emu *Emulator) HookMemRead(f MemReadHandler) (CloseableHook, error) {
+	if emu.hooks.memRead == nil {
+		m, e := newHookMultiplexer()
+		if e != nil {
+			return nil, e
+		}
+		emu.hooks.memRead = m
+		e = emu.hooks.memRead.Install(emu, uc.HOOK_MEM_READ)
+		if e != nil {
+			return nil, e
+		}
 	}
-
-	return &UnicornCloseableHook{emu: emu, h: h}, nil
+	return emu.hooks.memRead.AddHook(f)
 }
 
-func (emu *Emulator) hookMemRead() (*CloseableHook, error) {
-	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_READ,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			log.Printf("read: @0x%x [0x%x] = 0x%x", addr, size, value)
-		})
-
-	check(e)
-	if e != nil {
-		return nil, e
+func (emu *Emulator) HookMemWrite(f MemWriteHandler) (CloseableHook, error) {
+	if emu.hooks.memWrite == nil {
+		m, e := newHookMultiplexer()
+		if e != nil {
+			return nil, e
+		}
+		emu.hooks.memWrite = m
+		e = emu.hooks.memWrite.Install(emu, uc.HOOK_MEM_WRITE)
+		if e != nil {
+			return nil, e
+		}
 	}
-
-	return &UnicornCloseableHook{emu: emu, h: h}, nil
+	return emu.hooks.memWrite.AddHook(f)
 }
 
-func (emu *Emulator) hookMemWrite() (*CloseableHook, error) {
-	h, e := emu.u.HookAdd(
-		uc.HOOK_MEM_WRITE,
-		func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
-			log.Printf("write: @0x%x [0x%x] = 0x%x", addr, size, value)
-		})
+func (emu *Emulator) HookMemUnmapped(f MemUnmappedHandler) (CloseableHook, error) {
+	if emu.hooks.memUnmapped == nil {
+		m, e := newHookMultiplexer()
+		if e != nil {
+			return nil, e
+		}
+		emu.hooks.memUnmapped = m
+		e = emu.hooks.memUnmapped.Install(emu, uc.HOOK_MEM_UNMAPPED)
+		if e != nil {
+			return nil, e
+		}
 
-	check(e)
-	if e != nil {
-		return nil, e
 	}
+	return emu.hooks.memUnmapped.AddHook(f)
+}
 
-	return &UnicornCloseableHook{emu: emu, h: h}, nil
+func (emu *Emulator) traceMemUnmapped(err *error) (CloseableHook, error) {
+	return emu.HookMemUnmapped(func(access int, addr VA, size int, value int64) bool {
+		log.Printf("error: unmapped: 0x%x %x", addr, size)
+		*err = ErrUnmappedMemory
+		return false
+	})
+}
+
+func (emu *Emulator) traceMemRead() (CloseableHook, error) {
+	return emu.HookMemRead(func(access int, addr VA, size int, value int64) {
+		log.Printf("read: @0x%x [0x%x] = 0x%x", addr, size, value)
+	})
+}
+
+func (emu *Emulator) traceMemWrite() (CloseableHook, error) {
+	return emu.HookMemWrite(func(access int, addr VA, size int, value int64) {
+		log.Printf("write: @0x%x [0x%x] = 0x%x", addr, size, value)
+	})
 }
 
 func (emu *Emulator) RunTo(address VA) error {
 	ip := emu.GetInstructionPointer()
 
 	var memErr error = nil
-	memHook, e := emu.hookInvalidMemory(&memErr)
+	memHook, e := emu.traceMemUnmapped(&memErr)
 	check(e)
 	defer memHook.Close()
 
-	memReadHook, e := emu.hookMemRead()
+	memReadHook, e := emu.traceMemRead()
 	check(e)
 	defer memReadHook.Close()
 
-	memWriteHook, e := emu.hookMemWrite()
+	memWriteHook, e := emu.traceMemWrite()
 	check(e)
 	defer memWriteHook.Close()
 
@@ -377,15 +405,15 @@ func (emu *Emulator) StepInto() error {
 	var memErr error = nil
 	var codeErr error = nil
 
-	memReadHook, e := emu.hookMemRead()
+	memReadHook, e := emu.traceMemRead()
 	check(e)
 	defer memReadHook.Close()
 
-	memWriteHook, e := emu.hookMemWrite()
+	memWriteHook, e := emu.traceMemWrite()
 	check(e)
 	defer memWriteHook.Close()
 
-	memHook, e := emu.hookInvalidMemory(&memErr)
+	memHook, e := emu.traceMemUnmapped(&memErr)
 	check(e)
 	defer memHook.Close()
 
@@ -559,7 +587,7 @@ func (emu *Emulator) RestoreMemorySnapshot(as *MemorySnapshot) error {
 
 // x86 specific. mode-agnostic.
 type Snapshot struct {
-	hook      *CloseableHook
+	hook      CloseableHook
 	emu       *Emulator
 	memory    *MemorySnapshot
 	registers *RegisterSnapshot

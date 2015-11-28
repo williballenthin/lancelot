@@ -43,6 +43,14 @@ func isBBEnd(insn gapstone.Instruction) bool {
 		W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
 }
 
+func (dora *Dora) memReadHookFunc(access int, addr W.VA, size int, value int64) {
+	log.Printf("dora: read: @0x%x [0x%x] = 0x%x", addr, size, value)
+}
+
+func (dora *Dora) memWriteHookFunc(access int, addr W.VA, size int, value int64) {
+	log.Printf("dora: write: @0x%x [0x%x] = 0x%x", addr, size, value)
+}
+
 func (dora *Dora) ExploreFunction(va W.VA) error {
 	emu, e := dora.ws.GetEmulator()
 	check(e)
@@ -51,6 +59,14 @@ func (dora *Dora) ExploreFunction(va W.VA) error {
 	bbStart := va
 	emu.SetInstructionPointer(va)
 	check(e)
+
+	rh, e := emu.HookMemRead(dora.memReadHookFunc)
+	check(e)
+	defer rh.Close()
+
+	wh, e := emu.HookMemWrite(dora.memWriteHookFunc)
+	check(e)
+	defer wh.Close()
 
 	for {
 		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
