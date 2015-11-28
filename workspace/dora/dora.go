@@ -37,6 +37,13 @@ func isBBEnd(insn gapstone.Instruction) bool {
 		w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
 }
 
+// things yet to discover:
+//   TODO: arguments passed in registers
+//   TODO: arguments passed on stack
+//   OK: final stack delta
+//   TODO: all basic blocks
+//   TODO: calling convention
+// TODO: ensure stack is set up with return pointer and some junk symbolic args
 func (dora *Dora) ExploreFunction(va w.VA) error {
 	emu, e := dora.ws.GetEmulator()
 	check(e)
@@ -45,6 +52,8 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 	bbStart := va
 	emu.SetInstructionPointer(va)
 	check(e)
+
+	beforeSp := emu.GetStackPointer()
 
 	rh, e := emu.HookMemRead(func(access int, addr w.VA, size int, value int64) {
 		dora.ac.AddMemoryReadXref(MemoryReadCrossReference{emu.GetInstructionPointer(), addr})
@@ -93,11 +102,17 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 
 		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 			log.Printf("returning, done.")
+			afterSp := emu.GetStackPointer()
+			stackDelta := uint64(afterSp) - uint64(beforeSp)
+			log.Printf("stack delta: 0x%x", stackDelta)
 			break
 		}
 
 		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 			log.Printf("returning, done.")
+			afterSp := emu.GetStackPointer()
+			stackDelta := uint64(afterSp) - uint64(beforeSp)
+			log.Printf("stack delta: 0x%x", stackDelta)
 			break
 		}
 
@@ -119,7 +134,6 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 
 		if isBBEnd(insn) {
 			bbStart = emu.GetInstructionPointer()
-			log.Printf("bb start")
 			e := dora.ac.AddJumpXref(JumpCrossReference{beforePc, afterPc})
 			check(e)
 		}
