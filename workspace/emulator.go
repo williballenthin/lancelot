@@ -11,19 +11,17 @@ import (
 	"strings"
 )
 
-type hooks struct {
-	memRead     *hookMultiplexer
-	memWrite    *hookMultiplexer
-	memUnmapped *hookMultiplexer
-	code        *hookMultiplexer
-}
-
 type Emulator struct {
 	ws           *Workspace
 	u            uc.Unicorn
 	disassembler gapstone.Engine
 	maps         []MemoryRegion
-	hooks        hooks
+	hooks        struct {
+		memRead     *hookMultiplexer
+		memWrite    *hookMultiplexer
+		memUnmapped *hookMultiplexer
+		code        *hookMultiplexer
+	}
 }
 
 func newEmulator(ws *Workspace) (*Emulator, error) {
@@ -63,7 +61,6 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 		u:            u,
 		disassembler: disassembler,
 		maps:         make([]MemoryRegion, 0),
-		hooks:        hooks{},
 	}
 
 	e = CopyAddressSpace(emu, ws)
