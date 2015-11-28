@@ -37,6 +37,17 @@ func isBBEnd(insn gapstone.Instruction) bool {
 		w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
 }
 
+func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (w.VA, error) {
+	var va w.VA
+
+	check(sman.WithTempExcursion(func() error {
+		check(emu.StepInto())
+		va = emu.GetInstructionPointer()
+		return nil
+	}))
+	return va, nil
+}
+
 // things yet to discover:
 //   OK: final stack delta
 //   TODO: arguments passed in registers
@@ -51,6 +62,10 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 	emu, e := dora.ws.GetEmulator()
 	check(e)
 	defer emu.Close()
+
+	sman, e := w.NewSnapshotManager(emu)
+	check(e)
+	defer sman.Close()
 
 	bbStart := va
 	emu.SetInstructionPointer(va)
@@ -75,40 +90,16 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		check(e)
 		color.Set(color.FgHiBlack)
 		log.Printf("ip:" + s)
+		nextPc, e := GetNextInstructionPointer(emu, sman)
+		check(e)
+		log.Printf("  next: 0x%x", nextPc)
 		color.Unset()
 
 		insn, e := emu.GetCurrentInstruction()
 		check(e)
 
-		// TODO: make function
 		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			// emulate the call instruction to determine its target
-
 			// TODO: have to wire up import detection
-
-			// TODO: design function like:
-			//   currentState, e := emu.SidebarSnapshot(snap)
-			//   // this unhooks any listening shapshots and puts them in currentState
-			//   ... do some stuff
-			//   emu.CompleteSidebar(currentState)
-			//   // this reverts to the state from before
-			//   // and restores the listening snapshots
-
-			//check(emu.UnhookSnapshot(snap))
-			tsnap, e := w.CreateSnapshot(emu)
-			check(e)
-
-			e = emu.StepInto()
-			check(e)
-
-			nextPc := emu.GetInstructionPointer()
-			e = w.RestoreSnapshot(emu, tsnap)
-			check(e)
-
-			e = w.UnhookSnapshot(emu, tsnap)
-			check(e)
-			//emu.HookSnapshot(snap)
-
 			dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
 		}
 
