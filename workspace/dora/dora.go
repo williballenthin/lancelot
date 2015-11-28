@@ -39,13 +39,15 @@ func isBBEnd(insn gapstone.Instruction) bool {
 
 func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (w.VA, error) {
 	var va w.VA
-
-	check(sman.WithTempExcursion(func() error {
-		check(emu.StepInto())
+	e := sman.WithTempExcursion(func() error {
+		e := emu.StepInto()
+		if e != nil {
+			return e
+		}
 		va = emu.GetInstructionPointer()
 		return nil
-	}))
-	return va, nil
+	})
+	return va, e
 }
 
 // things yet to discover:
@@ -91,8 +93,9 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		color.Set(color.FgHiBlack)
 		log.Printf("ip:" + s)
 		nextPc, e := GetNextInstructionPointer(emu, sman)
-		check(e)
-		log.Printf("  next: 0x%x", nextPc)
+		if e == nil {
+			log.Printf("  next: 0x%x", nextPc)
+		}
 		color.Unset()
 
 		insn, e := emu.GetCurrentInstruction()
