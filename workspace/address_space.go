@@ -304,6 +304,7 @@ func (snap *MemorySnapshot) Clone() (*MemorySnapshot, error) {
 // Restore an address space from the outstanding changes in this snapshot.
 func (snap *MemorySnapshot) RevertAddressSpace(as AddressSpace) error {
 	for k, _ := range snap.dirtyPageNumbers {
+		//log.Printf("reverting dirty page: 0x%x", k)
 		d, e := snap.currentAddressSpace.MemRead(k, PAGE_SIZE)
 		check(e)
 		if e != nil {
@@ -362,6 +363,7 @@ func roundDownToPage(i uint64) uint64 {
 }
 
 func (snap *MemorySnapshot) MarkDirty(va VA) error {
+	//log.Printf("marking dirty: 0x%x -> 0x%x", va, roundDownToPage(uint64(va)))
 	snap.dirtyPageNumbers[VA(roundDownToPage(uint64(va)))] = true
 	return nil
 }
