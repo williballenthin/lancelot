@@ -295,16 +295,6 @@ func (emu *Emulator) removeHook(h uc.Hook) error {
 	check(e)
 	return e
 }
-
-type CloseableHook struct {
-	emu *Emulator
-	h   uc.Hook
-}
-
-func (hook *CloseableHook) Close() error {
-	return hook.emu.removeHook(hook.h)
-}
-
 func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
 	h, e := emu.u.HookAdd(
 		uc.HOOK_MEM_UNMAPPED,
@@ -319,7 +309,7 @@ func (emu *Emulator) hookInvalidMemory(err *error) (*CloseableHook, error) {
 		return nil, e
 	}
 
-	return &CloseableHook{emu: emu, h: h}, nil
+	return &UnicornCloseableHook{emu: emu, h: h}, nil
 }
 
 func (emu *Emulator) hookMemRead() (*CloseableHook, error) {
@@ -334,7 +324,7 @@ func (emu *Emulator) hookMemRead() (*CloseableHook, error) {
 		return nil, e
 	}
 
-	return &CloseableHook{emu: emu, h: h}, nil
+	return &UnicornCloseableHook{emu: emu, h: h}, nil
 }
 
 func (emu *Emulator) hookMemWrite() (*CloseableHook, error) {
@@ -349,7 +339,7 @@ func (emu *Emulator) hookMemWrite() (*CloseableHook, error) {
 		return nil, e
 	}
 
-	return &CloseableHook{emu: emu, h: h}, nil
+	return &UnicornCloseableHook{emu: emu, h: h}, nil
 }
 
 func (emu *Emulator) RunTo(address VA) error {
@@ -595,7 +585,7 @@ func (emu *Emulator) HookSnapshot(snap *Snapshot) error {
 		return e
 	}
 
-	snap.hook = &CloseableHook{emu: emu, h: hook}
+	snap.hook = &UnicornCloseableHook{emu: emu, h: hook}
 	return nil
 }
 
