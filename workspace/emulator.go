@@ -15,6 +15,7 @@ type hooks struct {
 	memRead     *hookMultiplexer
 	memWrite    *hookMultiplexer
 	memUnmapped *hookMultiplexer
+	code        *hookMultiplexer
 }
 
 type Emulator struct {
@@ -350,6 +351,22 @@ func (emu *Emulator) HookMemUnmapped(f MemUnmappedHandler) (CloseableHook, error
 	return emu.hooks.memUnmapped.AddHook(f)
 }
 
+func (emu *Emulator) HookCode(f CodeHandler) (CloseableHook, error) {
+	if emu.hooks.code == nil {
+		m, e := newHookMultiplexer()
+		if e != nil {
+			return nil, e
+		}
+		emu.hooks.code = m
+		e = emu.hooks.code.Install(emu, uc.HOOK_CODE)
+		if e != nil {
+			return nil, e
+		}
+
+	}
+	return emu.hooks.code.AddHook(f)
+}
+
 func (emu *Emulator) traceMemUnmapped(err *error) (CloseableHook, error) {
 	return emu.HookMemUnmapped(func(access int, addr VA, size int, value int64) bool {
 		log.Printf("error: unmapped: 0x%x %x", addr, size)
@@ -419,7 +436,7 @@ func (emu *Emulator) StepInto() error {
 
 	// always stop after one instruction
 	hitCount := 0
-	h, e := emu.u.HookAdd(uc.HOOK_CODE, func(mu uc.Unicorn, addr uint64, size uint32) {
+	h, e := emu.HookCode(func(addr VA, size uint32) {
 		if hitCount == 0 {
 			// pass
 		} else if hitCount == 1 {
@@ -430,7 +447,7 @@ func (emu *Emulator) StepInto() error {
 		hitCount++
 	})
 	check(e)
-	defer emu.removeHook(h)
+	defer h.Close()
 
 	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()

@@ -23,6 +23,7 @@ type Cookie uint64
 type MemReadHandler func(access int, addr VA, size int, value int64)
 type MemWriteHandler func(access int, addr VA, size int, value int64)
 type MemUnmappedHandler func(access int, addr VA, size int, value int64) bool
+type CodeHandler func(addr VA, size uint32)
 
 /************ internal ****************************/
 /* need to be careful with typing, so do not expose Interface{} */
@@ -140,6 +141,27 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 
 		m.h = &UnicornCloseableHook{emu: emu, h: h}
 		return nil
+	case uc.HOOK_CODE:
+		h, e := emu.u.HookAdd(
+			uc.HOOK_CODE,
+			func(mu uc.Unicorn, addr uint64, size uint32) {
+				for _, f := range m.entries {
+					if f, ok := f.(CodeHandler); ok {
+						f(VA(addr), uint32(size))
+					} else {
+						log.Printf("error: failed to convert handler to mem unmapped handler")
+					}
+				}
+			})
+
+		check(e)
+		if e != nil {
+			return e
+		}
+
+		m.h = &UnicornCloseableHook{emu: emu, h: h}
+		return nil
+
 	default:
 		return ErrInvalidArgument
 	}
