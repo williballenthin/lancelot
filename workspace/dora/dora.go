@@ -75,6 +75,7 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 
 	beforeSp := emu.GetStackPointer()
 
+	// TODO: how to disable these while on an excursion?
 	rh, e := emu.HookMemRead(func(access int, addr w.VA, size int, value int64) {
 		dora.ac.AddMemoryReadXref(MemoryReadCrossReference{emu.GetInstructionPointer(), addr})
 	})
@@ -92,10 +93,6 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		check(e)
 		color.Set(color.FgHiBlack)
 		log.Printf("ip:" + s)
-		nextPc, e := GetNextInstructionPointer(emu, sman)
-		if e == nil {
-			log.Printf("  next: 0x%x", nextPc)
-		}
 		color.Unset()
 
 		insn, e := emu.GetCurrentInstruction()
@@ -103,18 +100,16 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 
 		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			// TODO: have to wire up import detection
+			nextPc, e := GetNextInstructionPointer(emu, sman)
+			if e == nil {
+				log.Printf("  call target: 0x%x", nextPc)
+			}
+
 			dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
 		}
 
-		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
-			log.Printf("returning, done.")
-			afterSp := emu.GetStackPointer()
-			stackDelta := uint64(afterSp) - uint64(beforeSp)
-			log.Printf("stack delta: 0x%x", stackDelta)
-			break
-		}
-
-		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
+		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
+			w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 			log.Printf("returning, done.")
 			afterSp := emu.GetStackPointer()
 			stackDelta := uint64(afterSp) - uint64(beforeSp)
