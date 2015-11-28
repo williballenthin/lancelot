@@ -109,11 +109,6 @@ func CreateSnapshot(emu *Emulator) (*Snapshot, error) {
 		registers: regs,
 	}
 
-	e = HookSnapshot(emu, snap)
-	if e != nil {
-		return nil, e
-	}
-
 	return snap, nil
 }
 
