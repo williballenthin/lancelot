@@ -3,7 +3,7 @@ package dora
 import (
 	"github.com/bnagy/gapstone"
 	"github.com/fatih/color"
-	W "github.com/williballenthin/Lancelot/workspace"
+	w "github.com/williballenthin/Lancelot/workspace"
 	"log"
 )
 
@@ -15,43 +15,29 @@ func check(e error) {
 
 // dora the explora
 type Dora struct {
-	ws *W.Workspace
+	ws *w.Workspace
+	ac ArtifactCollection
 }
 
-func New(ws *W.Workspace) (*Dora, error) {
+func New(ws *w.Workspace) (*Dora, error) {
+	// TODO: get this from a real place
+	ac, e := NewLoggingArtifactCollection()
+	check(e)
+
 	return &Dora{
 		ws: ws,
+		ac: ac,
 	}, nil
 }
 
-func (dora *Dora) addBasicBlock(start W.VA, end W.VA) error {
-	log.Printf("discovered basic block: 0x%x 0x%x", start, end)
-
-	return nil
-}
-
-func (dora *Dora) endBasicBlock() error {
-	log.Printf("end basic block")
-
-	return nil
-}
-
 func isBBEnd(insn gapstone.Instruction) bool {
-	return W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) ||
-		W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) ||
-		W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
-		W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
+	return w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) ||
+		w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) ||
+		w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
+		w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
 }
 
-func (dora *Dora) memReadHookFunc(access int, addr W.VA, size int, value int64) {
-	log.Printf("dora: read: @0x%x [0x%x] = 0x%x", addr, size, value)
-}
-
-func (dora *Dora) memWriteHookFunc(access int, addr W.VA, size int, value int64) {
-	log.Printf("dora: write: @0x%x [0x%x] = 0x%x", addr, size, value)
-}
-
-func (dora *Dora) ExploreFunction(va W.VA) error {
+func (dora *Dora) ExploreFunction(va w.VA) error {
 	emu, e := dora.ws.GetEmulator()
 	check(e)
 	defer emu.Close()
@@ -60,11 +46,15 @@ func (dora *Dora) ExploreFunction(va W.VA) error {
 	emu.SetInstructionPointer(va)
 	check(e)
 
-	rh, e := emu.HookMemRead(dora.memReadHookFunc)
+	rh, e := emu.HookMemRead(func(access int, addr w.VA, size int, value int64) {
+		dora.ac.AddMemoryReadXref(MemoryReadCrossReference{emu.GetInstructionPointer(), addr})
+	})
 	check(e)
 	defer rh.Close()
 
-	wh, e := emu.HookMemWrite(dora.memWriteHookFunc)
+	wh, e := emu.HookMemWrite(func(access int, addr w.VA, size int, value int64) {
+		dora.ac.AddMemoryWriteXref(MemoryWriteCrossReference{emu.GetInstructionPointer(), addr})
+	})
 	check(e)
 	defer wh.Close()
 
@@ -78,34 +68,60 @@ func (dora *Dora) ExploreFunction(va W.VA) error {
 		insn, e := emu.GetCurrentInstruction()
 		check(e)
 
-		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			log.Printf("this is a call")
+		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+			// emulate the call instruction to determine its target
+
+			// TODO: have to wire up import detection
+
+			//check(emu.UnhookSnapshot(snap))
+			tsnap, e := emu.Snapshot()
+			check(e)
+
+			e = emu.StepInto()
+			check(e)
+
+			nextPc := emu.GetInstructionPointer()
+			e = emu.RestoreSnapshot(tsnap)
+			check(e)
+
+			e = emu.UnhookSnapshot(tsnap)
+			check(e)
+			//emu.HookSnapshot(snap)
+
+			dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
 		}
 
-		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 			log.Printf("returning, done.")
 			break
 		}
 
-		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
+		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 			log.Printf("returning, done.")
 			break
 		}
 
 		if isBBEnd(insn) {
-			e := dora.addBasicBlock(bbStart, emu.GetInstructionPointer())
+			e := dora.ac.AddBasicBlock(BasicBlock{Start: bbStart, End: emu.GetInstructionPointer()})
 			check(e)
 		}
 
+		beforePc := emu.GetInstructionPointer()
 		e = emu.StepOver()
 		if e != nil {
 			log.Printf("error: %s", e.Error())
 			break
 		}
+		afterPc := emu.GetInstructionPointer()
+
+		// TODO: need to detect calling convention, and in the case of stdcall,
+		//   cleanup the stack
 
 		if isBBEnd(insn) {
 			bbStart = emu.GetInstructionPointer()
 			log.Printf("bb start")
+			e := dora.ac.AddJumpXref(JumpCrossReference{beforePc, afterPc})
+			check(e)
 		}
 	}
 
