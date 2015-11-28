@@ -95,17 +95,17 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 			//   // and restores the listening snapshots
 
 			//check(emu.UnhookSnapshot(snap))
-			tsnap, e := emu.Snapshot()
+			tsnap, e := w.CreateSnapshot(emu)
 			check(e)
 
 			e = emu.StepInto()
 			check(e)
 
 			nextPc := emu.GetInstructionPointer()
-			e = emu.RestoreSnapshot(tsnap)
+			e = w.RestoreSnapshot(emu, tsnap)
 			check(e)
 
-			e = emu.UnhookSnapshot(tsnap)
+			e = w.UnhookSnapshot(emu, tsnap)
 			check(e)
 			//emu.HookSnapshot(snap)
 

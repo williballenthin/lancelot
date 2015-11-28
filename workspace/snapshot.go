@@ -11,7 +11,7 @@ type RegisterSnapshot struct {
 	regs [uc.X86_REG_ENDING - uc.X86_REG_INVALID]uint64
 }
 
-func (emu *Emulator) SnapshotRegisters() (*RegisterSnapshot, error) {
+func SnapshotRegisters(emu *Emulator) (*RegisterSnapshot, error) {
 	var regs RegisterSnapshot
 	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
 		r, e := emu.u.RegRead(i)
@@ -23,7 +23,7 @@ func (emu *Emulator) SnapshotRegisters() (*RegisterSnapshot, error) {
 	return &regs, nil
 }
 
-func (emu *Emulator) RestoreRegisterSnapshot(regs *RegisterSnapshot) error {
+func RestoreRegisterSnapshot(emu *Emulator, regs *RegisterSnapshot) error {
 	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
 		e := emu.u.RegWrite(i, regs.regs[i])
 		if e != nil {
@@ -33,13 +33,13 @@ func (emu *Emulator) RestoreRegisterSnapshot(regs *RegisterSnapshot) error {
 	return nil
 }
 
-func (emu *Emulator) SnapshotMemory() (*MemorySnapshot, error) {
+func SnapshotMemory(emu *Emulator) (*MemorySnapshot, error) {
 	return CreateMemorySnapshot(emu)
 }
 
 // until i figure out how this is best used,
 // the currentAddressSpace of `snapshot` *must* be be this emu.
-func (emu *Emulator) RestoreMemorySnapshot(as *MemorySnapshot) error {
+func RestoreMemorySnapshot(emu *Emulator, as *MemorySnapshot) error {
 	e := as.RevertAddressSpace(emu)
 	if e != nil {
 		return e
@@ -59,11 +59,11 @@ type Snapshot struct {
 	registers *RegisterSnapshot
 }
 
-var SnapshotHookAlreadyActive = errors.New("Snapshot hook already active")
+var ErrSnapshotHookAlreadyActive = errors.New("Snapshot hook already active")
 
-func (emu *Emulator) HookSnapshot(snap *Snapshot) error {
+func HookSnapshot(emu *Emulator, snap *Snapshot) error {
 	if snap.hook != nil {
-		return SnapshotHookAlreadyActive
+		return ErrSnapshotHookAlreadyActive
 	}
 
 	h, e := emu.HookMemWrite(func(access int, addr VA, size int, value int64) {
@@ -80,11 +80,11 @@ func (emu *Emulator) HookSnapshot(snap *Snapshot) error {
 	return nil
 }
 
-var SnapshotHookNotActive = errors.New("Snapshot hook not active")
+var ErrSnapshotHookNotActive = errors.New("Snapshot hook not active")
 
-func (emu *Emulator) UnhookSnapshot(snap *Snapshot) error {
+func UnhookSnapshot(emu *Emulator, snap *Snapshot) error {
 	if snap.hook == nil {
-		return SnapshotHookNotActive
+		return ErrSnapshotHookNotActive
 	}
 
 	e := snap.hook.Close()
@@ -92,13 +92,13 @@ func (emu *Emulator) UnhookSnapshot(snap *Snapshot) error {
 	return e
 }
 
-func (emu *Emulator) Snapshot() (*Snapshot, error) {
-	regs, e := emu.SnapshotRegisters()
+func CreateSnapshot(emu *Emulator) (*Snapshot, error) {
+	regs, e := SnapshotRegisters(emu)
 	if e != nil {
 		return nil, e
 	}
 
-	mem, e := emu.SnapshotMemory()
+	mem, e := SnapshotMemory(emu)
 	if e != nil {
 		return nil, e
 	}
@@ -109,7 +109,7 @@ func (emu *Emulator) Snapshot() (*Snapshot, error) {
 		registers: regs,
 	}
 
-	e = emu.HookSnapshot(snap)
+	e = HookSnapshot(emu, snap)
 	if e != nil {
 		return nil, e
 	}
@@ -117,14 +117,14 @@ func (emu *Emulator) Snapshot() (*Snapshot, error) {
 	return snap, nil
 }
 
-func (emu *Emulator) RestoreSnapshot(snap *Snapshot) error {
-	e := emu.RestoreRegisterSnapshot(snap.registers)
+func RestoreSnapshot(emu *Emulator, snap *Snapshot) error {
+	e := RestoreRegisterSnapshot(emu, snap.registers)
 	check(e)
 	if e != nil {
 		// we're in a bad state here
 		return e
 	}
-	e = emu.RestoreMemorySnapshot(snap.memory)
+	e = RestoreMemorySnapshot(emu, snap.memory)
 	if e != nil {
 		// we're in a bad state here
 		return e
