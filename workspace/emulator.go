@@ -395,14 +395,6 @@ func (emu *Emulator) RunTo(address VA) error {
 	check(e)
 	defer memHook.Close()
 
-	memReadHook, e := emu.traceMemRead()
-	check(e)
-	defer memReadHook.Close()
-
-	memWriteHook, e := emu.traceMemWrite()
-	check(e)
-	defer memWriteHook.Close()
-
 	e = emu.start(ip, address)
 	check(e)
 	if e != nil {
@@ -421,14 +413,6 @@ var EmulatorEscapedError = errors.New("Emulator failed to stop as requested.")
 func (emu *Emulator) StepInto() error {
 	var memErr error = nil
 	var codeErr error = nil
-
-	memReadHook, e := emu.traceMemRead()
-	check(e)
-	defer memReadHook.Close()
-
-	memWriteHook, e := emu.traceMemWrite()
-	check(e)
-	defer memWriteHook.Close()
 
 	memHook, e := emu.traceMemUnmapped(&memErr)
 	check(e)
