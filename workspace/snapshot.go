@@ -130,3 +130,148 @@ func RestoreSnapshot(emu *Emulator, snap *Snapshot) error {
 func (snap Snapshot) String() string {
 	return fmt.Sprintf("snapshot: eip=0x%x", snap.registers.regs[uc.X86_REG_EIP])
 }
+
+/************* SnapshotManager *******************/
+
+type SnapshotManagerCookie uint64
+
+type snapshotManagerState struct {
+	snap *Snapshot
+	c    SnapshotManagerCookie
+}
+
+type SnapshotManager struct {
+	emu     *Emulator
+	states  []*snapshotManagerState
+	counter uint64
+}
+
+func NewSnapshotManager(emu *Emulator) (*SnapshotManager, error) {
+	t := &SnapshotManager{
+		emu:     emu,
+		states:  make([]*snapshotManagerState, 0),
+		counter: 1,
+	}
+
+	// prime initial state
+	_, e := t.Push()
+	check(e)
+
+	return t, nil
+}
+
+func (t *SnapshotManager) Close() error {
+	for len(t.states) > 1 {
+		_, e := t.Pop()
+		check(e)
+	}
+	check(UnhookSnapshot(t.emu, t.states[0].snap))
+	t.states = nil
+	return nil
+}
+
+func (t *SnapshotManager) Push() (SnapshotManagerCookie, error) {
+	c := SnapshotManagerCookie(t.counter)
+	t.counter++
+
+	if len(t.states) > 0 {
+		currentState := t.states[len(t.states)-1]
+		// don't check this, because we might unhook
+		//  the initial state multiple times
+		UnhookSnapshot(t.emu, currentState.snap)
+	}
+
+	snap, e := CreateSnapshot(t.emu)
+	check(e)
+
+	check(HookSnapshot(t.emu, snap))
+
+	state := &snapshotManagerState{
+		snap: snap,
+		c:    c,
+	}
+
+	t.states = append(t.states, state)
+
+	return c, nil
+}
+
+var ErrSnapshotNotActive = errors.New("Snapshot not active")
+
+func (t *SnapshotManager) RevertToHead() error {
+	if len(t.states) == 0 {
+		panic(ErrSnapshotNotActive)
+	}
+
+	state := t.states[len(t.states)-1]
+	return RestoreSnapshot(t.emu, state.snap)
+}
+
+func (t *SnapshotManager) Pop() (SnapshotManagerCookie, error) {
+	if len(t.states) == 0 {
+		panic(ErrSnapshotNotActive)
+	}
+
+	state := t.states[len(t.states)-1]
+
+	if len(t.states) > 1 {
+		check(UnhookSnapshot(t.emu, state.snap))
+
+		t.states = t.states[:len(t.states)-1]
+
+		prevState := t.states[len(t.states)-1]
+		check(HookSnapshot(t.emu, prevState.snap))
+	}
+	return state.c, nil
+}
+
+func (t *SnapshotManager) GetCurrentCookie() (SnapshotManagerCookie, error) {
+	if len(t.states) == 0 {
+		panic(ErrSnapshotNotActive)
+	}
+
+	state := t.states[len(t.states)-1]
+	return state.c, nil
+}
+
+var ErrSnapshotNotFound = errors.New("Snapshot cookie not found")
+
+func (t *SnapshotManager) RevertUntil(c SnapshotManagerCookie) error {
+	var lastCookie SnapshotManagerCookie
+	for {
+		check(t.RevertToHead())
+
+		cookie, e := t.GetCurrentCookie()
+		check(e)
+
+		if cookie == c {
+			break
+		}
+		// ensure we don't get stuck on the initial state
+		if cookie == lastCookie {
+			return ErrSnapshotNotFound
+		}
+		lastCookie = cookie
+
+		_, e = t.Pop()
+		check(e)
+	}
+	return nil
+}
+
+func (t *SnapshotManager) WithTempExcursion(f func() error) error {
+	beforeCookie, e := t.Push()
+	check(e)
+
+	var ret error
+	e = f()
+	if e != nil {
+		ret = e
+	}
+
+	check(t.RevertUntil(beforeCookie))
+	_, e = t.Pop()
+	check(e)
+
+	return ret
+}
