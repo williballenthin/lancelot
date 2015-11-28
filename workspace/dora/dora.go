@@ -38,12 +38,15 @@ func isBBEnd(insn gapstone.Instruction) bool {
 }
 
 // things yet to discover:
+//   OK: final stack delta
 //   TODO: arguments passed in registers
 //   TODO: arguments passed on stack
-//   OK: final stack delta
 //   TODO: all basic blocks
 //   TODO: calling convention
+//   TODO: no return functions
 // TODO: ensure stack is set up with return pointer and some junk symbolic args
+// TODO: track max hits
+// this is going to be a pretty wild function :-(
 func (dora *Dora) ExploreFunction(va w.VA) error {
 	emu, e := dora.ws.GetEmulator()
 	check(e)
@@ -77,10 +80,19 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		insn, e := emu.GetCurrentInstruction()
 		check(e)
 
+		// TODO: make function
 		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			// emulate the call instruction to determine its target
 
 			// TODO: have to wire up import detection
+
+			// TODO: design function like:
+			//   currentState, e := emu.SidebarSnapshot(snap)
+			//   // this unhooks any listening shapshots and puts them in currentState
+			//   ... do some stuff
+			//   emu.CompleteSidebar(currentState)
+			//   // this reverts to the state from before
+			//   // and restores the listening snapshots
 
 			//check(emu.UnhookSnapshot(snap))
 			tsnap, e := emu.Snapshot()
