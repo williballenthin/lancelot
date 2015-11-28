@@ -237,7 +237,7 @@ func CopyAddressSpace(dest AddressSpace, src AddressSpace) error {
 	return nil
 }
 
-const PAGE_SIZE = 0x4000
+const PAGE_SIZE = 0x1000
 
 type MemorySnapshot struct {
 	// the data that exists at the time of the snapshot
