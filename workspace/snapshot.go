@@ -135,6 +135,11 @@ func (snap Snapshot) String() string {
 
 type SnapshotManagerCookie uint64
 
+func (c SnapshotManagerCookie) String() string {
+	return fmt.Sprintf("0x%x", uint64(c))
+
+}
+
 type snapshotManagerState struct {
 	snap *Snapshot
 	c    SnapshotManagerCookie
