@@ -50,9 +50,57 @@ func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (w.VA, 
 	return va, e
 }
 
+type todoPath struct {
+	state w.SnapshotManagerCookie
+	va    w.VA
+}
+
+func IsConditionalJump(insn gapstone.Instruction) bool {
+	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp" {
+		return true
+	}
+	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
+		if insn.Mnemonic == "jmp" && insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+			// jmp 0x1000
+			return false
+		} else {
+			// jmp eax
+			return true
+		}
+	}
+	return false
+}
+
+func GetJumpTargets(emu *w.Emulator, insn gapstone.Instruction) ([]w.VA, error) {
+	var ret []w.VA
+
+	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
+		if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+			// not a conditional jump???
+			return ret, w.InvalidArgumentError
+		}
+		// jmp eax
+		// don't know how to handle this case right now
+		return ret, nil
+	}
+
+	// assume a two case situation
+	falsePc := w.VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size))
+	truePc := w.VA(insn.X86.Operands[0].Imm) // or .Mem???
+
+	if truePc == 0 {
+		// TODO
+		panic("zero jump")
+	}
+
+	ret = append(ret, truePc, falsePc)
+	return ret, nil
+}
+
 // things yet to discover:
 //   OK: final stack delta
 //   TODO: arguments passed in registers
+//     insn.cs_detail.regs_read/regs_write
 //   TODO: arguments passed on stack
 //   TODO: all basic blocks
 //   TODO: calling convention
@@ -88,70 +136,102 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 	check(e)
 	defer wh.Close()
 
-	for {
-		s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
-		check(e)
-		color.Set(color.FgHiBlack)
-		log.Printf("ip:" + s)
-		color.Unset()
+	hitVas := make(map[w.VA]bool)
 
-		insn, e := emu.GetCurrentInstruction()
-		check(e)
+	var todoPaths = []todoPath{}
+	here, e := sman.GetCurrentCookie()
+	check(e)
+	todoPaths = append(todoPaths, todoPath{state: here, va: va})
 
-		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			// TODO: have to wire up import detection
-			nextPc, e := GetNextInstructionPointer(emu, sman)
-			if e == nil {
-				log.Printf("  call target: 0x%x", nextPc)
+	for len(todoPaths) > 0 {
+		path := todoPaths[len(todoPaths)-1]
+		todoPaths = todoPaths[1:]
+		log.Printf("exploring path %s: va=0x%x", path.state, path.va)
+		check(sman.RevertUntil(path.state))
+		emu.SetInstructionPointer(path.va)
+
+		for {
+			if _, ok := hitVas[emu.GetInstructionPointer()]; ok {
+				break
 			}
 
-			dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
-		}
-
-		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
-			w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
-			log.Printf("returning, done.")
-			afterSp := emu.GetStackPointer()
-			stackDelta := uint64(afterSp) - uint64(beforeSp)
-			log.Printf("stack delta: 0x%x", stackDelta)
-			break
-		}
-
-		if isBBEnd(insn) {
-			e := dora.ac.AddBasicBlock(BasicBlock{Start: bbStart, End: emu.GetInstructionPointer()})
+			s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 			check(e)
-		}
+			color.Set(color.FgHiBlack)
+			log.Printf("ip:" + s)
+			color.Unset()
 
-		beforePc := emu.GetInstructionPointer()
-		e = emu.StepOver()
-		if e != nil {
-			log.Printf("error: %s", e.Error())
-			break
-		}
-		afterPc := emu.GetInstructionPointer()
-
-		// TODO: need to detect calling convention, and in the case of stdcall,
-		//   cleanup the stack
-
-		if isBBEnd(insn) {
-			bbStart = emu.GetInstructionPointer()
-			e := dora.ac.AddJumpXref(JumpCrossReference{beforePc, afterPc})
+			insn, e := emu.GetCurrentInstruction()
 			check(e)
+
+			if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+				// TODO: have to wire up import detection
+				nextPc, e := GetNextInstructionPointer(emu, sman)
+				if e == nil {
+					log.Printf("  call target: 0x%x", nextPc)
+				}
+
+				dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
+			}
+
+			if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
+				w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
+				log.Printf("returning, done.")
+				afterSp := emu.GetStackPointer()
+				stackDelta := uint64(afterSp) - uint64(beforeSp)
+				log.Printf("stack delta: 0x%x", stackDelta)
+				break
+			}
+
+			if isBBEnd(insn) {
+				e := dora.ac.AddBasicBlock(BasicBlock{Start: bbStart, End: emu.GetInstructionPointer()})
+				check(e)
+			}
+
+			beforePc := emu.GetInstructionPointer()
+			if IsConditionalJump(insn) {
+				targets, e := GetJumpTargets(emu, insn)
+				check(e)
+				if len(targets) < 2 {
+					// TODO: by definition, a conditional jump should have at least two cases...
+					panic("len(targets) < 2")
+				}
+
+				here, e := sman.Push()
+				check(e)
+
+				nextPc := targets[0]
+				for _, target := range targets[1:] {
+					log.Printf("other target: 0x%x", target)
+					todoPaths = append(todoPaths, todoPath{state: here, va: target})
+				}
+				emu.SetInstructionPointer(nextPc)
+
+			} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+				nextPc := w.VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size))
+				emu.SetInstructionPointer(nextPc)
+
+				// TODO: need to detect calling convention, and in the case of stdcall,
+				//   cleanup the stack
+
+			} else {
+				e = emu.StepOver()
+				if e != nil {
+					log.Printf("error: %s", e.Error())
+					break
+				}
+			}
+
+			hitVas[beforePc] = true
+
+			afterPc := emu.GetInstructionPointer()
+			if isBBEnd(insn) {
+				bbStart = emu.GetInstructionPointer()
+				e := dora.ac.AddJumpXref(JumpCrossReference{beforePc, afterPc})
+				check(e)
+			}
 		}
 	}
-
-	/*
-		snap, e := dora.emu.Snapshot()
-		check(e)
-
-		defer func() {
-			e := dora.emu.RestoreSnapshot(snap)
-			check(e)
-
-			e = dora.emu.UnhookSnapshot(snap)
-			check(e)
-		}()
-	*/
 
 	return nil
 }
