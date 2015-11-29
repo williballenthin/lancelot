@@ -102,7 +102,7 @@ func GetJumpTargets(emu *w.Emulator, insn gapstone.Instruction) ([]w.VA, error) 
 //   TODO: arguments passed in registers
 //     insn.cs_detail.regs_read/regs_write
 //   TODO: arguments passed on stack
-//   TODO: all basic blocks
+//   OK: all basic blocks
 //   TODO: calling convention
 //   TODO: no return functions
 // TODO: ensure stack is set up with return pointer and some junk symbolic args
@@ -151,10 +151,12 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		emu.SetInstructionPointer(path.va)
 
 		for {
+			// TODO: dora.checkVisitedVas()
 			if _, ok := hitVas[emu.GetInstructionPointer()]; ok {
 				break
 			}
 
+			// TODO: dora.tracePc()
 			s, _, e := emu.FormatAddress(emu.GetInstructionPointer())
 			check(e)
 			color.Set(color.FgHiBlack)
@@ -164,16 +166,17 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 			insn, e := emu.GetCurrentInstruction()
 			check(e)
 
-			if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-				// TODO: have to wire up import detection
-				nextPc, e := GetNextInstructionPointer(emu, sman)
-				if e == nil {
-					log.Printf("  call target: 0x%x", nextPc)
-				}
-
-				dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), nextPc})
+			if isBBEnd(insn) {
+				e := dora.ac.AddBasicBlock(BasicBlock{Start: bbStart, End: emu.GetInstructionPointer()})
+				check(e)
 			}
 
+			beforePc := emu.GetInstructionPointer()
+			// TODO: dora.handleRet()
+			// TODO: dora.handleConditionalJump()
+			// TODO: dora.handleJump()
+			// TODO: dora.handleCall()
+			// TODO: dora.handleStep()
 			if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) ||
 				w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 				log.Printf("returning, done.")
@@ -181,15 +184,7 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 				stackDelta := uint64(afterSp) - uint64(beforeSp)
 				log.Printf("stack delta: 0x%x", stackDelta)
 				break
-			}
-
-			if isBBEnd(insn) {
-				e := dora.ac.AddBasicBlock(BasicBlock{Start: bbStart, End: emu.GetInstructionPointer()})
-				check(e)
-			}
-
-			beforePc := emu.GetInstructionPointer()
-			if IsConditionalJump(insn) {
+			} else if IsConditionalJump(insn) {
 				targets, e := GetJumpTargets(emu, insn)
 				check(e)
 				if len(targets) < 2 {
@@ -208,6 +203,13 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 				emu.SetInstructionPointer(nextPc)
 
 			} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+				// TODO: try to resolve imports before blindly emulating
+				callPc, e := GetNextInstructionPointer(emu, sman)
+				if e == nil {
+					log.Printf("  call target: 0x%x", callPc)
+				}
+				dora.ac.AddCallXref(CallCrossReference{emu.GetInstructionPointer(), callPc})
+
 				nextPc := w.VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size))
 				emu.SetInstructionPointer(nextPc)
 
@@ -222,6 +224,10 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 				}
 			}
 
+			// TODO: fetch stack read/write set for arg/variable detection
+			// TODO: fetch reg read/write set for arg detection
+
+			// TODO: dora.updateVisitedVas()
 			hitVas[beforePc] = true
 
 			afterPc := emu.GetInstructionPointer()
