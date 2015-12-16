@@ -224,12 +224,14 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 
 	// TODO: how to disable these while on an excursion?
 	rh, e := emu.HookMemRead(func(access int, addr w.VA, size int, value int64) {
+		// TODO: filter out stack references
 		dora.ac.AddMemoryReadXref(MemoryReadCrossReference{emu.GetInstructionPointer(), addr})
 	})
 	check(e)
 	defer rh.Close()
 
 	wh, e := emu.HookMemWrite(func(access int, addr w.VA, size int, value int64) {
+		// TODO: filter out stack references
 		dora.ac.AddMemoryWriteXref(MemoryWriteCrossReference{emu.GetInstructionPointer(), addr})
 	})
 	check(e)
@@ -242,7 +244,6 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 		check(ex.popState())
 		for {
 			if ex.hasExploredThisAddressBefore() {
-				log.Print("bad va")
 				break
 			}
 
@@ -273,7 +274,6 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 					log.Printf("error: %s", e.Error())
 					break
 				}
-				log.Print("ok")
 			}
 
 			// TODO: fetch stack read/write set for arg/variable detection
