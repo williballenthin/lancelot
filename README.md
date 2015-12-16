@@ -2,4 +2,4 @@
 Binary analysis
 
 # Code reviews
-Use git-appraise for code reviews.
+Use [git-appraise](https://github.com/google/git-appraise) for code reviews.
