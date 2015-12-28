@@ -238,6 +238,11 @@ func (ws Workspace) dumpMemoryRegions() error {
 	return nil
 }
 
+// TODO: do we really want this?
+func (ws *Workspace) GetDisassembler() (gapstone.Engine, error) {
+	return ws.disassembler, nil
+}
+
 func (ws *Workspace) GetEmulator() (*Emulator, error) {
 	emu, e := newEmulator(ws)
 	if e != nil {
