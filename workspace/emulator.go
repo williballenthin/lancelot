@@ -519,7 +519,7 @@ func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
 	check(e)
 
 	// fetch either instruction length, or max configured bytes, amount of data
-	numBytes := uint64(emu.ws.displayOptions.NumOpcodeBytes)
+	numBytes := uint64(emu.ws.DisplayOptions.NumOpcodeBytes)
 	d, e := emu.MemRead(va, min(uint64(insn.Size), numBytes))
 	check(e)
 

@@ -102,7 +102,7 @@ type Workspace struct {
 	loadedModules  []*LoadedModule
 	memoryRegions  []MemoryRegion
 	disassembler   gapstone.Engine
-	displayOptions DisplayOptions
+	DisplayOptions DisplayOptions
 }
 
 func New(arch Arch, mode Mode) (*Workspace, error) {
@@ -138,7 +138,7 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		loadedModules: make([]*LoadedModule, 0),
 		memoryRegions: make([]MemoryRegion, 0),
 		disassembler:  disassembler,
-		displayOptions: DisplayOptions{
+		DisplayOptions: DisplayOptions{
 			NumOpcodeBytes: 8,
 		},
 	}, nil

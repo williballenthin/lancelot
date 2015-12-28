@@ -31,6 +31,7 @@ func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (w.VA, 
 	})
 	return va, e
 }
+
 func IsConditionalJump(insn gapstone.Instruction) bool {
 	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp" {
 		return true
