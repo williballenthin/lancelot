@@ -3,8 +3,8 @@ package main
 import (
 	"debug/pe"
 	"fmt"
-	"github.com/codegangsta/cli"
 	"github.com/bnagy/gapstone"
+	"github.com/codegangsta/cli"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
@@ -51,26 +51,36 @@ func doit(path string, fva W.VA) error {
 	d, e := LinearDisassembly.New(ws)
 	check(e)
 
-        dis, e := ws.GetDisassembler()
+	dis, e := ws.GetDisassembler()
 	check(e)
 
 	d.RegisterInstructionTraceHandler(func(va W.VA, insn gapstone.Instruction) error {
-            s, _, e := LinearDisassembly.FormatAddressDisassembly(dis, ws, va, ws.DisplayOptions.NumOpcodeBytes)
-            check(e)
-            log.Printf(s)
-	    return nil
+		s, _, e := LinearDisassembly.FormatAddressDisassembly(dis, ws, va, ws.DisplayOptions.NumOpcodeBytes)
+		check(e)
+		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+				// assume we have: call [0x4010000]
+				iva := W.VA(insn.X86.Operands[0].Mem.Disp)
+				sym, e := ws.ResolveImportedFunction(iva)
+				if e == nil {
+					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
+				}
+			}
+		}
+		log.Printf(s)
+		return nil
 	})
 
 	d.RegisterInstructionTraceHandler(func(va W.VA, insn gapstone.Instruction) error {
-            if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-	        log.Printf("--> call")
-	    }
-	    return nil
+		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+			log.Printf("--> call")
+		}
+		return nil
 	})
 
 	d.RegisterJumpTraceHandler(func(va W.VA, insn gapstone.Instruction, jump LinearDisassembly.JumpTarget) error {
-            log.Printf("0x%x --> 0x%x", uint64(va), uint64(jump.Va))
-	    return nil
+		log.Printf("0x%x --> 0x%x", uint64(va), uint64(jump.Va))
+		return nil
 	})
 
 	e = d.ExploreFunction(ws, fva)
