@@ -95,6 +95,7 @@ func (i Flags64) isSet(j Flag64) bool {
 func (loader *PELoader) resolveThunkTable(
 	ws *workspace.Workspace,
 	mod *workspace.LoadedModule,
+	moduleName string,
 	rvaTable workspace.RVA) error {
 
 	var offset workspace.RVA = rvaTable
@@ -116,6 +117,10 @@ func (loader *PELoader) resolveThunkTable(
 			//        JMP  0xAABBCCDD --> E9 D9 CC BB AA  ugh, relative jump. do a push/ret instead.
 			//        RET             --> C3
 			//
+			mod.Imports[offset] = workspace.LinkedSymbol{
+				ModuleName: moduleName,
+				SymbolName: fmt.Sprintf("ordinal-%x", uint64(rvaImport)&uint64(0x7FFFFFFF)),
+			}
 		} else {
 			d, e := mod.MemRead(ws, rvaImport, 0x100)
 			check(e)
@@ -127,8 +132,12 @@ func (loader *PELoader) resolveThunkTable(
 			importByName.Name, e = readAscii(d[2:])
 			check(e)
 
-			fmt.Printf("  import by name: %s\n", importByName.Name)
+			fmt.Printf("  import by name: %s@0x%x\n", importByName.Name, uint64(rvaImport))
 			// TODO: replace thunk with handler
+			mod.Imports[offset] = workspace.LinkedSymbol{
+				ModuleName: moduleName,
+				SymbolName: importByName.Name,
+			}
 		}
 
 		offset += 4
@@ -178,7 +187,7 @@ func (loader *PELoader) resolveImports(
 		fmt.Printf("module name: %s\n", string(moduleName))
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaThunkTable)
-		loader.resolveThunkTable(ws, mod, workspace.RVA(dir.rvaThunkTable))
+		loader.resolveThunkTable(ws, mod, moduleName, workspace.RVA(dir.rvaThunkTable))
 	}
 
 	return nil
@@ -201,6 +210,7 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 		Name:        loader.name,
 		BaseAddress: imageBase,
 		EntryPoint:  addressOfEntryPoint.VA(imageBase),
+		Imports:     map[workspace.RVA]workspace.LinkedSymbol{},
 	}
 
 	for _, section := range loader.file.Sections {

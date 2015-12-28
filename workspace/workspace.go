@@ -43,10 +43,16 @@ var GAPSTONE_MODE_MAP = map[Mode]uint{
 var InvalidArchError = errors.New("Invalid ARCH provided.")
 var InvalidModeError = errors.New("Invalid MODE provided.")
 
+type LinkedSymbol struct {
+	ModuleName string
+	SymbolName string
+}
+
 type LoadedModule struct {
 	Name        string
 	BaseAddress VA
 	EntryPoint  VA
+	Imports     map[RVA]LinkedSymbol
 }
 
 func (m LoadedModule) VA(rva RVA) VA {
@@ -289,4 +295,22 @@ func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
 		}
 	}
 	return false
+}
+
+var ErrFailedToResolveImport = errors.New("Failed to resolve import")
+
+func (ws *Workspace) ResolveImportedFunction(va VA) (*LinkedSymbol, error) {
+	for _, mod := range ws.loadedModules {
+		if va < mod.BaseAddress {
+			continue
+		}
+		rva := RVA(uint64(va) - uint64(mod.BaseAddress))
+		sym, ok := mod.Imports[rva]
+		if !ok {
+			continue
+		}
+		return &sym, nil
+	}
+
+	return nil, ErrFailedToResolveImport
 }
