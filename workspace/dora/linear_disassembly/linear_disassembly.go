@@ -189,14 +189,20 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 	return ret, nil
 }
 
+// ExploreBB linearly disassembles instructions starting at a given address
+//  in a given address space, invoking the appropriate callbacks, and terminates
+//  at the end of the current basic block.
+// A basic block is delimited by a ret or jump instruction.
+// Returns the addresses to which this basic block may transfer control via jumps.
 func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
+	startVa := va
 	nextBBs := make([]w.VA, 0, 2)
 
 	isEndOfBB := false
 	dis := ld.disassembler
 	for insn, e := ReadInstruction(dis, as, va); e == nil && !isEndOfBB; insn, e = ReadInstruction(dis, as, va) {
 		for _, fn := range ld.insnHandlers {
-			e = fn(va, insn)
+			e = fn(insn)
 			if e != nil {
 				return nil, e
 			}
@@ -215,7 +221,7 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 
 			for _, target := range targets {
 				for _, fn := range ld.jumpHandlers {
-					e := fn(va, insn, target)
+					e := fn(insn, startVa, target)
 					if e != nil {
 						return nil, e
 					}

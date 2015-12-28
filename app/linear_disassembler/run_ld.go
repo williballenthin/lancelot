@@ -54,8 +54,8 @@ func doit(path string, fva W.VA) error {
 	dis, e := ws.GetDisassembler()
 	check(e)
 
-	d.RegisterInstructionTraceHandler(func(va W.VA, insn gapstone.Instruction) error {
-		s, _, e := LinearDisassembly.FormatAddressDisassembly(dis, ws, va, ws.DisplayOptions.NumOpcodeBytes)
+	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
+		s, _, e := LinearDisassembly.FormatAddressDisassembly(dis, ws, W.VA(insn.Address), ws.DisplayOptions.NumOpcodeBytes)
 		check(e)
 		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
@@ -71,15 +71,15 @@ func doit(path string, fva W.VA) error {
 		return nil
 	})
 
-	d.RegisterInstructionTraceHandler(func(va W.VA, insn gapstone.Instruction) error {
+	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			log.Printf("--> call")
+			//log.Printf("--> call")
 		}
 		return nil
 	})
 
-	d.RegisterJumpTraceHandler(func(va W.VA, insn gapstone.Instruction, jump LinearDisassembly.JumpTarget) error {
-		log.Printf("0x%x --> 0x%x", uint64(va), uint64(jump.Va))
+	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, bb W.VA, jump LinearDisassembly.JumpTarget) error {
+		log.Printf("edge: 0x%x --> 0x%x", uint64(bb), uint64(jump.Va))
 		return nil
 	})
 
