@@ -49,22 +49,24 @@ type LinkedSymbol struct {
 }
 
 type LoadedModule struct {
-	Name        string
-	BaseAddress VA
-	EntryPoint  VA
-	Imports     map[RVA]LinkedSymbol
+	Name             string
+	BaseAddress      VA
+	EntryPoint       VA
+	Imports          map[RVA]LinkedSymbol
+	ExportsByName    map[string]RVA
+	ExportsByOrdinal map[uint16]RVA
 }
 
 func (m LoadedModule) VA(rva RVA) VA {
 	return rva.VA(m.BaseAddress)
 }
 
-// note: relative to the module
+// note: rva is relative to the module
 func (m LoadedModule) MemRead(ws *Workspace, rva RVA, length uint64) ([]byte, error) {
 	return ws.MemRead(m.VA(rva), length)
 }
 
-// note: relative to the module
+// note: rva is relative to the module
 func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
 	if ws.Mode == MODE_32 {
 		var data uint32
@@ -91,7 +93,53 @@ func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
 	}
 }
 
-// note: relative to the module
+// note: rva is relative to the module
+func (m LoadedModule) MemReadRva(ws *Workspace, rva RVA) (RVA, error) {
+	// RVAs are 32bits even on x64
+	var data uint32
+	d, e := m.MemRead(ws, rva, 0x4)
+	if e != nil {
+		return 0, e
+	}
+
+	p := bytes.NewBuffer(d)
+	binary.Read(p, binary.LittleEndian, &data)
+	return RVA(uint64(data)), nil
+}
+
+// MemReadPeOffset reads a 32bit (even on x64) VA from the given address
+//  of the module.
+// note: rva is relative to the module
+func (m LoadedModule) MemReadPeOffset(ws *Workspace, rva RVA) (VA, error) {
+	// PE header offsets are 32bits even on x64
+	var data uint32
+	d, e := m.MemRead(ws, rva, 0x4)
+	if e != nil {
+		return 0, e
+	}
+
+	p := bytes.NewBuffer(d)
+	binary.Read(p, binary.LittleEndian, &data)
+	return VA(uint64(data)), nil
+}
+
+// MemReadShort reads a 16bit number (often used for ordinals) from the given
+//  address of the module.
+// note: rva is relative to the module
+func (m LoadedModule) MemReadShort(ws *Workspace, rva RVA) (uint16, error) {
+	// PE header offsets are 32bits even on x64
+	var data uint16
+	d, e := m.MemRead(ws, rva, 0x2)
+	if e != nil {
+		return 0, e
+	}
+
+	p := bytes.NewBuffer(d)
+	binary.Read(p, binary.LittleEndian, &data)
+	return data, nil
+}
+
+// note: rva is relative to the module
 func (m LoadedModule) MemWrite(ws *Workspace, rva RVA, data []byte) error {
 	return ws.MemWrite(m.VA(rva), data)
 }
