@@ -153,8 +153,7 @@ type Workspace struct {
 	as             AddressSpace
 	Arch           Arch
 	Mode           Mode
-	loadedModules  []*LoadedModule
-	memoryRegions  []MemoryRegion
+	LoadedModules  []*LoadedModule
 	disassembler   gapstone.Engine
 	DisplayOptions DisplayOptions
 }
@@ -189,8 +188,7 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		as:            as,
 		Arch:          arch,
 		Mode:          mode,
-		loadedModules: make([]*LoadedModule, 0),
-		memoryRegions: make([]MemoryRegion, 0),
+		LoadedModules: make([]*LoadedModule, 0),
 		disassembler:  disassembler,
 		DisplayOptions: DisplayOptions{
 			NumOpcodeBytes: 8,
@@ -226,7 +224,7 @@ func (ws *Workspace) GetMaps() ([]MemoryRegion, error) {
 }
 
 func (ws *Workspace) AddLoadedModule(mod *LoadedModule) error {
-	ws.loadedModules = append(ws.loadedModules, mod)
+	ws.LoadedModules = append(ws.LoadedModules, mod)
 	return nil
 }
 
@@ -282,9 +280,11 @@ func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
 	return 0, FailedToDisassembleInstruction
 }
 
-func (ws Workspace) dumpMemoryRegions() error {
+func (ws Workspace) DumpMemoryRegions() error {
 	log.Printf("=== memory map ===")
-	for _, region := range ws.memoryRegions {
+	mmaps, e := ws.GetMaps()
+	check(e)
+	for _, region := range mmaps {
 		log.Printf("  name: %s", region.Name)
 		log.Printf("    address: %x", region.Address)
 		log.Printf("    length: %x", region.Length)
@@ -301,29 +301,6 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 	emu, e := newEmulator(ws)
 	if e != nil {
 		return nil, e
-	}
-
-	for _, region := range ws.memoryRegions {
-		e := emu.MemMap(region.Address, region.Length, region.Name)
-		check(e)
-		if e != nil {
-			emu.Close()
-			return nil, e
-		}
-
-		d, e := ws.MemRead(region.Address, region.Length)
-		check(e)
-		if e != nil {
-			emu.Close()
-			return nil, e
-		}
-
-		e = emu.MemWrite(region.Address, d)
-		check(e)
-		if e != nil {
-			emu.Close()
-			return nil, e
-		}
 	}
 
 	stackAddress := VA(0x69690000)
@@ -348,7 +325,7 @@ func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
 var ErrFailedToResolveImport = errors.New("Failed to resolve import")
 
 func (ws *Workspace) ResolveImportedFunction(va VA) (*LinkedSymbol, error) {
-	for _, mod := range ws.loadedModules {
+	for _, mod := range ws.LoadedModules {
 		if va < mod.BaseAddress {
 			continue
 		}
