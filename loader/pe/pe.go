@@ -323,6 +323,7 @@ func readAscii(buf []byte) (string, error) {
 	br := bufio.NewReader(bytes.NewReader(buf))
 	bytez, e := br.ReadBytes(byte(0x00))
 	check(e)
+	bytez = bytes.TrimSuffix(bytez, []byte{0x00})
 	return string(bytez), nil
 }
 
