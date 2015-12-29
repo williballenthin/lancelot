@@ -48,13 +48,19 @@ type LinkedSymbol struct {
 	SymbolName string
 }
 
+type ExportedSymbol struct {
+	RVA             RVA
+	IsForwarded     bool
+	ForwardedSymbol LinkedSymbol
+}
+
 type LoadedModule struct {
 	Name             string
 	BaseAddress      VA
 	EntryPoint       VA
 	Imports          map[RVA]LinkedSymbol
-	ExportsByName    map[string]RVA
-	ExportsByOrdinal map[uint16]RVA
+	ExportsByName    map[string]ExportedSymbol
+	ExportsByOrdinal map[uint16]ExportedSymbol
 }
 
 func (m LoadedModule) VA(rva RVA) VA {

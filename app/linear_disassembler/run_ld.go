@@ -166,13 +166,19 @@ func doit(path string) error {
 
 	for _, mod := range ws.LoadedModules {
 		lifo = append(lifo, mod.EntryPoint)
-		for _, fn := range mod.ExportsByName {
-			fva := fn.VA(mod.BaseAddress)
+		for _, export := range mod.ExportsByName {
+			if export.IsForwarded {
+				continue
+			}
+			fva := export.RVA.VA(mod.BaseAddress)
 			log.Printf("adding function by export (name): 0x%x", fva)
 			lifo = append(lifo, fva)
 		}
-		for _, fn := range mod.ExportsByOrdinal {
-			fva := fn.VA(mod.BaseAddress)
+		for _, export := range mod.ExportsByOrdinal {
+			if export.IsForwarded {
+				continue
+			}
+			fva := export.RVA.VA(mod.BaseAddress)
 			log.Printf("adding function by export (ordinal): 0x%x", fva)
 			lifo = append(lifo, fva)
 		}

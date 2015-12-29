@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/williballenthin/Lancelot/workspace"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -246,14 +247,76 @@ func (loader *PELoader) resolveExports(
 
 	fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
 
+	// note closure over dir, mod, ws
+	readFunctionRva := func(i uint32) (workspace.RVA, error) {
+		if i > dir.NumberOfFunctions {
+			panic("function index too large")
+		}
+		// sizeof(RVA) is always 4 bytes, even on x64
+		return mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*i))
+	}
+
+	// isForwardedExport returns true when the provided RVA falls within the
+	//  export directory table, which is used to signify that an export is
+	//  fowarded to another module.
+	// implementation: note closure over loader
+	isForwardedExport := func(rvaFn workspace.RVA) bool {
+		if uint32(rvaFn) < exportDirectory.VirtualAddress {
+			return false
+		}
+		if uint32(rvaFn) >= exportDirectory.VirtualAddress+exportDirectory.Size {
+			return false
+		}
+		return true
+	}
+
+	// implementation: node closure over mod, ws
+	readForwardedSymbol := func(rvaFn workspace.RVA) (workspace.LinkedSymbol, error) {
+		var forwardedSymbol workspace.LinkedSymbol
+		forwardedNameBuf, e := mod.MemRead(ws, workspace.RVA(rvaFn), 0x100)
+		check(e)
+		forwardedName, e := readAscii(forwardedNameBuf)
+		check(e)
+
+		i := strings.LastIndex(forwardedName, ".")
+		if i == -1 {
+			panic("expected to find a '.' in the module name")
+		}
+		if i >= len(forwardedName) {
+			panic("module name ends in period")
+		}
+
+		forwardedSymbol.ModuleName = forwardedName[:i]
+		forwardedSymbol.SymbolName = forwardedName[i+1:]
+		return forwardedSymbol, nil
+	}
+
 	// resolve exports by ordinals first
 	for i := uint32(0); i < dir.NumberOfFunctions; i++ {
 		ordinal := uint16(i + dir.Base)
-		// sizeof(RVA) is always 4 bytes, even on x64
-		rvaFn, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*i))
+		rvaFn, e := readFunctionRva(i)
 		check(e)
-		mod.ExportsByOrdinal[ordinal] = rvaFn
-		fmt.Printf(" export: (ordinal) %x: 0x%x\n", ordinal, rvaFn)
+
+		isForwarded := isForwardedExport(rvaFn)
+
+		sym := workspace.ExportedSymbol{
+			RVA:         rvaFn,
+			IsForwarded: isForwarded,
+		}
+
+		if isForwarded {
+			fsym, e := readForwardedSymbol(rvaFn)
+			check(e)
+			sym.ForwardedSymbol = fsym
+		}
+		mod.ExportsByOrdinal[ordinal] = sym
+
+		if isForwarded {
+			fmt.Printf(" export: (ordinal) %x: 0x%x -> %s.%s\n",
+				ordinal, rvaFn, sym.ForwardedSymbol.ModuleName, sym.ForwardedSymbol.SymbolName)
+		} else {
+			fmt.Printf(" export: (ordinal) %x: 0x%x\n", ordinal, rvaFn)
+		}
 	}
 
 	// resolve exports by name
@@ -264,8 +327,7 @@ func (loader *PELoader) resolveExports(
 		// sizeof(ordinal) is always 2 bytes
 		nameOrdinal, e := mod.MemReadShort(ws, workspace.RVA(dir.rvaAddressOfNameOrdinals+2*i))
 		check(e)
-		// sizeof(RVA) is always 4 bytes, even on x64
-		rvaFn, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*uint32(nameOrdinal)))
+		rvaFn, e := readFunctionRva(uint32(nameOrdinal))
 		check(e)
 
 		nameBuf, e := mod.MemRead(ws, workspace.RVA(rvaName), 0x100)
@@ -273,8 +335,26 @@ func (loader *PELoader) resolveExports(
 		name, e := readAscii(nameBuf)
 		check(e)
 
-		mod.ExportsByName[name] = rvaFn
-		fmt.Printf(" export: %s: 0x%x\n", name, rvaFn)
+		isForwarded := isForwardedExport(rvaFn)
+
+		sym := workspace.ExportedSymbol{
+			RVA:         rvaFn,
+			IsForwarded: isForwarded,
+		}
+
+		if isForwarded {
+			fsym, e := readForwardedSymbol(rvaFn)
+			check(e)
+			sym.ForwardedSymbol = fsym
+		}
+		mod.ExportsByName[name] = sym
+
+		if isForwarded {
+			fmt.Printf(" export: %s: 0x%x -> %s.%s\n",
+				name, rvaFn, sym.ForwardedSymbol.ModuleName, sym.ForwardedSymbol.SymbolName)
+		} else {
+			fmt.Printf(" export: %s: 0x%x\n", name, rvaFn)
+		}
 	}
 
 	return nil
@@ -298,8 +378,8 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 		BaseAddress:      imageBase,
 		EntryPoint:       addressOfEntryPoint.VA(imageBase),
 		Imports:          map[workspace.RVA]workspace.LinkedSymbol{},
-		ExportsByName:    map[string]workspace.RVA{},
-		ExportsByOrdinal: map[uint16]workspace.RVA{},
+		ExportsByName:    map[string]workspace.ExportedSymbol{},
+		ExportsByOrdinal: map[uint16]workspace.ExportedSymbol{},
 	}
 
 	for _, section := range loader.file.Sections {
