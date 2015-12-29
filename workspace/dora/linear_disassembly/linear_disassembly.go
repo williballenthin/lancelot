@@ -4,6 +4,7 @@
 package LinearDisassembly
 
 import (
+	"errors"
 	"fmt"
 	"github.com/bnagy/gapstone"
 	w "github.com/williballenthin/Lancelot/workspace"
@@ -147,6 +148,11 @@ func FormatAddressDisassembly(dis gapstone.Engine, as w.AddressSpace, va w.VA, n
 	return ret, uint64(insn.Size), nil
 }
 
+// ErrFailedToResolveJumpTarget is an error to be returned when the target
+//  of a jump cannot be computed.
+// For example, in an indirect jump, during non-emulation-based analysis.
+var ErrFailedToResolveJumpTarget = errors.New("Failed to resolve jump target")
+
 // GetJumpTarget gets the address to which a known jump instruction
 //  transfers control.
 // If the instruction is a conditional jump, then this function returns
@@ -160,9 +166,16 @@ func GetJumpTarget(insn gapstone.Instruction) (w.VA, error) {
 	if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
 		return w.VA(insn.X86.Operands[0].Imm), nil
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
-		panic("TODO: jump OP_REG")
+		// jump eax
+		// this is indirect, which is unresolvable.
+		// leave analysis to the emulator.
+		return w.VA(0), ErrFailedToResolveJumpTarget
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
-		panic("TODO: jump OP_MEM")
+		// jump [0x1000]
+		// calling this indirect for now, which is unresolvable.
+		// we could attempt to manually read out the pointer contents
+		//  but that should really be left to the emulator.
+		return w.VA(0), ErrFailedToResolveJumpTarget
 	}
 	return w.VA(0), nil
 }
@@ -181,10 +194,11 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 		//   - indirect jump: jmp [0x1000]???
 
 		next, e := GetJumpTarget(insn)
-		check(e)
 		if e != nil {
-			return nil, e
+			// do the best we can
+			return ret, nil
 		}
+
 		ret = append(
 			ret,
 			JumpTarget{
@@ -201,21 +215,22 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 		//     mov eax, 1
 		//     ret
 		falsePc := w.VA(uint64(insn.Address) + uint64(insn.Size))
-		truePc, e := GetJumpTarget(insn)
-		if e != nil {
-			return nil, e
-		}
-
 		ret = append(
 			ret,
-			JumpTarget{
-				Va:       truePc,
-				JumpType: JumpTypeCondTrue,
-			},
 			JumpTarget{
 				Va:       falsePc,
 				JumpType: JumpTypeCondFalse,
 			})
+
+		truePc, e := GetJumpTarget(insn)
+		if e == nil {
+			ret = append(
+				ret,
+				JumpTarget{
+					Va:       truePc,
+					JumpType: JumpTypeCondTrue,
+				})
+		}
 	}
 	return ret, nil
 }
@@ -245,6 +260,7 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 		} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 			break // out of instruction processing loop
 		} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+			// this return a slice with zero length, but that should be ok
 			targets, e := GetJumpTargets(insn)
 			if e != nil {
 				return nil, e

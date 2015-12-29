@@ -120,7 +120,17 @@ func doit(path string) error {
 				targetva := W.VA(insn.X86.Operands[0].Imm)
 				s = s + fmt.Sprintf("  ; sub_%x", targetva)
 			}
+		} else if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+				// assume we have: jmp [0x4010000]  ; IAT
+				iva := W.VA(insn.X86.Operands[0].Mem.Disp)
+				sym, e := ws.ResolveImportedFunction(iva)
+				if e == nil {
+					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
+				}
+			}
 		}
+
 		log.Printf(s)
 		return nil
 	})
