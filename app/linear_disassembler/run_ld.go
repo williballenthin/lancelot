@@ -30,11 +30,14 @@ func check(e error) {
 	}
 }
 
+// findAll locates all instances of the given separator in
+//  the given byteslice and returns the RVAs relative to the
+//  start of the slice.
 func findAll(d []byte, sep []byte) ([]W.RVA, error) {
 	var offset uint64
 	ret := make([]W.RVA, 0, 100)
 	for {
-		i := bytes.Index(d, sep) // push ebp; mov ebp, esp
+		i := bytes.Index(d, sep)
 		if i == -1 {
 			break
 		}
@@ -50,6 +53,8 @@ func findAll(d []byte, sep []byte) ([]W.RVA, error) {
 	return ret, nil
 }
 
+// findPrologues locates all instances of common x86 function
+//   prologues in the given byteslice.
 func findPrologues(d []byte) ([]W.RVA, error) {
 	ret := make([]W.RVA, 0, 100)
 	bare := make(map[W.RVA]bool)
@@ -167,13 +172,16 @@ func doit(path string) error {
 		return nil
 	})
 
+	// callback for recording intra-function edges
 	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, bb W.VA, jump LinearDisassembly.JumpTarget) error {
 		log.Printf("edge: 0x%x --> 0x%x", uint64(bb), uint64(jump.Va))
 		return nil
 	})
 
+	// debugging
 	check(ws.DumpMemoryRegions())
 
+	// queue up any non-forwarded exports as functions to analyze
 	for _, mod := range ws.LoadedModules {
 		lifo = append(lifo, mod.EntryPoint)
 		for _, export := range mod.ExportsByName {
@@ -194,9 +202,10 @@ func doit(path string) error {
 		}
 	}
 
+	// search for prologues in each memory region, queue them
+	//  up as functions to analyze
 	mmaps, e := ws.GetMaps()
 	check(e)
-
 	for _, mmap := range mmaps {
 		d, e := ws.MemRead(mmap.Address, mmap.Length)
 		check(e)
@@ -211,6 +220,8 @@ func doit(path string) error {
 		}
 	}
 
+	// here's the main loop. fortunately, its concise.
+	// TODO: spawn some goroutines.
 	exploredFunctions := make(map[W.VA]bool)
 	for len(lifo) > 0 {
 		fva := lifo[len(lifo)-1]
