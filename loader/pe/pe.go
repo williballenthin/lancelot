@@ -100,9 +100,7 @@ func (loader *PELoader) resolveThunkTable(
 
 	var offset workspace.RVA = rvaTable
 	for {
-		rva, e := mod.MemReadPtr(ws, offset)
-		check(e)
-		rvaImport := workspace.RVA(rva)
+		rvaImport, e := mod.MemReadRva(ws, offset)
 		check(e)
 
 		if rvaImport == 0x0 {
@@ -193,6 +191,95 @@ func (loader *PELoader) resolveImports(
 	return nil
 }
 
+type ImageExportDirectory struct {
+	Characteristics          uint32
+	TimeDateStamp            uint32
+	MajorVersion             uint16
+	MinorVersion             uint16
+	rvaName                  uint32
+	Base                     uint32
+	NumberOfFunctions        uint32
+	NumberOfNames            uint32
+	rvaAddressOfFunctions    uint32
+	rvaAddressOfNames        uint32
+	rvaAddressOfNameOrdinals uint32
+}
+
+func (loader *PELoader) resolveExports(
+	ws *workspace.Workspace,
+	mod *workspace.LoadedModule,
+	dataDirectory [16]pe.DataDirectory) error {
+	exportDirectory := dataDirectory[0]
+	exportRva := workspace.RVA(exportDirectory.VirtualAddress)
+	exportSize := exportDirectory.Size
+
+	fmt.Printf("export rva: 0x%x\n", exportRva)
+	fmt.Printf("export size: 0x%x\n", exportSize)
+
+	d, e := mod.MemRead(ws, workspace.RVA(exportDirectory.VirtualAddress), uint64(exportDirectory.Size))
+	check(e)
+
+	p := bytes.NewBuffer(d)
+	var dir ImageExportDirectory
+
+	binary.Read(p, binary.LittleEndian, &dir.Characteristics)
+	binary.Read(p, binary.LittleEndian, &dir.TimeDateStamp)
+	binary.Read(p, binary.LittleEndian, &dir.MajorVersion)
+	binary.Read(p, binary.LittleEndian, &dir.MinorVersion)
+	binary.Read(p, binary.LittleEndian, &dir.rvaName)
+	binary.Read(p, binary.LittleEndian, &dir.Base)
+	binary.Read(p, binary.LittleEndian, &dir.NumberOfFunctions)
+	binary.Read(p, binary.LittleEndian, &dir.NumberOfNames)
+	binary.Read(p, binary.LittleEndian, &dir.rvaAddressOfFunctions)
+	binary.Read(p, binary.LittleEndian, &dir.rvaAddressOfNames)
+	binary.Read(p, binary.LittleEndian, &dir.rvaAddressOfNameOrdinals)
+
+	if dir.rvaAddressOfFunctions == 0 {
+		panic("address of functions is NULL")
+	}
+
+	exportModuleNameBuf, e := mod.MemRead(ws, workspace.RVA(dir.rvaName), 0x100)
+	check(e)
+	exportModuleName, e := readAscii(exportModuleNameBuf)
+	fmt.Printf("export name: %ss\n", string(exportModuleName))
+	check(e)
+
+	fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
+
+	// resolve exports by ordinals first
+	for i := uint32(0); i < dir.NumberOfFunctions; i++ {
+		ordinal := uint16(i + dir.Base)
+		// sizeof(RVA) is always 4 bytes, even on x64
+		rvaFn, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*i))
+		check(e)
+		mod.ExportsByOrdinal[ordinal] = rvaFn
+		fmt.Printf(" export: (ordinal) %x: 0x%x\n", ordinal, rvaFn)
+	}
+
+	// resolve exports by name
+	for i := uint32(0); i < dir.NumberOfNames; i++ {
+		// sizeof(RVA) is always 4 bytes, even on x64
+		rvaName, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfNames+4*i))
+		check(e)
+		// sizeof(ordinal) is always 2 bytes
+		nameOrdinal, e := mod.MemReadShort(ws, workspace.RVA(dir.rvaAddressOfNameOrdinals+2*i))
+		check(e)
+		// sizeof(RVA) is always 4 bytes, even on x64
+		rvaFn, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*uint32(nameOrdinal)))
+		check(e)
+
+		nameBuf, e := mod.MemRead(ws, workspace.RVA(rvaName), 0x100)
+		check(e)
+		name, e := readAscii(nameBuf)
+		check(e)
+
+		mod.ExportsByName[name] = rvaFn
+		fmt.Printf(" export: %s: 0x%x\n", name, rvaFn)
+	}
+
+	return nil
+}
+
 func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, error) {
 	var imageBase workspace.VA
 	var addressOfEntryPoint workspace.RVA
@@ -207,10 +294,12 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 	}
 
 	mod := &workspace.LoadedModule{
-		Name:        loader.name,
-		BaseAddress: imageBase,
-		EntryPoint:  addressOfEntryPoint.VA(imageBase),
-		Imports:     map[workspace.RVA]workspace.LinkedSymbol{},
+		Name:             loader.name,
+		BaseAddress:      imageBase,
+		EntryPoint:       addressOfEntryPoint.VA(imageBase),
+		Imports:          map[workspace.RVA]workspace.LinkedSymbol{},
+		ExportsByName:    map[string]workspace.RVA{},
+		ExportsByOrdinal: map[uint16]workspace.RVA{},
 	}
 
 	for _, section := range loader.file.Sections {
@@ -219,6 +308,9 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 	}
 
 	e := loader.resolveImports(ws, mod, dataDirectory)
+	check(e)
+
+	e = loader.resolveExports(ws, mod, dataDirectory)
 	check(e)
 
 	e = ws.AddLoadedModule(mod)
