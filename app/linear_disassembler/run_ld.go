@@ -59,12 +59,16 @@ func doit(path string, fva W.VA) error {
 		check(e)
 		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
-				// assume we have: call [0x4010000]
+				// assume we have: call [0x4010000]  ; IAT
 				iva := W.VA(insn.X86.Operands[0].Mem.Disp)
 				sym, e := ws.ResolveImportedFunction(iva)
 				if e == nil {
 					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
 				}
+			} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+				// assume we have: call 0x401000
+				targetva := W.VA(insn.X86.Operands[0].Imm)
+				s = s + fmt.Sprintf("  ; sub_%x", targetva)
 			}
 		}
 		log.Printf(s)
@@ -73,8 +77,24 @@ func doit(path string, fva W.VA) error {
 
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			//log.Printf("--> call")
+			log.Printf("call: ...")
 		}
+		return nil
+	})
+
+	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
+		if !W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+			return nil
+		}
+		if len(insn.X86.Operands) == 0 {
+			log.Printf("calling convention: non-stdcall")
+			return nil
+		}
+		if insn.X86.Operands[0].Type != gapstone.X86_OP_IMM {
+			return nil
+		}
+		stackDelta := insn.X86.Operands[0].Imm
+		log.Printf("calling convention: stdcall:0x%x", stackDelta)
 		return nil
 	})
 
