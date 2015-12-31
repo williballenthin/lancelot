@@ -7,33 +7,50 @@ import (
 )
 
 type BasicBlock struct {
+	// Start is the first address in the basic block.
 	Start w.VA
-	End   w.VA
+	// End is the last address in the basic block.
+	End w.VA
 }
 
 type CrossReference struct {
+	// From is the address from which the xref references.
 	From w.VA
-	To   w.VA
+	// To is the address to which the xref references.
+	To w.VA
 }
 
 type MemoryWriteCrossReference CrossReference
 type MemoryReadCrossReference CrossReference
 type CallCrossReference CrossReference
 
+type JumpType uint
+
 // JumpType defines the possible types of intra-function edges.
-type JumpType string
+const (
+	// JumpTypeCondTrue is the JumpType that represents the True
+	//  edge of a conditional branch.
+	JumpTypeCondTrue JumpType = iota
+	// JumpTypeCondFalse is the JumpType that represents the False
+	//  edge of a conditional branch.
+	JumpTypeCondFalse
+	// JumpTypeUncond is the JumpType that represents the edge of
+	//  an unconditional branch.
+	JumpTypeUncond
+)
 
-// JumpTypeCondTrue is the JumpType that represents the True
-//  edge of a conditional branch.
-var JumpTypeCondTrue JumpType = "jtrue"
-
-// JumpTypeCondFalse is the JumpType that represents the False
-//  edge of a conditional branch.
-var JumpTypeCondFalse JumpType = "jfalse"
-
-// JumpTypeUncond is the JumpType that represents the edge of
-//  an unconditional branch.
-var JumpTypeUncond JumpType = "juncond"
+func (t JumpType) String() string {
+	switch t {
+	case JumpTypeCondTrue:
+		return "JumpTypeCondTrue"
+	case JumpTypeCondFalse:
+		return "JumpTypeCondFalse"
+	case JumpTypeUncond:
+		return "JumpTypeUncond"
+	default:
+		panic("unexpected JumpType")
+	}
+}
 
 type JumpCrossReference struct {
 	CrossReference
