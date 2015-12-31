@@ -283,7 +283,14 @@ func (dora *Dora) ExploreFunction(va w.VA) error {
 			afterPc := emu.GetInstructionPointer()
 			if isBBEnd(insn) {
 				bbStart = emu.GetInstructionPointer()
-				e := dora.ac.AddJumpXref(JumpCrossReference{beforePc, afterPc})
+				// TODO: use correct jump type
+				e := dora.ac.AddJumpXref(
+					JumpCrossReference{
+						CrossReference: CrossReference{
+							From: beforePc,
+							To:   afterPc,
+						},
+						Type: JumpTypeUncond})
 				check(e)
 			}
 		}

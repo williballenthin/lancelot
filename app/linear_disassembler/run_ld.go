@@ -9,6 +9,7 @@ import (
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
+	dora "github.com/williballenthin/Lancelot/workspace/dora"
 	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembly"
 	"log"
 	"os"
@@ -173,8 +174,8 @@ func doit(path string) error {
 	})
 
 	// callback for recording intra-function edges
-	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, bb W.VA, jump LinearDisassembly.JumpTarget) error {
-		log.Printf("edge: 0x%x --> 0x%x", uint64(bb), uint64(jump.Va))
+	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, xref *dora.JumpCrossReference) error {
+		log.Printf("edge: 0x%x --> 0x%x (%s)", uint64(xref.From), uint64(xref.To), xref.Type)
 		return nil
 	})
 

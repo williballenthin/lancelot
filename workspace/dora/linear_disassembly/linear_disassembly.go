@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/bnagy/gapstone"
 	w "github.com/williballenthin/Lancelot/workspace"
+	dora "github.com/williballenthin/Lancelot/workspace/dora"
 	//	"log"
 	"strings"
 )
@@ -18,43 +19,11 @@ func check(e error) {
 	}
 }
 
-// JumpType defines the possible types of intra-function edges.
-type JumpType string
-
-// JumpTypeCondTrue is the JumpType that represents the True
-//  edge of a conditional branch.
-var JumpTypeCondTrue JumpType = "jtrue"
-
-// JumpTypeCondFalse is the JumpType that represents the False
-//  edge of a conditional branch.
-var JumpTypeCondFalse JumpType = "jfalse"
-
-// JumpTypeUncond is the JumpType that represents the edge of
-//  an unconditional branch.
-var JumpTypeUncond JumpType = "juncond"
-
-// JumpTarget describes the destination of an edge.
-type JumpTarget struct {
-	Va       w.VA
-	JumpType JumpType
-}
-
-// InstructionTraceHandler is a function that can process instructions
-//  parsed by this package.
-// Use insn.Address for the current address.
-type InstructionTraceHandler func(insn gapstone.Instruction) error
-
-// JumpTraceHandler is a function that can process control flow edges
-//  parsed by this package.
-// Use insn.Address for the source address.
-// Use bb for the address of the source basic block.
-type JumpTraceHandler func(insn gapstone.Instruction, bb w.VA, jump JumpTarget) error
-
 // LD is the object that holds the state of a linear disassembler.
 type LD struct {
 	disassembler gapstone.Engine
-	insnHandlers []InstructionTraceHandler
-	jumpHandlers []JumpTraceHandler
+	insnHandlers []dora.InstructionTraceHandler
+	jumpHandlers []dora.JumpTraceHandler
 }
 
 // New creates a new LinearDisassembler instance.
@@ -66,21 +35,21 @@ func New(ws *w.Workspace) (*LD, error) {
 	}
 	return &LD{
 		disassembler: d,
-		insnHandlers: make([]InstructionTraceHandler, 0, 1),
-		jumpHandlers: make([]JumpTraceHandler, 0, 1),
+		insnHandlers: make([]dora.InstructionTraceHandler, 0, 1),
+		jumpHandlers: make([]dora.JumpTraceHandler, 0, 1),
 	}, nil
 }
 
 // RegisterInstructionTraceHandler adds a callback function to receive the
 //   disassembled instructions.
-func (ld *LD) RegisterInstructionTraceHandler(fn InstructionTraceHandler) error {
+func (ld *LD) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) error {
 	ld.insnHandlers = append(ld.insnHandlers, fn)
 	return nil
 }
 
 // RegisterJumpTraceHandler adds a callback function to receive control flow
 //  edges identified among basic blocks.
-func (ld *LD) RegisterJumpTraceHandler(fn JumpTraceHandler) error {
+func (ld *LD) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
 	ld.jumpHandlers = append(ld.jumpHandlers, fn)
 	return nil
 }
@@ -184,8 +153,8 @@ func GetJumpTarget(insn gapstone.Instruction) (w.VA, error) {
 //  transfers control.
 // For a conditional jump, get both the true and false targets.
 // This function uses just the instruction instance, so for an indirect jump, we can't tell much.
-func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
-	ret := make([]JumpTarget, 0, 2)
+func GetJumpTargets(insn gapstone.Instruction) ([]*dora.JumpCrossReference, error) {
+	ret := make([]*dora.JumpCrossReference, 0, 2)
 
 	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
 		// unconditional jump, have the following possibilities:
@@ -201,9 +170,12 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 
 		ret = append(
 			ret,
-			JumpTarget{
-				Va:       next,
-				JumpType: JumpTypeUncond,
+			&dora.JumpCrossReference{
+				CrossReference: dora.CrossReference{
+					From: w.VA(insn.Address),
+					To:   next,
+				},
+				Type: dora.JumpTypeUncond,
 			})
 	} else {
 		// assume a two case situation:
@@ -217,18 +189,24 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 		falsePc := w.VA(uint64(insn.Address) + uint64(insn.Size))
 		ret = append(
 			ret,
-			JumpTarget{
-				Va:       falsePc,
-				JumpType: JumpTypeCondFalse,
+			&dora.JumpCrossReference{
+				CrossReference: dora.CrossReference{
+					From: w.VA(insn.Address),
+					To:   falsePc,
+				},
+				Type: dora.JumpTypeCondFalse,
 			})
 
 		truePc, e := GetJumpTarget(insn)
 		if e == nil {
 			ret = append(
 				ret,
-				JumpTarget{
-					Va:       truePc,
-					JumpType: JumpTypeCondTrue,
+				&dora.JumpCrossReference{
+					CrossReference: dora.CrossReference{
+						From: w.VA(insn.Address),
+						To:   truePc,
+					},
+					Type: dora.JumpTypeCondTrue,
 				})
 		}
 	}
@@ -241,7 +219,6 @@ func GetJumpTargets(insn gapstone.Instruction) ([]JumpTarget, error) {
 // A basic block is delimited by a ret or jump instruction.
 // Returns the addresses to which this basic block may transfer control via jumps.
 func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
-	startVa := va
 	nextBBs := make([]w.VA, 0, 2)
 
 	isEndOfBB := false
@@ -268,12 +245,12 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 
 			for _, target := range targets {
 				for _, fn := range ld.jumpHandlers {
-					e := fn(insn, startVa, target)
+					e := fn(insn, target)
 					if e != nil {
 						return nil, e
 					}
 				}
-				nextBBs = append(nextBBs, target.Va)
+				nextBBs = append(nextBBs, target.To)
 			}
 
 			break // out of instruction processing loop
