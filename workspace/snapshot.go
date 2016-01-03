@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
+	AS "github.com/williballenthin/Lancelot/address_space"
 )
 
 // naturally, x86 specific. mode-agnostic.
@@ -33,13 +34,13 @@ func RestoreRegisterSnapshot(emu *Emulator, regs *RegisterSnapshot) error {
 	return nil
 }
 
-func SnapshotMemory(emu *Emulator) (*MemorySnapshot, error) {
-	return CreateMemorySnapshot(emu)
+func SnapshotMemory(emu *Emulator) (*AS.MemorySnapshot, error) {
+	return AS.CreateMemorySnapshot(emu)
 }
 
 // until i figure out how this is best used,
 // the currentAddressSpace of `snapshot` *must* be be this emu.
-func RestoreMemorySnapshot(emu *Emulator, as *MemorySnapshot) error {
+func RestoreMemorySnapshot(emu *Emulator, as *AS.MemorySnapshot) error {
 	e := as.RevertAddressSpace(emu)
 	if e != nil {
 		return e
@@ -55,7 +56,7 @@ func RestoreMemorySnapshot(emu *Emulator, as *MemorySnapshot) error {
 type Snapshot struct {
 	hook      CloseableHook
 	emu       *Emulator
-	memory    *MemorySnapshot
+	memory    *AS.MemorySnapshot
 	registers *RegisterSnapshot
 }
 
@@ -66,9 +67,9 @@ func HookSnapshot(emu *Emulator, snap *Snapshot) error {
 		return ErrSnapshotHookAlreadyActive
 	}
 
-	h, e := emu.HookMemWrite(func(access int, addr VA, size int, value int64) {
-		for i := uint64(addr); i < uint64(addr)+uint64(size); i += PAGE_SIZE {
-			snap.memory.MarkDirty(VA(i))
+	h, e := emu.HookMemWrite(func(access int, addr AS.VA, size int, value int64) {
+		for i := uint64(addr); i < uint64(addr)+uint64(size); i += AS.PAGE_SIZE {
+			snap.memory.MarkDirty(AS.VA(i))
 		}
 	})
 	check(e)

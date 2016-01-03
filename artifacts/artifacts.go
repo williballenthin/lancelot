@@ -1,23 +1,22 @@
-package dora
+package artifacts
 
 import (
-	"github.com/bnagy/gapstone"
-	w "github.com/williballenthin/Lancelot/workspace"
+	as "github.com/williballenthin/Lancelot/address_space"
 	"log"
 )
 
 type BasicBlock struct {
 	// Start is the first address in the basic block.
-	Start w.VA
+	Start as.VA
 	// End is the last address in the basic block.
-	End w.VA
+	End as.VA
 }
 
 type CrossReference struct {
 	// From is the address from which the xref references.
-	From w.VA
+	From as.VA
 	// To is the address to which the xref references.
-	To w.VA
+	To as.VA
 }
 
 type MemoryWriteCrossReference CrossReference
@@ -56,17 +55,6 @@ type JumpCrossReference struct {
 	CrossReference
 	Type JumpType
 }
-
-// InstructionTraceHandler is a function that can process instructions
-//  parsed by this package.
-// Use insn.Address for the current address.
-type InstructionTraceHandler func(insn gapstone.Instruction) error
-
-// JumpTraceHandler is a function that can process control flow edges
-//  parsed by this package.
-// Use insn.Address for the source address.
-// Use bb for the address of the source basic block.
-type JumpTraceHandler func(insn gapstone.Instruction, xref *JumpCrossReference) error
 
 type ArtifactCollection interface {
 	AddBasicBlock(BasicBlock) error

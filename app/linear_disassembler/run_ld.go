@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/bnagy/gapstone"
 	"github.com/codegangsta/cli"
+	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/artifacts"
+	"github.com/williballenthin/Lancelot/disassembly"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
-	dora "github.com/williballenthin/Lancelot/workspace/dora"
 	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 	"log"
 	"os"
@@ -34,16 +36,16 @@ func check(e error) {
 // findAll locates all instances of the given separator in
 //  the given byteslice and returns the RVAs relative to the
 //  start of the slice.
-func findAll(d []byte, sep []byte) ([]W.RVA, error) {
+func findAll(d []byte, sep []byte) ([]AS.RVA, error) {
 	var offset uint64
-	ret := make([]W.RVA, 0, 100)
+	ret := make([]AS.RVA, 0, 100)
 	for {
 		i := bytes.Index(d, sep)
 		if i == -1 {
 			break
 		}
 
-		ret = append(ret, W.RVA(uint64(i)+offset))
+		ret = append(ret, AS.RVA(uint64(i)+offset))
 
 		if i+len(sep) > len(d) {
 			break
@@ -56,9 +58,9 @@ func findAll(d []byte, sep []byte) ([]W.RVA, error) {
 
 // findPrologues locates all instances of common x86 function
 //   prologues in the given byteslice.
-func findPrologues(d []byte) ([]W.RVA, error) {
-	ret := make([]W.RVA, 0, 100)
-	bare := make(map[W.RVA]bool)
+func findPrologues(d []byte) ([]AS.RVA, error) {
+	ret := make([]AS.RVA, 0, 100)
+	bare := make(map[AS.RVA]bool)
 
 	// first, find prologues with hotpatch region
 	hits, e := findAll(d, []byte{0x8B, 0xFF, 0x55, 0x8B, 0xEC}) // mov edi, edi; push ebp; mov ebp, esp
@@ -67,7 +69,7 @@ func findPrologues(d []byte) ([]W.RVA, error) {
 	// index the "bare" prologue start for future overlap query
 	ret = append(ret, hits...)
 	for _, hit := range hits {
-		bare[W.RVA(uint64(hit)+0x2)] = true
+		bare[AS.RVA(uint64(hit)+0x2)] = true
 	}
 
 	// now, find prologues without hotpatch region
@@ -101,7 +103,7 @@ func doit(path string) error {
 	d, e := LinearDisassembler.New(ws)
 	check(e)
 
-	var lifo []W.VA
+	var lifo []AS.VA
 
 	dis, e := ws.GetDisassembler()
 	check(e)
@@ -109,27 +111,27 @@ func doit(path string) error {
 	// callback for drawing instructions nicely
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 		s, _, e := LinearDisassembler.FormatAddressDisassembly(
-			dis, ws, W.VA(insn.Address),
+			dis, ws, AS.VA(insn.Address),
 			ws.DisplayOptions.NumOpcodeBytes)
 		check(e)
 
-		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 				// assume we have: call [0x4010000]  ; IAT
-				iva := W.VA(insn.X86.Operands[0].Mem.Disp)
+				iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
 				sym, e := ws.ResolveImportedFunction(iva)
 				if e == nil {
 					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
 				}
 			} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
 				// assume we have: call 0x401000
-				targetva := W.VA(insn.X86.Operands[0].Imm)
+				targetva := AS.VA(insn.X86.Operands[0].Imm)
 				s = s + fmt.Sprintf("  ; sub_%x", targetva)
 			}
-		} else if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 				// assume we have: jmp [0x4010000]  ; IAT
-				iva := W.VA(insn.X86.Operands[0].Mem.Disp)
+				iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
 				sym, e := ws.ResolveImportedFunction(iva)
 				if e == nil {
 					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
@@ -144,10 +146,10 @@ func doit(path string) error {
 	// callback for discovering referenced functions
 	// note closure over lifo
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
-		if W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
 				// assume we have: call 0x401000
-				targetva := W.VA(insn.X86.Operands[0].Imm)
+				targetva := AS.VA(insn.X86.Operands[0].Imm)
 				lifo = append(lifo, targetva)
 				log.Printf("found function: sub_%x", targetva)
 			}
@@ -158,7 +160,7 @@ func doit(path string) error {
 
 	// callback for computing calling conventions
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
-		if !W.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 			return nil
 		}
 		if len(insn.X86.Operands) == 0 {
@@ -174,7 +176,7 @@ func doit(path string) error {
 	})
 
 	// callback for recording intra-function edges
-	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, xref *dora.JumpCrossReference) error {
+	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, xref *artifacts.JumpCrossReference) error {
 		log.Printf("edge: 0x%x --> 0x%x (%s)", uint64(xref.From), uint64(xref.To), xref.Type)
 		return nil
 	})
@@ -223,7 +225,7 @@ func doit(path string) error {
 
 	// here's the main loop. fortunately, its concise.
 	// TODO: spawn some goroutines.
-	exploredFunctions := make(map[W.VA]bool)
+	exploredFunctions := make(map[AS.VA]bool)
 	for len(lifo) > 0 {
 		fva := lifo[len(lifo)-1]
 		lifo = lifo[:len(lifo)-1]

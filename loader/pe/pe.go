@@ -6,12 +6,11 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
+	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/workspace"
 	"strings"
 	"unicode/utf16"
 )
-
-var PAGE_SIZE uint64 = 0x1000
 
 func check(e error) {
 	if e != nil {
@@ -28,7 +27,7 @@ func roundUp(i uint64, base uint64) uint64 {
 }
 
 func roundUpToPage(i uint64) uint64 {
-	return roundUp(i, PAGE_SIZE)
+	return roundUp(i, AS.PAGE_SIZE)
 }
 
 type PELoader struct {
@@ -62,7 +61,7 @@ func (loader *PELoader) loadPESection(
 	fmt.Printf("  file offset: 0x%x\n", section.SectionHeader.Offset)
 	fmt.Printf("  file size: 0x%x\n", section.SectionHeader.Size)
 
-	rvaSecStart := workspace.RVA(h.VirtualAddress)
+	rvaSecStart := AS.RVA(h.VirtualAddress)
 	secStart := mod.VA(rvaSecStart)
 	secLength := roundUpToPage(uint64(h.VirtualSize))
 	e := ws.MemMap(secStart, secLength, fmt.Sprintf("%s/%s", mod.Name, section.SectionHeader.Name))
@@ -97,9 +96,9 @@ func (loader *PELoader) resolveThunkTable(
 	ws *workspace.Workspace,
 	mod *workspace.LoadedModule,
 	moduleName string,
-	rvaTable workspace.RVA) error {
+	rvaTable AS.RVA) error {
 
-	var offset workspace.RVA = rvaTable
+	var offset AS.RVA = rvaTable
 	for {
 		rvaImport, e := mod.MemReadRva(ws, offset)
 		check(e)
@@ -153,13 +152,13 @@ func (loader *PELoader) resolveImports(
 	// TODO: check 64bit reloc types
 
 	importDirectory := dataDirectory[1]
-	importRva := workspace.RVA(importDirectory.VirtualAddress)
+	importRva := AS.RVA(importDirectory.VirtualAddress)
 	importSize := importDirectory.Size
 
 	fmt.Printf("import rva: 0x%x\n", importRva)
 	fmt.Printf("import size: 0x%x\n", importSize)
 
-	d, e := mod.MemRead(ws, workspace.RVA(importDirectory.VirtualAddress), uint64(importDirectory.Size))
+	d, e := mod.MemRead(ws, AS.RVA(importDirectory.VirtualAddress), uint64(importDirectory.Size))
 	check(e)
 
 	p := bytes.NewBuffer(d)
@@ -178,7 +177,7 @@ func (loader *PELoader) resolveImports(
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaModuleName)
 
-		moduleNameBuf, e := mod.MemRead(ws, workspace.RVA(dir.rvaModuleName), 0x100)
+		moduleNameBuf, e := mod.MemRead(ws, AS.RVA(dir.rvaModuleName), 0x100)
 		check(e)
 		moduleName, e := readAscii(moduleNameBuf)
 		check(e)
@@ -186,7 +185,7 @@ func (loader *PELoader) resolveImports(
 		fmt.Printf("module name: %s\n", string(moduleName))
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaThunkTable)
-		loader.resolveThunkTable(ws, mod, moduleName, workspace.RVA(dir.rvaThunkTable))
+		loader.resolveThunkTable(ws, mod, moduleName, AS.RVA(dir.rvaThunkTable))
 	}
 
 	return nil
@@ -211,13 +210,13 @@ func (loader *PELoader) resolveExports(
 	mod *workspace.LoadedModule,
 	dataDirectory [16]pe.DataDirectory) error {
 	exportDirectory := dataDirectory[0]
-	exportRva := workspace.RVA(exportDirectory.VirtualAddress)
+	exportRva := AS.RVA(exportDirectory.VirtualAddress)
 	exportSize := exportDirectory.Size
 
 	fmt.Printf("export rva: 0x%x\n", exportRva)
 	fmt.Printf("export size: 0x%x\n", exportSize)
 
-	d, e := mod.MemRead(ws, workspace.RVA(exportDirectory.VirtualAddress), uint64(exportDirectory.Size))
+	d, e := mod.MemRead(ws, AS.RVA(exportDirectory.VirtualAddress), uint64(exportDirectory.Size))
 	check(e)
 
 	p := bytes.NewBuffer(d)
@@ -239,7 +238,7 @@ func (loader *PELoader) resolveExports(
 		panic("address of functions is NULL")
 	}
 
-	exportModuleNameBuf, e := mod.MemRead(ws, workspace.RVA(dir.rvaName), 0x100)
+	exportModuleNameBuf, e := mod.MemRead(ws, AS.RVA(dir.rvaName), 0x100)
 	check(e)
 	exportModuleName, e := readAscii(exportModuleNameBuf)
 	fmt.Printf("export name: %ss\n", string(exportModuleName))
@@ -248,19 +247,19 @@ func (loader *PELoader) resolveExports(
 	fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
 
 	// note closure over dir, mod, ws
-	readFunctionRva := func(i uint32) (workspace.RVA, error) {
+	readFunctionRva := func(i uint32) (AS.RVA, error) {
 		if i > dir.NumberOfFunctions {
 			panic("function index too large")
 		}
 		// sizeof(RVA) is always 4 bytes, even on x64
-		return mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfFunctions+4*i))
+		return mod.MemReadRva(ws, AS.RVA(dir.rvaAddressOfFunctions+4*i))
 	}
 
 	// isForwardedExport returns true when the provided RVA falls within the
 	//  export directory table, which is used to signify that an export is
 	//  fowarded to another module.
 	// implementation: note closure over loader
-	isForwardedExport := func(rvaFn workspace.RVA) bool {
+	isForwardedExport := func(rvaFn AS.RVA) bool {
 		if uint32(rvaFn) < exportDirectory.VirtualAddress {
 			return false
 		}
@@ -271,9 +270,9 @@ func (loader *PELoader) resolveExports(
 	}
 
 	// implementation: node closure over mod, ws
-	readForwardedSymbol := func(rvaFn workspace.RVA) (workspace.LinkedSymbol, error) {
+	readForwardedSymbol := func(rvaFn AS.RVA) (workspace.LinkedSymbol, error) {
 		var forwardedSymbol workspace.LinkedSymbol
-		forwardedNameBuf, e := mod.MemRead(ws, workspace.RVA(rvaFn), 0x100)
+		forwardedNameBuf, e := mod.MemRead(ws, AS.RVA(rvaFn), 0x100)
 		check(e)
 		forwardedName, e := readAscii(forwardedNameBuf)
 		check(e)
@@ -322,15 +321,15 @@ func (loader *PELoader) resolveExports(
 	// resolve exports by name
 	for i := uint32(0); i < dir.NumberOfNames; i++ {
 		// sizeof(RVA) is always 4 bytes, even on x64
-		rvaName, e := mod.MemReadRva(ws, workspace.RVA(dir.rvaAddressOfNames+4*i))
+		rvaName, e := mod.MemReadRva(ws, AS.RVA(dir.rvaAddressOfNames+4*i))
 		check(e)
 		// sizeof(ordinal) is always 2 bytes
-		nameOrdinal, e := mod.MemReadShort(ws, workspace.RVA(dir.rvaAddressOfNameOrdinals+2*i))
+		nameOrdinal, e := mod.MemReadShort(ws, AS.RVA(dir.rvaAddressOfNameOrdinals+2*i))
 		check(e)
 		rvaFn, e := readFunctionRva(uint32(nameOrdinal))
 		check(e)
 
-		nameBuf, e := mod.MemRead(ws, workspace.RVA(rvaName), 0x100)
+		nameBuf, e := mod.MemRead(ws, AS.RVA(rvaName), 0x100)
 		check(e)
 		name, e := readAscii(nameBuf)
 		check(e)
@@ -361,13 +360,13 @@ func (loader *PELoader) resolveExports(
 }
 
 func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, error) {
-	var imageBase workspace.VA
-	var addressOfEntryPoint workspace.RVA
+	var imageBase AS.VA
+	var addressOfEntryPoint AS.RVA
 	var dataDirectory [16]pe.DataDirectory
 
 	if optionalHeader, ok := loader.file.OptionalHeader.(*pe.OptionalHeader32); ok {
-		imageBase = workspace.VA(optionalHeader.ImageBase)
-		addressOfEntryPoint = workspace.RVA(optionalHeader.AddressOfEntryPoint)
+		imageBase = AS.VA(optionalHeader.ImageBase)
+		addressOfEntryPoint = AS.RVA(optionalHeader.AddressOfEntryPoint)
 		dataDirectory = optionalHeader.DataDirectory
 	} else {
 		return nil, workspace.InvalidModeError
@@ -377,7 +376,7 @@ func (loader *PELoader) Load(ws *workspace.Workspace) (*workspace.LoadedModule, 
 		Name:             loader.name,
 		BaseAddress:      imageBase,
 		EntryPoint:       addressOfEntryPoint.VA(imageBase),
-		Imports:          map[workspace.RVA]workspace.LinkedSymbol{},
+		Imports:          map[AS.RVA]workspace.LinkedSymbol{},
 		ExportsByName:    map[string]workspace.ExportedSymbol{},
 		ExportsByOrdinal: map[uint16]workspace.ExportedSymbol{},
 	}

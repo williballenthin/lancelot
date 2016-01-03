@@ -11,9 +11,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/bnagy/gapstone"
-	"io"
+	AS "github.com/williballenthin/Lancelot/address_space"
 	"log"
 )
 
@@ -22,8 +21,6 @@ func check(e error) {
 		panic(e)
 	}
 }
-
-const MAX_INSN_SIZE = 0x10
 
 type Arch string
 type Mode string
@@ -49,31 +46,31 @@ type LinkedSymbol struct {
 }
 
 type ExportedSymbol struct {
-	RVA             RVA
+	RVA             AS.RVA
 	IsForwarded     bool
 	ForwardedSymbol LinkedSymbol
 }
 
 type LoadedModule struct {
 	Name             string
-	BaseAddress      VA
-	EntryPoint       VA
-	Imports          map[RVA]LinkedSymbol
+	BaseAddress      AS.VA
+	EntryPoint       AS.VA
+	Imports          map[AS.RVA]LinkedSymbol
 	ExportsByName    map[string]ExportedSymbol
 	ExportsByOrdinal map[uint16]ExportedSymbol
 }
 
-func (m LoadedModule) VA(rva RVA) VA {
+func (m LoadedModule) VA(rva AS.RVA) AS.VA {
 	return rva.VA(m.BaseAddress)
 }
 
 // note: rva is relative to the module
-func (m LoadedModule) MemRead(ws *Workspace, rva RVA, length uint64) ([]byte, error) {
+func (m LoadedModule) MemRead(ws *Workspace, rva AS.RVA, length uint64) ([]byte, error) {
 	return ws.MemRead(m.VA(rva), length)
 }
 
 // note: rva is relative to the module
-func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
+func (m LoadedModule) MemReadPtr(ws *Workspace, rva AS.RVA) (AS.VA, error) {
 	if ws.Mode == MODE_32 {
 		var data uint32
 		d, e := m.MemRead(ws, rva, 0x4)
@@ -83,7 +80,7 @@ func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
 
 		p := bytes.NewBuffer(d)
 		binary.Read(p, binary.LittleEndian, &data)
-		return VA(uint64(data)), nil
+		return AS.VA(uint64(data)), nil
 	} else if ws.Mode == MODE_64 {
 		var data uint64
 		d, e := m.MemRead(ws, rva, 0x8)
@@ -93,15 +90,15 @@ func (m LoadedModule) MemReadPtr(ws *Workspace, rva RVA) (VA, error) {
 
 		p := bytes.NewBuffer(d)
 		binary.Read(p, binary.LittleEndian, &data)
-		return VA(uint64(data)), nil
+		return AS.VA(uint64(data)), nil
 	} else {
 		return 0, InvalidModeError
 	}
 }
 
 // note: rva is relative to the module
-func (m LoadedModule) MemReadRva(ws *Workspace, rva RVA) (RVA, error) {
-	// RVAs are 32bits even on x64
+func (m LoadedModule) MemReadRva(ws *Workspace, rva AS.RVA) (AS.RVA, error) {
+	// AS.RVAs are 32bits even on x64
 	var data uint32
 	d, e := m.MemRead(ws, rva, 0x4)
 	if e != nil {
@@ -110,13 +107,13 @@ func (m LoadedModule) MemReadRva(ws *Workspace, rva RVA) (RVA, error) {
 
 	p := bytes.NewBuffer(d)
 	binary.Read(p, binary.LittleEndian, &data)
-	return RVA(uint64(data)), nil
+	return AS.RVA(uint64(data)), nil
 }
 
-// MemReadPeOffset reads a 32bit (even on x64) VA from the given address
+// MemReadPeOffset reads a 32bit (even on x64) AS.VA from the given address
 //  of the module.
 // note: rva is relative to the module
-func (m LoadedModule) MemReadPeOffset(ws *Workspace, rva RVA) (VA, error) {
+func (m LoadedModule) MemReadPeOffset(ws *Workspace, rva AS.RVA) (AS.VA, error) {
 	// PE header offsets are 32bits even on x64
 	var data uint32
 	d, e := m.MemRead(ws, rva, 0x4)
@@ -126,13 +123,13 @@ func (m LoadedModule) MemReadPeOffset(ws *Workspace, rva RVA) (VA, error) {
 
 	p := bytes.NewBuffer(d)
 	binary.Read(p, binary.LittleEndian, &data)
-	return VA(uint64(data)), nil
+	return AS.VA(uint64(data)), nil
 }
 
 // MemReadShort reads a 16bit number (often used for ordinals) from the given
 //  address of the module.
 // note: rva is relative to the module
-func (m LoadedModule) MemReadShort(ws *Workspace, rva RVA) (uint16, error) {
+func (m LoadedModule) MemReadShort(ws *Workspace, rva AS.RVA) (uint16, error) {
 	// PE header offsets are 32bits even on x64
 	var data uint16
 	d, e := m.MemRead(ws, rva, 0x2)
@@ -146,7 +143,7 @@ func (m LoadedModule) MemReadShort(ws *Workspace, rva RVA) (uint16, error) {
 }
 
 // note: rva is relative to the module
-func (m LoadedModule) MemWrite(ws *Workspace, rva RVA, data []byte) error {
+func (m LoadedModule) MemWrite(ws *Workspace, rva AS.RVA, data []byte) error {
 	return ws.MemWrite(m.VA(rva), data)
 }
 
@@ -156,7 +153,7 @@ type DisplayOptions struct {
 
 type Workspace struct {
 	// we cheat and use u as the address space
-	as             AddressSpace
+	as             AS.AddressSpace
 	Arch           Arch
 	Mode           Mode
 	LoadedModules  []*LoadedModule
@@ -172,7 +169,7 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		return nil, InvalidModeError
 	}
 
-	as, e := NewSimpleAddressSpace()
+	as, e := AS.NewSimpleAddressSpace()
 	if e != nil {
 		return nil, e
 	}
@@ -209,81 +206,29 @@ func (ws *Workspace) Close() error {
 
 /** (*Workspace) implements AddressSpace **/
 
-func (ws *Workspace) MemRead(va VA, length uint64) ([]byte, error) {
+func (ws *Workspace) MemRead(va AS.VA, length uint64) ([]byte, error) {
 	return ws.as.MemRead(va, length)
 }
 
-func (ws *Workspace) MemWrite(va VA, data []byte) error {
+func (ws *Workspace) MemWrite(va AS.VA, data []byte) error {
 	return ws.as.MemWrite(va, data)
 }
 
-func (ws *Workspace) MemMap(va VA, length uint64, name string) error {
+func (ws *Workspace) MemMap(va AS.VA, length uint64, name string) error {
 	return ws.as.MemMap(va, length, name)
 }
 
-func (ws *Workspace) MemUnmap(va VA, length uint64) error {
+func (ws *Workspace) MemUnmap(va AS.VA, length uint64) error {
 	return ws.as.MemUnmap(va, length)
 }
 
-func (ws *Workspace) GetMaps() ([]MemoryRegion, error) {
+func (ws *Workspace) GetMaps() ([]AS.MemoryRegion, error) {
 	return ws.as.GetMaps()
 }
 
 func (ws *Workspace) AddLoadedModule(mod *LoadedModule) error {
 	ws.LoadedModules = append(ws.LoadedModules, mod)
 	return nil
-}
-
-// TODO: remove this?
-func (ws *Workspace) disassembleBytes(data []byte, address VA, w io.Writer) error {
-	insns, e := ws.disassembler.Disasm([]byte(data), uint64(address), 0 /* all instructions */)
-	check(e)
-
-	w.Write([]byte(fmt.Sprintf("Disasm:\n")))
-	for _, insn := range insns {
-		w.Write([]byte(fmt.Sprintf("0x%x:\t%s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr)))
-	}
-
-	return nil
-}
-
-// TODO: remove this?
-func (ws *Workspace) Disassemble(address VA, length uint64, w io.Writer) error {
-	d, e := ws.MemRead(address, length)
-	check(e)
-	return ws.disassembleBytes(d, address, w)
-}
-
-// TODO: remove this?
-var FailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
-
-// TODO: remove this?
-func (ws *Workspace) DisassembleInstruction(address VA) (string, error) {
-	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
-	check(e)
-
-	insns, e := ws.disassembler.Disasm(d, uint64(address), 1)
-	check(e)
-
-	for _, insn := range insns {
-		// return the first one
-		return fmt.Sprintf("0x%x: %s\t\t%s\n", insn.Address, insn.Mnemonic, insn.OpStr), nil
-	}
-	return "", FailedToDisassembleInstruction
-}
-
-func (ws *Workspace) GetInstructionLength(address VA) (uint64, error) {
-	d, e := ws.MemRead(address, uint64(MAX_INSN_SIZE))
-	check(e)
-
-	insns, e := ws.disassembler.Disasm(d, uint64(address), 1)
-	check(e)
-
-	for _, insn := range insns {
-		// return the first one
-		return uint64(insn.Size), nil
-	}
-	return 0, FailedToDisassembleInstruction
 }
 
 func (ws Workspace) DumpMemoryRegions() error {
@@ -309,9 +254,9 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 		return nil, e
 	}
 
-	stackAddress := VA(0x69690000)
+	stackAddress := AS.VA(0x69690000)
 	stackSize := uint64(0x40000)
-	e = emu.MemMap(VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
+	e = emu.MemMap(AS.VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
 	check(e)
 
 	emu.SetStackPointer(stackAddress)
@@ -319,23 +264,14 @@ func (ws *Workspace) GetEmulator() (*Emulator, error) {
 	return emu, nil
 }
 
-func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
-	for _, g := range i.Groups {
-		if group == g {
-			return true
-		}
-	}
-	return false
-}
-
 var ErrFailedToResolveImport = errors.New("Failed to resolve import")
 
-func (ws *Workspace) ResolveImportedFunction(va VA) (*LinkedSymbol, error) {
+func (ws *Workspace) ResolveImportedFunction(va AS.VA) (*LinkedSymbol, error) {
 	for _, mod := range ws.LoadedModules {
 		if va < mod.BaseAddress {
 			continue
 		}
-		rva := RVA(uint64(va) - uint64(mod.BaseAddress))
+		rva := AS.RVA(uint64(va) - uint64(mod.BaseAddress))
 		sym, ok := mod.Imports[rva]
 		if !ok {
 			continue

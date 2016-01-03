@@ -4,9 +4,10 @@
 package LinearDisassembler
 
 import (
-	"errors"
 	"fmt"
 	"github.com/bnagy/gapstone"
+	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/disassembly"
 	w "github.com/williballenthin/Lancelot/workspace"
 	dora "github.com/williballenthin/Lancelot/workspace/dora"
 	//	"log"
@@ -54,30 +55,6 @@ func (ld *LD) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
 	return nil
 }
 
-// ReadInstruction fetches bytes from the provided address space at the given
-//  address and parses them into a single instruction instance.
-// TODO: move to utils
-func ReadInstruction(dis gapstone.Engine, as w.AddressSpace, va w.VA) (gapstone.Instruction, error) {
-	d, e := as.MemRead(va, uint64(w.MAX_INSN_SIZE))
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, w.ErrInvalidMemoryRead
-	}
-
-	insns, e := dis.Disasm(d, uint64(va), 1)
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, w.FailedToDisassembleInstruction
-	}
-
-	if len(insns) == 0 {
-		return gapstone.Instruction{}, w.FailedToDisassembleInstruction
-	}
-
-	insn := insns[0]
-	return insn, nil
-}
-
 // move to utils
 func min(a uint64, b uint64) uint64 {
 	if a < b {
@@ -94,8 +71,8 @@ func min(a uint64, b uint64) uint64 {
 // This function returns the data at va formatted appropriately, the number
 //  of bytes for va formatted, and an error instance.
 // TODO: move to utils
-func FormatAddressDisassembly(dis gapstone.Engine, as w.AddressSpace, va w.VA, numOpcodeBytes uint) (string, uint64, error) {
-	insn, e := ReadInstruction(dis, as, va)
+func FormatAddressDisassembly(dis gapstone.Engine, as AS.AddressSpace, va AS.VA, numOpcodeBytes uint) (string, uint64, error) {
+	insn, e := disassembly.ReadInstruction(dis, as, va)
 	check(e)
 
 	numBytes := uint64(numOpcodeBytes)
@@ -117,113 +94,17 @@ func FormatAddressDisassembly(dis gapstone.Engine, as w.AddressSpace, va w.VA, n
 	return ret, uint64(insn.Size), nil
 }
 
-// ErrFailedToResolveJumpTarget is an error to be returned when the target
-//  of a jump cannot be computed.
-// For example, in an indirect jump, during non-emulation-based analysis.
-var ErrFailedToResolveJumpTarget = errors.New("Failed to resolve jump target")
-
-// GetJumpTarget gets the address to which a known jump instruction
-//  transfers control.
-// If the instruction is a conditional jump, then this function returns
-//  the "jump is taken" target.
-func GetJumpTarget(insn gapstone.Instruction) (w.VA, error) {
-	// have the following possibilities:
-	//   - direct jump: jmp 0x1000
-	//   - indirect jump: jmp eax
-	//   - indirect jump: jmp [0x1000]???
-
-	if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
-		return w.VA(insn.X86.Operands[0].Imm), nil
-	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
-		// jump eax
-		// this is indirect, which is unresolvable.
-		// leave analysis to the emulator.
-		return w.VA(0), ErrFailedToResolveJumpTarget
-	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
-		// jump [0x1000]
-		// calling this indirect for now, which is unresolvable.
-		// we could attempt to manually read out the pointer contents
-		//  but that should really be left to the emulator.
-		return w.VA(0), ErrFailedToResolveJumpTarget
-	}
-	return w.VA(0), nil
-}
-
-// GetJumpTargets gets the possible addresses to which a known jump instruction
-//  transfers control.
-// For a conditional jump, get both the true and false targets.
-// This function uses just the instruction instance, so for an indirect jump, we can't tell much.
-func GetJumpTargets(insn gapstone.Instruction) ([]*dora.JumpCrossReference, error) {
-	ret := make([]*dora.JumpCrossReference, 0, 2)
-
-	if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
-		// unconditional jump, have the following possibilities:
-		//   - direct jump: jmp 0x1000
-		//   - indirect jump: jmp eax
-		//   - indirect jump: jmp [0x1000]???
-
-		next, e := GetJumpTarget(insn)
-		if e != nil {
-			// do the best we can
-			return ret, nil
-		}
-
-		ret = append(
-			ret,
-			&dora.JumpCrossReference{
-				CrossReference: dora.CrossReference{
-					From: w.VA(insn.Address),
-					To:   next,
-				},
-				Type: dora.JumpTypeUncond,
-			})
-	} else {
-		// assume a two case situation:
-		//   here:
-		//     jnz yes
-		//     xor eax, eax
-		//     ret
-		//   yes:
-		//     mov eax, 1
-		//     ret
-		falsePc := w.VA(uint64(insn.Address) + uint64(insn.Size))
-		ret = append(
-			ret,
-			&dora.JumpCrossReference{
-				CrossReference: dora.CrossReference{
-					From: w.VA(insn.Address),
-					To:   falsePc,
-				},
-				Type: dora.JumpTypeCondFalse,
-			})
-
-		truePc, e := GetJumpTarget(insn)
-		if e == nil {
-			ret = append(
-				ret,
-				&dora.JumpCrossReference{
-					CrossReference: dora.CrossReference{
-						From: w.VA(insn.Address),
-						To:   truePc,
-					},
-					Type: dora.JumpTypeCondTrue,
-				})
-		}
-	}
-	return ret, nil
-}
-
 // ExploreBB linearly disassembles instructions starting at a given address
 //  in a given address space, invoking the appropriate callbacks, and terminates
 //  at the end of the current basic block.
 // A basic block is delimited by a ret or jump instruction.
 // Returns the addresses to which this basic block may transfer control via jumps.
-func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
-	nextBBs := make([]w.VA, 0, 2)
+func (ld *LD) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+	nextBBs := make([]AS.VA, 0, 2)
 
 	isEndOfBB := false
 	dis := ld.disassembler
-	for insn, e := ReadInstruction(dis, as, va); e == nil && !isEndOfBB; insn, e = ReadInstruction(dis, as, va) {
+	for insn, e := disassembly.ReadInstruction(dis, as, va); e == nil && !isEndOfBB; insn, e = disassembly.ReadInstruction(dis, as, va) {
 		for _, fn := range ld.insnHandlers {
 			e = fn(insn)
 			if e != nil {
@@ -232,13 +113,13 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 		}
 
 		// stop processing a basic block if we're at: RET, IRET, JUMP
-		if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 			break // out of instruction processing loop
-		} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
+		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
 			break // out of instruction processing loop
-		} else if w.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
 			// this return a slice with zero length, but that should be ok
-			targets, e := GetJumpTargets(insn)
+			targets, e := disassembly.GetJumpTargets(insn)
 			if e != nil {
 				return nil, e
 			}
@@ -256,7 +137,7 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 			break // out of instruction processing loop
 		}
 
-		va = w.VA(uint64(va) + uint64(insn.Size))
+		va = AS.VA(uint64(va) + uint64(insn.Size))
 	}
 
 	return nextBBs, nil
@@ -266,14 +147,14 @@ func (ld *LD) ExploreBB(as w.AddressSpace, va w.VA) ([]w.VA, error) {
 //  blocks starting at a given address in a given address space, invoking
 //  appropriate callbacks.
 // It terminates once it has explored all the basic blocks it discovers.
-func (ld *LD) ExploreFunction(as w.AddressSpace, va w.VA) error {
+func (ld *LD) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
 	// lifo is a stack (cause these are easier than queues in Go) of BBs
 	//  that need to be explored.
-	lifo := make([]w.VA, 0, 10)
+	lifo := make([]AS.VA, 0, 10)
 	lifo = append(lifo, va)
 
 	// the set of explored BBs, by BB start address
-	doneBBs := map[w.VA]bool{}
+	doneBBs := map[AS.VA]bool{}
 
 	for len(lifo) > 0 {
 		// pop BB address

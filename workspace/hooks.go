@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
+	AS "github.com/williballenthin/Lancelot/address_space"
 	"log"
 )
 
@@ -20,10 +21,10 @@ func (hook *UnicornCloseableHook) Close() error {
 }
 
 type Cookie uint64
-type MemReadHandler func(access int, addr VA, size int, value int64)
-type MemWriteHandler func(access int, addr VA, size int, value int64)
-type MemUnmappedHandler func(access int, addr VA, size int, value int64) bool
-type CodeHandler func(addr VA, size uint32)
+type MemReadHandler func(access int, addr AS.VA, size int, value int64)
+type MemWriteHandler func(access int, addr AS.VA, size int, value int64)
+type MemUnmappedHandler func(access int, addr AS.VA, size int, value int64) bool
+type CodeHandler func(addr AS.VA, size uint32)
 
 /************ internal ****************************/
 /* need to be careful with typing, so do not expose Interface{} */
@@ -86,7 +87,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
 				for _, f := range m.entries {
 					if f, ok := f.(MemReadHandler); ok {
-						f(access, VA(addr), size, value)
+						f(access, AS.VA(addr), size, value)
 					} else {
 						log.Printf("error: failed to convert handler to mem read handler")
 					}
@@ -106,7 +107,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) {
 				for _, f := range m.entries {
 					if f, ok := f.(MemWriteHandler); ok {
-						f(access, VA(addr), size, value)
+						f(access, AS.VA(addr), size, value)
 					} else {
 						log.Printf("error: failed to convert handler to mem write handler")
 					}
@@ -126,7 +127,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 			func(mu uc.Unicorn, access int, addr uint64, size int, value int64) bool {
 				for _, f := range m.entries {
 					if f, ok := f.(MemUnmappedHandler); ok {
-						if !f(access, VA(addr), size, value) {
+						if !f(access, AS.VA(addr), size, value) {
 							return false
 						}
 					} else {
@@ -149,7 +150,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 			func(mu uc.Unicorn, addr uint64, size uint32) {
 				for _, f := range m.entries {
 					if f, ok := f.(CodeHandler); ok {
-						f(VA(addr), uint32(size))
+						f(AS.VA(addr), uint32(size))
 					} else {
 						log.Printf("error: failed to convert handler to mem unmapped handler")
 					}

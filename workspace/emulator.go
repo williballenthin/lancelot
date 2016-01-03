@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/bnagy/gapstone"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
+	AS "github.com/williballenthin/Lancelot/address_space"
+	dis "github.com/williballenthin/Lancelot/disassembly"
 	"log"
 	"strings"
 )
@@ -15,7 +17,7 @@ type Emulator struct {
 	ws           *Workspace
 	u            uc.Unicorn
 	disassembler gapstone.Engine
-	maps         []MemoryRegion
+	maps         []AS.MemoryRegion
 	hooks        struct {
 		memRead     *hookMultiplexer
 		memWrite    *hookMultiplexer
@@ -60,10 +62,10 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 		ws:           ws,
 		u:            u,
 		disassembler: disassembler,
-		maps:         make([]MemoryRegion, 0),
+		maps:         make([]AS.MemoryRegion, 0),
 	}
 
-	e = CopyAddressSpace(emu, ws)
+	e = AS.CopyAddressSpace(emu, ws)
 	check(e)
 	if e != nil {
 		return nil, e
@@ -78,26 +80,26 @@ func (emu *Emulator) Close() error {
 
 /** (*Emulator) implements AddressSpace **/
 
-func (emu *Emulator) MemRead(va VA, length uint64) ([]byte, error) {
+func (emu *Emulator) MemRead(va AS.VA, length uint64) ([]byte, error) {
 	return emu.u.MemRead(uint64(va), length)
 }
 
-func (emu *Emulator) MemWrite(va VA, data []byte) error {
+func (emu *Emulator) MemWrite(va AS.VA, data []byte) error {
 	return emu.u.MemWrite(uint64(va), data)
 }
 
-func (emu *Emulator) MemMap(va VA, length uint64, name string) error {
+func (emu *Emulator) MemMap(va AS.VA, length uint64, name string) error {
 	e := emu.u.MemMap(uint64(va), length)
 	if e != nil {
 		return e
 	}
 
-	emu.maps = append(emu.maps, MemoryRegion{va, length, name})
+	emu.maps = append(emu.maps, AS.MemoryRegion{va, length, name})
 
 	return nil
 }
 
-func (emu *Emulator) MemUnmap(va VA, length uint64) error {
+func (emu *Emulator) MemUnmap(va AS.VA, length uint64) error {
 	e := emu.u.MemUnmap(uint64(va), length)
 	if e != nil {
 		return e
@@ -106,7 +108,7 @@ func (emu *Emulator) MemUnmap(va VA, length uint64) error {
 	for i, region := range emu.maps {
 		if region.Address == va {
 			if region.Length != length {
-				return InvalidArgumentError
+				return AS.InvalidArgumentError
 			}
 
 			emu.maps = append(emu.maps[:i], emu.maps[i+1:]...)
@@ -117,14 +119,14 @@ func (emu *Emulator) MemUnmap(va VA, length uint64) error {
 	return nil
 }
 
-func (emu *Emulator) GetMaps() ([]MemoryRegion, error) {
-	ret := make([]MemoryRegion, len(emu.maps))
+func (emu *Emulator) GetMaps() ([]AS.MemoryRegion, error) {
+	ret := make([]AS.MemoryRegion, len(emu.maps))
 	copy(ret, emu.maps)
 	return ret, nil
 }
 
 // read a pointer-sized number from the given address
-func (emu *Emulator) MemReadPtr(va VA) (VA, error) {
+func (emu *Emulator) MemReadPtr(va AS.VA) (AS.VA, error) {
 	if emu.ws.Mode == MODE_32 {
 		var data uint32
 		d, e := emu.MemRead(va, 0x4)
@@ -134,7 +136,7 @@ func (emu *Emulator) MemReadPtr(va VA) (VA, error) {
 
 		p := bytes.NewBuffer(d)
 		binary.Read(p, binary.LittleEndian, &data)
-		return VA(uint64(data)), nil
+		return AS.VA(uint64(data)), nil
 	} else if emu.ws.Mode == MODE_64 {
 		var data uint64
 		d, e := emu.MemRead(va, 0x8)
@@ -144,7 +146,7 @@ func (emu *Emulator) MemReadPtr(va VA) (VA, error) {
 
 		p := bytes.NewBuffer(d)
 		binary.Read(p, binary.LittleEndian, &data)
-		return VA(uint64(data)), nil
+		return AS.VA(uint64(data)), nil
 	} else {
 		return 0, InvalidModeError
 	}
@@ -212,7 +214,7 @@ func (emu *Emulator) RegToggleEflag(eflag uint64) {
 	}
 }
 
-func (emu *Emulator) SetStackPointer(address VA) {
+func (emu *Emulator) SetStackPointer(address AS.VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
 			emu.RegWrite(uc.X86_REG_ESP, uint64(address))
@@ -228,7 +230,7 @@ func (emu *Emulator) SetStackPointer(address VA) {
 	}
 }
 
-func (emu *Emulator) GetStackPointer() VA {
+func (emu *Emulator) GetStackPointer() AS.VA {
 	var r uint64
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
@@ -245,10 +247,10 @@ func (emu *Emulator) GetStackPointer() VA {
 	if e != nil {
 		panic(e)
 	}
-	return VA(r)
+	return AS.VA(r)
 }
 
-func (emu *Emulator) SetInstructionPointer(address VA) {
+func (emu *Emulator) SetInstructionPointer(address AS.VA) {
 	if emu.ws.Arch == ARCH_X86 {
 		if emu.ws.Mode == MODE_32 {
 			emu.RegWrite(uc.X86_REG_EIP, uint64(address))
@@ -264,7 +266,7 @@ func (emu *Emulator) SetInstructionPointer(address VA) {
 	}
 }
 
-func (emu *Emulator) GetInstructionPointer() VA {
+func (emu *Emulator) GetInstructionPointer() AS.VA {
 	var r uint64
 	var e error
 	if emu.ws.Arch == ARCH_X86 {
@@ -281,20 +283,13 @@ func (emu *Emulator) GetInstructionPointer() VA {
 	if e != nil {
 		panic(e)
 	}
-	return VA(r)
+	return AS.VA(r)
 }
 
 // utility method for handling the uint64 casting
-func (emu *Emulator) start(begin VA, until VA) error {
+func (emu *Emulator) start(begin AS.VA, until AS.VA) error {
 	return emu.u.Start(uint64(begin), uint64(until))
 }
-
-var ErrInvalidMemoryWrite error = errors.New("Invalid memory write error")
-var ErrInvalidMemoryRead error = errors.New("Invalid memory read error")
-var ErrInvalidMemoryExec error = errors.New("Invalid memory exec error")
-var ErrUnmappedMemory error = errors.New("Unmapped memory error")
-var ErrUnknownMemory error = errors.New("Unknown memory error")
-
 func (emu *Emulator) removeHook(h uc.Hook) error {
 	//log.Printf("DEBUG: remove hook: %v", h)
 	e := emu.u.HookDel(h)
@@ -365,26 +360,26 @@ func (emu *Emulator) HookCode(f CodeHandler) (CloseableHook, error) {
 }
 
 func (emu *Emulator) traceMemUnmapped(err *error) (CloseableHook, error) {
-	return emu.HookMemUnmapped(func(access int, addr VA, size int, value int64) bool {
+	return emu.HookMemUnmapped(func(access int, addr AS.VA, size int, value int64) bool {
 		log.Printf("error: unmapped: 0x%x %x", addr, size)
-		*err = ErrUnmappedMemory
+		*err = AS.ErrUnmappedMemory
 		return false
 	})
 }
 
 func (emu *Emulator) traceMemRead() (CloseableHook, error) {
-	return emu.HookMemRead(func(access int, addr VA, size int, value int64) {
+	return emu.HookMemRead(func(access int, addr AS.VA, size int, value int64) {
 		log.Printf("read: @0x%x [0x%x] = 0x%x", addr, size, value)
 	})
 }
 
 func (emu *Emulator) traceMemWrite() (CloseableHook, error) {
-	return emu.HookMemWrite(func(access int, addr VA, size int, value int64) {
+	return emu.HookMemWrite(func(access int, addr AS.VA, size int, value int64) {
 		log.Printf("write: @0x%x [0x%x] = 0x%x", addr, size, value)
 	})
 }
 
-func (emu *Emulator) RunTo(address VA) error {
+func (emu *Emulator) RunTo(address AS.VA) error {
 	ip := emu.GetInstructionPointer()
 
 	var memErr error = nil
@@ -417,7 +412,7 @@ func (emu *Emulator) StepInto() error {
 
 	// always stop after one instruction
 	hitCount := 0
-	h, e := emu.HookCode(func(addr VA, size uint32) {
+	h, e := emu.HookCode(func(addr AS.VA, size uint32) {
 		if hitCount == 0 {
 			// pass
 		} else if hitCount == 1 {
@@ -432,7 +427,7 @@ func (emu *Emulator) StepInto() error {
 
 	insn, e := emu.GetCurrentInstruction()
 	ip := emu.GetInstructionPointer()
-	end := VA(uint64(ip) + uint64(insn.Size))
+	end := AS.VA(uint64(ip) + uint64(insn.Size))
 	e = emu.start(ip, end)
 	if e != nil {
 		switch e := e.(type) {
@@ -440,11 +435,11 @@ func (emu *Emulator) StepInto() error {
 			// TODO: nested switch here
 			// TODO: split out into utility function??
 			if e == uc.ERR_FETCH_UNMAPPED {
-				return ErrInvalidMemoryExec
+				return AS.ErrInvalidMemoryExec
 			} else if e == uc.ERR_READ_UNMAPPED {
-				return ErrInvalidMemoryRead
+				return AS.ErrInvalidMemoryRead
 			} else if e == uc.ERR_WRITE_UNMAPPED {
-				return ErrInvalidMemoryWrite
+				return AS.ErrInvalidMemoryWrite
 			}
 			break
 		default:
@@ -463,30 +458,9 @@ func (emu *Emulator) StepInto() error {
 	return nil
 }
 
-func (emu *Emulator) ReadInstruction(va VA) (gapstone.Instruction, error) {
-	d, e := emu.MemRead(va, uint64(MAX_INSN_SIZE))
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, ErrInvalidMemoryRead
-	}
-
-	insns, e := emu.disassembler.Disasm(d, uint64(va), 1)
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, FailedToDisassembleInstruction
-	}
-
-	if len(insns) == 0 {
-		return gapstone.Instruction{}, FailedToDisassembleInstruction
-	}
-
-	insn := insns[0]
-	return insn, nil
-}
-
 func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
 	ip := emu.GetInstructionPointer()
-	return emu.ReadInstruction(ip)
+	return dis.ReadInstruction(emu.disassembler, emu, ip)
 }
 
 func (emu *Emulator) StepOver() error {
@@ -496,8 +470,8 @@ func (emu *Emulator) StepOver() error {
 		return e
 	}
 
-	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-		return emu.RunTo(VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size)))
+	if dis.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+		return emu.RunTo(AS.VA(uint64(emu.GetInstructionPointer()) + uint64(insn.Size)))
 	} else {
 		return emu.StepInto()
 	}
@@ -512,10 +486,10 @@ func min(a uint64, b uint64) uint64 {
 }
 
 // return: data at va formatted appropriately, number of bytes for va formatted, error
-func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
+func (emu *Emulator) FormatAddress(va AS.VA) (string, uint64, error) {
 	// assume everything is code right now
 
-	insn, e := emu.ReadInstruction(va)
+	insn, e := dis.ReadInstruction(emu.disassembler, emu, va)
 	check(e)
 
 	// fetch either instruction length, or max configured bytes, amount of data
@@ -524,7 +498,7 @@ func (emu *Emulator) FormatAddress(va VA) (string, uint64, error) {
 	check(e)
 
 	// format each of those as hex
-	bytesPrefix := make([]string, 0)
+	var bytesPrefix []string
 	for _, b := range d {
 		bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
 	}
