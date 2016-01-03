@@ -1,7 +1,7 @@
-// LinearDisassembly implements a code explorer that uses linear
+// Package LinearDisassembler implements a code explorer that uses linear
 //  disassembly to recognize instructions, basic blocks, and control
 //  flow edges.
-package LinearDisassembly
+package LinearDisassembler
 
 import (
 	"errors"

@@ -10,7 +10,7 @@ import (
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
 	dora "github.com/williballenthin/Lancelot/workspace/dora"
-	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembly"
+	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 	"log"
 	"os"
 )
@@ -98,7 +98,7 @@ func doit(path string) error {
 	_, e = loader.Load(ws)
 	check(e)
 
-	d, e := LinearDisassembly.New(ws)
+	d, e := LinearDisassembler.New(ws)
 	check(e)
 
 	var lifo []W.VA
@@ -108,7 +108,7 @@ func doit(path string) error {
 
 	// callback for drawing instructions nicely
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
-		s, _, e := LinearDisassembly.FormatAddressDisassembly(
+		s, _, e := LinearDisassembler.FormatAddressDisassembly(
 			dis, ws, W.VA(insn.Address),
 			ws.DisplayOptions.NumOpcodeBytes)
 		check(e)
