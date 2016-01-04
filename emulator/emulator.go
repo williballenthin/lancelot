@@ -1,4 +1,4 @@
-package workspace
+package emulator
 
 import (
 	"bytes"
@@ -9,12 +9,13 @@ import (
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	dis "github.com/williballenthin/Lancelot/disassembly"
+	W "github.com/williballenthin/Lancelot/workspace"
 	"log"
 	"strings"
 )
 
 type Emulator struct {
-	ws           *Workspace
+	ws           *W.Workspace
 	u            uc.Unicorn
 	disassembler gapstone.Engine
 	maps         []AS.MemoryRegion
@@ -26,7 +27,7 @@ type Emulator struct {
 	}
 }
 
-func newEmulator(ws *Workspace) (*Emulator, error) {
+func New(ws *W.Workspace) (*Emulator, error) {
 	if ws.Arch != ARCH_X86 {
 		return nil, InvalidArchError
 	}
@@ -70,6 +71,14 @@ func newEmulator(ws *Workspace) (*Emulator, error) {
 	if e != nil {
 		return nil, e
 	}
+
+	stackAddress := AS.VA(0x69690000)
+	stackSize := uint64(0x40000)
+	e = emu.MemMap(AS.VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
+	check(e)
+
+	emu.SetStackPointer(stackAddress)
+
 	return emu, nil
 }
 

@@ -243,27 +243,6 @@ func (ws Workspace) DumpMemoryRegions() error {
 	return nil
 }
 
-// TODO: do we really want this?
-func (ws *Workspace) GetDisassembler() (gapstone.Engine, error) {
-	return ws.disassembler, nil
-}
-
-func (ws *Workspace) GetEmulator() (*Emulator, error) {
-	emu, e := newEmulator(ws)
-	if e != nil {
-		return nil, e
-	}
-
-	stackAddress := AS.VA(0x69690000)
-	stackSize := uint64(0x40000)
-	e = emu.MemMap(AS.VA(uint64(stackAddress)-(stackSize/2)), stackSize, "stack")
-	check(e)
-
-	emu.SetStackPointer(stackAddress)
-
-	return emu, nil
-}
-
 var ErrFailedToResolveImport = errors.New("Failed to resolve import")
 
 func (ws *Workspace) ResolveImportedFunction(va AS.VA) (*LinkedSymbol, error) {

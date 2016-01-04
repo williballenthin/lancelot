@@ -5,6 +5,10 @@ import (
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
+
+	// we don't want to import this. seems like the dependency is backwards.
+	// but, need this for ARCH_* constants, until they're separate.
+	W "github.com/williballenthin/Lancelot/workspace"
 )
 
 const MAX_INSN_SIZE = 0x10
@@ -16,6 +20,30 @@ func check(e error) {
 }
 
 var ErrFailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
+
+func New(ws *W.Workspace) (*gapstone.Engine, error) {
+	if ws.Arch != W.ARCH_X86 {
+		return nil, W.InvalidArchError
+	}
+	if !(ws.Mode == W.MODE_32 || ws.Mode == W.MODE_64) {
+		return nil, W.InvalidModeError
+	}
+
+	disassembler, e := gapstone.New(
+		W.GAPSTONE_ARCH_MAP[arch],
+		W.GAPSTONE_MODE_MAP[mode],
+	)
+	if e != nil {
+		return nil, e
+	}
+	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	return disassembler, nil
+}
 
 // ReadInstruction fetches bytes from the provided address space at the given
 //  address and parses them into a single instruction instance.
