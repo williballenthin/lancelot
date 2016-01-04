@@ -152,7 +152,7 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 		check(e)
 
 		// call insn
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
 		check(e)
 
 		// find call target
@@ -163,27 +163,56 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 		//   - is indirect call, like: call EAX
 		//     -> just save PC, step into, read PC, restore PC, pop SP
 		//     but be sure to handle invalid fetch errors
+		var callTarget AS.VA
 		if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 			// assume we have: call [0x4010000]  ; IAT
 			iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
-			sym, e := ed.symbolResolver.ResolveSymbol(iva)
+			sym, e := ed.symbolResolver.ResolveAddressToSymbol(iva)
 			if e == nil {
-				// TODO: this is an imported function
+				// we successfully resolved an imported function.
+				// TODO: how are we marking xrefs to imports? i guess with xrefs to the IAT
+				callTarget = iva
 			} else {
-				// TODO: ???
+				// this is not an imported function, so we'll just have to try and see.
+				// either there's a valid function pointer at the address, or we'll get an invalid fetch.
+				callTarget, e = ed.discoverCallTarget()
+				if e != nil {
+					// unable to resolve call target, we'll have to skip
+					logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+
+					// just being explicit here. *do not* use as an indication of success/failure
+					callTarget = 0
+				} else {
+					// successfully resolved call target
+				}
 			}
 		} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
 			// assume we have: call 0x401000
-			targetva := AS.VA(insn.X86.Operands[0].Imm)
-			s = s + fmt.Sprintf("  ; sub_%x", targetva)
+			// TODO: just take the Imm value, like:
+			callTarget := AS.VA(insn.X86.Operands[0].Imm)
+		} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
+			// assume we have: call eax
+			callTarget, e = ed.discoverCallTarget()
+			if e != nil {
+				// unable to resolve call target, we'll have to skip
+				logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+
+				// just being explicit here. *do not* use as an indication of success/failure
+				callTarget = 0
+			} else {
+				// successfully resolved call target
+			}
 		}
 
 		// get calling convention
+		var stackDelta uint64
 
 		// invoke CallHandlers
 		// skip call instruction
+		ed.emulator.SetInstructionPointer(AS.VA(insn.Address + insn.Size))
 
 		// cleanup stack
+		ed.emulator.SetStackPointer(AS.VA(uint64(ed.emulator.GetStackPointer()) + stackDelta))
 	}
 
 	// emulate to end of current basic block
