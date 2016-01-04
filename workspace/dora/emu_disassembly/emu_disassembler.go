@@ -2,6 +2,7 @@ package EmulatingDisassembler
 
 import (
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/disassembly"
@@ -19,11 +20,14 @@ func check(e error) {
 
 // ED is the object that holds the state of a emulating disassembler.
 type ED struct {
-	as           AS.AddressSpace
-	disassembler *gapstone.Engine
-	emulator     *emulator.Emulator
-	insnHandlers []dora.InstructionTraceHandler
-	jumpHandlers []dora.JumpTraceHandler
+	as             AS.AddressSpace
+	symbolResolver W.SymbolResolver
+	disassembler   *gapstone.Engine
+	emulator       *emulator.Emulator
+	insnHandlers   []dora.InstructionTraceHandler
+	jumpHandlers   []dora.JumpTraceHandler
+
+	codeHook emulator.CloseableHook
 }
 
 // New creates a new EmulatingDisassembler instance.
@@ -42,17 +46,37 @@ func New(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 		return nil, e
 	}
 
-	return &ED{
-		as:           emu, // note: our AS is the emu, since it may change state.
-		disassembler: d,
-		emulator:     emu,
-		insnHandlers: make([]dora.InstructionTraceHandler, 0, 1),
-		jumpHandlers: make([]dora.JumpTraceHandler, 0, 1),
-	}, nil
+	ed := &ED{
+		as:             emu, // note: our AS is the emu, since it may change state.
+		symbolResolver: ws,
+		disassembler:   d,
+		emulator:       emu,
+		insnHandlers:   make([]dora.InstructionTraceHandler, 0, 1),
+		jumpHandlers:   make([]dora.JumpTraceHandler, 0, 1),
+	}
+
+	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
+		for _, fn := range ed.insnHandlers {
+			insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
+			check(e)
+			e = fn(insn)
+			check(e)
+		}
+	})
+	check(e)
+
+	return ed, nil
+}
+
+func (ed *ED) Close() error {
+	ed.codeHook.Close()
+	ed.emulator.Close()
 }
 
 // RegisterInstructionTraceHandler adds a callback function to receive the
 //   disassembled instructions.
+// This may be called for more instructions than are strictly in the targetted function, BB.
+// TODO: document this more.
 func (ed *ED) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) error {
 	ed.insnHandlers = append(ed.insnHandlers, fn)
 	return nil
@@ -65,65 +89,50 @@ func (ed *ED) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
 	return nil
 }
 
-// move to utils
-func min(a uint64, b uint64) uint64 {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
-}
+func (ed *ED) discoverCallTarget() (AS.VA, error) {
+	// TODO: assume that current insn is a CALL
 
-// FormatAddressDisassembly formats the bytes at a given address in a given
-//  address space as disassembly.
-// It may also include the hexidecimal bytes alongside the mnemonics and
-//  operands if numOpcodeBytes is non-zero.
-// This function returns the data at va formatted appropriately, the number
-//  of bytes for va formatted, and an error instance.
-// TODO: move to utils
-func FormatAddressDisassembly(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA, numOpcodeBytes uint) (string, uint64, error) {
-	insn, e := disassembly.ReadInstruction(dis, as, va)
+	pc := ed.emulator.GetInstructionPointer()
+	sp := ed.emulator.GetStackPointer()
+
+	e := ed.emulator.StepInto()
 	check(e)
-
-	numBytes := uint64(numOpcodeBytes)
-	d, e := as.MemRead(va, min(uint64(insn.Size), numBytes))
-	check(e)
-
-	// format each of those as hex
-	var bytesPrefix []string
-	for _, b := range d {
-		bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
+	if e != nil {
+		return 0, e
 	}
-	// and fill in padding space
-	for i := uint64(len(d)); i < numBytes; i++ {
-		bytesPrefix = append(bytesPrefix, "  ")
-	}
-	prefix := strings.Join(bytesPrefix, " ")
 
-	ret := fmt.Sprintf("0x%x: %s %s\t%s", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
-	return ret, uint64(insn.Size), nil
+	newPc := ed.emulator.GetInstructionPointer()
+	ed.emulator.SetInstructionPointer(pc)
+	ed.emulator.SetStackPointer(sp)
+
+	return newPc, nil
 }
 
 // when/where can this function be safely called?
 func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
-	// things to do:
+	// things done here:
 	//  - find CALL instructions
 	//  - emulate to CALL instructions
+	//     - using emulation, figure out what the target of the call is
 	//     - using linear disassembly, find target calling convention
 	//     - decide how much stack to clean up
+	//  - manually move PC to instruction after the CALL
 	//  - clean up stack
 	//  - continue emulating
-	//  - resolve jump targets using emulation
+	//  - resolve jump targets at end of BB using emulation
+	logrus.Debug("EmulateBB: va: 0x%x", va)
 
 	nextBBs := make([]AS.VA, 0, 2)
 	var callVAs []AS.VA
 
+	// recon
 	endVA := va
 	e := disassembly.IterateInstructions(ed.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
 		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			return true, nil
 		}
 
+		logrus.Debug("EmulateBB: planning: found call: va: 0x%x", insn.Address)
 		callVAs = append(callVAs, AS.VA(insn.Address))
 		endVA = AS.VA(insn.Address) // update last reached VA, to compute end of BB
 		return true, nil            // continue processing instructions
@@ -131,23 +140,43 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	check(e)
 
 	// prepare emulator
-	// but what is actually done in the setup routine vs here?
 	ed.emulator.SetInstructionPointer(va)
 
-	// install handlers
-	//   - HOOK_CODE handler fires instruction trace handlers
-	// though, this should be done in the setup routine?
-
+	// emulate!
 	for len(callVAs) > 0 {
 		callVA := callVAs[0]
 		callVAs = callVAs[1:]
 
+		logrus.Debug("EmulateBB: emulating: from: 0x%x to: 0x%x", ed.emulator.GetInstructionPointer(), callVA)
 		e := ed.emulator.RunTo(callVA)
+		check(e)
+
+		// call insn
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
 		check(e)
 
 		// find call target
 		//   - is direct call, like: call 0x401000
+		//     -> read target
+		//   - is direct call, like: call [0x401000] ; via IAT
+		//     -> read IAT, use MSDN doc to determine number of args?
 		//   - is indirect call, like: call EAX
+		//     -> just save PC, step into, read PC, restore PC, pop SP
+		//     but be sure to handle invalid fetch errors
+		if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+			// assume we have: call [0x4010000]  ; IAT
+			iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
+			sym, e := ed.symbolResolver.ResolveSymbol(iva)
+			if e == nil {
+				// TODO: this is an imported function
+			} else {
+				// TODO: ???
+			}
+		} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+			// assume we have: call 0x401000
+			targetva := AS.VA(insn.X86.Operands[0].Imm)
+			s = s + fmt.Sprintf("  ; sub_%x", targetva)
+		}
 
 		// get calling convention
 
@@ -158,6 +187,7 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	}
 
 	// emulate to end of current basic block
+	logrus.Debug("EmulateBB: emulating to end: from: 0x%x to: 0x%x", ed.emulator.GetInstructionPointer(), endVA)
 	e = ed.emulator.RunTo(endVA)
 	check(e)
 
@@ -166,41 +196,6 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	//     -> read target
 	//  - is indirect jump, like: jmp EAX
 	//     -> just save PC, step into, read PC, restore PC
+	//     but be sure to handle invalid fetch errors
 	return nextBBs, nil
-}
-
-// ExploreFunction linearly disassembles instructions and explores basic
-//  blocks starting at a given address in a given address space, invoking
-//  appropriate callbacks.
-// It terminates once it has explored all the basic blocks it discovers.
-func (ed *ED) ExploreFunction(as w.AddressSpace, va w.VA) error {
-	// lifo is a stack (cause these are easier than queues in Go) of BBs
-	//  that need to be explored.
-	lifo := make([]w.VA, 0, 10)
-	lifo = append(lifo, va)
-
-	// the set of explored BBs, by BB start address
-	doneBBs := map[w.VA]bool{}
-
-	for len(lifo) > 0 {
-		// pop BB address
-		bb := lifo[len(lifo)-1]
-		lifo = lifo[:len(lifo)-1]
-
-		_, done := doneBBs[bb]
-		if done {
-			continue
-		}
-
-		doneBBs[bb] = true
-		next, e := ed.ExploreBB(as, bb)
-		if e != nil {
-			return e
-		}
-
-		// push new BB addresses
-		lifo = append(lifo, next...)
-	}
-
-	return nil
 }
