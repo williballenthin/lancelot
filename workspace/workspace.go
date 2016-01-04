@@ -8,6 +8,7 @@
 //  - persistent analysis results
 //     - xrefs
 //     - function, basic block, instruction locations
+// TODO: define interfaces for each of the above
 package workspace
 
 import (
@@ -233,12 +234,12 @@ func (ws Workspace) DumpMemoryRegions() error {
 var ErrFailedToResolveImport = errors.New("Failed to resolve import")
 
 type SymbolResolver interface {
-	ResolveSymbol(va AS.VA) (*LinkedSymbol, error)
+	ResolveAddressToSymbol(va AS.VA) (*LinkedSymbol, error)
 }
 
 // Workspace implements SymbolResolver
 
-func (ws *Workspace) ResolveSymbol(va AS.VA) (*LinkedSymbol, error) {
+func (ws *Workspace) ResolveAddressToSymbol(va AS.VA) (*LinkedSymbol, error) {
 	for _, mod := range ws.LoadedModules {
 		if va < mod.BaseAddress {
 			continue
