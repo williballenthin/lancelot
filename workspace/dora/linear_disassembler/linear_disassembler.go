@@ -102,43 +102,40 @@ func FormatAddressDisassembly(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA
 func (ld *LD) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	nextBBs := make([]AS.VA, 0, 2)
 
-	isEndOfBB := false
-	dis := ld.disassembler
-	for insn, e := disassembly.ReadInstruction(dis, as, va); e == nil && !isEndOfBB; insn, e = disassembly.ReadInstruction(dis, as, va) {
+	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
+
 		for _, fn := range ld.insnHandlers {
-			e = fn(insn)
+			e := fn(insn)
 			if e != nil {
-				return nil, e
+				return false, e
 			}
 		}
 
-		// stop processing a basic block if we're at: RET, IRET, JUMP
-		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
-			break // out of instruction processing loop
-		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
-			break // out of instruction processing loop
-		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
 			// this return a slice with zero length, but that should be ok
 			targets, e := disassembly.GetJumpTargets(insn)
 			if e != nil {
-				return nil, e
+				return false, e
 			}
 
 			for _, target := range targets {
 				for _, fn := range ld.jumpHandlers {
 					e := fn(insn, target)
 					if e != nil {
-						return nil, e
+						return false, e
 					}
 				}
 				nextBBs = append(nextBBs, target.To)
 			}
 
-			break // out of instruction processing loop
+			// though we can assume that IterateInstructions will return after this insn (end of bb),
+			//  we'd better not make assumptions. here, we explicityly end processing.
+			return false, nil // continue processing instructions
 		}
 
-		va = AS.VA(uint64(va) + uint64(insn.Size))
-	}
+		return true, nil // continue processing instructions
+	})
+	check(e)
 
 	return nextBBs, nil
 }

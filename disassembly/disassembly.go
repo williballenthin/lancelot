@@ -200,3 +200,36 @@ func IsConditionalJump(insn gapstone.Instruction) bool {
 	}
 	return false
 }
+
+// IterateInstructions invokes the provided callback with each instruction starting
+//  from the given address until the end of the current basic block.
+func IterateInstructions(
+	dis *gapstone.Engine,
+	as AS.AddressSpace,
+	va AS.VA,
+	f func(insn gapstone.Instruction) (bool, error)) error {
+
+	for insn, e := ReadInstruction(dis, as, va); e == nil; insn, e = ReadInstruction(dis, as, va) {
+
+		cont, e := f(insn)
+		if e != nil {
+			return e
+		}
+
+		if !cont {
+			break
+		}
+
+		// stop processing a basic block if we're at: RET, IRET, JUMP
+		if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+			break // out of instruction processing loop
+		} else if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET) {
+			break // out of instruction processing loop
+		} else if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
+			break // out of instruction processing loop
+		}
+
+		va = AS.VA(uint64(va) + uint64(insn.Size))
+	}
+	return nil
+}
