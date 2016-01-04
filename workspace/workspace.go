@@ -232,7 +232,13 @@ func (ws Workspace) DumpMemoryRegions() error {
 
 var ErrFailedToResolveImport = errors.New("Failed to resolve import")
 
-func (ws *Workspace) ResolveImportedFunction(va AS.VA) (*LinkedSymbol, error) {
+type SymbolResolver interface {
+	ResolveSymbol(va AS.VA) (*LinkedSymbol, error)
+}
+
+// Workspace implements SymbolResolver
+
+func (ws *Workspace) ResolveSymbol(va AS.VA) (*LinkedSymbol, error) {
 	for _, mod := range ws.LoadedModules {
 		if va < mod.BaseAddress {
 			continue
