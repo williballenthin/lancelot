@@ -105,7 +105,7 @@ func doit(path string) error {
 
 	var lifo []AS.VA
 
-	dis, e := ws.GetDisassembler()
+	dis, e := disassembly.New(ws)
 	check(e)
 
 	// callback for drawing instructions nicely

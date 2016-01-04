@@ -1,3 +1,4 @@
+// TODO: consider renaming to "disassembler"
 package disassembly
 
 import (
@@ -30,8 +31,8 @@ func New(ws *W.Workspace) (*gapstone.Engine, error) {
 	}
 
 	disassembler, e := gapstone.New(
-		W.GAPSTONE_ARCH_MAP[arch],
-		W.GAPSTONE_MODE_MAP[mode],
+		W.GAPSTONE_ARCH_MAP[ws.Arch],
+		W.GAPSTONE_MODE_MAP[ws.Mode],
 	)
 	if e != nil {
 		return nil, e
@@ -42,12 +43,12 @@ func New(ws *W.Workspace) (*gapstone.Engine, error) {
 		return nil, e
 	}
 
-	return disassembler, nil
+	return &disassembler, nil
 }
 
 // ReadInstruction fetches bytes from the provided address space at the given
 //  address and parses them into a single instruction instance.
-func ReadInstruction(dis gapstone.Engine, as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error) {
+func ReadInstruction(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error) {
 	d, e := as.MemRead(va, uint64(MAX_INSN_SIZE))
 	check(e)
 	if e != nil {
@@ -173,7 +174,7 @@ func GetJumpTargets(insn gapstone.Instruction) ([]*artifacts.JumpCrossReference,
 	return ret, nil
 }
 
-func GetInstructionLength(dis gapstone.Engine, as AS.AddressSpace, va AS.VA) (uint, error) {
+func GetInstructionLength(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (uint, error) {
 	insn, e := ReadInstruction(dis, as, va)
 	if e != nil {
 		return 0, e

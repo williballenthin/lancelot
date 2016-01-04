@@ -6,7 +6,8 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
 	dis "github.com/williballenthin/Lancelot/disassembly"
-	w "github.com/williballenthin/Lancelot/workspace"
+	E "github.com/williballenthin/Lancelot/emulator"
+	W "github.com/williballenthin/Lancelot/workspace"
 	"log"
 )
 
@@ -34,7 +35,7 @@ func isBBEnd(insn gapstone.Instruction) bool {
 		dis.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_IRET)
 }
 
-func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (AS.VA, error) {
+func GetNextInstructionPointer(emu *E.Emulator, sman *E.SnapshotManager) (AS.VA, error) {
 	var va AS.VA
 	e := sman.WithTempExcursion(func() error {
 		e := emu.StepInto()
@@ -49,11 +50,11 @@ func GetNextInstructionPointer(emu *w.Emulator, sman *w.SnapshotManager) (AS.VA,
 
 // dora the explora
 type Dora struct {
-	ws *w.Workspace
+	ws *W.Workspace
 	ac artifacts.ArtifactCollection
 }
 
-func New(ws *w.Workspace) (*Dora, error) {
+func New(ws *W.Workspace) (*Dora, error) {
 	// TODO: get this from a real place
 	ac, e := artifacts.NewLoggingArtifactCollection()
 	check(e)
@@ -65,13 +66,13 @@ func New(ws *w.Workspace) (*Dora, error) {
 }
 
 type todoPath struct {
-	state w.SnapshotManagerCookie
+	state E.SnapshotManagerCookie
 	va    AS.VA
 }
 
 type FunctionExplorer struct {
-	emu     *w.Emulator
-	sman    *w.SnapshotManager
+	emu     *E.Emulator
+	sman    *E.SnapshotManager
 	todo    []todoPath
 	hits    map[AS.VA]bool
 	startSp AS.VA
@@ -176,11 +177,11 @@ func (s *FunctionExplorer) handleGeneralInstruction(insn gapstone.Instruction) e
 // TODO: track max hits
 // this is going to be a pretty wild function :-(
 func (dora *Dora) ExploreFunction(va AS.VA) error {
-	emu, e := dora.ws.GetEmulator()
+	emu, e := E.New(dora.ws)
 	check(e)
 	defer emu.Close()
 
-	sman, e := w.NewSnapshotManager(emu)
+	sman, e := E.NewSnapshotManager(emu)
 	check(e)
 	defer sman.Close()
 

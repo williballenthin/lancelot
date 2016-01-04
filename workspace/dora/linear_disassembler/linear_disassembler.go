@@ -22,7 +22,7 @@ func check(e error) {
 
 // LD is the object that holds the state of a linear disassembler.
 type LD struct {
-	disassembler gapstone.Engine
+	disassembler *gapstone.Engine
 	insnHandlers []dora.InstructionTraceHandler
 	jumpHandlers []dora.JumpTraceHandler
 }
@@ -30,7 +30,7 @@ type LD struct {
 // New creates a new LinearDisassembler instance.
 func New(ws *w.Workspace) (*LD, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
-	d, e := ws.GetDisassembler()
+	d, e := disassembly.New(ws)
 	if e != nil {
 		return nil, e
 	}
@@ -71,7 +71,7 @@ func min(a uint64, b uint64) uint64 {
 // This function returns the data at va formatted appropriately, the number
 //  of bytes for va formatted, and an error instance.
 // TODO: move to utils
-func FormatAddressDisassembly(dis gapstone.Engine, as AS.AddressSpace, va AS.VA, numOpcodeBytes uint) (string, uint64, error) {
+func FormatAddressDisassembly(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA, numOpcodeBytes uint) (string, uint64, error) {
 	insn, e := disassembly.ReadInstruction(dis, as, va)
 	check(e)
 

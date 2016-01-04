@@ -1,11 +1,14 @@
+// Package workspace implements an object that tracks
+//  analysis configuration, state, and results.
+//
+// Things it tracks:
+//  - configured architecture and mode
+//  - loaded binaries
+//  - things marked by the analyst
+//  - persistent analysis results
+//     - xrefs
+//     - function, basic block, instruction locations
 package workspace
-
-// TODO:
-//   - AddressSpace interface
-//   - higher level maps api
-//     - track allocations
-//     - snapshot, revert, commit
-//  - then, forward-emulate one instruction (via code hook) to get next insn
 
 import (
 	"bytes"
@@ -157,7 +160,6 @@ type Workspace struct {
 	Arch           Arch
 	Mode           Mode
 	LoadedModules  []*LoadedModule
-	disassembler   gapstone.Engine
 	DisplayOptions DisplayOptions
 }
 
@@ -174,25 +176,11 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		return nil, e
 	}
 
-	disassembler, e := gapstone.New(
-		GAPSTONE_ARCH_MAP[arch],
-		GAPSTONE_MODE_MAP[mode],
-	)
-	if e != nil {
-		return nil, e
-	}
-	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
-	check(e)
-	if e != nil {
-		return nil, e
-	}
-
 	return &Workspace{
 		as:            as,
 		Arch:          arch,
 		Mode:          mode,
 		LoadedModules: make([]*LoadedModule, 0),
-		disassembler:  disassembler,
 		DisplayOptions: DisplayOptions{
 			NumOpcodeBytes: 8,
 		},
@@ -200,7 +188,6 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 }
 
 func (ws *Workspace) Close() error {
-	ws.disassembler.Close()
 	return nil
 }
 

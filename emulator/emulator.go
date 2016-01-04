@@ -14,10 +14,16 @@ import (
 	"strings"
 )
 
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
 type Emulator struct {
 	ws           *W.Workspace
 	u            uc.Unicorn
-	disassembler gapstone.Engine
+	disassembler *gapstone.Engine
 	maps         []AS.MemoryRegion
 	hooks        struct {
 		memRead     *hookMultiplexer
@@ -28,18 +34,18 @@ type Emulator struct {
 }
 
 func New(ws *W.Workspace) (*Emulator, error) {
-	if ws.Arch != ARCH_X86 {
-		return nil, InvalidArchError
+	if ws.Arch != W.ARCH_X86 {
+		return nil, W.InvalidArchError
 	}
-	if !(ws.Mode == MODE_32 || ws.Mode == MODE_64) {
-		return nil, InvalidModeError
+	if !(ws.Mode == W.MODE_32 || ws.Mode == W.MODE_64) {
+		return nil, W.InvalidModeError
 	}
 
 	var u uc.Unicorn
 	var e error
-	if ws.Mode == MODE_32 {
+	if ws.Mode == W.MODE_32 {
 		u, e = uc.NewUnicorn(uc.ARCH_X86, uc.MODE_32)
-	} else if ws.Mode == MODE_64 {
+	} else if ws.Mode == W.MODE_64 {
 		u, e = uc.NewUnicorn(uc.ARCH_X86, uc.MODE_64)
 	}
 	if e != nil {
@@ -47,8 +53,8 @@ func New(ws *W.Workspace) (*Emulator, error) {
 	}
 
 	disassembler, e := gapstone.New(
-		GAPSTONE_ARCH_MAP[ws.Arch],
-		GAPSTONE_MODE_MAP[ws.Mode],
+		W.GAPSTONE_ARCH_MAP[ws.Arch],
+		W.GAPSTONE_MODE_MAP[ws.Mode],
 	)
 	if e != nil {
 		return nil, e
@@ -62,7 +68,7 @@ func New(ws *W.Workspace) (*Emulator, error) {
 	emu := &Emulator{
 		ws:           ws,
 		u:            u,
-		disassembler: disassembler,
+		disassembler: &disassembler,
 		maps:         make([]AS.MemoryRegion, 0),
 	}
 
@@ -136,7 +142,7 @@ func (emu *Emulator) GetMaps() ([]AS.MemoryRegion, error) {
 
 // read a pointer-sized number from the given address
 func (emu *Emulator) MemReadPtr(va AS.VA) (AS.VA, error) {
-	if emu.ws.Mode == MODE_32 {
+	if emu.ws.Mode == W.MODE_32 {
 		var data uint32
 		d, e := emu.MemRead(va, 0x4)
 		if e != nil {
@@ -146,7 +152,7 @@ func (emu *Emulator) MemReadPtr(va AS.VA) (AS.VA, error) {
 		p := bytes.NewBuffer(d)
 		binary.Read(p, binary.LittleEndian, &data)
 		return AS.VA(uint64(data)), nil
-	} else if emu.ws.Mode == MODE_64 {
+	} else if emu.ws.Mode == W.MODE_64 {
 		var data uint64
 		d, e := emu.MemRead(va, 0x8)
 		if e != nil {
@@ -157,11 +163,11 @@ func (emu *Emulator) MemReadPtr(va AS.VA) (AS.VA, error) {
 		binary.Read(p, binary.LittleEndian, &data)
 		return AS.VA(uint64(data)), nil
 	} else {
-		return 0, InvalidModeError
+		return 0, W.InvalidModeError
 	}
 }
 
-func (emu Emulator) GetMode() Mode {
+func (emu Emulator) GetMode() W.Mode {
 	return emu.ws.Mode
 }
 func (emu *Emulator) RegRead(reg int) (uint64, error) {
@@ -224,34 +230,34 @@ func (emu *Emulator) RegToggleEflag(eflag uint64) {
 }
 
 func (emu *Emulator) SetStackPointer(address AS.VA) {
-	if emu.ws.Arch == ARCH_X86 {
-		if emu.ws.Mode == MODE_32 {
+	if emu.ws.Arch == W.ARCH_X86 {
+		if emu.ws.Mode == W.MODE_32 {
 			emu.RegWrite(uc.X86_REG_ESP, uint64(address))
 			return
-		} else if emu.ws.Mode == MODE_64 {
+		} else if emu.ws.Mode == W.MODE_64 {
 			emu.RegWrite(uc.X86_REG_RSP, uint64(address))
 			return
 		} else {
-			panic(InvalidModeError)
+			panic(W.InvalidModeError)
 		}
 	} else {
-		panic(InvalidArchError)
+		panic(W.InvalidArchError)
 	}
 }
 
 func (emu *Emulator) GetStackPointer() AS.VA {
 	var r uint64
 	var e error
-	if emu.ws.Arch == ARCH_X86 {
-		if emu.ws.Mode == MODE_32 {
+	if emu.ws.Arch == W.ARCH_X86 {
+		if emu.ws.Mode == W.MODE_32 {
 			r, e = emu.RegRead(uc.X86_REG_ESP)
-		} else if emu.ws.Mode == MODE_64 {
+		} else if emu.ws.Mode == W.MODE_64 {
 			r, e = emu.RegRead(uc.X86_REG_RSP)
 		} else {
-			panic(InvalidModeError)
+			panic(W.InvalidModeError)
 		}
 	} else {
-		panic(InvalidArchError)
+		panic(W.InvalidArchError)
 	}
 	if e != nil {
 		panic(e)
@@ -260,34 +266,34 @@ func (emu *Emulator) GetStackPointer() AS.VA {
 }
 
 func (emu *Emulator) SetInstructionPointer(address AS.VA) {
-	if emu.ws.Arch == ARCH_X86 {
-		if emu.ws.Mode == MODE_32 {
+	if emu.ws.Arch == W.ARCH_X86 {
+		if emu.ws.Mode == W.MODE_32 {
 			emu.RegWrite(uc.X86_REG_EIP, uint64(address))
 			return
-		} else if emu.ws.Mode == MODE_64 {
+		} else if emu.ws.Mode == W.MODE_64 {
 			emu.RegWrite(uc.X86_REG_RIP, uint64(address))
 			return
 		} else {
-			panic(InvalidModeError)
+			panic(W.InvalidModeError)
 		}
 	} else {
-		panic(InvalidArchError)
+		panic(W.InvalidArchError)
 	}
 }
 
 func (emu *Emulator) GetInstructionPointer() AS.VA {
 	var r uint64
 	var e error
-	if emu.ws.Arch == ARCH_X86 {
-		if emu.ws.Mode == MODE_32 {
+	if emu.ws.Arch == W.ARCH_X86 {
+		if emu.ws.Mode == W.MODE_32 {
 			r, e = emu.RegRead(uc.X86_REG_EIP)
-		} else if emu.ws.Mode == MODE_64 {
+		} else if emu.ws.Mode == W.MODE_64 {
 			r, e = emu.RegRead(uc.X86_REG_RIP)
 		} else {
-			panic(InvalidModeError)
+			panic(W.InvalidModeError)
 		}
 	} else {
-		panic(InvalidArchError)
+		panic(W.InvalidArchError)
 	}
 	if e != nil {
 		panic(e)
