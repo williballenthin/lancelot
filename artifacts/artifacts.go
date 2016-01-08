@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"errors"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
@@ -106,47 +107,6 @@ func (l LoggingArtifactCollection) AddJumpXref(xref JumpCrossReference) error {
 
 type LocationType uint
 
-const (
-	LocationFunction LocationType = iota
-	LocationBasicBlock
-	LocationString
-	LocationUnknown
-)
-
-// AddressDataType
-const (
-	LocationData P.AddressDataType = iota
-	FunctionData
-	BasicBlockData
-)
-
-// AddressDataKeyString
-const (
-	FunctionName P.AddressDataKeyS = iota
-)
-
-// AddressDataKeyNumber
-const (
-	FunctionStackDelta P.AddressDataKeyI = iota
-	TypeOfLocation
-)
-
-// EdgeDataType
-const (
-	XrefData      P.EdgeDataType = iota // from basic block to basic block
-	CallGraphData                       // from function to function
-)
-
-// EdgeDataKeyString
-const (
-	XrefName P.EdgeDataKeyS = iota
-)
-
-// EdgeDataKeyNumber
-const (
-	XrefBranchType P.EdgeDataKeyI = iota // this some fake value so we can test
-)
-
 type Artifacts struct {
 	persistence P.Persistence
 }
@@ -158,9 +118,27 @@ func New(p P.Persistence) (*Artifacts, error) {
 }
 
 func (a *Artifacts) AddFunction(va AS.VA) (*Function, error) {
-	// TODO: don't stomp on existing location
+	// TODO: don't stomp on existing location?
 	e := a.persistence.SetAddressValueNumber(LocationData, va, TypeOfLocation, int64(LocationFunction))
 	check(e)
+
+	return &Function{
+		artifacts: a,
+		Start:     va,
+	}, nil
+}
+
+var ErrFunctionNotFound = errors.New("Function not found at specified address")
+
+func (a *Artifacts) GetFunction(va AS.VA) (*Function, error) {
+	v, e := a.persistence.GetAddressValueNumber(LocationData, va, TypeOfLocation)
+	if e != nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	if v != int64(LocationFunction) {
+		return nil, ErrFunctionNotFound
+	}
 
 	return &Function{
 		artifacts: a,
