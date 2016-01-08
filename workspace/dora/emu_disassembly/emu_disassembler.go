@@ -1,6 +1,7 @@
 package EmulatingDisassembler
 
 import (
+	"errors"
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
@@ -89,7 +90,10 @@ func (ed *ED) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
 	return nil
 }
 
-func (ed *ED) discoverCallTarget() (AS.VA, error) {
+// emuldateToCallTargetAndBack emulates the current instruction that should be a
+//  CALL instruction, fetches PC after the instruction, and resets
+//  the PC and SP registers.
+func (ed *ED) emulateToCallTargetAndBack() (AS.VA, error) {
 	// TODO: assume that current insn is a CALL
 
 	pc := ed.emulator.GetInstructionPointer()
@@ -106,6 +110,64 @@ func (ed *ED) discoverCallTarget() (AS.VA, error) {
 	ed.emulator.SetStackPointer(sp)
 
 	return newPc, nil
+}
+
+// ErrFailedToResolveCallTarget is an error to be used when an
+//  analysis routine is unable to determine the target of a CALL
+//  instruction.
+var ErrFailedToResolveCallTarget = errors.New("Failed to resolve call target")
+
+// discoverCallTarget finds the target of the current instruction that
+//  should be a CALL instruction.
+// returns ErrFailedToResolveCallTarget if the target is not resolvable.
+// this should be expected in some cases, like calling into uninitialized memory.
+//
+// find call target
+//   - is direct call, like: call 0x401000
+//     -> directly read target
+//   - is direct call, like: call [0x401000] ; via IAT
+//     -> read IAT, use MSDN doc to determine number of args?
+//   - is indirect call, like: call EAX
+//     -> just save PC, step into, read PC, restore PC, pop SP
+//     but be sure to handle invalid fetch errors
+func (ed *ED) discoverCallTarget() (AS.VA, error) {
+	var callTarget AS.VA
+	callVA := ed.emulator.GetInstructionPointer()
+
+	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
+	if e != nil {
+		return 0, e
+	}
+
+	if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+		// assume we have: call [0x4010000]  ; IAT
+		iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
+		sym, e := ed.symbolResolver.ResolveAddressToSymbol(iva)
+		if e == nil {
+			// we successfully resolved an imported function.
+			// TODO: how are we marking xrefs to imports? i guess with xrefs to the IAT
+			callTarget = iva
+		} else {
+			// this is not an imported function, so we'll just have to try and see.
+			// either there's a valid function pointer at the address, or we'll get an invalid fetch.
+			callTarget, e = ed.discoverCallTarget()
+			if e != nil {
+				logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+				return 0, ErrFailedToResolveCallTarget
+			}
+		}
+	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+		// assume we have: call 0x401000
+		callTarget := AS.VA(insn.X86.Operands[0].Imm)
+	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
+		// assume we have: call eax
+		callTarget, e = ed.discoverCallTarget()
+		if e != nil {
+			logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+			return 0, ErrFailedToResolveCallTarget
+		}
+	}
+	return callTarget, nil
 }
 
 // when/where can this function be safely called?
@@ -155,59 +217,18 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
 		check(e)
 
-		// find call target
-		//   - is direct call, like: call 0x401000
-		//     -> read target
-		//   - is direct call, like: call [0x401000] ; via IAT
-		//     -> read IAT, use MSDN doc to determine number of args?
-		//   - is indirect call, like: call EAX
-		//     -> just save PC, step into, read PC, restore PC, pop SP
-		//     but be sure to handle invalid fetch errors
-		var callTarget AS.VA
-		if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
-			// assume we have: call [0x4010000]  ; IAT
-			iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
-			sym, e := ed.symbolResolver.ResolveAddressToSymbol(iva)
-			if e == nil {
-				// we successfully resolved an imported function.
-				// TODO: how are we marking xrefs to imports? i guess with xrefs to the IAT
-				callTarget = iva
-			} else {
-				// this is not an imported function, so we'll just have to try and see.
-				// either there's a valid function pointer at the address, or we'll get an invalid fetch.
-				callTarget, e = ed.discoverCallTarget()
-				if e != nil {
-					// unable to resolve call target, we'll have to skip
-					logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+		callTarget, e := ed.discoverCallTarget()
+		if e == ErrFailedToResolveCallTarget {
+			// will just have to make a guess as to how to clean up the stack
+		} else if e != nil {
 
-					// just being explicit here. *do not* use as an indication of success/failure
-					callTarget = 0
-				} else {
-					// successfully resolved call target
-				}
-			}
-		} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
-			// assume we have: call 0x401000
-			// TODO: just take the Imm value, like:
-			callTarget := AS.VA(insn.X86.Operands[0].Imm)
-		} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
-			// assume we have: call eax
-			callTarget, e = ed.discoverCallTarget()
-			if e != nil {
-				// unable to resolve call target, we'll have to skip
-				logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
-
-				// just being explicit here. *do not* use as an indication of success/failure
-				callTarget = 0
-			} else {
-				// successfully resolved call target
-			}
 		}
 
 		// get calling convention
 		var stackDelta uint64
 
 		// invoke CallHandlers
+
 		// skip call instruction
 		ed.emulator.SetInstructionPointer(AS.VA(insn.Address + insn.Size))
 
