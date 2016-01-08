@@ -1,22 +1,31 @@
 package artifacts
 
 import (
-	as "github.com/williballenthin/Lancelot/address_space"
+	AS "github.com/williballenthin/Lancelot/address_space"
+	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
 )
 
-type BasicBlock struct {
-	// Start is the first address in the basic block.
-	Start as.VA
-	// End is the last address in the basic block.
-	End as.VA
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
 }
 
+// unique: (Start)
+type BasicBlock struct {
+	// Start is the first address in the basic block.
+	Start AS.VA
+	// End is the last address in the basic block.
+	End AS.VA
+}
+
+// unique: (From, To)
 type CrossReference struct {
 	// From is the address from which the xref references.
-	From as.VA
+	From AS.VA
 	// To is the address to which the xref references.
-	To as.VA
+	To AS.VA
 }
 
 type MemoryWriteCrossReference CrossReference
@@ -93,4 +102,68 @@ func (l LoggingArtifactCollection) AddCallXref(xref CallCrossReference) error {
 func (l LoggingArtifactCollection) AddJumpXref(xref JumpCrossReference) error {
 	log.Printf("j xref: 0x%x %s 0x%x", xref.From, xref.Type, xref.To)
 	return nil
+}
+
+type LocationType uint
+
+const (
+	LocationFunction LocationType = iota
+	LocationBasicBlock
+	LocationString
+	LocationUnknown
+)
+
+// AddressDataType
+const (
+	LocationData P.AddressDataType = iota
+	FunctionData
+	BasicBlockData
+)
+
+// AddressDataKeyString
+const (
+	FunctionName P.AddressDataKeyS = iota
+)
+
+// AddressDataKeyNumber
+const (
+	FunctionStackDelta P.AddressDataKeyI = iota
+	TypeOfLocation
+)
+
+// EdgeDataType
+const (
+	XrefData      P.EdgeDataType = iota // from basic block to basic block
+	CallGraphData                       // from function to function
+)
+
+// EdgeDataKeyString
+const (
+	XrefName P.EdgeDataKeyS = iota
+)
+
+// EdgeDataKeyNumber
+const (
+	XrefBranchType P.EdgeDataKeyI = iota // this some fake value so we can test
+)
+
+type Artifacts struct {
+	persistence P.Persistence
+}
+
+func New(p P.Persistence) (*Artifacts, error) {
+	return &Artifacts{
+		persistence: p,
+	}, nil
+}
+
+func (a *Artifacts) AddFunction(va AS.VA) (*Function, error) {
+	// TODO: don't stomp on existing location
+	e := a.persistence.SetAddressValueNumber(LocationData, va, TypeOfLocation, int64(LocationFunction))
+	check(e)
+
+	return &Function{
+		artifacts: a,
+		Start:     va,
+	}, nil
 }

@@ -17,6 +17,8 @@ import (
 	"errors"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/artifacts"
+	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
 )
 
@@ -162,9 +164,11 @@ type Workspace struct {
 	Mode           Mode
 	LoadedModules  []*LoadedModule
 	DisplayOptions DisplayOptions
+	persistence    P.Persistence
+	Artifacts      *A.Artifacts
 }
 
-func New(arch Arch, mode Mode) (*Workspace, error) {
+func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
 	if arch != ARCH_X86 {
 		return nil, InvalidArchError
 	}
@@ -177,6 +181,11 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		return nil, e
 	}
 
+	arts, e := artifacts.New(p)
+	if e != nil {
+		return nil
+	}
+
 	return &Workspace{
 		as:            as,
 		Arch:          arch,
@@ -185,6 +194,8 @@ func New(arch Arch, mode Mode) (*Workspace, error) {
 		DisplayOptions: DisplayOptions{
 			NumOpcodeBytes: 8,
 		},
+		persistence: p,
+		Artifacts:   arts,
 	}, nil
 }
 
@@ -239,6 +250,7 @@ type SymbolResolver interface {
 
 // Workspace implements SymbolResolver
 
+// perhaps this should be moved into artifacts
 func (ws *Workspace) ResolveAddressToSymbol(va AS.VA) (*LinkedSymbol, error) {
 	for _, mod := range ws.LoadedModules {
 		if va < mod.BaseAddress {

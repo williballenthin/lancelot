@@ -7,16 +7,7 @@ import (
 
 type AddressDataType uint
 
-const (
-	FunctionData = iota
-	BasicBlockData
-)
-
 type AddressDataKeyS uint
-
-const (
-	FunctionName = iota
-)
 
 type AddressDataKeyI uint
 
