@@ -1,7 +1,7 @@
 package mem_persistence
 
 import (
-	P "github.com/williballenthin/Lancelot/persistence"
+	A "github.com/williballenthin/Lancelot/artifacts"
 	//	"log"
 	"testing"
 )
@@ -18,31 +18,31 @@ func TestNew(t *testing.T) {
 
 func TestSAVS(t *testing.T) {
 	m, _ := New()
-	e := m.SetAddressValueString(P.FunctionData, 0, P.FunctionName, "sub_401000")
+	e := m.SetAddressValueString(A.FunctionData, 0, A.FunctionName, "sub_401000")
 	if e != nil {
 		t.Fail()
 	}
-	if m.addressDataS[P.FunctionData][0][P.FunctionName] != "sub_401000" {
+	if m.addressDataS[A.FunctionData][0][A.FunctionName] != "sub_401000" {
 		t.Fail()
 	}
 }
 
 func TestDAVS(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueString(P.FunctionData, 0, P.FunctionName, "sub_401000")
-	e := m.DelAddressValueString(P.FunctionData, 0, P.FunctionName)
+	m.SetAddressValueString(A.FunctionData, 0, A.FunctionName, "sub_401000")
+	e := m.DelAddressValueString(A.FunctionData, 0, A.FunctionName)
 	if e != nil {
 		t.Fail()
 	}
-	if _, ok := m.addressDataS[P.FunctionData][0][P.FunctionName]; ok {
+	if _, ok := m.addressDataS[A.FunctionData][0][A.FunctionName]; ok {
 		t.Fail()
 	}
 }
 
 func TestGAVS(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueString(P.FunctionData, 0, P.FunctionName, "sub_401000")
-	v, e := m.GetAddressValueString(P.FunctionData, 0, P.FunctionName)
+	m.SetAddressValueString(A.FunctionData, 0, A.FunctionName, "sub_401000")
+	v, e := m.GetAddressValueString(A.FunctionData, 0, A.FunctionName)
 	if e != nil {
 		t.Fail()
 	}
@@ -53,8 +53,8 @@ func TestGAVS(t *testing.T) {
 
 func TestGAVSS(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueString(P.FunctionData, 0, P.FunctionName, "sub_401000")
-	v, e := m.GetAddressValueStrings(P.FunctionData, 0)
+	m.SetAddressValueString(A.FunctionData, 0, A.FunctionName, "sub_401000")
+	v, e := m.GetAddressValueStrings(A.FunctionData, 0)
 	if e != nil {
 		t.Fail()
 	}
@@ -63,7 +63,7 @@ func TestGAVSS(t *testing.T) {
 	}
 	vv := v[0]
 
-	if vv.Type != P.FunctionName {
+	if vv.Key != A.FunctionName {
 		t.Fail()
 	}
 	if vv.Value != "sub_401000" {
@@ -73,31 +73,31 @@ func TestGAVSS(t *testing.T) {
 
 func TestSAVI(t *testing.T) {
 	m, _ := New()
-	e := m.SetAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta, 69)
+	e := m.SetAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta, 69)
 	if e != nil {
 		t.Fail()
 	}
-	if m.addressDataI[P.FunctionData][0][P.FunctionStackDelta] != 69 {
+	if m.addressDataI[A.FunctionData][0][A.FunctionStackDelta] != 69 {
 		t.Fail()
 	}
 }
 
 func TestDAVI(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta, 69)
-	e := m.DelAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta)
+	m.SetAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta, 69)
+	e := m.DelAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta)
 	if e != nil {
 		t.Fail()
 	}
-	if _, ok := m.addressDataS[P.FunctionData][0][P.FunctionStackDelta]; ok {
+	if _, ok := m.addressDataI[A.FunctionData][0][A.FunctionStackDelta]; ok {
 		t.Fail()
 	}
 }
 
 func TestGAVI(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta, 69)
-	v, e := m.GetAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta)
+	m.SetAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta, 69)
+	v, e := m.GetAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta)
 	if e != nil {
 		t.Fail()
 	}
@@ -108,8 +108,8 @@ func TestGAVI(t *testing.T) {
 
 func TestGAVIS(t *testing.T) {
 	m, _ := New()
-	m.SetAddressValueNumber(P.FunctionData, 0, P.FunctionStackDelta, 69)
-	v, e := m.GetAddressValueNumbers(P.FunctionData, 0)
+	m.SetAddressValueNumber(A.FunctionData, 0, A.FunctionStackDelta, 69)
+	v, e := m.GetAddressValueNumbers(A.FunctionData, 0)
 	if e != nil {
 		t.Fail()
 	}
@@ -118,7 +118,7 @@ func TestGAVIS(t *testing.T) {
 	}
 	vv := v[0]
 
-	if vv.Type != P.FunctionStackDelta {
+	if vv.Key != A.FunctionStackDelta {
 		t.Fail()
 	}
 	if vv.Value != 69 {
@@ -128,31 +128,31 @@ func TestGAVIS(t *testing.T) {
 
 func TestSEVS(t *testing.T) {
 	m, _ := New()
-	e := m.SetEdgeValueString(P.XrefData, 0, 1, P.XrefName, "sub_401000")
+	e := m.SetEdgeValueString(A.XrefData, 0, 1, A.XrefName, "sub_401000")
 	if e != nil {
 		t.Fail()
 	}
-	if m.edgeDataS[P.XrefData][0][1][P.XrefName] != "sub_401000" {
+	if m.edgeDataS[A.XrefData][0][1][A.XrefName] != "sub_401000" {
 		t.Fail()
 	}
 }
 
 func TestDEVS(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueString(P.XrefData, 0, 1, P.XrefName, "sub_401000")
-	e := m.DelEdgeValueString(P.XrefData, 0, 1, P.XrefName)
+	m.SetEdgeValueString(A.XrefData, 0, 1, A.XrefName, "sub_401000")
+	e := m.DelEdgeValueString(A.XrefData, 0, 1, A.XrefName)
 	if e != nil {
 		t.Fail()
 	}
-	if _, ok := m.edgeDataS[P.XrefData][0][1][P.XrefName]; ok {
+	if _, ok := m.edgeDataS[A.XrefData][0][1][A.XrefName]; ok {
 		t.Fail()
 	}
 }
 
 func TestGEVS(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueString(P.XrefData, 0, 1, P.XrefName, "sub_401000")
-	v, e := m.GetEdgeValueString(P.XrefData, 0, 1, P.XrefName)
+	m.SetEdgeValueString(A.XrefData, 0, 1, A.XrefName, "sub_401000")
+	v, e := m.GetEdgeValueString(A.XrefData, 0, 1, A.XrefName)
 	if e != nil {
 		t.Fail()
 	}
@@ -163,8 +163,8 @@ func TestGEVS(t *testing.T) {
 
 func TestGEVSS(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueString(P.XrefData, 0, 1, P.XrefName, "sub_401000")
-	v, e := m.GetEdgeValueStrings(P.XrefData, 0, 1)
+	m.SetEdgeValueString(A.XrefData, 0, 1, A.XrefName, "sub_401000")
+	v, e := m.GetEdgeValueStrings(A.XrefData, 0, 1)
 	if e != nil {
 		t.Fail()
 	}
@@ -173,7 +173,7 @@ func TestGEVSS(t *testing.T) {
 	}
 	vv := v[0]
 
-	if vv.Type != P.XrefName {
+	if vv.Key != A.XrefName {
 		t.Fail()
 	}
 	if vv.Value != "sub_401000" {
@@ -183,31 +183,31 @@ func TestGEVSS(t *testing.T) {
 
 func TestSEVI(t *testing.T) {
 	m, _ := New()
-	e := m.SetEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType, 69)
+	e := m.SetEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType, 69)
 	if e != nil {
 		t.Fail()
 	}
-	if m.edgeDataI[P.XrefData][0][1][P.XrefBranchType] != 69 {
+	if m.edgeDataI[A.XrefData][0][1][A.XrefBranchType] != 69 {
 		t.Fail()
 	}
 }
 
 func TestDEVI(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType, 69)
-	e := m.DelEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType)
+	m.SetEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType, 69)
+	e := m.DelEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType)
 	if e != nil {
 		t.Fail()
 	}
-	if _, ok := m.edgeDataS[P.XrefData][0][1][P.XrefBranchType]; ok {
+	if _, ok := m.edgeDataI[A.XrefData][0][1][A.XrefBranchType]; ok {
 		t.Fail()
 	}
 }
 
 func TestGEVI(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType, 69)
-	v, e := m.GetEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType)
+	m.SetEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType, 69)
+	v, e := m.GetEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType)
 	if e != nil {
 		t.Fail()
 	}
@@ -218,8 +218,8 @@ func TestGEVI(t *testing.T) {
 
 func TestGEVIS(t *testing.T) {
 	m, _ := New()
-	m.SetEdgeValueNumber(P.XrefData, 0, 1, P.XrefBranchType, 69)
-	v, e := m.GetEdgeValueNumbers(P.XrefData, 0, 1)
+	m.SetEdgeValueNumber(A.XrefData, 0, 1, A.XrefBranchType, 69)
+	v, e := m.GetEdgeValueNumbers(A.XrefData, 0, 1)
 	if e != nil {
 		t.Fail()
 	}
@@ -228,7 +228,7 @@ func TestGEVIS(t *testing.T) {
 	}
 	vv := v[0]
 
-	if vv.Type != P.XrefBranchType {
+	if vv.Key != A.XrefBranchType {
 		t.Fail()
 	}
 	if vv.Value != 69 {
