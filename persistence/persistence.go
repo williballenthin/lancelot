@@ -73,22 +73,22 @@ type Persistence interface {
 	GetAddressValueNumbers(atype AddressDataType, va AS.VA) ([]AddressValueNumber, error)
 
 	// stomps on existing value
-	SetEdgeValueString(atype EdgeDataType, va AS.VA, key EdgeDataKeyS, value string) error
+	SetEdgeValueString(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyS, value string) error
 	// no error if key does not exist
-	DelEdgeValueString(atype EdgeDataType, va AS.VA, key EdgeDataKeyS) error
+	DelEdgeValueString(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyS) error
 	// returns ErrKeyDoesNotExist if any part of the query fails
-	GetEdgeValueString(atype EdgeDataType, va AS.VA, key EdgeDataKeyS) (string, error)
+	GetEdgeValueString(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyS) (string, error)
 	// returns the empty list and ErrKeyDoesNotExist if any part of the query fails
-	GetEdgeValueStrings(atype EdgeDataType, va AS.VA) ([]EdgeValueString, error)
+	GetEdgeValueStrings(atype EdgeDataType, from AS.VA, to AS.VA) ([]EdgeValueString, error)
 
 	// stomps on existing value
-	SetEdgeValueNumber(atype EdgeDataType, va AS.VA, key EdgeDataKeyI, value int64) error
+	SetEdgeValueNumber(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyI, value int64) error
 	// no error if key does not exist
-	DelEdgeValueNumber(atype EdgeDataType, va AS.VA, key EdgeDataKeyI) error
+	DelEdgeValueNumber(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyI) error
 	// returns ErrKeyDoesNotExist if any part of the query fails
-	GetEdgeValueNumber(atype EdgeDataType, va AS.VA, key EdgeDataKeyI) (int64, error)
+	GetEdgeValueNumber(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyI) (int64, error)
 	// returns the empty list and ErrKeyDoesNotExist if any part of the query fails
-	GetEdgeValueNumbers(atype EdgeDataType, va AS.VA) ([]EdgeValueNumber, error)
+	GetEdgeValueNumbers(atype EdgeDataType, from AS.VA, to AS.VA) ([]EdgeValueNumber, error)
 }
 
 // usage:

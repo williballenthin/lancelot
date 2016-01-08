@@ -3,7 +3,6 @@ package mem_persistence
 import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
-	//	"log"
 )
 
 type MemPersistence struct {

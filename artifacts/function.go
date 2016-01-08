@@ -2,7 +2,6 @@ package artifacts
 
 import (
 	AS "github.com/williballenthin/Lancelot/address_space"
-	"log"
 )
 
 // unique: (Start)
