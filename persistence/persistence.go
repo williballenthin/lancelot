@@ -5,15 +5,15 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 )
 
+// ErrNotImplemented should be returned by implementors of Persistence
+//  that don't support some operation.
+var ErrNotImplemented = errors.New("Method not implemented")
+
 type AddressDataType uint
 
 type AddressDataKeyS uint
 
 type AddressDataKeyI uint
-
-const (
-	FunctionStackDelta = iota
-)
 
 type AddressValueString struct {
 	Type  AddressDataType
@@ -31,21 +31,9 @@ type AddressValueNumber struct {
 
 type EdgeDataType uint
 
-const (
-	XrefData = iota
-)
-
 type EdgeDataKeyS uint
 
-const (
-	XrefName = iota
-)
-
 type EdgeDataKeyI uint
-
-const (
-	XrefBranchType = iota // this some fake value so we can test
-)
 
 type EdgeValueString struct {
 	Type  EdgeDataType
