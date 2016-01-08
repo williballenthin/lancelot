@@ -165,7 +165,7 @@ type Workspace struct {
 	LoadedModules  []*LoadedModule
 	DisplayOptions DisplayOptions
 	persistence    P.Persistence
-	Artifacts      *A.Artifacts
+	Artifacts      *artifacts.Artifacts
 }
 
 func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
@@ -183,7 +183,7 @@ func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
 
 	arts, e := artifacts.New(p)
 	if e != nil {
-		return nil
+		return nil, e
 	}
 
 	return &Workspace{
