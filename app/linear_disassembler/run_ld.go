@@ -10,6 +10,7 @@ import (
 	"github.com/williballenthin/Lancelot/artifacts"
 	"github.com/williballenthin/Lancelot/disassembly"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
+	mem_persistence "github.com/williballenthin/Lancelot/persistence/memory"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
 	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
@@ -91,7 +92,10 @@ func doit(path string) error {
 	f, e := pe.Open(path)
 	check(e)
 
-	ws, e := W.New(W.ARCH_X86, W.MODE_32)
+	persis, e := mem_persistence.New()
+	check(e)
+
+	ws, e := W.New(W.ARCH_X86, W.MODE_32, persis)
 	check(e)
 
 	loader, e := peloader.New(path, f)
@@ -119,7 +123,7 @@ func doit(path string) error {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 				// assume we have: call [0x4010000]  ; IAT
 				iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
-				sym, e := ws.ResolveImportedFunction(iva)
+				sym, e := ws.ResolveAddressToSymbol(iva)
 				if e == nil {
 					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
 				}
@@ -132,7 +136,7 @@ func doit(path string) error {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 				// assume we have: jmp [0x4010000]  ; IAT
 				iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
-				sym, e := ws.ResolveImportedFunction(iva)
+				sym, e := ws.ResolveAddressToSymbol(iva)
 				if e == nil {
 					s = s + fmt.Sprintf("  ; %s.%s", sym.ModuleName, sym.SymbolName)
 				}
