@@ -16,7 +16,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
-	FA "github.com/williballenthin/Lancelot/analysis/function"
+	FiA "github.com/williballenthin/Lancelot/analysis/file"
+	FuA "github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/artifacts"
 	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
@@ -60,7 +61,8 @@ type Workspace struct {
 	DisplayOptions   DisplayOptions
 	persistence      P.Persistence
 	Artifacts        *artifacts.Artifacts
-	functionAnalysis map[Cookie]FA.FunctionAnalysis
+	functionAnalysis map[Cookie]FuA.FunctionAnalysis
+	fileAnalysis     map[Cookie]FiA.FileAnalysis
 	counter          Cookie
 }
 
@@ -92,7 +94,8 @@ func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
 		},
 		persistence:      p,
 		Artifacts:        arts,
-		functionAnalysis: make(map[Cookie]FA.FunctionAnalysis),
+		functionAnalysis: make(map[Cookie]FuA.FunctionAnalysis),
+		fileAnalysis:     make(map[Cookie]FiA.FileAnalysis),
 	}, nil
 }
 
@@ -164,7 +167,7 @@ func (ws *Workspace) ResolveAddressToSymbol(va AS.VA) (*LinkedSymbol, error) {
 	return nil, ErrFailedToResolveImport
 }
 
-func (ws *Workspace) RegisterFunctionAnalysis(a FA.FunctionAnalysis) (Cookie, error) {
+func (ws *Workspace) RegisterFunctionAnalysis(a FuA.FunctionAnalysis) (Cookie, error) {
 	ws.counter++
 	c := ws.counter
 	ws.functionAnalysis[c] = a
@@ -173,6 +176,18 @@ func (ws *Workspace) RegisterFunctionAnalysis(a FA.FunctionAnalysis) (Cookie, er
 
 func (ws *Workspace) UnregisterFunctionAnalysis(c Cookie) error {
 	delete(ws.functionAnalysis, c)
+	return nil
+}
+
+func (ws *Workspace) RegisterFileAnalysis(a FiA.FileAnalysis) (Cookie, error) {
+	ws.counter++
+	c := ws.counter
+	ws.fileAnalysis[c] = a
+	return c, nil
+}
+
+func (ws *Workspace) UnregisterFileAnalysis(c Cookie) error {
+	delete(ws.fileAnalysis, c)
 	return nil
 }
 
@@ -192,4 +207,14 @@ func (ws *Workspace) MakeFunction(va AS.VA) error {
 		}
 	}
 	return e
+}
+
+func (ws *Workspace) AnalyzeAll() error {
+	for _, a := range ws.fileAnalysis {
+		e := a.AnalyzeAll()
+		if e != nil {
+			logrus.Warn("file analysis failed: %s", e.Error())
+		}
+	}
+	return nil
 }

@@ -1,12 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"debug/pe"
 	"fmt"
 	"github.com/bnagy/gapstone"
 	"github.com/codegangsta/cli"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	EP "github.com/williballenthin/Lancelot/analysis/file/entry_point"
+	Pr "github.com/williballenthin/Lancelot/analysis/file/prologue"
 	DCA "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
 	N "github.com/williballenthin/Lancelot/analysis/function/name"
 	SDA "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
@@ -37,60 +38,6 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-}
-
-// findAll locates all instances of the given separator in
-//  the given byteslice and returns the RVAs relative to the
-//  start of the slice.
-func findAll(d []byte, sep []byte) ([]AS.RVA, error) {
-	var offset uint64
-	ret := make([]AS.RVA, 0, 100)
-	for {
-		i := bytes.Index(d, sep)
-		if i == -1 {
-			break
-		}
-
-		ret = append(ret, AS.RVA(uint64(i)+offset))
-
-		if i+len(sep) > len(d) {
-			break
-		}
-		d = d[i+len(sep):]
-		offset += uint64(i + len(sep))
-	}
-	return ret, nil
-}
-
-// findPrologues locates all instances of common x86 function
-//   prologues in the given byteslice.
-func findPrologues(d []byte) ([]AS.RVA, error) {
-	ret := make([]AS.RVA, 0, 100)
-	bare := make(map[AS.RVA]bool)
-
-	// first, find prologues with hotpatch region
-	hits, e := findAll(d, []byte{0x8B, 0xFF, 0x55, 0x8B, 0xEC}) // mov edi, edi; push ebp; mov ebp, esp
-	check(e)
-
-	// index the "bare" prologue start for future overlap query
-	ret = append(ret, hits...)
-	for _, hit := range hits {
-		bare[AS.RVA(uint64(hit)+0x2)] = true
-	}
-
-	// now, find prologues without hotpatch region
-	hits, e = findAll(d, []byte{0x55, 0x8B, 0xEC}) // push ebp; mov ebp, esp
-	check(e)
-
-	// and ensure they don't overlap with the hotpatchable prologues
-	for _, hit := range hits {
-		if _, ok := bare[hit]; ok {
-			continue
-		}
-		ret = append(ret, hit)
-	}
-
-	return ret, nil
 }
 
 func doit(path string) error {
@@ -144,6 +91,20 @@ func doit(path string) error {
 	check(e)
 	defer ws.UnregisterFunctionAnalysis(hDca)
 
+	ep, e := EP.New(ws)
+	check(e)
+
+	pro, e := Pr.New(ws)
+	check(e)
+
+	hEp, e := ws.RegisterFileAnalysis(ep)
+	check(e)
+	defer ws.UnregisterFileAnalysis(hEp)
+
+	hPro, e := ws.RegisterFileAnalysis(pro)
+	check(e)
+	defer ws.UnregisterFileAnalysis(hPro)
+
 	// callback for drawing instructions nicely
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 		s, _, e := linear_disassembler.FormatAddressDisassembly(
@@ -187,7 +148,7 @@ func doit(path string) error {
 				// assume we have: call 0x401000
 				targetva := AS.VA(insn.X86.Operands[0].Imm)
 				lifo = append(lifo, targetva)
-				log.Printf("found function: sub_%x", targetva)
+				log.Printf("found function: sub_%s", targetva)
 			}
 			log.Printf("call: ...")
 		}
@@ -213,77 +174,17 @@ func doit(path string) error {
 
 	// callback for recording intra-function edges
 	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, xref *artifacts.JumpCrossReference) error {
-		log.Printf("edge: 0x%x --> 0x%x (%s)", uint64(xref.From), uint64(xref.To), xref.Type)
+		log.Printf("edge: %s --> %s (%s)", xref.From, xref.To, xref.Type)
 		return nil
 	})
 
 	// debugging
 	check(ws.DumpMemoryRegions())
 
-	// queue up any non-forwarded exports as functions to analyze
-	for _, mod := range ws.LoadedModules {
-		lifo = append(lifo, mod.EntryPoint)
-		for _, export := range mod.ExportsByName {
-			if export.IsForwarded {
-				continue
-			}
-			fva := export.RVA.VA(mod.BaseAddress)
-			log.Printf("adding function by export (name): 0x%x", fva)
-			lifo = append(lifo, fva)
-		}
-		for _, export := range mod.ExportsByOrdinal {
-			if export.IsForwarded {
-				continue
-			}
-			fva := export.RVA.VA(mod.BaseAddress)
-			log.Printf("adding function by export (ordinal): 0x%x", fva)
-			lifo = append(lifo, fva)
-		}
-	}
-
-	// search for prologues in each memory region, queue them
-	//  up as functions to analyze
-	mmaps, e := ws.GetMaps()
-	check(e)
-	for _, mmap := range mmaps {
-		d, e := ws.MemRead(mmap.Address, mmap.Length)
-		check(e)
-
-		fns, e := findPrologues(d)
-		check(e)
-
-		for _, fn := range fns {
-			fva := fn.VA(mmap.Address)
-			log.Printf("adding function by prologue signature: 0x%x", fva)
-			lifo = append(lifo, fva)
-		}
-	}
-
-	// here's the main loop. fortunately, its concise.
-	// TODO: spawn some goroutines.
-	exploredFunctions := make(map[AS.VA]bool)
-	for len(lifo) > 0 {
-		fva := lifo[len(lifo)-1]
-		lifo = lifo[:len(lifo)-1]
-
-		_, exists := exploredFunctions[fva]
-		if exists {
-			continue
-		}
-
-		exploredFunctions[fva] = true
-		log.Printf("exploring function: sub_%x", fva)
-		//e = d.ExploreFunction(ws, fva)
-		check(e)
-	}
-
 	log.Printf("============================================")
 	log.Printf("ok, thats done. now lets make a function.")
 
-	for _, mod := range ws.LoadedModules {
-		log.Printf("Entry point: %s", mod.EntryPoint)
-		ws.MakeFunction(mod.EntryPoint)
-	}
+	ws.AnalyzeAll()
 
 	return nil
 }
