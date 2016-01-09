@@ -3,21 +3,18 @@ package main
 import (
 	"debug/pe"
 	"fmt"
-	"github.com/bnagy/gapstone"
 	"github.com/codegangsta/cli"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
 	direct_call_analysis "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
 	name_analysis "github.com/williballenthin/Lancelot/analysis/function/name"
 	stack_delta_analysis "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
-	"github.com/williballenthin/Lancelot/artifacts"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	log_persistence "github.com/williballenthin/Lancelot/persistence/log"
 	mem_persistence "github.com/williballenthin/Lancelot/persistence/memory"
 	mux_persistence "github.com/williballenthin/Lancelot/persistence/mux"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
-	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 	"log"
 	"os"
 )
@@ -60,9 +57,6 @@ func doit(path string) error {
 	_, e = loader.Load(ws)
 	check(e)
 
-	d, e := linear_disassembler.New(ws)
-	check(e)
-
 	sda, e := stack_delta_analysis.New(ws)
 	check(e)
 
@@ -97,12 +91,6 @@ func doit(path string) error {
 	hPro, e := ws.RegisterFileAnalysis(pro)
 	check(e)
 	defer ws.UnregisterFileAnalysis(hPro)
-
-	// callback for recording intra-function edges
-	d.RegisterJumpTraceHandler(func(insn gapstone.Instruction, xref *artifacts.JumpCrossReference) error {
-		log.Printf("edge: %s --> %s (%s)", xref.From, xref.To, xref.Type)
-		return nil
-	})
 
 	ws.AnalyzeAll()
 

@@ -16,7 +16,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
-	"github.com/williballenthin/Lancelot/analysis"
 	FiA "github.com/williballenthin/Lancelot/analysis/file"
 	FuA "github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/artifacts"
@@ -110,8 +109,8 @@ func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
 		},
 		persistence:      p,
 		Artifacts:        arts,
-		functionAnalysis: make([]savedFuncAnalysis),
-		fileAnalysis:     make([]savedFileAnalysis),
+		functionAnalysis: make([]savedFuncAnalysis, 0),
+		fileAnalysis:     make([]savedFileAnalysis, 0),
 	}, nil
 }
 
@@ -264,6 +263,21 @@ func (ws *Workspace) MakeFunction(va AS.VA) error {
 			if e != nil {
 				logrus.Warn("function analysis failed: %s", e.Error())
 			}
+		}
+	}
+	return e
+}
+
+func (ws *Workspace) MakeCodeCrossReference(from AS.VA, to AS.VA, jtype P.JumpType) error {
+	// here we are assuming there can't be two xrefs with the same (from, to) with different types
+	// seems like a bad assumption:
+	// JNZ $+5
+	_, e := ws.Artifacts.GetCodeCrossReference(from, to)
+	if e == artifacts.ErrXrefNotFound {
+		_, e := ws.Artifacts.AddCodeCrossReference(from, to, jtype)
+		if e != nil {
+			logrus.Warn("error adding xref: %s", e.Error())
+			return e
 		}
 	}
 	return e
