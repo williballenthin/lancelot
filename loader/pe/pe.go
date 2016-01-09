@@ -6,6 +6,7 @@ import (
 	"debug/pe"
 	"encoding/binary"
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/workspace"
 	"strings"
@@ -55,11 +56,11 @@ func (loader *PELoader) loadPESection(
 
 	h := section.SectionHeader
 
-	fmt.Printf("section: %s\n", section.SectionHeader.Name)
-	fmt.Printf("  virtual address: 0x%x\n", section.SectionHeader.VirtualAddress)
-	fmt.Printf("  virtual size: 0x%x\n", section.SectionHeader.VirtualSize)
-	fmt.Printf("  file offset: 0x%x\n", section.SectionHeader.Offset)
-	fmt.Printf("  file size: 0x%x\n", section.SectionHeader.Size)
+	logrus.Infof("section: %s", section.SectionHeader.Name)
+	logrus.Infof("  virtual address: 0x%x", section.SectionHeader.VirtualAddress)
+	logrus.Infof("  virtual size: 0x%x", section.SectionHeader.VirtualSize)
+	logrus.Infof("  file offset: 0x%x", section.SectionHeader.Offset)
+	logrus.Infof("  file size: 0x%x", section.SectionHeader.Size)
 
 	rvaSecStart := AS.RVA(h.VirtualAddress)
 	secStart := mod.VA(rvaSecStart)
@@ -108,7 +109,7 @@ func (loader *PELoader) resolveThunkTable(
 		}
 
 		if Flags64(rvaImport).isSet(FLAG_IMPORT_BY_ORDINAL) {
-			fmt.Printf("  import by ordinal: %03x\n", uint64(rvaImport)&uint64(0x7FFFFFFF))
+			logrus.Infof("  import by ordinal: %03x", uint64(rvaImport)&uint64(0x7FFFFFFF))
 			// TODO: replace thunk with handler
 			// notes:
 			//    32: PUSH 0xAABBCCDD --> 68 DD CC BB AA
@@ -130,7 +131,7 @@ func (loader *PELoader) resolveThunkTable(
 			importByName.Name, e = readAscii(d[2:])
 			check(e)
 
-			fmt.Printf("  import by name: %s@0x%x\n", importByName.Name, uint64(rvaImport))
+			logrus.Infof("  import by name: %s@%s", importByName.Name, rvaImport)
 			// TODO: replace thunk with handler
 			mod.Imports[offset] = workspace.LinkedSymbol{
 				ModuleName: moduleName,
@@ -155,8 +156,8 @@ func (loader *PELoader) resolveImports(
 	importRva := AS.RVA(importDirectory.VirtualAddress)
 	importSize := importDirectory.Size
 
-	fmt.Printf("import rva: 0x%x\n", importRva)
-	fmt.Printf("import size: 0x%x\n", importSize)
+	logrus.Infof("import rva: %s", importRva)
+	logrus.Infof("import size: 0x%x", importSize)
 
 	d, e := mod.MemRead(ws, AS.RVA(importDirectory.VirtualAddress), uint64(importDirectory.Size))
 	check(e)
@@ -165,15 +166,15 @@ func (loader *PELoader) resolveImports(
 	for {
 		var dir ImageImportDirectory
 		binary.Read(p, binary.LittleEndian, &dir.rvaOriginalThunkTable)
-		fmt.Printf("rva import lookup table: 0x%x\n", dir.rvaOriginalThunkTable)
+		logrus.Infof("rva import lookup table: 0x%x", dir.rvaOriginalThunkTable)
 		if dir.rvaOriginalThunkTable == 0 {
 			break
 		}
 		binary.Read(p, binary.LittleEndian, &dir.TimeDateStamp)
-		fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
+		logrus.Infof("time date stamp: 0x%x", dir.TimeDateStamp)
 
 		binary.Read(p, binary.LittleEndian, &dir.ForwarderChain)
-		fmt.Printf("forwarder chain: 0x%x\n", dir.ForwarderChain)
+		logrus.Infof("forwarder chain: 0x%x", dir.ForwarderChain)
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaModuleName)
 
@@ -182,7 +183,7 @@ func (loader *PELoader) resolveImports(
 		moduleName, e := readAscii(moduleNameBuf)
 		check(e)
 
-		fmt.Printf("module name: %s\n", string(moduleName))
+		logrus.Infof("module name: %s", string(moduleName))
 
 		binary.Read(p, binary.LittleEndian, &dir.rvaThunkTable)
 		loader.resolveThunkTable(ws, mod, moduleName, AS.RVA(dir.rvaThunkTable))
@@ -213,8 +214,8 @@ func (loader *PELoader) resolveExports(
 	exportRva := AS.RVA(exportDirectory.VirtualAddress)
 	exportSize := exportDirectory.Size
 
-	fmt.Printf("export rva: 0x%x\n", exportRva)
-	fmt.Printf("export size: 0x%x\n", exportSize)
+	logrus.Infof("export rva: %s", exportRva)
+	logrus.Infof("export size: 0x%x", exportSize)
 
 	d, e := mod.MemRead(ws, AS.RVA(exportDirectory.VirtualAddress), uint64(exportDirectory.Size))
 	check(e)
@@ -241,10 +242,10 @@ func (loader *PELoader) resolveExports(
 	exportModuleNameBuf, e := mod.MemRead(ws, AS.RVA(dir.rvaName), 0x100)
 	check(e)
 	exportModuleName, e := readAscii(exportModuleNameBuf)
-	fmt.Printf("export name: %ss\n", string(exportModuleName))
+	logrus.Infof("export name: %s", string(exportModuleName))
 	check(e)
 
-	fmt.Printf("time date stamp: 0x%x\n", dir.TimeDateStamp)
+	logrus.Infof("time date stamp: 0x%x", dir.TimeDateStamp)
 
 	// note closure over dir, mod, ws
 	readFunctionRva := func(i uint32) (AS.RVA, error) {
@@ -311,10 +312,10 @@ func (loader *PELoader) resolveExports(
 		mod.ExportsByOrdinal[ordinal] = sym
 
 		if isForwarded {
-			fmt.Printf(" export: (ordinal) %x: 0x%x -> %s.%s\n",
+			logrus.Infof(" export: (ordinal) %x: %s -> %s.%s",
 				ordinal, rvaFn, sym.ForwardedSymbol.ModuleName, sym.ForwardedSymbol.SymbolName)
 		} else {
-			fmt.Printf(" export: (ordinal) %x: 0x%x\n", ordinal, rvaFn)
+			logrus.Infof(" export: (ordinal) %x: %s", ordinal, rvaFn)
 		}
 	}
 
@@ -349,10 +350,10 @@ func (loader *PELoader) resolveExports(
 		mod.ExportsByName[name] = sym
 
 		if isForwarded {
-			fmt.Printf(" export: %s: 0x%x -> %s.%s\n",
+			logrus.Infof(" export: %s: %s -> %s.%s",
 				name, rvaFn, sym.ForwardedSymbol.ModuleName, sym.ForwardedSymbol.SymbolName)
 		} else {
-			fmt.Printf(" export: %s: 0x%x\n", name, rvaFn)
+			logrus.Infof(" export: %s: %s", name, rvaFn)
 		}
 	}
 
