@@ -4,7 +4,6 @@ import (
 	"errors"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
-	"log"
 )
 
 func check(e error) {
@@ -23,6 +22,7 @@ type BasicBlock struct {
 
 // unique: (From, To)
 type CrossReference struct {
+	artifacts *Artifacts
 	// From is the address from which the xref references.
 	From AS.VA
 	// To is the address to which the xref references.
@@ -33,76 +33,9 @@ type MemoryWriteCrossReference CrossReference
 type MemoryReadCrossReference CrossReference
 type CallCrossReference CrossReference
 
-type JumpType uint
-
-// JumpType defines the possible types of intra-function edges.
-const (
-	// JumpTypeCondTrue is the JumpType that represents the True
-	//  edge of a conditional branch.
-	JumpTypeCondTrue JumpType = iota
-	// JumpTypeCondFalse is the JumpType that represents the False
-	//  edge of a conditional branch.
-	JumpTypeCondFalse
-	// JumpTypeUncond is the JumpType that represents the edge of
-	//  an unconditional branch.
-	JumpTypeUncond
-)
-
-func (t JumpType) String() string {
-	switch t {
-	case JumpTypeCondTrue:
-		return "JumpTypeCondTrue"
-	case JumpTypeCondFalse:
-		return "JumpTypeCondFalse"
-	case JumpTypeUncond:
-		return "JumpTypeUncond"
-	default:
-		panic("unexpected JumpType")
-	}
-}
-
-type JumpCrossReference struct {
+type CodeCrossReference struct {
 	CrossReference
-	Type JumpType
-}
-
-type ArtifactCollection interface {
-	AddBasicBlock(BasicBlock) error
-	AddMemoryReadXref(MemoryReadCrossReference) error
-	AddMemoryWriteXref(MemoryWriteCrossReference) error
-	AddCallXref(CallCrossReference) error
-	AddJumpXref(JumpCrossReference) error
-}
-
-type LoggingArtifactCollection struct{}
-
-func NewLoggingArtifactCollection() (ArtifactCollection, error) {
-	return &LoggingArtifactCollection{}, nil
-}
-
-func (l LoggingArtifactCollection) AddBasicBlock(bb BasicBlock) error {
-	log.Printf("bb: 0x%x 0x%x", bb.Start, bb.End)
-	return nil
-}
-
-func (l LoggingArtifactCollection) AddMemoryReadXref(xref MemoryReadCrossReference) error {
-	log.Printf("r xref: 0x%x 0x%x", xref.From, xref.To)
-	return nil
-}
-
-func (l LoggingArtifactCollection) AddMemoryWriteXref(xref MemoryWriteCrossReference) error {
-	log.Printf("w xref: 0x%x 0x%x", xref.From, xref.To)
-	return nil
-}
-
-func (l LoggingArtifactCollection) AddCallXref(xref CallCrossReference) error {
-	log.Printf("c xref: 0x%x 0x%x", xref.From, xref.To)
-	return nil
-}
-
-func (l LoggingArtifactCollection) AddJumpXref(xref JumpCrossReference) error {
-	log.Printf("j xref: 0x%x %s 0x%x", xref.From, xref.Type, xref.To)
-	return nil
+	Type P.JumpType
 }
 
 type Artifacts struct {
@@ -141,5 +74,39 @@ func (a *Artifacts) GetFunction(va AS.VA) (*Function, error) {
 	return &Function{
 		artifacts: a,
 		Start:     va,
+	}, nil
+}
+
+func (a *Artifacts) AddCodeCrossReference(from AS.VA, to AS.VA, jtype P.JumpType) (*CodeCrossReference, error) {
+	// TODO: don't stomp on existing location?
+	e := a.persistence.SetEdgeValueNumber(P.CodeXrefData, from, to, P.XrefJumpType, int64(jtype))
+	check(e)
+
+	return &CodeCrossReference{
+		CrossReference: CrossReference{
+			artifacts: a,
+			From:      from,
+			To:        to,
+		},
+		Type: jtype,
+	}, nil
+}
+
+var ErrXrefNotFound = errors.New("Cross reference not found at specified address")
+
+// TODO: this does not support two xrefs with same (from, to) with different types
+func (a *Artifacts) GetCodeCrossReference(from AS.VA, to AS.VA) (*CodeCrossReference, error) {
+	v, e := a.persistence.GetEdgeValueNumber(P.CodeXrefData, from, to, P.XrefJumpType)
+	if e != nil {
+		return nil, ErrXrefNotFound
+	}
+
+	return &CodeCrossReference{
+		CrossReference: CrossReference{
+			artifacts: a,
+			From:      from,
+			To:        to,
+		},
+		Type: P.JumpType(v),
 	}, nil
 }

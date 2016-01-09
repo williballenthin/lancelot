@@ -4,14 +4,12 @@
 package linear_disassembler
 
 import (
-	"fmt"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/disassembly"
 	w "github.com/williballenthin/Lancelot/workspace"
 	dora "github.com/williballenthin/Lancelot/workspace/dora"
 	//	"log"
-	"strings"
 )
 
 func check(e error) {
@@ -85,42 +83,13 @@ func min(a uint64, b uint64) uint64 {
 	}
 }
 
-// FormatAddressDisassembly formats the bytes at a given address in a given
-//  address space as disassembly.
-// It may also include the hexidecimal bytes alongside the mnemonics and
-//  operands if numOpcodeBytes is non-zero.
-// This function returns the data at va formatted appropriately, the number
-//  of bytes for va formatted, and an error instance.
-// TODO: move to utils
-func FormatAddressDisassembly(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA, numOpcodeBytes uint) (string, uint64, error) {
-	insn, e := disassembly.ReadInstruction(dis, as, va)
-	check(e)
-
-	numBytes := uint64(numOpcodeBytes)
-	d, e := as.MemRead(va, min(uint64(insn.Size), numBytes))
-	check(e)
-
-	// format each of those as hex
-	var bytesPrefix []string
-	for _, b := range d {
-		bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
-	}
-	// and fill in padding space
-	for i := uint64(len(d)); i < numBytes; i++ {
-		bytesPrefix = append(bytesPrefix, "  ")
-	}
-	prefix := strings.Join(bytesPrefix, " ")
-
-	ret := fmt.Sprintf("0x%x: %s %s\t%s", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
-	return ret, uint64(insn.Size), nil
-}
-
 // ExploreBB linearly disassembles instructions starting at a given address
 //  in a given address space, invoking the appropriate callbacks, and terminates
 //  at the end of the current basic block.
 // A basic block is delimited by a ret or jump instruction.
 // Returns the addresses to which this basic block may transfer control via jumps.
 func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+	bbStart := va
 	nextBBs := make([]AS.VA, 0, 2)
 
 	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
@@ -141,7 +110,7 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 
 			for _, target := range targets {
 				for _, fn := range ld.jumpHandlers {
-					e := fn(insn, target)
+					e := fn(insn, bbStart, target.To, target.Type)
 					if e != nil {
 						return false, e
 					}

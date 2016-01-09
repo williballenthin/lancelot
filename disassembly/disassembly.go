@@ -5,10 +5,7 @@ import (
 	"errors"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
-	"github.com/williballenthin/Lancelot/artifacts"
-
-	// we don't want to import this. seems like the dependency is backwards.
-	// but, need this for ARCH_* constants, until they're separate.
+	P "github.com/williballenthin/Lancelot/persistence"
 	W "github.com/williballenthin/Lancelot/workspace"
 )
 
@@ -110,12 +107,18 @@ func GetJumpTarget(insn gapstone.Instruction) (AS.VA, error) {
 	return AS.VA(0), nil
 }
 
+type Jump struct {
+	From AS.VA
+	To   AS.VA
+	Type P.JumpType
+}
+
 // GetJumpTargets gets the possible addresses to which a known jump instruction
 //  transfers control.
 // For a conditional jump, get both the true and false targets.
 // This function uses just the instruction instance, so for an indirect jump, we can't tell much.
-func GetJumpTargets(insn gapstone.Instruction) ([]*artifacts.JumpCrossReference, error) {
-	ret := make([]*artifacts.JumpCrossReference, 0, 2)
+func GetJumpTargets(insn gapstone.Instruction) ([]*Jump, error) {
+	ret := make([]*Jump, 0, 2)
 
 	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
 		// unconditional jump, have the following possibilities:
@@ -131,12 +134,10 @@ func GetJumpTargets(insn gapstone.Instruction) ([]*artifacts.JumpCrossReference,
 
 		ret = append(
 			ret,
-			&artifacts.JumpCrossReference{
-				CrossReference: artifacts.CrossReference{
-					From: AS.VA(insn.Address),
-					To:   next,
-				},
-				Type: artifacts.JumpTypeUncond,
+			&Jump{
+				From: AS.VA(insn.Address),
+				To:   next,
+				Type: P.JumpTypeUncond,
 			})
 	} else {
 		// assume a two case situation:
@@ -150,24 +151,20 @@ func GetJumpTargets(insn gapstone.Instruction) ([]*artifacts.JumpCrossReference,
 		falsePc := AS.VA(uint64(insn.Address) + uint64(insn.Size))
 		ret = append(
 			ret,
-			&artifacts.JumpCrossReference{
-				CrossReference: artifacts.CrossReference{
-					From: AS.VA(insn.Address),
-					To:   falsePc,
-				},
-				Type: artifacts.JumpTypeCondFalse,
+			&Jump{
+				From: AS.VA(insn.Address),
+				To:   falsePc,
+				Type: P.JumpTypeCondFalse,
 			})
 
 		truePc, e := GetJumpTarget(insn)
 		if e == nil {
 			ret = append(
 				ret,
-				&artifacts.JumpCrossReference{
-					CrossReference: artifacts.CrossReference{
-						From: AS.VA(insn.Address),
-						To:   truePc,
-					},
-					Type: artifacts.JumpTypeCondTrue,
+				&Jump{
+					From: AS.VA(insn.Address),
+					To:   truePc,
+					Type: P.JumpTypeCondTrue,
 				})
 		}
 	}

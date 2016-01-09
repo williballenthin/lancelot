@@ -81,7 +81,7 @@ func (l AddressDataKeyI) String() string {
 const (
 	EdgeDataUnused EdgeDataType = iota
 	// from basic block to basic block
-	FlowXrefData
+	CodeXrefData
 	// from instruction to VA (mem read/write),
 	// or VA to VA (pointer
 	DataXrefData
@@ -91,8 +91,8 @@ const (
 
 func (l EdgeDataType) String() string {
 	switch l {
-	case FlowXrefData:
-		return "FlowXrefData"
+	case CodeXrefData:
+		return "CodeXrefData"
 	case DataXrefData:
 		return "DataXrefData"
 	case CallGraphData:
@@ -121,6 +121,7 @@ func (l EdgeDataKeyS) String() string {
 const (
 	EdgeKeyUnusedI EdgeDataKeyI = iota
 	XrefBranchType              // this some fake value so we can test
+	XrefJumpType
 )
 
 func (l EdgeDataKeyI) String() string {
@@ -129,5 +130,37 @@ func (l EdgeDataKeyI) String() string {
 		return "XrefBranchType"
 	default:
 		panic("unknown type")
+	}
+}
+
+type JumpType int64
+
+// JumpType defines the possible types of intra-function edges.
+const (
+	JumpTypeUnused JumpType = iota
+	// JumpTypeCondTrue is the JumpType that represents the True
+	//  edge of a conditional branch.
+	JumpTypeCondTrue
+	// JumpTypeCondFalse is the JumpType that represents the False
+	//  edge of a conditional branch.
+	JumpTypeCondFalse
+	// JumpTypeUncond is the JumpType that represents the edge of
+	//  an unconditional branch.
+	JumpTypeUncond
+	JumpTypeSwitch
+)
+
+func (t JumpType) String() string {
+	switch t {
+	case JumpTypeCondTrue:
+		return "JumpTypeCondTrue"
+	case JumpTypeCondFalse:
+		return "JumpTypeCondFalse"
+	case JumpTypeUncond:
+		return "JumpTypeUncond"
+	case JumpTypeSwitch:
+		return "JumpTypeSwitch"
+	default:
+		panic("unexpected JumpType")
 	}
 }
