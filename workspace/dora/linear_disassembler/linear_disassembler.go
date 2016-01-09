@@ -1,7 +1,7 @@
-// Package LinearDisassembler implements a code explorer that uses linear
+// Package linear_disassembler implements a code explorer that uses linear
 //  disassembly to recognize instructions, basic blocks, and control
 //  flow edges.
-package LinearDisassembler
+package linear_disassembler
 
 import (
 	"fmt"
@@ -20,38 +20,59 @@ func check(e error) {
 	}
 }
 
-// LD is the object that holds the state of a linear disassembler.
-type LD struct {
+type Cookie uint64
+
+// LinearDisassembler is the object that holds the state of a linear disassembler.
+type LinearDisassembler struct {
 	disassembler *gapstone.Engine
-	insnHandlers []dora.InstructionTraceHandler
-	jumpHandlers []dora.JumpTraceHandler
+	counter      Cookie
+	insnHandlers map[Cookie]dora.InstructionTraceHandler
+	jumpHandlers map[Cookie]dora.JumpTraceHandler
 }
 
 // New creates a new LinearDisassembler instance.
-func New(ws *w.Workspace) (*LD, error) {
+func New(ws *w.Workspace) (*LinearDisassembler, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
 	d, e := disassembly.New(ws)
 	if e != nil {
 		return nil, e
 	}
-	return &LD{
+	return &LinearDisassembler{
 		disassembler: d,
-		insnHandlers: make([]dora.InstructionTraceHandler, 0, 1),
-		jumpHandlers: make([]dora.JumpTraceHandler, 0, 1),
+		insnHandlers: make(map[Cookie]dora.InstructionTraceHandler),
+		jumpHandlers: make(map[Cookie]dora.JumpTraceHandler),
 	}, nil
 }
 
 // RegisterInstructionTraceHandler adds a callback function to receive the
 //   disassembled instructions.
-func (ld *LD) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) error {
-	ld.insnHandlers = append(ld.insnHandlers, fn)
+func (ld *LinearDisassembler) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) (Cookie, error) {
+	ld.counter++
+	c := ld.counter
+	ld.insnHandlers[c] = fn
+	return c, nil
+}
+
+// UnregisterInstructionTraceHandler removes a previously-added callback
+//   function to receive the disassembled instructions.
+func (ld *LinearDisassembler) UnregisterInstructionTraceHandler(c Cookie) error {
+	delete(ld.insnHandlers, c)
 	return nil
 }
 
 // RegisterJumpTraceHandler adds a callback function to receive control flow
 //  edges identified among basic blocks.
-func (ld *LD) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
-	ld.jumpHandlers = append(ld.jumpHandlers, fn)
+func (ld *LinearDisassembler) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) (Cookie, error) {
+	ld.counter++
+	c := ld.counter
+	ld.jumpHandlers[c] = fn
+	return c, nil
+}
+
+// UnregisterJumpTraceHandler removes a previously-added callback
+//   function to receive control flow edges identified among basic blocks.
+func (ld *LinearDisassembler) UnregisterJumpTraceHandler(c Cookie) error {
+	delete(ld.jumpHandlers, c)
 	return nil
 }
 
@@ -99,7 +120,7 @@ func FormatAddressDisassembly(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA
 //  at the end of the current basic block.
 // A basic block is delimited by a ret or jump instruction.
 // Returns the addresses to which this basic block may transfer control via jumps.
-func (ld *LD) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	nextBBs := make([]AS.VA, 0, 2)
 
 	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
@@ -144,7 +165,7 @@ func (ld *LD) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 //  blocks starting at a given address in a given address space, invoking
 //  appropriate callbacks.
 // It terminates once it has explored all the basic blocks it discovers.
-func (ld *LD) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
+func (ld *LinearDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
 	// lifo is a stack (cause these are easier than queues in Go) of BBs
 	//  that need to be explored.
 	lifo := make([]AS.VA, 0, 10)
