@@ -26,7 +26,7 @@ func (m *MuxPersistence) SetAddressValueString(atype P.AddressDataType, va AS.VA
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) DelAddressValueString(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyS) error {
@@ -37,7 +37,7 @@ func (m *MuxPersistence) DelAddressValueString(atype P.AddressDataType, va AS.VA
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) GetAddressValueString(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyS) (string, error) {
@@ -69,7 +69,7 @@ func (m *MuxPersistence) GetAddressValueStrings(atype P.AddressDataType, va AS.V
 	return r, ret
 }
 
-func (m *MuxPersistence) SetAddressValueString(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyI, value string) error {
+func (m *MuxPersistence) SetAddressValueNumber(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyI, value int64) error {
 	var ret error
 	for _, p := range m.others {
 		e := p.SetAddressValueNumber(atype, va, key, value)
@@ -77,7 +77,7 @@ func (m *MuxPersistence) SetAddressValueString(atype P.AddressDataType, va AS.VA
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) DelAddressValueNumber(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyI) error {
@@ -88,10 +88,10 @@ func (m *MuxPersistence) DelAddressValueNumber(atype P.AddressDataType, va AS.VA
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
-func (m *MuxPersistence) GetAddressValueNumber(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyI) (string, error) {
+func (m *MuxPersistence) GetAddressValueNumber(atype P.AddressDataType, va AS.VA, key P.AddressDataKeyI) (int64, error) {
 	var ret error
 	for _, p := range m.others {
 		v, e := p.GetAddressValueNumber(atype, va, key)
@@ -102,7 +102,7 @@ func (m *MuxPersistence) GetAddressValueNumber(atype P.AddressDataType, va AS.VA
 			return v, nil
 		}
 	}
-	return "", ret
+	return 0, ret
 }
 
 func (m *MuxPersistence) GetAddressValueNumbers(atype P.AddressDataType, va AS.VA) ([]P.AddressValueNumber, error) {
@@ -128,7 +128,7 @@ func (m *MuxPersistence) SetEdgeValueString(atype P.EdgeDataType, from AS.VA, to
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) DelEdgeValueString(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyS) error {
@@ -139,7 +139,7 @@ func (m *MuxPersistence) DelEdgeValueString(atype P.EdgeDataType, from AS.VA, to
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) GetEdgeValueString(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyS) (string, error) {
@@ -171,7 +171,7 @@ func (m *MuxPersistence) GetEdgeValueStrings(atype P.EdgeDataType, from AS.VA, t
 	return r, ret
 }
 
-func (m *MuxPersistence) SetEdgeValueString(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyI, value string) error {
+func (m *MuxPersistence) SetEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyI, value int64) error {
 	var ret error
 	for _, p := range m.others {
 		e := p.SetEdgeValueNumber(atype, from, to, key, value)
@@ -179,7 +179,7 @@ func (m *MuxPersistence) SetEdgeValueString(atype P.EdgeDataType, from AS.VA, to
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
 func (m *MuxPersistence) DelEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyI) error {
@@ -190,10 +190,10 @@ func (m *MuxPersistence) DelEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to
 			ret = e
 		}
 	}
-	return nil
+	return ret
 }
 
-func (m *MuxPersistence) GetEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyI) (string, error) {
+func (m *MuxPersistence) GetEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to AS.VA, key P.EdgeDataKeyI) (int64, error) {
 	var ret error
 	for _, p := range m.others {
 		v, e := p.GetEdgeValueNumber(atype, from, to, key)
@@ -204,7 +204,7 @@ func (m *MuxPersistence) GetEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to
 			return v, nil
 		}
 	}
-	return "", ret
+	return 0, ret
 }
 
 func (m *MuxPersistence) GetEdgeValueNumbers(atype P.EdgeDataType, from AS.VA, to AS.VA) ([]P.EdgeValueNumber, error) {
