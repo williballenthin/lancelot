@@ -1,6 +1,7 @@
 package mem_persistence
 
 import (
+	//"github.com/Sirupsen/logrus"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
 )

@@ -1,6 +1,7 @@
 package mux_persistence
 
 import (
+	//	"github.com/Sirupsen/logrus"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
 )
@@ -46,6 +47,7 @@ func (m *MuxPersistence) GetAddressValueString(atype P.AddressDataType, va AS.VA
 		v, e := p.GetAddressValueString(atype, va, key)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -61,6 +63,7 @@ func (m *MuxPersistence) GetAddressValueStrings(atype P.AddressDataType, va AS.V
 		v, e := p.GetAddressValueStrings(atype, va)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -97,6 +100,7 @@ func (m *MuxPersistence) GetAddressValueNumber(atype P.AddressDataType, va AS.VA
 		v, e := p.GetAddressValueNumber(atype, va, key)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -112,6 +116,7 @@ func (m *MuxPersistence) GetAddressValueNumbers(atype P.AddressDataType, va AS.V
 		v, e := p.GetAddressValueNumbers(atype, va)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -148,6 +153,7 @@ func (m *MuxPersistence) GetEdgeValueString(atype P.EdgeDataType, from AS.VA, to
 		v, e := p.GetEdgeValueString(atype, from, to, key)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -163,6 +169,7 @@ func (m *MuxPersistence) GetEdgeValueStrings(atype P.EdgeDataType, from AS.VA, t
 		v, e := p.GetEdgeValueStrings(atype, from, to)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -199,6 +206,7 @@ func (m *MuxPersistence) GetEdgeValueNumber(atype P.EdgeDataType, from AS.VA, to
 		v, e := p.GetEdgeValueNumber(atype, from, to, key)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
@@ -214,6 +222,7 @@ func (m *MuxPersistence) GetEdgeValueNumbers(atype P.EdgeDataType, from AS.VA, t
 		v, e := p.GetEdgeValueNumbers(atype, from, to)
 		if e != P.ErrNotImplemented && e != nil {
 			ret = e
+			continue
 		}
 		if e != P.ErrNotImplemented {
 			return v, nil
