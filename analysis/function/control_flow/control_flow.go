@@ -1,9 +1,11 @@
 package control_flow_analysis
 
 import (
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
+	P "github.com/williballenthin/Lancelot/persistence"
 	W "github.com/williballenthin/Lancelot/workspace"
 	LD "github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 )
@@ -33,9 +35,9 @@ func (a *ControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 		insn gapstone.Instruction,
 		from_bb AS.VA,
 		target AS.VA,
-		jtype artifacts.JumpType) error {
+		jtype P.JumpType) error {
 
-		a.ws.MakeCodeCrossReference(insn.Address, target, jtype)
+		a.ws.MakeCodeCrossReference(AS.VA(insn.Address), target, jtype)
 		return nil
 	})
 	check(e)
