@@ -7,10 +7,15 @@ import (
 	"github.com/bnagy/gapstone"
 	"github.com/codegangsta/cli"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	DCA "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
+	N "github.com/williballenthin/Lancelot/analysis/function/name"
+	SDA "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
 	"github.com/williballenthin/Lancelot/artifacts"
 	"github.com/williballenthin/Lancelot/disassembly"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
+	log_persistence "github.com/williballenthin/Lancelot/persistence/log"
 	mem_persistence "github.com/williballenthin/Lancelot/persistence/memory"
+	mux_persistence "github.com/williballenthin/Lancelot/persistence/mux"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
 	"github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
@@ -92,10 +97,16 @@ func doit(path string) error {
 	f, e := pe.Open(path)
 	check(e)
 
-	persis, e := mem_persistence.New()
+	memPersis, e := mem_persistence.New()
 	check(e)
 
-	ws, e := W.New(W.ARCH_X86, W.MODE_32, persis)
+	logPersis, e := log_persistence.New()
+	check(e)
+
+	muxPersis, e := mux_persistence.New(memPersis, logPersis)
+	check(e)
+
+	ws, e := W.New(W.ARCH_X86, W.MODE_32, muxPersis)
 	check(e)
 
 	loader, e := peloader.New(path, f)
@@ -104,7 +115,7 @@ func doit(path string) error {
 	_, e = loader.Load(ws)
 	check(e)
 
-	d, e := LinearDisassembler.New(ws)
+	d, e := linear_disassembler.New(ws)
 	check(e)
 
 	var lifo []AS.VA
@@ -112,9 +123,30 @@ func doit(path string) error {
 	dis, e := disassembly.New(ws)
 	check(e)
 
+	sda, e := SDA.New(ws)
+	check(e)
+
+	na, e := N.New(ws)
+	check(e)
+
+	dca, e := DCA.New(ws)
+	check(e)
+
+	hSda, e := ws.RegisterFunctionAnalysis(sda)
+	check(e)
+	defer ws.UnregisterFunctionAnalysis(hSda)
+
+	hNa, e := ws.RegisterFunctionAnalysis(na)
+	check(e)
+	defer ws.UnregisterFunctionAnalysis(hNa)
+
+	hDca, e := ws.RegisterFunctionAnalysis(dca)
+	check(e)
+	defer ws.UnregisterFunctionAnalysis(hDca)
+
 	// callback for drawing instructions nicely
 	d.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
-		s, _, e := LinearDisassembler.FormatAddressDisassembly(
+		s, _, e := linear_disassembler.FormatAddressDisassembly(
 			dis, ws, AS.VA(insn.Address),
 			ws.DisplayOptions.NumOpcodeBytes)
 		check(e)
@@ -241,8 +273,16 @@ func doit(path string) error {
 
 		exploredFunctions[fva] = true
 		log.Printf("exploring function: sub_%x", fva)
-		e = d.ExploreFunction(ws, fva)
+		//e = d.ExploreFunction(ws, fva)
 		check(e)
+	}
+
+	log.Printf("============================================")
+	log.Printf("ok, thats done. now lets make a function.")
+
+	for _, mod := range ws.LoadedModules {
+		log.Printf("Entry point: %s", mod.EntryPoint)
+		ws.MakeFunction(mod.EntryPoint)
 	}
 
 	return nil
