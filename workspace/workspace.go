@@ -16,11 +16,13 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/analysis"
 	FiA "github.com/williballenthin/Lancelot/analysis/file"
 	FuA "github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/artifacts"
 	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
+	"sort"
 )
 
 func check(e error) {
@@ -52,6 +54,20 @@ type DisplayOptions struct {
 	NumOpcodeBytes uint
 }
 
+type savedFuncAnalysis struct {
+	analysis FuA.FunctionAnalysis
+	cookie   Cookie
+}
+
+func (a savedFuncAnalysis) Priority() uint {
+	return a.analysis.Priority()
+}
+
+type savedFileAnalysis struct {
+	analysis FiA.FileAnalysis
+	cookie   Cookie
+}
+
 type Workspace struct {
 	// we cheat and use u as the address space
 	as               AS.AddressSpace
@@ -61,8 +77,8 @@ type Workspace struct {
 	DisplayOptions   DisplayOptions
 	persistence      P.Persistence
 	Artifacts        *artifacts.Artifacts
-	functionAnalysis map[Cookie]FuA.FunctionAnalysis
-	fileAnalysis     map[Cookie]FiA.FileAnalysis
+	functionAnalysis []savedFuncAnalysis
+	fileAnalysis     []savedFileAnalysis
 	counter          Cookie
 }
 
@@ -94,8 +110,8 @@ func New(arch Arch, mode Mode, p P.Persistence) (*Workspace, error) {
 		},
 		persistence:      p,
 		Artifacts:        arts,
-		functionAnalysis: make(map[Cookie]FuA.FunctionAnalysis),
-		fileAnalysis:     make(map[Cookie]FiA.FileAnalysis),
+		functionAnalysis: make([]savedFuncAnalysis),
+		fileAnalysis:     make([]savedFileAnalysis),
 	}, nil
 }
 
@@ -167,27 +183,70 @@ func (ws *Workspace) ResolveAddressToSymbol(va AS.VA) (*LinkedSymbol, error) {
 	return nil, ErrFailedToResolveImport
 }
 
+type ByPriorityFunc []savedFuncAnalysis
+
+func (a ByPriorityFunc) Len() int      { return len(a) }
+func (a ByPriorityFunc) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByPriorityFunc) Less(i, j int) bool {
+	return a[i].analysis.Priority() < a[j].analysis.Priority()
+}
+
+type ByPriorityFile []savedFileAnalysis
+
+func (a ByPriorityFile) Len() int      { return len(a) }
+func (a ByPriorityFile) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByPriorityFile) Less(i, j int) bool {
+	return a[i].analysis.Priority() < a[j].analysis.Priority()
+}
+
+// there should probably be a priority system here
 func (ws *Workspace) RegisterFunctionAnalysis(a FuA.FunctionAnalysis) (Cookie, error) {
 	ws.counter++
 	c := ws.counter
-	ws.functionAnalysis[c] = a
+
+	item := savedFuncAnalysis{
+		analysis: a,
+		cookie:   c,
+	}
+	ws.functionAnalysis = append(ws.functionAnalysis, item)
+	sort.Sort(ByPriorityFunc(ws.functionAnalysis))
+
 	return c, nil
 }
 
 func (ws *Workspace) UnregisterFunctionAnalysis(c Cookie) error {
-	delete(ws.functionAnalysis, c)
+	for i, v := range ws.functionAnalysis {
+		if v.cookie == c {
+			ws.functionAnalysis = append(ws.functionAnalysis[:i], ws.functionAnalysis[i+1:]...)
+			return nil
+		}
+	}
 	return nil
 }
 
+// there should probably be a priority system here
+// for example, want import/export indexing before prologue scanning
 func (ws *Workspace) RegisterFileAnalysis(a FiA.FileAnalysis) (Cookie, error) {
 	ws.counter++
 	c := ws.counter
-	ws.fileAnalysis[c] = a
+
+	item := savedFileAnalysis{
+		analysis: a,
+		cookie:   c,
+	}
+	ws.fileAnalysis = append(ws.fileAnalysis, item)
+	sort.Sort(ByPriorityFile(ws.fileAnalysis))
+
 	return c, nil
 }
 
 func (ws *Workspace) UnregisterFileAnalysis(c Cookie) error {
-	delete(ws.fileAnalysis, c)
+	for i, v := range ws.fileAnalysis {
+		if v.cookie == c {
+			ws.fileAnalysis = append(ws.fileAnalysis[:i], ws.fileAnalysis[i+1:]...)
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -199,8 +258,9 @@ func (ws *Workspace) MakeFunction(va AS.VA) error {
 			logrus.Warn("error adding function: %s", e.Error())
 			return e
 		}
+		// the slice is sorted by priority
 		for _, a := range ws.functionAnalysis {
-			e := a.AnalyzeFunction(f)
+			e := a.analysis.AnalyzeFunction(f)
 			if e != nil {
 				logrus.Warn("function analysis failed: %s", e.Error())
 			}
@@ -210,8 +270,9 @@ func (ws *Workspace) MakeFunction(va AS.VA) error {
 }
 
 func (ws *Workspace) AnalyzeAll() error {
+	// the slice is sorted by priority
 	for _, a := range ws.fileAnalysis {
-		e := a.AnalyzeAll()
+		e := a.analysis.AnalyzeAll()
 		if e != nil {
 			logrus.Warn("file analysis failed: %s", e.Error())
 		}

@@ -99,3 +99,7 @@ func (a *PrologueAnalysis) AnalyzeAll() error {
 	}
 	return nil
 }
+
+func (a *PrologueAnalysis) Priority() uint {
+	return 75
+}

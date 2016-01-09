@@ -50,3 +50,7 @@ func (a *DirectCallAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 
 	return nil
 }
+
+func (a *DirectCallAnalysis) Priority() uint {
+	return 50
+}

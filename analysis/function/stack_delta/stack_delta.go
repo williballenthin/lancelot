@@ -59,3 +59,7 @@ func (a *StackDeltaAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 
 	return nil
 }
+
+func (a *StackDeltaAnalysis) Priority() uint {
+	return 50
+}

@@ -32,3 +32,7 @@ func (a *NameAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 	}
 	return nil
 }
+
+func (a *NameAnalysis) Priority() uint {
+	return 25
+}

@@ -45,3 +45,7 @@ func (a *EntryPointAnalysis) AnalyzeAll() error {
 	}
 	return nil
 }
+
+func (a *EntryPointAnalysis) Priority() uint {
+	return 50
+}
