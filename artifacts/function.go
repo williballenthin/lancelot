@@ -2,6 +2,7 @@ package artifacts
 
 import (
 	AS "github.com/williballenthin/Lancelot/address_space"
+	P "github.com/williballenthin/Lancelot/persistence"
 )
 
 // unique: (Start)
@@ -12,17 +13,17 @@ type Function struct {
 }
 
 func (f *Function) SetName(name string) error {
-	return f.artifacts.persistence.SetAddressValueString(FunctionData, f.Start, FunctionName, name)
+	return f.artifacts.persistence.SetAddressValueString(P.FunctionData, f.Start, P.FunctionName, name)
 }
 
 func (f *Function) GetName() (string, error) {
-	return f.artifacts.persistence.GetAddressValueString(FunctionData, f.Start, FunctionName)
+	return f.artifacts.persistence.GetAddressValueString(P.FunctionData, f.Start, P.FunctionName)
 }
 
 func (f *Function) SetStackDelta(delta int64) error {
-	return f.artifacts.persistence.SetAddressValueNumber(FunctionData, f.Start, FunctionStackDelta, delta)
+	return f.artifacts.persistence.SetAddressValueNumber(P.FunctionData, f.Start, P.FunctionStackDelta, delta)
 }
 
 func (f *Function) GetStackDelta() (int64, error) {
-	return f.artifacts.persistence.GetAddressValueNumber(FunctionData, f.Start, FunctionStackDelta)
+	return f.artifacts.persistence.GetAddressValueNumber(P.FunctionData, f.Start, P.FunctionStackDelta)
 }

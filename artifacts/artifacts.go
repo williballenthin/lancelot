@@ -105,8 +105,6 @@ func (l LoggingArtifactCollection) AddJumpXref(xref JumpCrossReference) error {
 	return nil
 }
 
-type LocationType uint
-
 type Artifacts struct {
 	persistence P.Persistence
 }
@@ -119,7 +117,7 @@ func New(p P.Persistence) (*Artifacts, error) {
 
 func (a *Artifacts) AddFunction(va AS.VA) (*Function, error) {
 	// TODO: don't stomp on existing location?
-	e := a.persistence.SetAddressValueNumber(LocationData, va, TypeOfLocation, int64(LocationFunction))
+	e := a.persistence.SetAddressValueNumber(P.LocationData, va, P.TypeOfLocation, int64(P.LocationFunction))
 	check(e)
 
 	return &Function{
@@ -131,12 +129,12 @@ func (a *Artifacts) AddFunction(va AS.VA) (*Function, error) {
 var ErrFunctionNotFound = errors.New("Function not found at specified address")
 
 func (a *Artifacts) GetFunction(va AS.VA) (*Function, error) {
-	v, e := a.persistence.GetAddressValueNumber(LocationData, va, TypeOfLocation)
+	v, e := a.persistence.GetAddressValueNumber(P.LocationData, va, P.TypeOfLocation)
 	if e != nil {
 		return nil, ErrFunctionNotFound
 	}
 
-	if v != int64(LocationFunction) {
+	if v != int64(P.LocationFunction) {
 		return nil, ErrFunctionNotFound
 	}
 
