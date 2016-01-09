@@ -6,6 +6,7 @@ import (
 	"github.com/codegangsta/cli"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
+	control_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/control_flow"
 	direct_call_analysis "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
 	name_analysis "github.com/williballenthin/Lancelot/analysis/function/name"
 	stack_delta_analysis "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
@@ -66,6 +67,9 @@ func doit(path string) error {
 	dca, e := direct_call_analysis.New(ws)
 	check(e)
 
+	cf, e := control_flow_analysis.New(ws)
+	check(e)
+
 	hSda, e := ws.RegisterFunctionAnalysis(sda)
 	check(e)
 	defer ws.UnregisterFunctionAnalysis(hSda)
@@ -77,6 +81,10 @@ func doit(path string) error {
 	hDca, e := ws.RegisterFunctionAnalysis(dca)
 	check(e)
 	defer ws.UnregisterFunctionAnalysis(hDca)
+
+	hCf, e := ws.RegisterFunctionAnalysis(cf)
+	check(e)
+	defer ws.UnregisterFunctionAnalysis(hCf)
 
 	ep, e := entry_point_analysis.New(ws)
 	check(e)
