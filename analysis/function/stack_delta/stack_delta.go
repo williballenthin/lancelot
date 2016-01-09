@@ -17,23 +17,21 @@ func check(e error) {
 
 type StackDeltaAnalysis struct {
 	ws *W.Workspace
-	ld *LD.LinearDisassembler
 }
 
 func New(ws *W.Workspace) (*StackDeltaAnalysis, error) {
-	ld, e := LD.New(ws)
-	check(e)
-
 	return &StackDeltaAnalysis{
 		ws: ws,
-		ld: ld,
 	}, nil
 }
 
 /** StackDeltaAnalysis implements FunctionAnalysis interface **/
 func (a *StackDeltaAnalysis) AnalyzeFunction(f *artifacts.Function) error {
+	ld, e := LD.New(a.ws)
+	check(e)
+
 	didSetStackDelta := false
-	c, e := a.ld.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
+	c, e := ld.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 		if !didSetStackDelta {
 			if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 				return nil
@@ -52,9 +50,9 @@ func (a *StackDeltaAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 		return nil
 	})
 	check(e)
-	defer a.ld.UnregisterInstructionTraceHandler(c)
+	defer ld.UnregisterInstructionTraceHandler(c)
 
-	e = a.ld.ExploreFunction(a.ws, f.Start)
+	e = ld.ExploreFunction(a.ws, f.Start)
 	check(e)
 
 	return nil
