@@ -2,6 +2,7 @@ package address_space
 
 import (
 	"errors"
+	"fmt"
 )
 
 func check(e error) {
@@ -13,6 +14,13 @@ func check(e error) {
 type VA uint64
 type RVA uint64
 
+func (va VA) String() string {
+	return fmt.Sprintf("0x%x", uint64(va))
+}
+
+func (va RVA) String() string {
+	return fmt.Sprintf("0x%x", uint64(va))
+}
 func (rva RVA) VA(baseAddress VA) VA {
 	return VA(uint64(rva) + uint64(baseAddress))
 }
