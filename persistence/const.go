@@ -128,6 +128,8 @@ func (l EdgeDataKeyI) String() string {
 	switch l {
 	case XrefBranchType:
 		return "XrefBranchType"
+	case XrefJumpType:
+		return "XrefJumpType"
 	default:
 		panic("unknown type")
 	}
