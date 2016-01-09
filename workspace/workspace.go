@@ -254,16 +254,17 @@ func (ws *Workspace) MakeFunction(va AS.VA) error {
 	if e == artifacts.ErrFunctionNotFound {
 		f, e := ws.Artifacts.AddFunction(va)
 		if e != nil {
-			logrus.Warn("error adding function: %s", e.Error())
+			logrus.Warnf("error adding function: %s", e.Error())
 			return e
 		}
 		// the slice is sorted by priority
 		for _, a := range ws.functionAnalysis {
 			e := a.analysis.AnalyzeFunction(f)
 			if e != nil {
-				logrus.Warn("function analysis failed: %s", e.Error())
+				logrus.Warnf("function analysis failed: %s", e.Error())
 			}
 		}
+		return nil
 	}
 	return e
 }
@@ -276,9 +277,23 @@ func (ws *Workspace) MakeCodeCrossReference(from AS.VA, to AS.VA, jtype P.JumpTy
 	if e == artifacts.ErrXrefNotFound {
 		_, e := ws.Artifacts.AddCodeCrossReference(from, to, jtype)
 		if e != nil {
-			logrus.Warn("error adding xref: %s", e.Error())
+			logrus.Warnf("error adding xref: %s", e.Error())
 			return e
 		}
+		return nil
+	}
+	return e
+}
+
+func (ws *Workspace) MakeBasicBlock(start AS.VA, end AS.VA) error {
+	_, e := ws.Artifacts.GetBasicBlock(start)
+	if e == artifacts.ErrBasicBlockNotFound {
+		_, e := ws.Artifacts.AddBasicBlock(start, end)
+		if e != nil {
+			logrus.Warnf("error adding basic block: %s", e.Error())
+			return e
+		}
+		return nil
 	}
 	return e
 }
@@ -288,7 +303,7 @@ func (ws *Workspace) AnalyzeAll() error {
 	for _, a := range ws.fileAnalysis {
 		e := a.analysis.AnalyzeAll()
 		if e != nil {
-			logrus.Warn("file analysis failed: %s", e.Error())
+			logrus.Warnf("file analysis failed: %s", e.Error())
 		}
 	}
 	return nil

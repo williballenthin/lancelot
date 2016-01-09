@@ -13,14 +13,6 @@ func check(e error) {
 	}
 }
 
-// unique: (Start)
-type BasicBlock struct {
-	// Start is the first address in the basic block.
-	Start AS.VA
-	// End is the last address in the basic block.
-	End AS.VA
-}
-
 // unique: (From, To)
 type CrossReference struct {
 	artifacts *Artifacts
@@ -109,5 +101,71 @@ func (a *Artifacts) GetCodeCrossReference(from AS.VA, to AS.VA) (*CodeCrossRefer
 			To:        to,
 		},
 		Type: P.JumpType(v),
+	}, nil
+}
+
+func (a *Artifacts) AddBasicBlock(start AS.VA, end AS.VA) (*BasicBlock, error) {
+	// if theres a function at an address, then there must also be a basic block.
+	// function takes precedence.
+	v, e := a.persistence.GetAddressValueNumber(P.LocationData, start, P.TypeOfLocation)
+	if e != nil && e != P.ErrKeyDoesNotExist {
+		return nil, e
+	}
+
+	if e == P.ErrKeyDoesNotExist {
+		// nothing yet here, mark it as a basic block
+		e := a.persistence.SetAddressValueNumber(
+			P.LocationData, start, P.TypeOfLocation, int64(P.LocationBasicBlock))
+		check(e)
+
+	} else {
+		// there is already some data here.
+
+		// if its a function, it takes precendence.
+		// else, we mark the location as a basic block.
+		if v != int64(P.LocationFunction) {
+			// TODO: don't stomp on existing location?
+			e := a.persistence.SetAddressValueNumber(
+				P.LocationData, start, P.TypeOfLocation, int64(P.LocationBasicBlock))
+			check(e)
+		}
+	}
+
+	length := end - start
+	e = a.persistence.SetAddressValueNumber(P.BasicBlockData, start, P.BasicBlockLength, int64(length))
+	check(e)
+
+	return &BasicBlock{
+		artifacts: a,
+		Start:     start,
+		End:       end,
+	}, nil
+}
+
+var ErrBasicBlockNotFound = errors.New("Basic block not found at specified address")
+
+func (a *Artifacts) GetBasicBlock(va AS.VA) (*BasicBlock, error) {
+	v, e := a.persistence.GetAddressValueNumber(P.LocationData, va, P.TypeOfLocation)
+	if e != nil {
+		return nil, ErrBasicBlockNotFound
+	}
+	switch v {
+	case int64(P.LocationFunction):
+		// ok
+	case int64(P.LocationBasicBlock):
+		// ok
+	default:
+		return nil, ErrFunctionNotFound
+	}
+
+	length, e := a.persistence.GetAddressValueNumber(P.BasicBlockData, va, P.BasicBlockLength)
+	if e != nil {
+		return nil, ErrBasicBlockNotFound
+	}
+
+	return &BasicBlock{
+		artifacts: a,
+		Start:     va,
+		End:       AS.VA(uint64(va) + uint64(length)),
 	}, nil
 }

@@ -25,6 +25,8 @@ type InstructionTraceHandler func(insn gapstone.Instruction) error
 // Use bb for the address of the source basic block.
 type JumpTraceHandler func(insn gapstone.Instruction, from_bb AS.VA, target AS.VA, jtype P.JumpType) error
 
+type BBTraceHandler func(start AS.VA, end AS.VA) error
+
 func isBBEnd(insn gapstone.Instruction) bool {
 	return dis.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) ||
 		dis.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) ||

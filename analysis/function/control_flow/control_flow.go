@@ -1,7 +1,7 @@
 package control_flow_analysis
 
 import (
-	"github.com/Sirupsen/logrus"
+	//	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
@@ -31,17 +31,22 @@ func (a *ControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 	ld, e := LD.New(a.ws)
 	check(e)
 
-	c, e := ld.RegisterJumpTraceHandler(func(
+	cj, e := ld.RegisterJumpTraceHandler(func(
 		insn gapstone.Instruction,
 		from_bb AS.VA,
 		target AS.VA,
 		jtype P.JumpType) error {
 
-		a.ws.MakeCodeCrossReference(AS.VA(insn.Address), target, jtype)
-		return nil
+		return a.ws.MakeCodeCrossReference(AS.VA(insn.Address), target, jtype)
 	})
 	check(e)
-	defer ld.UnregisterInstructionTraceHandler(c)
+	defer ld.UnregisterInstructionTraceHandler(cj)
+
+	cb, e := ld.RegisterBBTraceHandler(func(start AS.VA, end AS.VA) error {
+		return a.ws.MakeBasicBlock(start, end)
+	})
+	check(e)
+	defer ld.UnregisterBBTraceHandler(cb)
 
 	e = ld.ExploreFunction(a.ws, f.Start)
 	check(e)

@@ -4,12 +4,12 @@
 package linear_disassembler
 
 import (
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/disassembly"
 	w "github.com/williballenthin/Lancelot/workspace"
 	dora "github.com/williballenthin/Lancelot/workspace/dora"
-	//	"log"
 )
 
 func check(e error) {
@@ -26,6 +26,7 @@ type LinearDisassembler struct {
 	counter      Cookie
 	insnHandlers map[Cookie]dora.InstructionTraceHandler
 	jumpHandlers map[Cookie]dora.JumpTraceHandler
+	bbHandlers   map[Cookie]dora.BBTraceHandler
 }
 
 // New creates a new LinearDisassembler instance.
@@ -39,6 +40,7 @@ func New(ws *w.Workspace) (*LinearDisassembler, error) {
 		disassembler: d,
 		insnHandlers: make(map[Cookie]dora.InstructionTraceHandler),
 		jumpHandlers: make(map[Cookie]dora.JumpTraceHandler),
+		bbHandlers:   make(map[Cookie]dora.BBTraceHandler),
 	}, nil
 }
 
@@ -74,6 +76,18 @@ func (ld *LinearDisassembler) UnregisterJumpTraceHandler(c Cookie) error {
 	return nil
 }
 
+func (ld *LinearDisassembler) RegisterBBTraceHandler(fn dora.BBTraceHandler) (Cookie, error) {
+	ld.counter++
+	c := ld.counter
+	ld.bbHandlers[c] = fn
+	return c, nil
+}
+
+func (ld *LinearDisassembler) UnregisterBBTraceHandler(c Cookie) error {
+	delete(ld.bbHandlers, c)
+	return nil
+}
+
 // move to utils
 func min(a uint64, b uint64) uint64 {
 	if a < b {
@@ -90,10 +104,13 @@ func min(a uint64, b uint64) uint64 {
 // Returns the addresses to which this basic block may transfer control via jumps.
 func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	bbStart := va
+	// the last VA reached while exploring tihs BB
+	// only makes sense to fetch this value after iterating instructions
+	lastVa := AS.VA(0)
 	nextBBs := make([]AS.VA, 0, 2)
 
 	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
-
+		lastVa = AS.VA(insn.Address)
 		for _, fn := range ld.insnHandlers {
 			e := fn(insn)
 			if e != nil {
@@ -112,7 +129,8 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 				for _, fn := range ld.jumpHandlers {
 					e := fn(insn, bbStart, target.To, target.Type)
 					if e != nil {
-						return false, e
+						logrus.Warnf("Jump handler failed: %s", e.Error())
+						continue
 					}
 				}
 				nextBBs = append(nextBBs, target.To)
@@ -126,6 +144,14 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 		return true, nil // continue processing instructions
 	})
 	check(e)
+
+	for _, fn := range ld.bbHandlers {
+		e := fn(bbStart, lastVa)
+		if e != nil {
+			logrus.Warnf("Basic block handler failed: %s", e.Error())
+			continue
+		}
+	}
 
 	return nextBBs, nil
 }

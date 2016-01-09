@@ -48,12 +48,15 @@ func (l AddressDataType) String() string {
 const (
 	KeyUnusedS AddressDataKeyS = iota
 	FunctionName
+	BasicBlockName
 )
 
 func (l AddressDataKeyS) String() string {
 	switch l {
 	case FunctionName:
 		return "FunctionName"
+	case BasicBlockName:
+		return "BasicBlockName"
 	default:
 		panic("unknown type")
 	}
@@ -64,6 +67,7 @@ const (
 	KeyUnusedI AddressDataKeyI = iota
 	FunctionStackDelta
 	TypeOfLocation
+	BasicBlockLength
 )
 
 func (l AddressDataKeyI) String() string {
@@ -72,6 +76,8 @@ func (l AddressDataKeyI) String() string {
 		return "FunctionStackDelta"
 	case TypeOfLocation:
 		return "TypeOfLocation"
+	case BasicBlockLength:
+		return "BasicBlockLength"
 	default:
 		panic("unknown type")
 	}
