@@ -5,7 +5,6 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	dis "github.com/williballenthin/Lancelot/disassembly"
 	E "github.com/williballenthin/Lancelot/emulator"
-	P "github.com/williballenthin/Lancelot/persistence"
 )
 
 func check(e error) {
@@ -13,19 +12,6 @@ func check(e error) {
 		panic(e)
 	}
 }
-
-// InstructionTraceHandler is a function that can process instructions
-//  parsed by this package.
-// Use insn.Address for the current address.
-type InstructionTraceHandler func(insn gapstone.Instruction) error
-
-// JumpTraceHandler is a function that can process control flow edges
-//  parsed by this package.
-// Use insn.Address for the source address.
-// Use bb for the address of the source basic block.
-type JumpTraceHandler func(insn gapstone.Instruction, from_bb AS.VA, target AS.VA, jtype P.JumpType) error
-
-type BBTraceHandler func(start AS.VA, end AS.VA) error
 
 func isBBEnd(insn gapstone.Instruction) bool {
 	return dis.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) ||

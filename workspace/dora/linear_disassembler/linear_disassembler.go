@@ -4,12 +4,12 @@
 package linear_disassembler
 
 import (
-	"github.com/Sirupsen/logrus"
+	//	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/disassembly"
 	w "github.com/williballenthin/Lancelot/workspace"
-	dora "github.com/williballenthin/Lancelot/workspace/dora"
 )
 
 func check(e error) {
@@ -18,15 +18,10 @@ func check(e error) {
 	}
 }
 
-type Cookie uint64
-
 // LinearDisassembler is the object that holds the state of a linear disassembler.
 type LinearDisassembler struct {
+	function_analysis.FunctionEventDispatcher
 	disassembler *gapstone.Engine
-	counter      Cookie
-	insnHandlers map[Cookie]dora.InstructionTraceHandler
-	jumpHandlers map[Cookie]dora.JumpTraceHandler
-	bbHandlers   map[Cookie]dora.BBTraceHandler
 }
 
 // New creates a new LinearDisassembler instance.
@@ -36,56 +31,15 @@ func New(ws *w.Workspace) (*LinearDisassembler, error) {
 	if e != nil {
 		return nil, e
 	}
+	ev, e := function_analysis.NewFunctionEventDispatcher()
+	if e != nil {
+		return nil, e
+	}
+
 	return &LinearDisassembler{
-		disassembler: d,
-		insnHandlers: make(map[Cookie]dora.InstructionTraceHandler),
-		jumpHandlers: make(map[Cookie]dora.JumpTraceHandler),
-		bbHandlers:   make(map[Cookie]dora.BBTraceHandler),
+		FunctionEventDispatcher: *ev,
+		disassembler:            d,
 	}, nil
-}
-
-// RegisterInstructionTraceHandler adds a callback function to receive the
-//   disassembled instructions.
-func (ld *LinearDisassembler) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) (Cookie, error) {
-	ld.counter++
-	c := ld.counter
-	ld.insnHandlers[c] = fn
-	return c, nil
-}
-
-// UnregisterInstructionTraceHandler removes a previously-added callback
-//   function to receive the disassembled instructions.
-func (ld *LinearDisassembler) UnregisterInstructionTraceHandler(c Cookie) error {
-	delete(ld.insnHandlers, c)
-	return nil
-}
-
-// RegisterJumpTraceHandler adds a callback function to receive control flow
-//  edges identified among basic blocks.
-func (ld *LinearDisassembler) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) (Cookie, error) {
-	ld.counter++
-	c := ld.counter
-	ld.jumpHandlers[c] = fn
-	return c, nil
-}
-
-// UnregisterJumpTraceHandler removes a previously-added callback
-//   function to receive control flow edges identified among basic blocks.
-func (ld *LinearDisassembler) UnregisterJumpTraceHandler(c Cookie) error {
-	delete(ld.jumpHandlers, c)
-	return nil
-}
-
-func (ld *LinearDisassembler) RegisterBBTraceHandler(fn dora.BBTraceHandler) (Cookie, error) {
-	ld.counter++
-	c := ld.counter
-	ld.bbHandlers[c] = fn
-	return c, nil
-}
-
-func (ld *LinearDisassembler) UnregisterBBTraceHandler(c Cookie) error {
-	delete(ld.bbHandlers, c)
-	return nil
 }
 
 // move to utils
@@ -111,12 +65,7 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 
 	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
 		lastVa = AS.VA(insn.Address)
-		for _, fn := range ld.insnHandlers {
-			e := fn(insn)
-			if e != nil {
-				return false, e
-			}
-		}
+		check(ld.EmitInstruction(insn))
 
 		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) {
 			// this return a slice with zero length, but that should be ok
@@ -126,13 +75,7 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 			}
 
 			for _, target := range targets {
-				for _, fn := range ld.jumpHandlers {
-					e := fn(insn, bbStart, target.To, target.Type)
-					if e != nil {
-						logrus.Warnf("Jump handler failed: %s", e.Error())
-						continue
-					}
-				}
+				check(ld.EmitJump(insn, bbStart, target.To, target.Type))
 				nextBBs = append(nextBBs, target.To)
 			}
 
@@ -145,13 +88,7 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 	})
 	check(e)
 
-	for _, fn := range ld.bbHandlers {
-		e := fn(bbStart, lastVa)
-		if e != nil {
-			logrus.Warnf("Basic block handler failed: %s", e.Error())
-			continue
-		}
-	}
+	check(ld.EmitBB(bbStart, lastVa))
 
 	return nextBBs, nil
 }
