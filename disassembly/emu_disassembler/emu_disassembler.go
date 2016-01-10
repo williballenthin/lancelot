@@ -1,4 +1,4 @@
-package EmulatingDisassembler
+package emu_disassembler
 
 import (
 	"errors"
@@ -19,20 +19,32 @@ func check(e error) {
 	}
 }
 
+// EmulatingDisassembler is the object that holds the state of a emulating disassembler.
+type EmulatingDisassembler struct {
+	"errors"
+	"github.com/Sirupsen/logrus"
+	"github.com/bnagy/gapstone"
+	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/analysis/function"
+	"github.com/williballenthin/Lancelot/disassembly"
+	"github.com/williballenthin/Lancelot/emulator"
+	W "github.com/williballenthin/Lancelot/workspace"
+)
+
 // ED is the object that holds the state of a emulating disassembler.
 type ED struct {
+	function_analysis.FunctionEventDispatcher
+
+	ws             *W.Workspace
 	as             AS.AddressSpace
 	symbolResolver W.SymbolResolver
 	disassembler   *gapstone.Engine
 	emulator       *emulator.Emulator
-	insnHandlers   []dora.InstructionTraceHandler
-	jumpHandlers   []dora.JumpTraceHandler
-
-	codeHook emulator.CloseableHook
+	codeHook       emulator.CloseableHook
 }
 
-// New creates a new EmulatingDisassembler instance.
-func New(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
+// NewED creates a new EmulatingDisassembler instance.
+func NewED(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
 	d, e := disassembly.New(ws)
 	if e != nil {
@@ -46,23 +58,24 @@ func New(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 	if e != nil {
 		return nil, e
 	}
+	ev, e := function_analysis.NewFunctionEventDispatcher()
+	if e != nil {
+		return nil, e
+	}
 
 	ed := &ED{
-		as:             emu, // note: our AS is the emu, since it may change state.
-		symbolResolver: ws,
-		disassembler:   d,
-		emulator:       emu,
-		insnHandlers:   make([]dora.InstructionTraceHandler, 0, 1),
-		jumpHandlers:   make([]dora.JumpTraceHandler, 0, 1),
+		ws:                      ws,
+		as:                      emu, // note: our AS is the emu, since it may change state.
+		symbolResolver:          ws,
+		disassembler:            d,
+		emulator:                emu,
+		FunctionEventDispatcher: *ev,
 	}
 
 	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
-		for _, fn := range ed.insnHandlers {
-			insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
-			check(e)
-			e = fn(insn)
-			check(e)
-		}
+		check(e)
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
+		ev.EmitInstruction(insn)
 	})
 	check(e)
 
@@ -72,22 +85,6 @@ func New(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 func (ed *ED) Close() error {
 	ed.codeHook.Close()
 	ed.emulator.Close()
-}
-
-// RegisterInstructionTraceHandler adds a callback function to receive the
-//   disassembled instructions.
-// This may be called for more instructions than are strictly in the targetted function, BB.
-// TODO: document this more.
-func (ed *ED) RegisterInstructionTraceHandler(fn dora.InstructionTraceHandler) error {
-	ed.insnHandlers = append(ed.insnHandlers, fn)
-	return nil
-}
-
-// RegisterJumpTraceHandler adds a callback function to receive control flow
-//  edges identified among basic blocks.
-func (ed *ED) RegisterJumpTraceHandler(fn dora.JumpTraceHandler) error {
-	ed.jumpHandlers = append(ed.jumpHandlers, fn)
-	return nil
 }
 
 // emuldateToCallTargetAndBack emulates the current instruction that should be a
@@ -217,23 +214,28 @@ func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
 		check(e)
 
+		var stackDelta int64
 		callTarget, e := ed.discoverCallTarget()
 		if e == ErrFailedToResolveCallTarget {
 			// will just have to make a guess as to how to clean up the stack
 		} else if e != nil {
+			e := ed.ws.MakeFunction(callTarget)
+			check(e)
 
+			f, e := ed.ws.Artifacts.GetFunction(callTarget)
+			check(e)
+
+			stackDelta, e = f.GetStackDelta()
+			check(e)
 		}
 
-		// get calling convention
-		var stackDelta uint64
-
-		// invoke CallHandlers
+		check(ed.EmitCall(callVA, callTarget))
 
 		// skip call instruction
 		ed.emulator.SetInstructionPointer(AS.VA(insn.Address + insn.Size))
 
 		// cleanup stack
-		ed.emulator.SetStackPointer(AS.VA(uint64(ed.emulator.GetStackPointer()) + stackDelta))
+		ed.emulator.SetStackPointer(AS.VA(int64(ed.emulator.GetStackPointer()) + stackDelta))
 	}
 
 	// emulate to end of current basic block
