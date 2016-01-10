@@ -2,15 +2,13 @@ package emu_disassembler
 
 import (
 	"errors"
-	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/disassembly"
 	"github.com/williballenthin/Lancelot/emulator"
 	W "github.com/williballenthin/Lancelot/workspace"
-	"github.com/williballenthin/Lancelot/workspace/dora"
-	"strings"
 )
 
 func check(e error) {
@@ -21,39 +19,25 @@ func check(e error) {
 
 // EmulatingDisassembler is the object that holds the state of a emulating disassembler.
 type EmulatingDisassembler struct {
-	"errors"
-	"github.com/Sirupsen/logrus"
-	"github.com/bnagy/gapstone"
-	AS "github.com/williballenthin/Lancelot/address_space"
-	"github.com/williballenthin/Lancelot/analysis/function"
-	"github.com/williballenthin/Lancelot/disassembly"
-	"github.com/williballenthin/Lancelot/emulator"
-	W "github.com/williballenthin/Lancelot/workspace"
-)
-
-// ED is the object that holds the state of a emulating disassembler.
-type ED struct {
 	function_analysis.FunctionEventDispatcher
 
 	ws             *W.Workspace
-	as             AS.AddressSpace
 	symbolResolver W.SymbolResolver
 	disassembler   *gapstone.Engine
 	emulator       *emulator.Emulator
 	codeHook       emulator.CloseableHook
 }
 
-// NewED creates a new EmulatingDisassembler instance.
-func NewED(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
+// New creates a new EmulatingDisassembler instance.
+func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
 	d, e := disassembly.New(ws)
 	if e != nil {
 		return nil, e
 	}
 
-	// TODO: should we be emulating over the AS instead?
-	// then, what is ws used for? -> config, arch, results...
-	// so would use look like: ed := New(ws, ws)
+	// note: we could easily emulate over a memory/debugger/emulator state
+	// by using a different address space here.
 	emu, e := emulator.New(ws)
 	if e != nil {
 		return nil, e
@@ -63,9 +47,8 @@ func NewED(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 		return nil, e
 	}
 
-	ed := &ED{
+	ed := &EmulatingDisassembler{
 		ws:                      ws,
-		as:                      emu, // note: our AS is the emu, since it may change state.
 		symbolResolver:          ws,
 		disassembler:            d,
 		emulator:                emu,
@@ -74,7 +57,7 @@ func NewED(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 
 	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
 		check(e)
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, addr)
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ws, addr)
 		ev.EmitInstruction(insn)
 	})
 	check(e)
@@ -82,7 +65,7 @@ func NewED(ws *W.Workspace, as AS.AddressSpace) (*ED, error) {
 	return ed, nil
 }
 
-func (ed *ED) Close() error {
+func (ed *EmulatingDisassembler) Close() error {
 	ed.codeHook.Close()
 	ed.emulator.Close()
 }
@@ -90,7 +73,7 @@ func (ed *ED) Close() error {
 // emuldateToCallTargetAndBack emulates the current instruction that should be a
 //  CALL instruction, fetches PC after the instruction, and resets
 //  the PC and SP registers.
-func (ed *ED) emulateToCallTargetAndBack() (AS.VA, error) {
+func (ed *EmulatingDisassembler) emulateToCallTargetAndBack() (AS.VA, error) {
 	// TODO: assume that current insn is a CALL
 
 	pc := ed.emulator.GetInstructionPointer()
@@ -127,7 +110,7 @@ var ErrFailedToResolveCallTarget = errors.New("Failed to resolve call target")
 //   - is indirect call, like: call EAX
 //     -> just save PC, step into, read PC, restore PC, pop SP
 //     but be sure to handle invalid fetch errors
-func (ed *ED) discoverCallTarget() (AS.VA, error) {
+func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 	var callTarget AS.VA
 	callVA := ed.emulator.GetInstructionPointer()
 
@@ -168,7 +151,7 @@ func (ed *ED) discoverCallTarget() (AS.VA, error) {
 }
 
 // when/where can this function be safely called?
-func (ed *ED) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+func (ed *EmulatingDisassembler) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	// things done here:
 	//  - find CALL instructions
 	//  - emulate to CALL instructions
