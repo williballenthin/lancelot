@@ -428,6 +428,13 @@ func (emu *Emulator) RunTo(address AS.VA) error {
 			//  mem hooks did not fire.
 			// this appears to be an issue with the unicorn emulator not
 			//  clearing its internal error variable.
+			// here, we can ignore the issue, but often the bug shows up
+			//  at the first emulated instruction, so PC is not at the
+			//  expected address.
+			// the caller needs to ensure PC is actually its expected value
+			//  after a call to this function.
+			// seems like instead we should signal an error, like, ErrTryAgain.
+			//  or maybe try to handle it here.
 			if e == uc.ERR_FETCH_UNMAPPED {
 				// BUG: sometimes get unexpected error values here, no idea why
 				// return AS.ErrInvalidMemoryExec
