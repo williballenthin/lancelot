@@ -4,10 +4,12 @@ import (
 	"errors"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
+	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/disassembly"
 	"github.com/williballenthin/Lancelot/emulator"
+	P "github.com/williballenthin/Lancelot/persistence"
 	W "github.com/williballenthin/Lancelot/workspace"
 )
 
@@ -56,8 +58,8 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	}
 
 	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
-		check(e)
 		insn, e := disassembly.ReadInstruction(ed.disassembler, ws, addr)
+		check(e)
 		ev.EmitInstruction(insn)
 	})
 	check(e)
@@ -68,6 +70,7 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 func (ed *EmulatingDisassembler) Close() error {
 	ed.codeHook.Close()
 	ed.emulator.Close()
+	return nil
 }
 
 // emuldateToCallTargetAndBack emulates the current instruction that should be a
@@ -92,14 +95,14 @@ func (ed *EmulatingDisassembler) emulateToCallTargetAndBack() (AS.VA, error) {
 	return newPc, nil
 }
 
-// ErrFailedToResolveCallTarget is an error to be used when an
-//  analysis routine is unable to determine the target of a CALL
-//  instruction.
-var ErrFailedToResolveCallTarget = errors.New("Failed to resolve call target")
+// ErrFailedToResolveTarget is an error to be used when an
+//  analysis routine is unable to determine the target of a
+//  control flow instruction.
+var ErrFailedToResolveTarget = errors.New("Failed to resolve control flow target")
 
 // discoverCallTarget finds the target of the current instruction that
 //  should be a CALL instruction.
-// returns ErrFailedToResolveCallTarget if the target is not resolvable.
+// returns ErrFailedToResolveTarget if the target is not resolvable.
 // this should be expected in some cases, like calling into uninitialized memory.
 //
 // find call target
@@ -114,7 +117,7 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 	var callTarget AS.VA
 	callVA := ed.emulator.GetInstructionPointer()
 
-	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
+	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, callVA)
 	if e != nil {
 		return 0, e
 	}
@@ -122,7 +125,6 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 	if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
 		// assume we have: call [0x4010000]  ; IAT
 		iva := AS.VA(insn.X86.Operands[0].Mem.Disp)
-		sym, e := ed.symbolResolver.ResolveAddressToSymbol(iva)
 		if e == nil {
 			// we successfully resolved an imported function.
 			// TODO: how are we marking xrefs to imports? i guess with xrefs to the IAT
@@ -133,25 +135,144 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 			callTarget, e = ed.discoverCallTarget()
 			if e != nil {
 				logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
-				return 0, ErrFailedToResolveCallTarget
+				return 0, ErrFailedToResolveTarget
 			}
 		}
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
 		// assume we have: call 0x401000
-		callTarget := AS.VA(insn.X86.Operands[0].Imm)
+		callTarget = AS.VA(insn.X86.Operands[0].Imm)
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
 		// assume we have: call eax
 		callTarget, e = ed.discoverCallTarget()
 		if e != nil {
 			logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
-			return 0, ErrFailedToResolveCallTarget
+			return 0, ErrFailedToResolveTarget
 		}
 	}
 	return callTarget, nil
 }
 
+func (ed *EmulatingDisassembler) emulateToJumpTargetsAndBack() ([]AS.VA, error) {
+	// TODO: assume that current insn is a branch of some sort
+
+	var set map[AS.VA]bool
+
+	// rather than do too much inspection (which sounds tedious to program right now),
+	//  lets just brute force all possibilities.
+	// these are the cases, via http://unixwiz.net/techtips/x86-jumps.html
+	//  - EFLAGS all set (OF, SF, ZF, CF, PF)
+	//  - EFLAGS none set (OF, SF, ZF, CF, PF)
+	//  - CF != OF
+	//  - RCX/ECX/CX == 0
+	//  - RCX/ECX/CX == 1
+
+	// case one:
+	//  - EFLAGS all set (OF, SF, ZF, CF, PF)
+	ed.emulator.RegSetEflag(emulator.EFLAG_OF)
+	ed.emulator.RegSetEflag(emulator.EFLAG_SF)
+	ed.emulator.RegSetEflag(emulator.EFLAG_ZF)
+	ed.emulator.RegSetEflag(emulator.EFLAG_CF)
+	ed.emulator.RegSetEflag(emulator.EFLAG_PF)
+	va, e := ed.emulateToCallTargetAndBack()
+	if e != nil {
+		logrus.Warn("Failed to resolve branch target: %s", e.Error())
+	} else {
+		set[va] = true
+	}
+
+	// case two:
+	//  - EFLAGS none set (OF, SF, ZF, CF, PF)
+	ed.emulator.RegUnsetEflag(emulator.EFLAG_OF)
+	ed.emulator.RegUnsetEflag(emulator.EFLAG_SF)
+	ed.emulator.RegUnsetEflag(emulator.EFLAG_ZF)
+	ed.emulator.RegUnsetEflag(emulator.EFLAG_CF)
+	ed.emulator.RegUnsetEflag(emulator.EFLAG_PF)
+	va, e = ed.emulateToCallTargetAndBack()
+	if e != nil {
+		logrus.Warn("Failed to resolve branch target: %s", e.Error())
+	} else {
+		set[va] = true
+	}
+
+	// case three:
+	//  - CF != OF
+	// CF is 0, so set OF to 1
+	ed.emulator.RegSetEflag(emulator.EFLAG_OF)
+	va, e = ed.emulateToCallTargetAndBack()
+	if e != nil {
+		logrus.Warn("Failed to resolve branch target: %s", e.Error())
+	} else {
+		set[va] = true
+	}
+
+	// case four:
+	//  - RCX/ECX/CX == 0
+	ed.emulator.RegWrite(uc.X86_REG_RCX, 0)
+	ed.emulator.RegWrite(uc.X86_REG_ECX, 0)
+	ed.emulator.RegWrite(uc.X86_REG_CX, 0)
+	va, e = ed.emulateToCallTargetAndBack()
+	if e != nil {
+		logrus.Warn("Failed to resolve branch target: %s", e.Error())
+	} else {
+		if va != 0 {
+			// ignore if we had: jmp ecx
+			set[va] = true
+		}
+	}
+
+	// case five:
+	//  - RCX/ECX/CX == 1
+	ed.emulator.RegWrite(uc.X86_REG_RCX, 1)
+	ed.emulator.RegWrite(uc.X86_REG_ECX, 1)
+	ed.emulator.RegWrite(uc.X86_REG_CX, 1)
+	va, e = ed.emulateToCallTargetAndBack()
+	if e != nil {
+		logrus.Warn("Failed to resolve branch target: %s", e.Error())
+	} else {
+		if va != 1 {
+			// ignore if we had: jmp ecx
+			set[va] = true
+		}
+	}
+
+	ret := make([]AS.VA, 0, len(set))
+	for va := range set {
+		ret = append(ret, va)
+	}
+
+	return ret, nil
+}
+
+// discoverJumpTargets finds the targets of the current instruction that
+//  should be a jump/branch instruction.
+// returns ErrFailedToResolveTarget if the target is not resolvable.
+// this should be expected in some cases, like jumping into uninitialized memory.
+func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
+	jumpVA := ed.emulator.GetInstructionPointer()
+
+	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, jumpVA)
+	if e != nil {
+		return nil, e
+	}
+
+	var jumpTargets []AS.VA
+	if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+		// simple case:
+		// this looks like: jnz 0x401000
+		jumpTargets = []AS.VA{AS.VA(insn.X86.Operands[0].Imm)}
+	} else {
+		jumpTargets, e = ed.emulateToJumpTargetsAndBack()
+		check(e)
+	}
+
+	if disassembly.IsConditionalJump(insn) {
+		jumpTargets = append(jumpTargets, AS.VA(insn.Address+insn.Size))
+	}
+	return jumpTargets, nil
+}
+
 // when/where can this function be safely called?
-func (ed *EmulatingDisassembler) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	// things done here:
 	//  - find CALL instructions
 	//  - emulate to CALL instructions
@@ -162,22 +283,22 @@ func (ed *EmulatingDisassembler) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 	//  - clean up stack
 	//  - continue emulating
 	//  - resolve jump targets at end of BB using emulation
-	logrus.Debug("EmulateBB: va: 0x%x", va)
-
-	nextBBs := make([]AS.VA, 0, 2)
+	logrus.Debugf("EmulateBB: va: %s", va)
+	var nextBBs []AS.VA
+	bbStart := va
 	var callVAs []AS.VA
 
 	// recon
 	endVA := va
 	e := disassembly.IterateInstructions(ed.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
+		endVA = AS.VA(insn.Address) // update last reached VA, to compute end of BB
 		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			return true, nil
 		}
 
-		logrus.Debug("EmulateBB: planning: found call: va: 0x%x", insn.Address)
+		logrus.Debugf("EmulateBB: planning: found call: va: 0x%x", insn.Address)
 		callVAs = append(callVAs, AS.VA(insn.Address))
-		endVA = AS.VA(insn.Address) // update last reached VA, to compute end of BB
-		return true, nil            // continue processing instructions
+		return true, nil // continue processing instructions
 	})
 	check(e)
 
@@ -189,18 +310,23 @@ func (ed *EmulatingDisassembler) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 		callVA := callVAs[0]
 		callVAs = callVAs[1:]
 
-		logrus.Debug("EmulateBB: emulating: from: 0x%x to: 0x%x", ed.emulator.GetInstructionPointer(), callVA)
+		logrus.Debugf("EmulateBB: emulating: from: %s to: %s", ed.emulator.GetInstructionPointer(), callVA)
 		e := ed.emulator.RunTo(callVA)
 		check(e)
 
 		// call insn
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.as, callVA)
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, callVA)
 		check(e)
+
+		check(ed.EmitInstruction(insn))
 
 		var stackDelta int64
 		callTarget, e := ed.discoverCallTarget()
-		if e == ErrFailedToResolveCallTarget {
+		if e == ErrFailedToResolveTarget {
 			// will just have to make a guess as to how to clean up the stack
+			// for right now, assume its 0
+			// TODO: if its an import, assume STDCALL
+			//  and use MSDN documentation to extract number of parameters
 		} else if e != nil {
 			e := ed.ws.MakeFunction(callTarget)
 			check(e)
@@ -211,26 +337,78 @@ func (ed *EmulatingDisassembler) EmulateBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 			stackDelta, e = f.GetStackDelta()
 			check(e)
 		}
-
 		check(ed.EmitCall(callVA, callTarget))
 
 		// skip call instruction
 		ed.emulator.SetInstructionPointer(AS.VA(insn.Address + insn.Size))
+		logrus.Debugf("EmulateBB: skipping call: %s", ed.emulator.GetInstructionPointer())
 
 		// cleanup stack
 		ed.emulator.SetStackPointer(AS.VA(int64(ed.emulator.GetStackPointer()) + stackDelta))
 	}
 
 	// emulate to end of current basic block
-	logrus.Debug("EmulateBB: emulating to end: from: 0x%x to: 0x%x", ed.emulator.GetInstructionPointer(), endVA)
+	logrus.Debugf("EmulateBB: emulating to end: from: %s to: %s", ed.emulator.GetInstructionPointer(), endVA)
 	e = ed.emulator.RunTo(endVA)
 	check(e)
 
-	// find jump targets
-	//  - is direct jump, like: jmp 0x401000
-	//     -> read target
-	//  - is indirect jump, like: jmp EAX
-	//     -> just save PC, step into, read PC, restore PC
-	//     but be sure to handle invalid fetch errors
+	pc := ed.emulator.GetInstructionPointer()
+	check(ed.EmitBB(bbStart, pc))
+
+	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
+	check(e)
+
+	if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
+		logrus.Debugf("EmulateBB: ends with a ret")
+	} else {
+		// must be a jump
+		nextBBs, e = ed.discoverJumpTargets()
+		check(e)
+
+		logrus.Debugf("EmulateBB: next BBs: %v", nextBBs)
+
+		for _, target := range nextBBs {
+			// TODO: use real jump types
+			check(ed.EmitJump(insn, bbStart, target, P.JumpTypeUncond))
+		}
+	}
 	return nextBBs, nil
+}
+
+// ExploreFunction uses an emulator to disassemble instructions and explore basic
+//  blocks starting at a given address in a given address space, invoking
+//  appropriate callbacks.
+// It terminates once it has explored all the basic blocks it discovers.
+func (ed *EmulatingDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
+	// TODO: need to use snapshots to maintain correct state in each BB
+
+	// lifo is a stack (cause these are easier than queues in Go) of BBs
+	//  that need to be explored.
+	lifo := make([]AS.VA, 0, 10)
+	lifo = append(lifo, va)
+
+	// the set of explored BBs, by BB start address
+	doneBBs := map[AS.VA]bool{}
+
+	for len(lifo) > 0 {
+		// pop BB address
+		bb := lifo[len(lifo)-1]
+		lifo = lifo[:len(lifo)-1]
+
+		_, done := doneBBs[bb]
+		if done {
+			continue
+		}
+
+		doneBBs[bb] = true
+		next, e := ed.ExploreBB(as, bb)
+		if e != nil {
+			return e
+		}
+
+		// push new BB addresses
+		lifo = append(lifo, next...)
+	}
+
+	return nil
 }
