@@ -417,47 +417,10 @@ func (emu *Emulator) RunTo(address AS.VA) error {
 	defer memHook.Close()
 
 	e = emu.start(ip, address)
-	logrus.Debugf("Emulator done RunTo: pc: %s", emu.GetInstructionPointer())
 	if memErr != nil {
 		return memErr
 	}
-	if e != nil {
-		switch e := e.(type) {
-		case uc.UcError:
-			// seems we sometimes receive errors here, even though our
-			//  mem hooks did not fire.
-			// this appears to be an issue with the unicorn emulator not
-			//  clearing its internal error variable.
-			// here, we can ignore the issue, but often the bug shows up
-			//  at the first emulated instruction, so PC is not at the
-			//  expected address.
-			// the caller needs to ensure PC is actually its expected value
-			//  after a call to this function.
-			// seems like instead we should signal an error, like, ErrTryAgain.
-			//  or maybe try to handle it here.
-			if e == uc.ERR_FETCH_UNMAPPED {
-				// BUG: sometimes get unexpected error values here, no idea why
-				// return AS.ErrInvalidMemoryExec
-				logrus.Warnf("BUG: unexpected fetch error")
-				return nil
-			} else if e == uc.ERR_READ_UNMAPPED {
-				// BUG: sometimes get unexpected error values here, no idea why
-				// return AS.ErrInvalidMemoryRead
-				logrus.Warnf("BUG: unexpected read error")
-				return nil
-			} else if e == uc.ERR_WRITE_UNMAPPED {
-				// BUG: sometimes get unexpected error values here, no idea why
-				// return AS.ErrInvalidMemoryWrite
-				logrus.Warnf("BUG: unexpected write error")
-				return nil
-			}
-			break
-		default:
-			break
-		}
-		return e
-	}
-	return nil
+	return e
 }
 
 var EmulatorEscapedError = errors.New("Emulator failed to stop as requested.")
