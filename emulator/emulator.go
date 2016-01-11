@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	dis "github.com/williballenthin/Lancelot/disassembly"
 	W "github.com/williballenthin/Lancelot/workspace"
-	"log"
 	"strings"
 )
 
@@ -376,42 +376,80 @@ func (emu *Emulator) HookCode(f CodeHandler) (CloseableHook, error) {
 
 func (emu *Emulator) traceMemUnmapped(err *error) (CloseableHook, error) {
 	return emu.HookMemUnmapped(func(access int, addr AS.VA, size int, value int64) bool {
-		log.Printf("error: unmapped: 0x%x %x", addr, size)
+		logrus.Warnf("Emulator: error: memory unmapped: %s len: %x", addr, size)
 		*err = AS.ErrUnmappedMemory
-		return false
+		return true
 	})
 }
 
 func (emu *Emulator) traceMemRead() (CloseableHook, error) {
 	return emu.HookMemRead(func(access int, addr AS.VA, size int, value int64) {
-		log.Printf("read: @0x%x [0x%x] = 0x%x", addr, size, value)
+		logrus.Debugf("Emulator: read: %s length: 0x%x value: 0x%x", addr, size, value)
 	})
 }
 
 func (emu *Emulator) traceMemWrite() (CloseableHook, error) {
 	return emu.HookMemWrite(func(access int, addr AS.VA, size int, value int64) {
-		log.Printf("write: @0x%x [0x%x] = 0x%x", addr, size, value)
+		logrus.Debugf("Emulator: write: %s length: 0x%x value: 0x%x", addr, size, value)
 	})
+}
+
+func DumpMemoryRegions(as AS.AddressSpace) error {
+	fmt.Printf("=== memory map ===\n")
+	mmaps, e := as.GetMaps()
+	check(e)
+	for _, region := range mmaps {
+		fmt.Printf("  name: %s\n", region.Name)
+		fmt.Printf("    address: %s\n", region.Address)
+		fmt.Printf("    length: %x\n", region.Length)
+	}
+	return nil
 }
 
 func (emu *Emulator) RunTo(address AS.VA) error {
 	ip := emu.GetInstructionPointer()
+	logrus.Debugf("Emulator RunTo: from: %s to: %s", ip, address)
 
 	var memErr error = nil
+	// TODO: remove these traces
 	memHook, e := emu.traceMemUnmapped(&memErr)
 	check(e)
 	defer memHook.Close()
 
 	e = emu.start(ip, address)
-	check(e)
-	if e != nil {
-		return e
-	}
-	check(memErr)
+	logrus.Debugf("Emulator done RunTo: pc: %s", emu.GetInstructionPointer())
 	if memErr != nil {
 		return memErr
 	}
-
+	if e != nil {
+		switch e := e.(type) {
+		case uc.UcError:
+			// seems we sometimes receive errors here, even though our
+			//  mem hooks did not fire.
+			// this appears to be an issue with the unicorn emulator not
+			//  clearing its internal error variable.
+			if e == uc.ERR_FETCH_UNMAPPED {
+				// BUG: sometimes get unexpected error values here, no idea why
+				// return AS.ErrInvalidMemoryExec
+				logrus.Warnf("BUG: unexpected fetch error")
+				return nil
+			} else if e == uc.ERR_READ_UNMAPPED {
+				// BUG: sometimes get unexpected error values here, no idea why
+				// return AS.ErrInvalidMemoryRead
+				logrus.Warnf("BUG: unexpected read error")
+				return nil
+			} else if e == uc.ERR_WRITE_UNMAPPED {
+				// BUG: sometimes get unexpected error values here, no idea why
+				// return AS.ErrInvalidMemoryWrite
+				logrus.Warnf("BUG: unexpected write error")
+				return nil
+			}
+			break
+		default:
+			break
+		}
+		return e
+	}
 	return nil
 }
 
@@ -445,6 +483,7 @@ func (emu *Emulator) StepInto() error {
 	end := AS.VA(uint64(ip) + uint64(insn.Size))
 	e = emu.start(ip, end)
 	if e != nil {
+		logrus.Warnf("Single step failed: %s", e.Error())
 		switch e := e.(type) {
 		case uc.UcError:
 			// TODO: nested switch here
@@ -465,7 +504,6 @@ func (emu *Emulator) StepInto() error {
 	if memErr != nil {
 		return memErr
 	}
-	check(codeErr)
 	if codeErr != nil {
 		return codeErr
 	}
