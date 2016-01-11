@@ -3,11 +3,13 @@ package main
 import (
 	"debug/pe"
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
 	control_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/control_flow"
 	direct_call_analysis "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
+	indirect_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/indirect_flow"
 	name_analysis "github.com/williballenthin/Lancelot/analysis/function/name"
 	stack_delta_analysis "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
@@ -37,6 +39,8 @@ func check(e error) {
 }
 
 func doit(path string) error {
+	logrus.SetLevel(logrus.DebugLevel)
+
 	f, e := pe.Open(path)
 	check(e)
 
@@ -70,6 +74,9 @@ func doit(path string) error {
 	cf, e := control_flow_analysis.New(ws)
 	check(e)
 
+	ifa, e := indirect_flow_analysis.New(ws)
+	check(e)
+
 	hSda, e := ws.RegisterFunctionAnalysis(sda)
 	check(e)
 	defer ws.UnregisterFunctionAnalysis(hSda)
@@ -85,6 +92,10 @@ func doit(path string) error {
 	hCf, e := ws.RegisterFunctionAnalysis(cf)
 	check(e)
 	defer ws.UnregisterFunctionAnalysis(hCf)
+
+	hIfa, e := ws.RegisterFunctionAnalysis(ifa)
+	check(e)
+	defer ws.UnregisterFunctionAnalysis(hIfa)
 
 	ep, e := entry_point_analysis.New(ws)
 	check(e)
