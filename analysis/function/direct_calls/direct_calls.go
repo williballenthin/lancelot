@@ -5,8 +5,8 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
 	"github.com/williballenthin/Lancelot/disassembly"
+	LD "github.com/williballenthin/Lancelot/disassembly/linear_disassembler"
 	W "github.com/williballenthin/Lancelot/workspace"
-	LD "github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 )
 
 func check(e error) {

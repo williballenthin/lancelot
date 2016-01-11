@@ -5,9 +5,9 @@ import (
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
+	LD "github.com/williballenthin/Lancelot/disassembly/linear_disassembler"
 	P "github.com/williballenthin/Lancelot/persistence"
 	W "github.com/williballenthin/Lancelot/workspace"
-	LD "github.com/williballenthin/Lancelot/workspace/dora/linear_disassembler"
 )
 
 func check(e error) {
@@ -40,7 +40,7 @@ func (a *ControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 		return a.ws.MakeCodeCrossReference(AS.VA(insn.Address), target, jtype)
 	})
 	check(e)
-	defer ld.UnregisterInstructionTraceHandler(cj)
+	defer ld.UnregisterJumpTraceHandler(cj)
 
 	cb, e := ld.RegisterBBTraceHandler(func(start AS.VA, end AS.VA) error {
 		return a.ws.MakeBasicBlock(start, end)
