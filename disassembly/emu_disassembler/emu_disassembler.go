@@ -2,6 +2,7 @@ package emu_disassembler
 
 import (
 	"errors"
+	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
@@ -28,6 +29,7 @@ type EmulatingDisassembler struct {
 	disassembler   *gapstone.Engine
 	emulator       *emulator.Emulator
 	codeHook       emulator.CloseableHook
+	unmappedHook   emulator.CloseableHook
 }
 
 // New creates a new EmulatingDisassembler instance.
@@ -44,6 +46,12 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	if e != nil {
 		return nil, e
 	}
+
+	unmappedHook, e := emu.HookMemUnmapped(func(access int, addr AS.VA, size int, value int64) bool {
+		logrus.Warnf("Unmapped: %d %s %d %d", access, addr, size, value)
+		return true
+	})
+
 	ev, e := function_analysis.NewFunctionEventDispatcher()
 	if e != nil {
 		return nil, e
@@ -55,6 +63,7 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 		disassembler:            d,
 		emulator:                emu,
 		FunctionEventDispatcher: *ev,
+		unmappedHook:            unmappedHook,
 	}
 
 	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
@@ -69,6 +78,7 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 
 func (ed *EmulatingDisassembler) Close() error {
 	ed.codeHook.Close()
+	ed.unmappedHook.Close()
 	ed.emulator.Close()
 	return nil
 }
@@ -82,16 +92,18 @@ func (ed *EmulatingDisassembler) emulateToCallTargetAndBack() (AS.VA, error) {
 	pc := ed.emulator.GetInstructionPointer()
 	sp := ed.emulator.GetStackPointer()
 
+	defer func() {
+		ed.emulator.SetInstructionPointer(pc)
+		ed.emulator.SetStackPointer(sp)
+	}()
+
 	e := ed.emulator.StepInto()
-	check(e)
 	if e != nil {
+		logrus.Warnf("Failed to resolve call target: %s: %s", pc, e.Error())
 		return 0, e
 	}
 
 	newPc := ed.emulator.GetInstructionPointer()
-	ed.emulator.SetInstructionPointer(pc)
-	ed.emulator.SetStackPointer(sp)
-
 	return newPc, nil
 }
 
@@ -132,9 +144,9 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 		} else {
 			// this is not an imported function, so we'll just have to try and see.
 			// either there's a valid function pointer at the address, or we'll get an invalid fetch.
-			callTarget, e = ed.discoverCallTarget()
+			callTarget, e = ed.emulateToCallTargetAndBack()
 			if e != nil {
-				logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+				logrus.Debugf("EmulateBB: emulating: failed to resolve call: %s", callVA)
 				return 0, ErrFailedToResolveTarget
 			}
 		}
@@ -143,9 +155,9 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 		callTarget = AS.VA(insn.X86.Operands[0].Imm)
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
 		// assume we have: call eax
-		callTarget, e = ed.discoverCallTarget()
+		callTarget, e = ed.emulateToCallTargetAndBack()
 		if e != nil {
-			logrus.Debug("EmulateBB: emulating: failed to resolve call: 0x%x", callVA)
+			logrus.Debugf("EmulateBB: emulating: failed to resolve call: %s", callVA)
 			return 0, ErrFailedToResolveTarget
 		}
 	}
@@ -271,6 +283,34 @@ func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 	return jumpTargets, nil
 }
 
+func SkipInstruction(emu *emulator.Emulator, dis *gapstone.Engine) error {
+
+	pc := emu.GetInstructionPointer()
+	insn, e := disassembly.ReadInstruction(dis, emu, pc)
+	check(e)
+
+	nextPc := AS.VA(insn.Address + insn.Size)
+	logrus.Debugf("Skipping from %s to %s", pc, nextPc)
+	emu.SetInstructionPointer(nextPc)
+	return nil
+}
+
+func (ed *EmulatingDisassembler) bulletproofRun(dest AS.VA) error {
+	for ed.emulator.GetInstructionPointer() != dest {
+		e := ed.emulator.RunTo(dest)
+		if e == AS.ErrUnmappedMemory {
+			pc := ed.emulator.GetInstructionPointer()
+			// TODO: mark these instruction in the workspace
+			logrus.Warnf("EmulateBB: invalid fetch during emulation, but carrying on: %s: %s", pc, e.Error())
+			check(SkipInstruction(ed.emulator, ed.disassembler))
+		} else if e != nil {
+			logrus.Warnf("EmulateBB: emulation failed: %s", e.Error())
+			return e
+		}
+	}
+	return nil
+}
+
 // when/where can this function be safely called?
 func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
 	// things done here:
@@ -311,13 +351,20 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 		callVAs = callVAs[1:]
 
 		logrus.Debugf("EmulateBB: emulating: from: %s to: %s", ed.emulator.GetInstructionPointer(), callVA)
-		e := ed.emulator.RunTo(callVA)
+
+		e := ed.bulletproofRun(callVA)
 		check(e)
 
-		// call insn
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, callVA)
-		check(e)
+		pc := ed.emulator.GetInstructionPointer()
 
+		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
+		check(e)
+		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+			panic(fmt.Sprintf("expected to be at a call, but we're not: %s", pc))
+		}
+		logrus.Debugf("EmulateBB: paused at call: %s", pc)
+		// this instruction may be emitted twice, since we potentially
+		//  use emulation to resolve the call target
 		check(ed.EmitInstruction(insn))
 
 		var stackDelta int64
@@ -337,11 +384,10 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 			stackDelta, e = f.GetStackDelta()
 			check(e)
 		}
-		check(ed.EmitCall(callVA, callTarget))
+		check(ed.EmitCall(pc, callTarget))
 
-		// skip call instruction
-		ed.emulator.SetInstructionPointer(AS.VA(insn.Address + insn.Size))
-		logrus.Debugf("EmulateBB: skipping call: %s", ed.emulator.GetInstructionPointer())
+		logrus.Debugf("EmulateBB: skipping call: %s", pc)
+		check(SkipInstruction(ed.emulator, ed.disassembler))
 
 		// cleanup stack
 		ed.emulator.SetStackPointer(AS.VA(int64(ed.emulator.GetStackPointer()) + stackDelta))
@@ -349,7 +395,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 
 	// emulate to end of current basic block
 	logrus.Debugf("EmulateBB: emulating to end: from: %s to: %s", ed.emulator.GetInstructionPointer(), endVA)
-	e = ed.emulator.RunTo(endVA)
+	e = ed.bulletproofRun(endVA)
 	check(e)
 
 	pc := ed.emulator.GetInstructionPointer()
@@ -357,6 +403,9 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 
 	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
 	check(e)
+
+	logrus.Debugf("EmulateBB: final instruction: %s", ed.emulator.GetInstructionPointer())
+	check(ed.EmitInstruction(insn))
 
 	if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
 		logrus.Debugf("EmulateBB: ends with a ret")
