@@ -1,5 +1,9 @@
 package address_space
 
+import (
+	"github.com/Sirupsen/logrus"
+)
+
 func CopyAddressSpace(dest AddressSpace, src AddressSpace) error {
 	maps, e := src.GetMaps()
 	check(e)
@@ -98,7 +102,7 @@ func (snap *MemorySnapshot) Clone() (*MemorySnapshot, error) {
 // Restore an address space from the outstanding changes in this snapshot.
 func (snap *MemorySnapshot) RevertAddressSpace(as AddressSpace) error {
 	for k, _ := range snap.dirtyPageNumbers {
-		//log.Printf("reverting dirty page: 0x%x", k)
+		logrus.Debugf("reverting dirty page: %s", k)
 		d, e := snap.currentAddressSpace.MemRead(k, PAGE_SIZE)
 		check(e)
 		if e != nil {
@@ -157,8 +161,13 @@ func roundDownToPage(i uint64) uint64 {
 }
 
 func (snap *MemorySnapshot) MarkDirty(va VA) error {
-	//log.Printf("marking dirty: 0x%x -> 0x%x", va, roundDownToPage(uint64(va)))
-	snap.dirtyPageNumbers[VA(roundDownToPage(uint64(va)))] = true
+	pageVA := VA(roundDownToPage(uint64(va)))
+	logrus.Debugf("marking dirty: %s page: %s", va, pageVA)
+	// probe the page to ensure it exists
+	_, e := snap.currentAddressSpace.MemRead(pageVA, 1)
+	if e == nil {
+		snap.dirtyPageNumbers[pageVA] = true
+	}
 	return nil
 }
 
