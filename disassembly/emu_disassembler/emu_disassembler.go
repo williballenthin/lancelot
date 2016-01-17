@@ -20,6 +20,11 @@ func check(e error) {
 	}
 }
 
+type todoPath struct {
+	state emulator.SnapshotManagerCookie
+	va    AS.VA
+}
+
 // EmulatingDisassembler is the object that holds the state of a emulating disassembler.
 type EmulatingDisassembler struct {
 	function_analysis.FunctionEventDispatcher
@@ -27,9 +32,13 @@ type EmulatingDisassembler struct {
 	ws             *W.Workspace
 	symbolResolver W.SymbolResolver
 	disassembler   *gapstone.Engine
-	emulator       *emulator.Emulator
-	codeHook       emulator.CloseableHook
-	unmappedHook   emulator.CloseableHook
+
+	emulator *emulator.Emulator
+	sman     *emulator.SnapshotManager
+	todo     []todoPath
+
+	codeHook     emulator.CloseableHook
+	unmappedHook emulator.CloseableHook
 }
 
 // New creates a new EmulatingDisassembler instance.
@@ -47,6 +56,9 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 		return nil, e
 	}
 
+	sman, e := emulator.NewSnapshotManager(emu)
+	check(e)
+
 	unmappedHook, e := emu.HookMemUnmapped(func(access int, addr AS.VA, size int, value int64) bool {
 		logrus.Warnf("Unmapped: %d %s %d %d", access, addr, size, value)
 		return true
@@ -58,10 +70,11 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	}
 
 	ed := &EmulatingDisassembler{
-		ws:                      ws,
-		symbolResolver:          ws,
-		disassembler:            d,
-		emulator:                emu,
+		ws:             ws,
+		symbolResolver: ws,
+		disassembler:   d,
+		emulator:       emu,
+		sman:           sman,
 		FunctionEventDispatcher: *ev,
 		unmappedHook:            unmappedHook,
 	}
@@ -80,6 +93,28 @@ func (ed *EmulatingDisassembler) Close() error {
 	ed.codeHook.Close()
 	ed.unmappedHook.Close()
 	ed.emulator.Close()
+	ed.sman.Close()
+	return nil
+}
+
+func (ed *EmulatingDisassembler) pushState(va AS.VA) error {
+	here, e := ed.sman.Push()
+	check(e)
+	logrus.Debugf("emu disassembler: adding path: va: %s cookie: %s", va, here)
+	ed.todo = append(ed.todo, todoPath{state: here, va: va})
+	return nil
+}
+
+func (ed *EmulatingDisassembler) popState() error {
+	if len(ed.todo) == 0 {
+		// TODO: handle a real error
+		panic("no paths to explore")
+	}
+	path := ed.todo[len(ed.todo)-1]
+	ed.todo = ed.todo[1:]
+	logrus.Debugf("emu disassembler: exploring path: va: %s cookie: %s", path.va, path.state)
+	check(ed.sman.RevertUntil(path.state))
+	ed.emulator.SetInstructionPointer(path.va)
 	return nil
 }
 
@@ -313,6 +348,8 @@ func (ed *EmulatingDisassembler) bulletproofRun(dest AS.VA) error {
 
 // when/where can this function be safely called?
 func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+	logrus.Debugf("emu disassembler: explore bb: %s", va)
+
 	// things done here:
 	//  - find CALL instructions
 	//  - emulate to CALL instructions
@@ -323,7 +360,6 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 	//  - clean up stack
 	//  - continue emulating
 	//  - resolve jump targets at end of BB using emulation
-	logrus.Debugf("EmulateBB: va: %s", va)
 	var nextBBs []AS.VA
 	bbStart := va
 	var callVAs []AS.VA
@@ -428,35 +464,34 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 //  blocks starting at a given address in a given address space, invoking
 //  appropriate callbacks.
 // It terminates once it has explored all the basic blocks it discovers.
+// TODO: what is `as` for?
 func (ed *EmulatingDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
-	// TODO: need to use snapshots to maintain correct state in each BB
+	logrus.Debugf("emu disassembler: explore function: %s", va)
 
-	// lifo is a stack (cause these are easier than queues in Go) of BBs
-	//  that need to be explored.
-	lifo := make([]AS.VA, 0, 10)
-	lifo = append(lifo, va)
+	ed.emulator.SetInstructionPointer(va)
+	ed.pushState(va)
 
 	// the set of explored BBs, by BB start address
 	doneBBs := map[AS.VA]bool{}
 
-	for len(lifo) > 0 {
-		// pop BB address
-		bb := lifo[len(lifo)-1]
-		lifo = lifo[:len(lifo)-1]
+	for len(ed.todo) > 0 {
+		ed.popState()
+		pc := ed.emulator.GetInstructionPointer()
 
-		_, done := doneBBs[bb]
+		_, done := doneBBs[pc]
 		if done {
 			continue
 		}
 
-		doneBBs[bb] = true
-		next, e := ed.ExploreBB(as, bb)
+		doneBBs[pc] = true
+		next, e := ed.ExploreBB(as, pc)
 		if e != nil {
 			return e
 		}
 
-		// push new BB addresses
-		lifo = append(lifo, next...)
+		for _, n := range next {
+			ed.pushState(n)
+		}
 	}
 
 	return nil
