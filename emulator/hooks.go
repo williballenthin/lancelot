@@ -2,6 +2,7 @@ package emulator
 
 import (
 	"errors"
+	"github.com/Sirupsen/logrus"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"log"
@@ -37,6 +38,9 @@ type CodeHandler func(addr AS.VA, size uint32)
 type Handler interface{}
 
 type hookMultiplexer struct {
+	// referenced:
+
+	// owned:
 	h       CloseableHook
 	counter uint64
 	entries map[Cookie]Handler
@@ -49,8 +53,18 @@ func newHookMultiplexer() (*hookMultiplexer, error) {
 	}, nil
 }
 
+func (m *hookMultiplexer) Close() error {
+	if m.h != nil {
+		return m.h.Close()
+	}
+	return nil
+}
+
 type multiplexerCloseableHook struct {
+	// referenced:
 	m *hookMultiplexer
+
+	// owned:
 	c Cookie
 }
 
@@ -98,6 +112,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 		if e != nil {
 			return e
 		}
+		logrus.Debugf("hooks: added hook: %v", h)
 
 		m.h = &UnicornCloseableHook{emu: emu, h: h}
 		return nil
@@ -118,6 +133,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 		if e != nil {
 			return e
 		}
+		logrus.Debugf("hooks: added hook: %v", h)
 
 		m.h = &UnicornCloseableHook{emu: emu, h: h}
 		return nil
@@ -141,6 +157,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 		if e != nil {
 			return e
 		}
+		logrus.Debugf("hooks: added hook: %v", h)
 
 		m.h = &UnicornCloseableHook{emu: emu, h: h}
 		return nil
@@ -161,6 +178,7 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 		if e != nil {
 			return e
 		}
+		logrus.Debugf("hooks: added hook: %v", h)
 
 		m.h = &UnicornCloseableHook{emu: emu, h: h}
 		return nil
@@ -168,8 +186,4 @@ func (m *hookMultiplexer) Install(emu *Emulator, hookType int) error {
 	default:
 		return ErrInvalidArgument
 	}
-}
-
-func (m *hookMultiplexer) Close() error {
-	return m.h.Close()
 }

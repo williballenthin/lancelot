@@ -42,6 +42,10 @@ func NewFunctionEventDispatcher() (*FunctionEventDispatcher, error) {
 	}, nil
 }
 
+func (ev *FunctionEventDispatcher) Close() error {
+	return nil
+}
+
 // RegisterInstructionTraceHandler adds a callback function to receive the
 //   disassembled instructions.
 func (ev *FunctionEventDispatcher) RegisterInstructionTraceHandler(fn InstructionTraceHandler) (Cookie, error) {

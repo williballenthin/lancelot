@@ -13,13 +13,20 @@ func check(e error) {
 }
 
 type NameAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*NameAnalysis, error) {
 	return &NameAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *NameAnalysis) Close() error {
+	return nil
 }
 
 /** NameAnalysis implements FunctionAnalysis interface **/

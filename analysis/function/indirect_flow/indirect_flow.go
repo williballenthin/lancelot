@@ -27,6 +27,10 @@ func New(ws *W.Workspace) (*IndirectControlFlowAnalysis, error) {
 	}, nil
 }
 
+func (a *IndirectControlFlowAnalysis) Close() error {
+	return nil
+}
+
 func min(a uint64, b uint64) uint64 {
 	if a < b {
 		return a

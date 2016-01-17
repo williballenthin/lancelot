@@ -29,16 +29,17 @@ type todoPath struct {
 type EmulatingDisassembler struct {
 	function_analysis.FunctionEventDispatcher
 
+	// reference:
 	ws             *W.Workspace
 	symbolResolver W.SymbolResolver
-	disassembler   *gapstone.Engine
 
-	emulator *emulator.Emulator
-	sman     *emulator.SnapshotManager
-	todo     []todoPath
-
+	// own:
+	disassembler *gapstone.Engine
+	emulator     *emulator.Emulator
+	sman         *emulator.SnapshotManager
 	codeHook     emulator.CloseableHook
 	unmappedHook emulator.CloseableHook
+	todo         []todoPath
 }
 
 // New creates a new EmulatingDisassembler instance.
@@ -90,10 +91,12 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 }
 
 func (ed *EmulatingDisassembler) Close() error {
-	ed.codeHook.Close()
-	ed.unmappedHook.Close()
+	ed.FunctionEventDispatcher.Close()
+	ed.disassembler.Close()
 	ed.emulator.Close()
 	ed.sman.Close()
+	ed.codeHook.Close()
+	ed.unmappedHook.Close()
 	return nil
 }
 

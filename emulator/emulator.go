@@ -21,7 +21,10 @@ func check(e error) {
 }
 
 type Emulator struct {
-	ws           *W.Workspace
+	// reference:
+	ws *W.Workspace
+
+	// own:
 	u            uc.Unicorn
 	disassembler *gapstone.Engine
 	maps         []AS.MemoryRegion
@@ -90,7 +93,20 @@ func New(ws *W.Workspace) (*Emulator, error) {
 }
 
 func (emu *Emulator) Close() error {
+	if emu.hooks.memRead != nil {
+		emu.hooks.memRead.Close()
+	}
+	if emu.hooks.memWrite != nil {
+		emu.hooks.memWrite.Close()
+	}
+	if emu.hooks.memUnmapped != nil {
+		emu.hooks.memUnmapped.Close()
+	}
+	if emu.hooks.code != nil {
+		emu.hooks.code.Close()
+	}
 	emu.disassembler.Close()
+	emu.u.Close()
 	return nil
 }
 
@@ -307,7 +323,7 @@ func (emu *Emulator) start(begin AS.VA, until AS.VA) error {
 	return emu.u.Start(uint64(begin), uint64(until))
 }
 func (emu *Emulator) removeHook(h uc.Hook) error {
-	//log.Printf("DEBUG: remove hook: %v", h)
+	logrus.Debugf("emulator: remove hook: %v", h)
 	e := emu.u.HookDel(h)
 	check(e)
 	return e

@@ -12,13 +12,20 @@ func check(e error) {
 }
 
 type EntryPointAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*EntryPointAnalysis, error) {
 	return &EntryPointAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *EntryPointAnalysis) Close() error {
+	return nil
 }
 
 /** EntryPointAnalysis implements FileAnalysis interface **/

@@ -16,13 +16,20 @@ func check(e error) {
 }
 
 type StackDeltaAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*StackDeltaAnalysis, error) {
 	return &StackDeltaAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *StackDeltaAnalysis) Close() error {
+	return nil
 }
 
 /** StackDeltaAnalysis implements FunctionAnalysis interface **/

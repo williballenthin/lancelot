@@ -7,4 +7,6 @@ type FileAnalysis interface {
 	//  entry point - 50
 	//  prologue - 75
 	Priority() uint
+
+	Close() error
 }

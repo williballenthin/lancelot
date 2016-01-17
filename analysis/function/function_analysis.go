@@ -12,4 +12,6 @@ type FunctionAnalysis interface {
 	//   direct call - 50
 	//   stack delta - 50  (must be before emulation)
 	Priority() uint
+
+	Close() error
 }

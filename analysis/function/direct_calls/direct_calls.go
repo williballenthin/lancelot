@@ -16,13 +16,20 @@ func check(e error) {
 }
 
 type DirectCallAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*DirectCallAnalysis, error) {
 	return &DirectCallAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *DirectCallAnalysis) Close() error {
+	return nil
 }
 
 /** DirectCallAnalysis implements FunctionAnalysis interface **/

@@ -17,13 +17,20 @@ func check(e error) {
 }
 
 type ControlFlowAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*ControlFlowAnalysis, error) {
 	return &ControlFlowAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *ControlFlowAnalysis) Close() error {
+	return nil
 }
 
 /** ControlFlowAnalysis implements FunctionAnalysis interface **/

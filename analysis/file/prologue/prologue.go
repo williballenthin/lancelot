@@ -14,13 +14,20 @@ func check(e error) {
 }
 
 type PrologueAnalysis struct {
+	// referenced:
 	ws *W.Workspace
+
+	// owned:
 }
 
 func New(ws *W.Workspace) (*PrologueAnalysis, error) {
 	return &PrologueAnalysis{
 		ws: ws,
 	}, nil
+}
+
+func (a *PrologueAnalysis) Close() error {
+	return nil
 }
 
 // findAll locates all instances of the given separator in
