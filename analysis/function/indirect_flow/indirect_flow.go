@@ -37,8 +37,10 @@ func min(a uint64, b uint64) uint64 {
 
 /** IndirectControlFlowAnalysis implements FunctionAnalysis interface **/
 func (a *IndirectControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) error {
+	logrus.Debugf("indirect cf analysis: analyze function: %s", f.Start)
 	ed, e := ED.New(a.ws)
 	check(e)
+	defer ed.Close()
 
 	ci, e := ed.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
 

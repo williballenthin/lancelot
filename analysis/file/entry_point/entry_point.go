@@ -24,7 +24,7 @@ func New(ws *W.Workspace) (*EntryPointAnalysis, error) {
 /** EntryPointAnalysis implements FileAnalysis interface **/
 func (a *EntryPointAnalysis) AnalyzeAll() error {
 	for _, mod := range a.ws.LoadedModules {
-		logrus.Debug("entry point analysis: found function: module entry: %s", mod.EntryPoint)
+		logrus.Debugf("entry point analysis: found function: module entry: 0x%x", mod.EntryPoint)
 		a.ws.MakeFunction(mod.EntryPoint)
 		for _, export := range mod.ExportsByName {
 			if export.IsForwarded {
@@ -32,7 +32,7 @@ func (a *EntryPointAnalysis) AnalyzeAll() error {
 			}
 			fva := export.RVA.VA(mod.BaseAddress)
 			a.ws.MakeFunction(fva)
-			logrus.Debug("entry point analysis: found function: export: %s", fva)
+			logrus.Debugf("entry point analysis: found function: export: %s", fva)
 		}
 		for _, export := range mod.ExportsByOrdinal {
 			if export.IsForwarded {
@@ -40,7 +40,7 @@ func (a *EntryPointAnalysis) AnalyzeAll() error {
 			}
 			fva := export.RVA.VA(mod.BaseAddress)
 			a.ws.MakeFunction(fva)
-			logrus.Debug("entry point analysis: found function: export: %s", fva)
+			logrus.Debugf("entry point analysis: found function: export: %s", fva)
 		}
 	}
 	return nil

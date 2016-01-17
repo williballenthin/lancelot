@@ -34,6 +34,7 @@ type Emulator struct {
 }
 
 func New(ws *W.Workspace) (*Emulator, error) {
+	logrus.Debug("emulator: new")
 	if ws.Arch != W.ARCH_X86 {
 		return nil, W.InvalidArchError
 	}
@@ -394,6 +395,12 @@ func (emu *Emulator) traceMemWrite() (CloseableHook, error) {
 	})
 }
 
+func (emu *Emulator) traceInsn() (CloseableHook, error) {
+	return emu.HookCode(func(addr AS.VA, size uint32) {
+		logrus.Debugf("Emulator: insn: %s length: 0x%x", addr, size)
+	})
+}
+
 func DumpMemoryRegions(as AS.AddressSpace) error {
 	fmt.Printf("=== memory map ===\n")
 	mmaps, e := as.GetMaps()
@@ -416,7 +423,13 @@ func (emu *Emulator) RunTo(address AS.VA) error {
 	check(e)
 	defer memHook.Close()
 
+	insnHook, e := emu.traceInsn()
+	check(e)
+	defer insnHook.Close()
+
+	logrus.Debugf("Emulator RunTo: from: %s to: %s, start", ip, address)
 	e = emu.start(ip, address)
+	logrus.Debugf("Emulator RunTo: from: %s to: %s, end", ip, address)
 	if memErr != nil {
 		return memErr
 	}

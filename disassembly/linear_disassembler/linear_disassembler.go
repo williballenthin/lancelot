@@ -4,7 +4,7 @@
 package linear_disassembler
 
 import (
-	//	"github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/analysis/function"
@@ -57,6 +57,7 @@ func min(a uint64, b uint64) uint64 {
 // A basic block is delimited by a ret or jump instruction.
 // Returns the addresses to which this basic block may transfer control via jumps.
 func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, error) {
+	logrus.Debugf("linear disassembler: explore bb: %s", va)
 	bbStart := va
 	// the last VA reached while exploring tihs BB
 	// only makes sense to fetch this value after iterating instructions
@@ -98,6 +99,8 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 //  appropriate callbacks.
 // It terminates once it has explored all the basic blocks it discovers.
 func (ld *LinearDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) error {
+	logrus.Debugf("linear disassembler: explore function: %s", va)
+
 	// lifo is a stack (cause these are easier than queues in Go) of BBs
 	//  that need to be explored.
 	lifo := make([]AS.VA, 0, 10)
