@@ -114,7 +114,7 @@ func (ed *EmulatingDisassembler) popState() error {
 		panic("no paths to explore")
 	}
 	path := ed.todo[len(ed.todo)-1]
-	ed.todo = ed.todo[1:]
+	ed.todo = ed.todo[:len(ed.todo)-1]
 	logrus.Debugf("emu disassembler: exploring path: va: %s cookie: %s", path.va, path.state)
 	check(ed.sman.RevertUntil(path.state))
 	ed.emulator.SetInstructionPointer(path.va)
