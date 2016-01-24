@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
+	file_analysis "github.com/williballenthin/Lancelot/analysis/file"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
+	function_analysis "github.com/williballenthin/Lancelot/analysis/function"
 	control_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/control_flow"
 	direct_call_analysis "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
 	indirect_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/indirect_flow"
@@ -38,6 +40,46 @@ func check(e error) {
 	}
 }
 
+func getFunctionAnalyzers(ws *W.Workspace) (map[string]function_analysis.FunctionAnalysis, error) {
+	function_analyzers := make(map[string]function_analysis.FunctionAnalysis)
+
+	sda, e := stack_delta_analysis.New(ws)
+	check(e)
+	function_analyzers["analysis.function.stack_delta"] = sda
+
+	na, e := name_analysis.New(ws)
+	check(e)
+	function_analyzers["analysis.function.name"] = na
+
+	dca, e := direct_call_analysis.New(ws)
+	check(e)
+	function_analyzers["analysis.function.direct_calls"] = dca
+
+	cf, e := control_flow_analysis.New(ws)
+	check(e)
+	function_analyzers["analysis.function.control_flow"] = cf
+
+	ifa, e := indirect_flow_analysis.New(ws)
+	check(e)
+	function_analyzers["analysis.function.indirect_control_flow"] = ifa
+
+	return function_analyzers, nil
+}
+
+func getFileAnalyzers(ws *W.Workspace) (map[string]file_analysis.FileAnalysis, error) {
+	file_analyzers := make(map[string]file_analysis.FileAnalysis)
+
+	ep, e := entry_point_analysis.New(ws)
+	check(e)
+	file_analyzers["analysis.file.entry_point"] = ep
+
+	pro, e := prologue_analysis.New(ws)
+	check(e)
+	file_analyzers["analysis.file.prologue"] = pro
+
+	return file_analyzers, nil
+}
+
 func doit(path string) error {
 	logrus.SetLevel(logrus.DebugLevel)
 
@@ -62,54 +104,25 @@ func doit(path string) error {
 	_, e = loader.Load(ws)
 	check(e)
 
-	sda, e := stack_delta_analysis.New(ws)
+	function_analyzers, e := getFunctionAnalyzers(ws)
 	check(e)
+	for name, a := range function_analyzers {
+		logrus.Info("registering: %s", name)
+		hA, e := ws.RegisterFunctionAnalysis(a)
+		check(e)
+		// TODO: is there an issue here of all the closures pointing to the same value?
+		defer ws.UnregisterFunctionAnalysis(hA)
+	}
 
-	na, e := name_analysis.New(ws)
+	file_analyzers, e := getFileAnalyzers(ws)
 	check(e)
-
-	dca, e := direct_call_analysis.New(ws)
-	check(e)
-
-	cf, e := control_flow_analysis.New(ws)
-	check(e)
-
-	ifa, e := indirect_flow_analysis.New(ws)
-	check(e)
-
-	hSda, e := ws.RegisterFunctionAnalysis(sda)
-	check(e)
-	defer ws.UnregisterFunctionAnalysis(hSda)
-
-	hNa, e := ws.RegisterFunctionAnalysis(na)
-	check(e)
-	defer ws.UnregisterFunctionAnalysis(hNa)
-
-	hDca, e := ws.RegisterFunctionAnalysis(dca)
-	check(e)
-	defer ws.UnregisterFunctionAnalysis(hDca)
-
-	hCf, e := ws.RegisterFunctionAnalysis(cf)
-	check(e)
-	defer ws.UnregisterFunctionAnalysis(hCf)
-
-	hIfa, e := ws.RegisterFunctionAnalysis(ifa)
-	check(e)
-	defer ws.UnregisterFunctionAnalysis(hIfa)
-
-	ep, e := entry_point_analysis.New(ws)
-	check(e)
-
-	pro, e := prologue_analysis.New(ws)
-	check(e)
-
-	hEp, e := ws.RegisterFileAnalysis(ep)
-	check(e)
-	defer ws.UnregisterFileAnalysis(hEp)
-
-	hPro, e := ws.RegisterFileAnalysis(pro)
-	check(e)
-	defer ws.UnregisterFileAnalysis(hPro)
+	for name, a := range file_analyzers {
+		logrus.Info("registering: %s", name)
+		hA, e := ws.RegisterFileAnalysis(a)
+		check(e)
+		// TODO: is there an issue here of all the closures pointing to the same value?
+		defer ws.UnregisterFileAnalysis(hA)
+	}
 
 	ws.AnalyzeAll()
 
