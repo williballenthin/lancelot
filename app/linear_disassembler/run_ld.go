@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
+	AS "github.com/williballenthin/Lancelot/address_space"
 	file_analysis "github.com/williballenthin/Lancelot/analysis/file"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
@@ -107,7 +108,7 @@ func doit(path string) error {
 	function_analyzers, e := getFunctionAnalyzers(ws)
 	check(e)
 	for name, a := range function_analyzers {
-		logrus.Info("registering: %s", name)
+		logrus.Infof("registering: %s", name)
 		hA, e := ws.RegisterFunctionAnalysis(a)
 		check(e)
 		// TODO: is there an issue here of all the closures pointing to the same value?
@@ -117,14 +118,27 @@ func doit(path string) error {
 	file_analyzers, e := getFileAnalyzers(ws)
 	check(e)
 	for name, a := range file_analyzers {
-		logrus.Info("registering: %s", name)
-		hA, e := ws.RegisterFileAnalysis(a)
-		check(e)
-		// TODO: is there an issue here of all the closures pointing to the same value?
-		defer ws.UnregisterFileAnalysis(hA)
+		found := false
+		// blacklist
+		// TODO: make this configurable
+		for _, n := range []string{"analysis.file.entry_point", "analysis.file.prologue"} {
+			if name == n {
+				found = true
+				break
+			}
+		}
+		if !found {
+			logrus.Infof("registering: %s", name)
+			hA, e := ws.RegisterFileAnalysis(a)
+			check(e)
+			// TODO: is there an issue here of all the closures pointing to the same value?
+			defer ws.UnregisterFileAnalysis(hA)
+		}
 	}
 
 	ws.AnalyzeAll()
+
+	ws.MakeFunction(AS.VA(0x10003c90))
 
 	return nil
 }
