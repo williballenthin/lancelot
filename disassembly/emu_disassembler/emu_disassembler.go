@@ -100,9 +100,7 @@ func (ed *EmulatingDisassembler) Close() error {
 	return nil
 }
 
-func (ed *EmulatingDisassembler) pushState(va AS.VA) error {
-	here, e := ed.sman.Push()
-	check(e)
+func (ed *EmulatingDisassembler) pushState(here emulator.SnapshotManagerCookie, va AS.VA) error {
 	logrus.Debugf("emu disassembler: adding path: va: %s cookie: %s", va, here)
 	ed.todo = append(ed.todo, todoPath{state: here, va: va})
 	return nil
@@ -472,7 +470,9 @@ func (ed *EmulatingDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) e
 	logrus.Debugf("emu disassembler: explore function: %s", va)
 
 	ed.emulator.SetInstructionPointer(va)
-	ed.pushState(va)
+	here, e := ed.sman.Push()
+	check(e)
+	ed.pushState(here, va)
 
 	// the set of explored BBs, by BB start address
 	doneBBs := map[AS.VA]bool{}
@@ -492,8 +492,10 @@ func (ed *EmulatingDisassembler) ExploreFunction(as AS.AddressSpace, va AS.VA) e
 			return e
 		}
 
+		here, e := ed.sman.Push()
+		check(e)
 		for _, n := range next {
-			ed.pushState(n)
+			ed.pushState(here, n)
 		}
 	}
 
