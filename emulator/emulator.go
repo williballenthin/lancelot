@@ -114,14 +114,17 @@ func (emu *Emulator) Close() error {
 /** (*Emulator) implements AddressSpace **/
 
 func (emu *Emulator) MemRead(va AS.VA, length uint64) ([]byte, error) {
+	logrus.Debugf("emulator: mem read: %s 0x%x", va, length)
 	return emu.u.MemRead(uint64(va), length)
 }
 
 func (emu *Emulator) MemWrite(va AS.VA, data []byte) error {
+	logrus.Debugf("emulator: mem write: %s 0x%x", va, len(data))
 	return emu.u.MemWrite(uint64(va), data)
 }
 
 func (emu *Emulator) MemMap(va AS.VA, length uint64, name string) error {
+	logrus.Debugf("emulator: mem map: %s 0x%x %s", va, length, name)
 	e := emu.u.MemMap(uint64(va), length)
 	if e != nil {
 		return e
@@ -133,6 +136,7 @@ func (emu *Emulator) MemMap(va AS.VA, length uint64, name string) error {
 }
 
 func (emu *Emulator) MemUnmap(va AS.VA, length uint64) error {
+	logrus.Debugf("emulator: mem unmap: %s 0x%x", va, length)
 	e := emu.u.MemUnmap(uint64(va), length)
 	if e != nil {
 		return e
