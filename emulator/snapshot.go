@@ -3,6 +3,7 @@ package emulator
 import (
 	"errors"
 	"fmt"
+	"github.com/Sirupsen/logrus"
 	uc "github.com/unicorn-engine/unicorn/bindings/go/unicorn"
 	AS "github.com/williballenthin/Lancelot/address_space"
 )
@@ -13,6 +14,7 @@ type RegisterSnapshot struct {
 }
 
 func SnapshotRegisters(emu *Emulator) (*RegisterSnapshot, error) {
+	logrus.Debugf("snapshot: create registers")
 	var regs RegisterSnapshot
 	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
 		r, e := emu.u.RegRead(i)
@@ -25,6 +27,7 @@ func SnapshotRegisters(emu *Emulator) (*RegisterSnapshot, error) {
 }
 
 func RestoreRegisterSnapshot(emu *Emulator, regs *RegisterSnapshot) error {
+	logrus.Debugf("snapshot: restore registers")
 	for i := uc.X86_REG_INVALID + 1; i < uc.X86_REG_ENDING; i++ {
 		e := emu.u.RegWrite(i, regs.regs[i])
 		if e != nil {
@@ -35,12 +38,14 @@ func RestoreRegisterSnapshot(emu *Emulator, regs *RegisterSnapshot) error {
 }
 
 func SnapshotMemory(emu *Emulator) (*AS.MemorySnapshot, error) {
+	logrus.Debugf("snapshot: create memory")
 	return AS.CreateMemorySnapshot(emu)
 }
 
 // until i figure out how this is best used,
 // the currentAddressSpace of `snapshot` *must* be be this emu.
 func RestoreMemorySnapshot(emu *Emulator, as *AS.MemorySnapshot) error {
+	logrus.Debugf("snapshot: restore memory")
 	e := as.RevertAddressSpace(emu)
 	if e != nil {
 		return e
@@ -63,6 +68,7 @@ type Snapshot struct {
 var ErrSnapshotHookAlreadyActive = errors.New("Snapshot hook already active")
 
 func HookSnapshot(emu *Emulator, snap *Snapshot) error {
+	logrus.Debugf("snapshot: hook")
 	if snap.hook != nil {
 		return ErrSnapshotHookAlreadyActive
 	}
@@ -84,6 +90,7 @@ func HookSnapshot(emu *Emulator, snap *Snapshot) error {
 var ErrSnapshotHookNotActive = errors.New("Snapshot hook not active")
 
 func UnhookSnapshot(emu *Emulator, snap *Snapshot) error {
+	logrus.Debugf("snapshot: unhook")
 	if snap.hook == nil {
 		return ErrSnapshotHookNotActive
 	}
@@ -94,6 +101,7 @@ func UnhookSnapshot(emu *Emulator, snap *Snapshot) error {
 }
 
 func CreateSnapshot(emu *Emulator) (*Snapshot, error) {
+	logrus.Debugf("snapshot: create")
 	regs, e := SnapshotRegisters(emu)
 	if e != nil {
 		return nil, e
@@ -114,6 +122,7 @@ func CreateSnapshot(emu *Emulator) (*Snapshot, error) {
 }
 
 func RestoreSnapshot(emu *Emulator, snap *Snapshot) error {
+	logrus.Debugf("snapshot: restore")
 	e := RestoreRegisterSnapshot(emu, snap.registers)
 	check(e)
 	if e != nil {
@@ -121,6 +130,7 @@ func RestoreSnapshot(emu *Emulator, snap *Snapshot) error {
 		return e
 	}
 	e = RestoreMemorySnapshot(emu, snap.memory)
+	check(e)
 	if e != nil {
 		// we're in a bad state here
 		return e
@@ -167,6 +177,7 @@ func NewSnapshotManager(emu *Emulator) (*SnapshotManager, error) {
 }
 
 func (t *SnapshotManager) Close() error {
+	logrus.Debugf("snapshot manager: close")
 	for len(t.states) > 1 {
 		_, e := t.Pop()
 		check(e)
@@ -177,6 +188,7 @@ func (t *SnapshotManager) Close() error {
 }
 
 func (t *SnapshotManager) Push() (SnapshotManagerCookie, error) {
+	logrus.Debugf("snapshot manager: push")
 	c := SnapshotManagerCookie(t.counter)
 	t.counter++
 
@@ -205,6 +217,7 @@ func (t *SnapshotManager) Push() (SnapshotManagerCookie, error) {
 var ErrSnapshotNotActive = errors.New("Snapshot not active")
 
 func (t *SnapshotManager) RevertToHead() error {
+	logrus.Debugf("snapshot manager: revert to head")
 	if len(t.states) == 0 {
 		panic(ErrSnapshotNotActive)
 	}
@@ -214,6 +227,7 @@ func (t *SnapshotManager) RevertToHead() error {
 }
 
 func (t *SnapshotManager) Pop() (SnapshotManagerCookie, error) {
+	logrus.Debugf("snapshot manager: pop")
 	if len(t.states) == 0 {
 		panic(ErrSnapshotNotActive)
 	}
@@ -243,6 +257,7 @@ func (t *SnapshotManager) GetCurrentCookie() (SnapshotManagerCookie, error) {
 var ErrSnapshotNotFound = errors.New("Snapshot cookie not found")
 
 func (t *SnapshotManager) RevertUntil(c SnapshotManagerCookie) error {
+	logrus.Debugf("snapshot manager: revert until")
 	var lastCookie SnapshotManagerCookie
 	for {
 		check(t.RevertToHead())
@@ -266,6 +281,7 @@ func (t *SnapshotManager) RevertUntil(c SnapshotManagerCookie) error {
 }
 
 func (t *SnapshotManager) WithTempExcursion(f func() error) error {
+	logrus.Debugf("snapshot manager: with temp exursion")
 	beforeCookie, e := t.Push()
 	check(e)
 

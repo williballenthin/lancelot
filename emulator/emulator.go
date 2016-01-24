@@ -93,6 +93,7 @@ func New(ws *W.Workspace) (*Emulator, error) {
 }
 
 func (emu *Emulator) Close() error {
+	logrus.Debug("emulator: close")
 	if emu.hooks.memRead != nil {
 		emu.hooks.memRead.Close()
 	}
@@ -188,6 +189,7 @@ func (emu Emulator) GetMode() W.Mode {
 	return emu.ws.Mode
 }
 func (emu *Emulator) RegRead(reg int) (uint64, error) {
+	logrus.Debug("emulator: regread")
 	return emu.u.RegRead(reg)
 }
 
@@ -223,6 +225,7 @@ func (emu *Emulator) RegReadEflag(eflag uint64) bool {
 }
 
 func (emu *Emulator) RegWrite(reg int, value uint64) error {
+	logrus.Debug("emulator: reg write")
 	return emu.u.RegWrite(reg, value)
 }
 
@@ -247,6 +250,7 @@ func (emu *Emulator) RegToggleEflag(eflag uint64) {
 }
 
 func (emu *Emulator) SetStackPointer(address AS.VA) {
+	logrus.Debug("emulator: set stack pointer")
 	if emu.ws.Arch == W.ARCH_X86 {
 		if emu.ws.Mode == W.MODE_32 {
 			emu.RegWrite(uc.X86_REG_ESP, uint64(address))
@@ -263,6 +267,7 @@ func (emu *Emulator) SetStackPointer(address AS.VA) {
 }
 
 func (emu *Emulator) GetStackPointer() AS.VA {
+	logrus.Debug("emulator: get stack pointer")
 	var r uint64
 	var e error
 	if emu.ws.Arch == W.ARCH_X86 {
@@ -283,6 +288,7 @@ func (emu *Emulator) GetStackPointer() AS.VA {
 }
 
 func (emu *Emulator) SetInstructionPointer(address AS.VA) {
+	logrus.Debug("emulator: set insn pointer")
 	if emu.ws.Arch == W.ARCH_X86 {
 		if emu.ws.Mode == W.MODE_32 {
 			emu.RegWrite(uc.X86_REG_EIP, uint64(address))
@@ -299,6 +305,7 @@ func (emu *Emulator) SetInstructionPointer(address AS.VA) {
 }
 
 func (emu *Emulator) GetInstructionPointer() AS.VA {
+	logrus.Debug("emulator: get insn pointer")
 	var r uint64
 	var e error
 	if emu.ws.Arch == W.ARCH_X86 {
@@ -320,8 +327,10 @@ func (emu *Emulator) GetInstructionPointer() AS.VA {
 
 // utility method for handling the uint64 casting
 func (emu *Emulator) start(begin AS.VA, until AS.VA) error {
+	logrus.Debug("emulator: start")
 	return emu.u.Start(uint64(begin), uint64(until))
 }
+
 func (emu *Emulator) removeHook(h uc.Hook) error {
 	logrus.Debugf("emulator: remove hook: %v", h)
 	e := emu.u.HookDel(h)
@@ -430,8 +439,9 @@ func DumpMemoryRegions(as AS.AddressSpace) error {
 }
 
 func (emu *Emulator) RunTo(address AS.VA) error {
+	logrus.Debugf("emulator: runto: to: %s", address)
 	ip := emu.GetInstructionPointer()
-	logrus.Debugf("Emulator RunTo: from: %s to: %s", ip, address)
+	logrus.Debugf("emulator: runto: from: %s to: %s", ip, address)
 
 	var memErr error = nil
 	// TODO: remove these traces
@@ -455,6 +465,7 @@ func (emu *Emulator) RunTo(address AS.VA) error {
 var EmulatorEscapedError = errors.New("Emulator failed to stop as requested.")
 
 func (emu *Emulator) StepInto() error {
+	logrus.Debugf("emulator: step into")
 	var memErr error = nil
 	var codeErr error = nil
 
@@ -516,6 +527,7 @@ func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
 }
 
 func (emu *Emulator) StepOver() error {
+	logrus.Debugf("emulator: step over")
 	insn, e := emu.GetCurrentInstruction()
 	check(e)
 	if e != nil {

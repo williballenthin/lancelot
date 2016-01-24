@@ -368,6 +368,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 	// recon
 	endVA := va
 	e := disassembly.IterateInstructions(ed.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
+		logrus.Debugf("recon: insn: %s", AS.VA(insn.Address))
 		endVA = AS.VA(insn.Address) // update last reached VA, to compute end of BB
 		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			return true, nil
@@ -441,7 +442,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
 	check(e)
 
-	logrus.Debugf("EmulateBB: final instruction: %s", ed.emulator.GetInstructionPointer())
+	logrus.Debugf("EmulateBB: final instruction: %s", pc)
 	check(ed.EmitInstruction(insn))
 
 	if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_RET) {
