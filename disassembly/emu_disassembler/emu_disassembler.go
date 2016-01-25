@@ -300,6 +300,7 @@ func (ed *EmulatingDisassembler) findJumpTableTargets(disp AS.VA, scale int) ([]
 	var targets []AS.VA
 	va := disp
 	for {
+		logrus.Debugf("pointer read: %s", va)
 		target, e := W.MemReadPointer(ed.emulator, va, ed.emulator.GetMode())
 		check(e)
 
@@ -332,9 +333,9 @@ func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 		// this looks like: jnz 0x401000
 		jumpTargets = []AS.VA{AS.VA(insn.X86.Operands[0].Imm)}
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+		// complex cases:
 		op := insn.X86.Operands[0]
-		// complex case:
-		if op.Mem.Scale > 0 {
+		if op.Mem.Base == 0 {
 			// this can look like: jmp dword ptr [edx*4 + 0x401000]
 			// segment: 0
 			// base: 0
@@ -345,13 +346,15 @@ func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 			check(e)
 		} else {
 			// or this can look like: jmp dword ptr [0x401000]
-			panic("not implemented")
-			logrus.Debugf("jump target: MEM")
-			logrus.Debugf("jump target: segment: %x", op.Mem.Segment)
-			logrus.Debugf("jump target: base: %x", op.Mem.Base)
-			logrus.Debugf("jump target: index: %x", op.Mem.Index)
-			logrus.Debugf("jump target: scale: %x", op.Mem.Scale)
-			logrus.Debugf("jump target: disp: %x", op.Mem.Disp)
+			//
+			// or this:  jmp dword ptr [ebx + 0x18]"
+			// segment: 0
+			// base: 0x15 (X86_REG_EBX)
+			// index: 0
+			// scale: 1
+			// disp: 0x18
+			jumpTargets, e = ed.emulateToJumpTargetsAndBack()
+			check(e)
 		}
 	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
 		// complex case:
