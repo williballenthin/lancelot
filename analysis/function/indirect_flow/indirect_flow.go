@@ -46,32 +46,35 @@ func (a *IndirectControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) err
 	check(e)
 	defer ed.Close()
 
-	ci, e := ed.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
+	cj, e := ed.RegisterJumpTraceHandler(func(
+		insn gapstone.Instruction,
+		from_bb AS.VA,
+		target AS.VA,
+		jtype P.JumpType) error {
 
-		// fetch either instruction length, or max configured bytes, amount of data
-		numBytes := uint64(a.ws.DisplayOptions.NumOpcodeBytes)
-		d, e := a.ws.MemRead(AS.VA(insn.Address), min(uint64(insn.Size), numBytes))
-		check(e)
+		return a.ws.MakeCodeCrossReference(AS.VA(insn.Address), target, jtype)
+	})
+	check(e)
+	defer ed.UnregisterJumpTraceHandler(cj)
 
-		// format each of those as hex
-		var bytesPrefix []string
-		for _, b := range d {
-			bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
+	cb, e := ed.RegisterBBTraceHandler(func(start AS.VA, end AS.VA) error {
+		return a.ws.MakeBasicBlock(start, end)
+	})
+	check(e)
+	defer ed.UnregisterBBTraceHandler(cb)
+
+	c, e := ed.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
+		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
+			if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
+				// assume we have: call 0x401000
+				targetva := AS.VA(insn.X86.Operands[0].Imm)
+				a.ws.MakeFunction(targetva)
+			}
 		}
-		// and fill in padding space
-		for i := uint64(len(d)); i < numBytes; i++ {
-			bytesPrefix = append(bytesPrefix, "  ")
-		}
-		prefix := strings.Join(bytesPrefix, " ")
-
-		s := fmt.Sprintf("0x%x: %s %s\t%s", insn.Address, prefix, insn.Mnemonic, insn.OpStr)
-
-		logrus.Debugf("IndirectControlFlow: %s", s)
-
 		return nil
 	})
 	check(e)
-	defer ed.UnregisterInstructionTraceHandler(ci)
+	defer ed.UnregisterInstructionTraceHandler(c)
 
 	e = ed.ExploreFunction(a.ws, f.Start)
 	check(e)
