@@ -1,14 +1,14 @@
 package indirect_flow_analysis
 
 import (
-	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	"github.com/williballenthin/Lancelot/artifacts"
+	disassembly "github.com/williballenthin/Lancelot/disassembly"
 	ED "github.com/williballenthin/Lancelot/disassembly/emu_disassembler"
+	P "github.com/williballenthin/Lancelot/persistence"
 	W "github.com/williballenthin/Lancelot/workspace"
-	"strings"
 )
 
 func check(e error) {

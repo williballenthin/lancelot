@@ -55,18 +55,11 @@ func (a *ControlFlowAnalysis) AnalyzeFunction(f *artifacts.Function) error {
 	check(e)
 	defer ld.UnregisterBBTraceHandler(cb)
 
-	c, e := ld.RegisterInstructionTraceHandler(func(insn gapstone.Instruction) error {
-		if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
-			if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
-				// assume we have: call 0x401000
-				targetva := AS.VA(insn.X86.Operands[0].Imm)
-				a.ws.MakeFunction(targetva)
-			}
-		}
-		return nil
+	c, e := ld.RegisterCallTraceHandler(func(from AS.VA, to AS.VA) error {
+		return a.ws.MakeCallCrossReference(from, to)
 	})
 	check(e)
-	defer ld.UnregisterInstructionTraceHandler(c)
+	defer ld.UnregisterCallTraceHandler(c)
 
 	e = ld.ExploreFunction(a.ws, f.Start)
 	check(e)

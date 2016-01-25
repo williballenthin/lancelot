@@ -92,7 +92,7 @@ const (
 	// or VA to VA (pointer
 	DataXrefData
 	// from function to function
-	CallGraphData
+	CallXrefData
 )
 
 func (l EdgeDataType) String() string {
@@ -101,8 +101,8 @@ func (l EdgeDataType) String() string {
 		return "CodeXrefData"
 	case DataXrefData:
 		return "DataXrefData"
-	case CallGraphData:
-		return "CallGraphData"
+	case CallXrefData:
+		return "CallXrefData"
 	default:
 		panic("unknown type")
 	}
@@ -128,6 +128,7 @@ const (
 	EdgeKeyUnusedI EdgeDataKeyI = iota
 	XrefBranchType              // this some fake value so we can test
 	XrefJumpType
+	XrefExists // simply to make call xrefs exist
 )
 
 func (l EdgeDataKeyI) String() string {
@@ -136,6 +137,8 @@ func (l EdgeDataKeyI) String() string {
 		return "XrefBranchType"
 	case XrefJumpType:
 		return "XrefJumpType"
+	case XrefExists:
+		return "XrefExists"
 	default:
 		panic("unknown type")
 	}

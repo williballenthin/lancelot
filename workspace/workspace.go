@@ -287,6 +287,19 @@ func (ws *Workspace) MakeCodeCrossReference(from AS.VA, to AS.VA, jtype P.JumpTy
 	return e
 }
 
+func (ws *Workspace) MakeCallCrossReference(from AS.VA, to AS.VA) error {
+	_, e := ws.Artifacts.GetCallCrossReference(from, to)
+	if e == artifacts.ErrXrefNotFound {
+		_, e := ws.Artifacts.AddCallCrossReference(from, to)
+		if e != nil {
+			logrus.Warnf("error adding xref: %s", e.Error())
+			return e
+		}
+		return nil
+	}
+	return e
+}
+
 func (ws *Workspace) MakeBasicBlock(start AS.VA, end AS.VA) error {
 	_, e := ws.Artifacts.GetBasicBlock(start)
 	if e == artifacts.ErrBasicBlockNotFound {

@@ -104,6 +104,31 @@ func (a *Artifacts) GetCodeCrossReference(from AS.VA, to AS.VA) (*CodeCrossRefer
 	}, nil
 }
 
+func (a *Artifacts) AddCallCrossReference(from AS.VA, to AS.VA) (*CallCrossReference, error) {
+	// TODO: don't stomp on existing location?
+	e := a.persistence.SetEdgeValueNumber(P.CallXrefData, from, to, P.XrefExists, int64(1))
+	check(e)
+
+	return &CallCrossReference{
+		artifacts: a,
+		From:      from,
+		To:        to,
+	}, nil
+}
+
+func (a *Artifacts) GetCallCrossReference(from AS.VA, to AS.VA) (*CallCrossReference, error) {
+	_, e := a.persistence.GetEdgeValueNumber(P.CallXrefData, from, to, P.XrefExists)
+	if e != nil {
+		return nil, ErrXrefNotFound
+	}
+
+	return &CallCrossReference{
+		artifacts: a,
+		From:      from,
+		To:        to,
+	}, nil
+}
+
 func (a *Artifacts) AddBasicBlock(start AS.VA, end AS.VA) (*BasicBlock, error) {
 	// if theres a function at an address, then there must also be a basic block.
 	// function takes precedence.

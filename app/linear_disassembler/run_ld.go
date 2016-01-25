@@ -11,7 +11,6 @@ import (
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
 	function_analysis "github.com/williballenthin/Lancelot/analysis/function"
 	control_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/control_flow"
-	direct_call_analysis "github.com/williballenthin/Lancelot/analysis/function/direct_calls"
 	indirect_flow_analysis "github.com/williballenthin/Lancelot/analysis/function/indirect_flow"
 	name_analysis "github.com/williballenthin/Lancelot/analysis/function/name"
 	stack_delta_analysis "github.com/williballenthin/Lancelot/analysis/function/stack_delta"
@@ -51,10 +50,6 @@ func getFunctionAnalyzers(ws *W.Workspace) (map[string]function_analysis.Functio
 	na, e := name_analysis.New(ws)
 	check(e)
 	function_analyzers["analysis.function.name"] = na
-
-	dca, e := direct_call_analysis.New(ws)
-	check(e)
-	function_analyzers["analysis.function.direct_calls"] = dca
 
 	cf, e := control_flow_analysis.New(ws)
 	check(e)
