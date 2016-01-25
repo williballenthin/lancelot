@@ -336,3 +336,58 @@ func (m *MemPersistence) GetEdgeValueNumbers(etype P.EdgeDataType, from AS.VA, t
 	}
 	return ret, nil
 }
+
+func (m *MemPersistence) GetEdgesFrom(etype P.EdgeDataType, from AS.VA) ([]AS.VA, error) {
+	var ret []AS.VA
+
+	frommapi, ok := m.edgeDataI[etype]
+	if ok {
+		tomapi, ok := frommapi[from]
+		if ok {
+			for toi, _ := range tomapi {
+				ret = append(ret, toi)
+			}
+		}
+	}
+
+	frommaps, ok := m.edgeDataS[etype]
+	if ok {
+		tomaps, ok := frommaps[from]
+		if ok {
+			for tos, _ := range tomaps {
+				ret = append(ret, tos)
+			}
+		}
+	}
+	return ret, nil
+}
+
+func (m *MemPersistence) GetEdgesTo(etype P.EdgeDataType, to AS.VA) ([]AS.VA, error) {
+	// until we have an index, iterate through all edges, and find the one pointing backwards
+	// yes, i know its not efficient.
+	var ret []AS.VA
+
+	frommapi, ok := m.edgeDataI[etype]
+	if ok {
+		for fromi, tomapi := range frommapi {
+			for toi, _ := range tomapi {
+				if toi == to {
+					ret = append(ret, fromi)
+				}
+			}
+		}
+	}
+
+	frommaps, ok := m.edgeDataS[etype]
+	if ok {
+		for froms, tomaps := range frommaps {
+			for tos, _ := range tomaps {
+				if tos == to {
+					ret = append(ret, froms)
+				}
+			}
+		}
+	}
+
+	return ret, nil
+}

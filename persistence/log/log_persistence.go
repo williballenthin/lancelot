@@ -170,3 +170,21 @@ func (m *LogPersistence) GetEdgeValueNumbers(etype P.EdgeDataType, from AS.VA, t
 	var ret []P.EdgeValueNumber
 	return ret, P.ErrNotImplemented
 }
+
+func (m *LogPersistence) GetEdgesFrom(etype P.EdgeDataType, from AS.VA) ([]AS.VA, error) {
+	logrus.WithFields(logrus.Fields{
+		"etype": etype,
+		"from":  from,
+	}).Info("GetEdgesFrom")
+	var ret []AS.VA
+	return ret, P.ErrNotImplemented
+}
+
+func (m *LogPersistence) GetEdgesTo(etype P.EdgeDataType, to AS.VA) ([]AS.VA, error) {
+	logrus.WithFields(logrus.Fields{
+		"etype": etype,
+		"to":    to,
+	}).Info("GetEdgesTo")
+	var ret []AS.VA
+	return ret, P.ErrNotImplemented
+}

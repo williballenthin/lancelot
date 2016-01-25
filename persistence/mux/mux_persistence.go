@@ -230,3 +230,35 @@ func (m *MuxPersistence) GetEdgeValueNumbers(atype P.EdgeDataType, from AS.VA, t
 	}
 	return r, ret
 }
+
+func (m *MuxPersistence) GetEdgesFrom(etype P.EdgeDataType, from AS.VA) ([]AS.VA, error) {
+	var r []AS.VA
+	var ret error
+	for _, p := range m.others {
+		v, e := p.GetEdgesFrom(etype, from)
+		if e != P.ErrNotImplemented && e != nil {
+			ret = e
+			continue
+		}
+		if e != P.ErrNotImplemented {
+			return v, nil
+		}
+	}
+	return r, ret
+}
+
+func (m *MuxPersistence) GetEdgesTo(etype P.EdgeDataType, to AS.VA) ([]AS.VA, error) {
+	var r []AS.VA
+	var ret error
+	for _, p := range m.others {
+		v, e := p.GetEdgesFrom(etype, to)
+		if e != P.ErrNotImplemented && e != nil {
+			ret = e
+			continue
+		}
+		if e != P.ErrNotImplemented {
+			return v, nil
+		}
+	}
+	return r, ret
+}

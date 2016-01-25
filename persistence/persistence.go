@@ -81,6 +81,9 @@ type Persistence interface {
 	// returns the empty list and ErrKeyDoesNotExist if any part of the query fails
 	GetEdgeValueStrings(atype EdgeDataType, from AS.VA, to AS.VA) ([]EdgeValueString, error)
 
+	GetEdgesFrom(atype EdgeDataType, from AS.VA) ([]AS.VA, error)
+	GetEdgesTo(atype EdgeDataType, to AS.VA) ([]AS.VA, error)
+
 	// stomps on existing value
 	SetEdgeValueNumber(atype EdgeDataType, from AS.VA, to AS.VA, key EdgeDataKeyI, value int64) error
 	// no error if key does not exist
