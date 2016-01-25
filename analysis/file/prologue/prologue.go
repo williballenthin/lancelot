@@ -101,7 +101,7 @@ func (a *PrologueAnalysis) AnalyzeAll() error {
 		for _, fn := range fns {
 			fva := fn.VA(mmap.Address)
 			a.ws.MakeFunction(fva)
-			logrus.Debug("function prologue analysis: found function: %s", fva)
+			logrus.Debugf("function prologue analysis: found function: %s", fva)
 		}
 	}
 	return nil
