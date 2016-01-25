@@ -3,6 +3,7 @@ package disassembly
 
 import (
 	"errors"
+	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
@@ -47,6 +48,9 @@ func New(ws *W.Workspace) (*gapstone.Engine, error) {
 //  address and parses them into a single instruction instance.
 func ReadInstruction(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error) {
 	d, e := as.MemRead(va, uint64(MAX_INSN_SIZE))
+	if e != nil {
+		logrus.Warnf("read instruction invalid: %s 0x%x", va, MAX_INSN_SIZE)
+	}
 	check(e)
 	if e != nil {
 		return gapstone.Instruction{}, AS.ErrInvalidMemoryRead
