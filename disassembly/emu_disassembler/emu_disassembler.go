@@ -203,7 +203,7 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 func (ed *EmulatingDisassembler) emulateToJumpTargetsAndBack() ([]AS.VA, error) {
 	// TODO: assume that current insn is a branch of some sort
 
-	var set map[AS.VA]bool
+	set := make(map[AS.VA]bool)
 
 	// rather than do too much inspection (which sounds tedious to program right now),
 	//  lets just brute force all possibilities.
