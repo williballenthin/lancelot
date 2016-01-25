@@ -291,6 +291,29 @@ func (ed *EmulatingDisassembler) emulateToJumpTargetsAndBack() ([]AS.VA, error) 
 	return ret, nil
 }
 
+func ProbeMemory(as AS.AddressSpace, va AS.VA, size uint64) bool {
+	_, e := as.MemRead(va, size)
+	return e == nil
+}
+
+func (ed *EmulatingDisassembler) findJumpTableTargets(disp AS.VA, scale int) ([]AS.VA, error) {
+	var targets []AS.VA
+	va := disp
+	for {
+		target, e := W.MemReadPointer(ed.emulator, va, ed.emulator.GetMode())
+		check(e)
+
+		if ProbeMemory(ed.emulator, target, uint64(scale)) {
+			targets = append(targets, target)
+			// not sure this conversion from negative number to uint64 is correct
+			va = AS.VA(uint64(va) + uint64(scale))
+		} else {
+			break
+		}
+	}
+	return targets, nil
+}
+
 // discoverJumpTargets finds the targets of the current instruction that
 //  should be a jump/branch instruction.
 // returns ErrFailedToResolveTarget if the target is not resolvable.
@@ -308,12 +331,42 @@ func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 		// simple case:
 		// this looks like: jnz 0x401000
 		jumpTargets = []AS.VA{AS.VA(insn.X86.Operands[0].Imm)}
+	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_MEM {
+		op := insn.X86.Operands[0]
+		// complex case:
+		if op.Mem.Scale > 0 {
+			// this can look like: jmp dword ptr [edx*4 + 0x401000]
+			// segment: 0
+			// base: 0
+			// index: 0x18 (X86_REG_EDX)
+			// scale: 4
+			// disp: 0x401000
+			jumpTargets, e = ed.findJumpTableTargets(AS.VA(op.Mem.Disp), op.Mem.Scale)
+			check(e)
+		} else {
+			// or this can look like: jmp dword ptr [0x401000]
+			panic("not implemented")
+			logrus.Debugf("jump target: MEM")
+			logrus.Debugf("jump target: segment: %x", op.Mem.Segment)
+			logrus.Debugf("jump target: base: %x", op.Mem.Base)
+			logrus.Debugf("jump target: index: %x", op.Mem.Index)
+			logrus.Debugf("jump target: scale: %x", op.Mem.Scale)
+			logrus.Debugf("jump target: disp: %x", op.Mem.Disp)
+		}
+	} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
+		// complex case:
+		// this can look like: jmp [edx]
+		jumpTargets, e = ed.emulateToJumpTargetsAndBack()
+		check(e)
 	} else {
+		// this shouldnt really happen. the remaining types are: INVALID, and FP
+		logrus.Debugf("jump target type: %x", insn.X86.Operands[0].Type)
 		jumpTargets, e = ed.emulateToJumpTargetsAndBack()
 		check(e)
 	}
 
 	if disassembly.IsConditionalJump(insn) {
+		logrus.Debugf("conditional jump")
 		jumpTargets = append(jumpTargets, AS.VA(insn.Address+insn.Size))
 	}
 	return jumpTargets, nil
