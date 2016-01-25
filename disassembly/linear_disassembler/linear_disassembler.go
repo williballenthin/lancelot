@@ -81,19 +81,21 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 			}
 
 			// though we can assume that IterateInstructions will return after this insn (end of bb),
-			//  we'd better not make assumptions. here, we explicityly end processing.
+			//  we'd better not make assumptions. here, we explicitly end processing.
 			return false, nil // continue processing instructions
 		} else if disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			if insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
-				// assume we have: call 0x401000
+				// example: call 0x401000
 				targetva := AS.VA(insn.X86.Operands[0].Imm)
 				check(ld.EmitCall(AS.VA(insn.Address), targetva))
 			} else if insn.X86.Operands[0].Type == gapstone.X86_OP_REG {
+				// example: call eax
 				// indirect call, we're stuck
 			} else {
 				op := insn.X86.Operands[0]
 				if op.Mem.Base != 0 || op.Mem.Index != 0 {
 					// example: call [eax] or call [eax + 10]
+					// indirect call, we're stuck
 				} else {
 					// example: call [GetVersionA]
 					targetva := AS.VA(op.Mem.Disp)
