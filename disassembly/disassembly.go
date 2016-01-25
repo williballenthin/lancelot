@@ -187,19 +187,8 @@ func GetInstructionLength(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (u
 }
 
 func IsConditionalJump(insn gapstone.Instruction) bool {
-	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp" {
-		return true
-	}
-	if DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic == "jmp" {
-		if insn.Mnemonic == "jmp" && insn.X86.Operands[0].Type == gapstone.X86_OP_IMM {
-			// jmp 0x1000
-			return false
-		} else {
-			// jmp eax
-			return true
-		}
-	}
-	return false
+	// TODO: test for loop, too
+	return DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp"
 }
 
 // IterateInstructions invokes the provided callback with each instruction starting
