@@ -11,6 +11,7 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	dis "github.com/williballenthin/Lancelot/disassembly"
 	W "github.com/williballenthin/Lancelot/workspace"
+	"runtime"
 	"strings"
 )
 
@@ -45,6 +46,7 @@ func New(ws *W.Workspace) (*Emulator, error) {
 		return nil, W.InvalidModeError
 	}
 
+	runtime.LockOSThread()
 	var u uc.Unicorn
 	var e error
 	if ws.Mode == W.MODE_32 {
@@ -108,6 +110,7 @@ func (emu *Emulator) Close() error {
 	}
 	emu.disassembler.Close()
 	emu.u.Close()
+	runtime.UnlockOSThread()
 	return nil
 }
 

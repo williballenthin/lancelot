@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
-	AS "github.com/williballenthin/Lancelot/address_space"
+	//	AS "github.com/williballenthin/Lancelot/address_space"
 	file_analysis "github.com/williballenthin/Lancelot/analysis/file"
 	entry_point_analysis "github.com/williballenthin/Lancelot/analysis/file/entry_point"
 	prologue_analysis "github.com/williballenthin/Lancelot/analysis/file/prologue"
@@ -121,7 +121,7 @@ func doit(path string) error {
 		found := false
 		// blacklist
 		// TODO: make this configurable
-		for _, n := range []string{"analysis.file.entry_point", "analysis.file.prologue"} {
+		for _, n := range []string{} { //"analysis.file.entry_point", "analysis.file.prologue"} {
 			if name == n {
 				found = true
 				break
@@ -138,7 +138,7 @@ func doit(path string) error {
 
 	ws.AnalyzeAll()
 
-	ws.MakeFunction(AS.VA(0x10003c90))
+	//ws.MakeFunction(AS.VA(0x100012a9))
 
 	return nil
 }
