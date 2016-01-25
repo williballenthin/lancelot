@@ -389,6 +389,7 @@ func SkipInstruction(emu *emulator.Emulator, dis *gapstone.Engine) error {
 
 func (ed *EmulatingDisassembler) bulletproofRun(dest AS.VA) error {
 	for ed.emulator.GetInstructionPointer() != dest {
+		startVA := ed.emulator.GetInstructionPointer()
 		e := ed.emulator.RunTo(dest)
 		if e == AS.ErrUnmappedMemory {
 			pc := ed.emulator.GetInstructionPointer()
@@ -398,6 +399,10 @@ func (ed *EmulatingDisassembler) bulletproofRun(dest AS.VA) error {
 		} else if e != nil {
 			logrus.Warnf("EmulateBB: emulation failed: %s", e.Error())
 			return e
+		} else if startVA == ed.emulator.GetInstructionPointer() {
+			pc := ed.emulator.GetInstructionPointer()
+			logrus.Warnf("exception? no progress made. %s", pc)
+			check(SkipInstruction(ed.emulator, ed.disassembler))
 		}
 	}
 	return nil
