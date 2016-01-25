@@ -12,6 +12,8 @@
 package workspace
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"github.com/Sirupsen/logrus"
 	"github.com/bnagy/gapstone"
@@ -307,4 +309,30 @@ func (ws *Workspace) AnalyzeAll() error {
 		}
 	}
 	return nil
+}
+
+func MemReadPointer(as AS.AddressSpace, va AS.VA, mode Mode) (AS.VA, error) {
+	if mode == MODE_32 {
+		var data uint32
+		d, e := as.MemRead(va, 0x4)
+		if e != nil {
+			return AS.VA(0), e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return AS.VA(uint64(data)), nil
+	} else if mode == MODE_64 {
+		var data uint64
+		d, e := as.MemRead(va, 0x8)
+		if e != nil {
+			return AS.VA(0), e
+		}
+
+		p := bytes.NewBuffer(d)
+		binary.Read(p, binary.LittleEndian, &data)
+		return AS.VA(uint64(data)), nil
+	} else {
+		return 0, InvalidModeError
+	}
 }

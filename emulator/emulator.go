@@ -1,8 +1,6 @@
 package emulator
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/Sirupsen/logrus"
@@ -167,29 +165,7 @@ func (emu *Emulator) GetMaps() ([]AS.MemoryRegion, error) {
 
 // read a pointer-sized number from the given address
 func (emu *Emulator) MemReadPtr(va AS.VA) (AS.VA, error) {
-	if emu.ws.Mode == W.MODE_32 {
-		var data uint32
-		d, e := emu.MemRead(va, 0x4)
-		if e != nil {
-			return 0, e
-		}
-
-		p := bytes.NewBuffer(d)
-		binary.Read(p, binary.LittleEndian, &data)
-		return AS.VA(uint64(data)), nil
-	} else if emu.ws.Mode == W.MODE_64 {
-		var data uint64
-		d, e := emu.MemRead(va, 0x8)
-		if e != nil {
-			return 0, e
-		}
-
-		p := bytes.NewBuffer(d)
-		binary.Read(p, binary.LittleEndian, &data)
-		return AS.VA(uint64(data)), nil
-	} else {
-		return 0, W.InvalidModeError
-	}
+	return W.MemReadPointer(emu, va, emu.ws.Mode)
 }
 
 func (emu Emulator) GetMode() W.Mode {
