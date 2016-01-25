@@ -1,6 +1,11 @@
 package config
 
 import (
+	"github.com/williballenthin/Lancelot/persistence"
+	log_persistence "github.com/williballenthin/Lancelot/persistence/log"
+	mem_persistence "github.com/williballenthin/Lancelot/persistence/memory"
+	mux_persistence "github.com/williballenthin/Lancelot/persistence/mux"
+
 	"github.com/Sirupsen/logrus"
 	//	AS "github.com/williballenthin/Lancelot/address_space"
 	file_analysis "github.com/williballenthin/Lancelot/analysis/file"
@@ -54,6 +59,19 @@ func getFileAnalyzers(ws *W.Workspace) (map[string]file_analysis.FileAnalysis, e
 	file_analyzers["analysis.file.prologue"] = pro
 
 	return file_analyzers, nil
+}
+
+func MakeDefaultPersistence() (persistence.Persistence, error) {
+	memPersis, e := mem_persistence.New()
+	check(e)
+
+	logPersis, e := log_persistence.New()
+	check(e)
+
+	muxPersis, e := mux_persistence.New(memPersis, logPersis)
+	check(e)
+
+	return muxPersis, nil
 }
 
 func RegisterDefaultAnalyzers(ws *W.Workspace) error {

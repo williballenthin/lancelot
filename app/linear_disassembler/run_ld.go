@@ -7,9 +7,6 @@ import (
 	"github.com/codegangsta/cli"
 	"github.com/williballenthin/Lancelot/config"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
-	log_persistence "github.com/williballenthin/Lancelot/persistence/log"
-	mem_persistence "github.com/williballenthin/Lancelot/persistence/memory"
-	mux_persistence "github.com/williballenthin/Lancelot/persistence/mux"
 	"github.com/williballenthin/Lancelot/utils"
 	W "github.com/williballenthin/Lancelot/workspace"
 	"log"
@@ -38,16 +35,10 @@ func doit(path string) error {
 	f, e := pe.Open(path)
 	check(e)
 
-	memPersis, e := mem_persistence.New()
+	persis, e := config.MakeDefaultPersistence()
 	check(e)
 
-	logPersis, e := log_persistence.New()
-	check(e)
-
-	muxPersis, e := mux_persistence.New(memPersis, logPersis)
-	check(e)
-
-	ws, e := W.New(W.ARCH_X86, W.MODE_32, muxPersis)
+	ws, e := W.New(W.ARCH_X86, W.MODE_32, persis)
 	check(e)
 
 	loader, e := peloader.New(path, f)
