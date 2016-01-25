@@ -27,3 +27,7 @@ func (f *Function) SetStackDelta(delta int64) error {
 func (f *Function) GetStackDelta() (int64, error) {
 	return f.artifacts.persistence.GetAddressValueNumber(P.FunctionData, f.Start, P.FunctionStackDelta)
 }
+
+func (f *Function) GetFirstBasicBlock() (*BasicBlock, error) {
+	return f.artifacts.GetBasicBlock(f.Start)
+}

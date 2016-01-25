@@ -21,6 +21,7 @@ import (
 	FiA "github.com/williballenthin/Lancelot/analysis/file"
 	FuA "github.com/williballenthin/Lancelot/analysis/function"
 	"github.com/williballenthin/Lancelot/artifacts"
+	dis "github.com/williballenthin/Lancelot/disassembly"
 	P "github.com/williballenthin/Lancelot/persistence"
 	"log"
 	"sort"
@@ -348,4 +349,29 @@ func MemReadPointer(as AS.AddressSpace, va AS.VA, mode Mode) (AS.VA, error) {
 	} else {
 		return 0, InvalidModeError
 	}
+}
+
+func (ws *Workspace) GetDisassembler() (dis.Disassembler, error) {
+	if ws.Arch != ARCH_X86 {
+		return nil, InvalidArchError
+	}
+	if !(ws.Mode == MODE_32 || ws.Mode == MODE_64) {
+		return nil, InvalidModeError
+	}
+
+	disassembler, e := gapstone.New(
+		GAPSTONE_ARCH_MAP[ws.Arch],
+		GAPSTONE_MODE_MAP[ws.Mode],
+	)
+	if e != nil {
+		return nil, e
+	}
+	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
+	check(e)
+	if e != nil {
+		return nil, e
+	}
+
+	d := dis.GapstoneDisassembler(disassembler)
+	return &d, nil
 }

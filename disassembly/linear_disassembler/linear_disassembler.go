@@ -20,14 +20,17 @@ func check(e error) {
 
 // LinearDisassembler is the object that holds the state of a linear disassembler.
 type LinearDisassembler struct {
+	// own:
 	function_analysis.FunctionEventDispatcher
-	disassembler *gapstone.Engine
+	disassembler disassembly.Disassembler
+
+	// reference:
 }
 
 // New creates a new LinearDisassembler instance.
 func New(ws *w.Workspace) (*LinearDisassembler, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
-	d, e := disassembly.New(ws)
+	d, e := ws.GetDisassembler()
 	if e != nil {
 		return nil, e
 	}
@@ -40,6 +43,12 @@ func New(ws *w.Workspace) (*LinearDisassembler, error) {
 		FunctionEventDispatcher: *ev,
 		disassembler:            d,
 	}, nil
+}
+
+func (ld *LinearDisassembler) Close() error {
+	ld.disassembler.Close()
+	ld.FunctionEventDispatcher.Close()
+	return nil
 }
 
 // move to utils
@@ -64,7 +73,7 @@ func (ld *LinearDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.VA, 
 	lastVa := AS.VA(0)
 	nextBBs := make([]AS.VA, 0, 2)
 
-	e := disassembly.IterateInstructions(ld.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
+	e := ld.disassembler.IterateInstructions(as, va, func(insn gapstone.Instruction) (bool, error) {
 		lastVa = AS.VA(insn.Address)
 		check(ld.EmitInstruction(insn))
 

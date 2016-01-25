@@ -7,7 +7,6 @@ import (
 	"github.com/bnagy/gapstone"
 	AS "github.com/williballenthin/Lancelot/address_space"
 	P "github.com/williballenthin/Lancelot/persistence"
-	W "github.com/williballenthin/Lancelot/workspace"
 )
 
 const MAX_INSN_SIZE = 0x10
@@ -16,58 +15,6 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-}
-
-var ErrFailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
-
-func New(ws *W.Workspace) (*gapstone.Engine, error) {
-	if ws.Arch != W.ARCH_X86 {
-		return nil, W.InvalidArchError
-	}
-	if !(ws.Mode == W.MODE_32 || ws.Mode == W.MODE_64) {
-		return nil, W.InvalidModeError
-	}
-
-	disassembler, e := gapstone.New(
-		W.GAPSTONE_ARCH_MAP[ws.Arch],
-		W.GAPSTONE_MODE_MAP[ws.Mode],
-	)
-	if e != nil {
-		return nil, e
-	}
-	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
-	check(e)
-	if e != nil {
-		return nil, e
-	}
-
-	return &disassembler, nil
-}
-
-// ReadInstruction fetches bytes from the provided address space at the given
-//  address and parses them into a single instruction instance.
-func ReadInstruction(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error) {
-	d, e := as.MemRead(va, uint64(MAX_INSN_SIZE))
-	if e != nil {
-		logrus.Warnf("read instruction invalid: %s 0x%x", va, MAX_INSN_SIZE)
-	}
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, AS.ErrInvalidMemoryRead
-	}
-
-	insns, e := dis.Disasm(d, uint64(va), 1)
-	check(e)
-	if e != nil {
-		return gapstone.Instruction{}, ErrFailedToDisassembleInstruction
-	}
-
-	if len(insns) == 0 {
-		return gapstone.Instruction{}, ErrFailedToDisassembleInstruction
-	}
-
-	insn := insns[0]
-	return insn, nil
 }
 
 func DoesInstructionHaveGroup(i gapstone.Instruction, group uint) bool {
@@ -175,8 +122,58 @@ func GetJumpTargets(insn gapstone.Instruction) ([]*Jump, error) {
 	return ret, nil
 }
 
-func GetInstructionLength(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (uint, error) {
-	insn, e := ReadInstruction(dis, as, va)
+func IsConditionalJump(insn gapstone.Instruction) bool {
+	// TODO: test for loop, too
+	return DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp"
+}
+
+type Disassembler interface {
+	ReadInstruction(as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error)
+	GetInstructionLength(as AS.AddressSpace, va AS.VA) (uint, error)
+	IterateInstructions(as AS.AddressSpace, va AS.VA, f func(insn gapstone.Instruction) (bool, error)) error
+	Close() error
+}
+
+var ErrFailedToDisassembleInstruction = errors.New("Failed to disassemble an instruction")
+
+/** GapstoneDisassembler implements Disassembler **/
+type GapstoneDisassembler gapstone.Engine
+
+func (dis *GapstoneDisassembler) Close() error {
+	n := gapstone.Engine(*dis)
+	n.Close()
+	return nil
+}
+
+// ReadInstruction fetches bytes from the provided address space at the given
+//  address and parses them into a single instruction instance.
+func (dis *GapstoneDisassembler) ReadInstruction(as AS.AddressSpace, va AS.VA) (gapstone.Instruction, error) {
+	d, e := as.MemRead(va, uint64(MAX_INSN_SIZE))
+	if e != nil {
+		logrus.Warnf("read instruction invalid: %s 0x%x", va, MAX_INSN_SIZE)
+	}
+	check(e)
+	if e != nil {
+		return gapstone.Instruction{}, AS.ErrInvalidMemoryRead
+	}
+
+	n := gapstone.Engine(*dis)
+	insns, e := n.Disasm(d, uint64(va), 1)
+	check(e)
+	if e != nil {
+		return gapstone.Instruction{}, ErrFailedToDisassembleInstruction
+	}
+
+	if len(insns) == 0 {
+		return gapstone.Instruction{}, ErrFailedToDisassembleInstruction
+	}
+
+	insn := insns[0]
+	return insn, nil
+}
+
+func (dis *GapstoneDisassembler) GetInstructionLength(as AS.AddressSpace, va AS.VA) (uint, error) {
+	insn, e := dis.ReadInstruction(as, va)
 	if e != nil {
 		return 0, e
 
@@ -186,20 +183,10 @@ func GetInstructionLength(dis *gapstone.Engine, as AS.AddressSpace, va AS.VA) (u
 	return insn.Size, nil
 }
 
-func IsConditionalJump(insn gapstone.Instruction) bool {
-	// TODO: test for loop, too
-	return DoesInstructionHaveGroup(insn, gapstone.X86_GRP_JUMP) && insn.Mnemonic != "jmp"
-}
-
 // IterateInstructions invokes the provided callback with each instruction starting
 //  from the given address until the end of the current basic block.
-func IterateInstructions(
-	dis *gapstone.Engine,
-	as AS.AddressSpace,
-	va AS.VA,
-	f func(insn gapstone.Instruction) (bool, error)) error {
-
-	for insn, e := ReadInstruction(dis, as, va); e == nil; insn, e = ReadInstruction(dis, as, va) {
+func (dis *GapstoneDisassembler) IterateInstructions(as AS.AddressSpace, va AS.VA, f func(insn gapstone.Instruction) (bool, error)) error {
+	for insn, e := dis.ReadInstruction(as, va); e == nil; insn, e = dis.ReadInstruction(as, va) {
 
 		cont, e := f(insn)
 		if e != nil {

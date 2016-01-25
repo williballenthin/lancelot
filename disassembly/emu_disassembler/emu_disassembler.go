@@ -34,7 +34,7 @@ type EmulatingDisassembler struct {
 	symbolResolver W.SymbolResolver
 
 	// own:
-	disassembler *gapstone.Engine
+	disassembler disassembly.Disassembler
 	emulator     *emulator.Emulator
 	sman         *emulator.SnapshotManager
 	codeHook     emulator.CloseableHook
@@ -45,7 +45,7 @@ type EmulatingDisassembler struct {
 // New creates a new EmulatingDisassembler instance.
 func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	// maybe the disassembler shouldn't come from the workspace directly?
-	d, e := disassembly.New(ws)
+	d, e := ws.GetDisassembler()
 	if e != nil {
 		return nil, e
 	}
@@ -81,7 +81,7 @@ func New(ws *W.Workspace) (*EmulatingDisassembler, error) {
 	}
 
 	ed.codeHook, e = emu.HookCode(func(addr AS.VA, size uint32) {
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ws, addr)
+		insn, e := ed.disassembler.ReadInstruction(ws, addr)
 		check(e)
 		ev.EmitInstruction(insn)
 	})
@@ -165,7 +165,7 @@ func (ed *EmulatingDisassembler) discoverCallTarget() (AS.VA, error) {
 	var callTarget AS.VA
 	callVA := ed.emulator.GetInstructionPointer()
 
-	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, callVA)
+	insn, e := ed.disassembler.ReadInstruction(ed.ws, callVA)
 	if e != nil {
 		return 0, e
 	}
@@ -322,7 +322,7 @@ func (ed *EmulatingDisassembler) findJumpTableTargets(disp AS.VA, scale int) ([]
 func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 	jumpVA := ed.emulator.GetInstructionPointer()
 
-	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, jumpVA)
+	insn, e := ed.disassembler.ReadInstruction(ed.ws, jumpVA)
 	if e != nil {
 		return nil, e
 	}
@@ -375,10 +375,10 @@ func (ed *EmulatingDisassembler) discoverJumpTargets() ([]AS.VA, error) {
 	return jumpTargets, nil
 }
 
-func SkipInstruction(emu *emulator.Emulator, dis *gapstone.Engine) error {
+func SkipInstruction(emu *emulator.Emulator, dis disassembly.Disassembler) error {
 
 	pc := emu.GetInstructionPointer()
-	insn, e := disassembly.ReadInstruction(dis, emu, pc)
+	insn, e := dis.ReadInstruction(emu, pc)
 	check(e)
 
 	nextPc := AS.VA(insn.Address + insn.Size)
@@ -428,7 +428,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 
 	// recon
 	endVA := va
-	e := disassembly.IterateInstructions(ed.disassembler, as, va, func(insn gapstone.Instruction) (bool, error) {
+	e := ed.disassembler.IterateInstructions(as, va, func(insn gapstone.Instruction) (bool, error) {
 		logrus.Debugf("recon: insn: %s", AS.VA(insn.Address))
 		endVA = AS.VA(insn.Address) // update last reached VA, to compute end of BB
 		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
@@ -456,7 +456,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 
 		pc := ed.emulator.GetInstructionPointer()
 
-		insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
+		insn, e := ed.disassembler.ReadInstruction(ed.ws, pc)
 		check(e)
 		if !disassembly.DoesInstructionHaveGroup(insn, gapstone.X86_GRP_CALL) {
 			panic(fmt.Sprintf("expected to be at a call, but we're not: %s", pc))
@@ -500,7 +500,7 @@ func (ed *EmulatingDisassembler) ExploreBB(as AS.AddressSpace, va AS.VA) ([]AS.V
 	pc := ed.emulator.GetInstructionPointer()
 	check(ed.EmitBB(bbStart, pc))
 
-	insn, e := disassembly.ReadInstruction(ed.disassembler, ed.ws, pc)
+	insn, e := ed.disassembler.ReadInstruction(ed.ws, pc)
 	check(e)
 
 	logrus.Debugf("EmulateBB: final instruction: %s", pc)

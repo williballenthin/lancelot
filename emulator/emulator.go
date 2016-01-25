@@ -9,7 +9,6 @@ import (
 	AS "github.com/williballenthin/Lancelot/address_space"
 	dis "github.com/williballenthin/Lancelot/disassembly"
 	W "github.com/williballenthin/Lancelot/workspace"
-	"runtime"
 	"strings"
 )
 
@@ -25,7 +24,7 @@ type Emulator struct {
 
 	// own:
 	u            uc.Unicorn
-	disassembler *gapstone.Engine
+	disassembler dis.Disassembler
 	maps         []AS.MemoryRegion
 	hooks        struct {
 		memRead     *hookMultiplexer
@@ -44,7 +43,6 @@ func New(ws *W.Workspace) (*Emulator, error) {
 		return nil, W.InvalidModeError
 	}
 
-	runtime.LockOSThread()
 	var u uc.Unicorn
 	var e error
 	if ws.Mode == W.MODE_32 {
@@ -56,23 +54,12 @@ func New(ws *W.Workspace) (*Emulator, error) {
 		return nil, e
 	}
 
-	disassembler, e := gapstone.New(
-		W.GAPSTONE_ARCH_MAP[ws.Arch],
-		W.GAPSTONE_MODE_MAP[ws.Mode],
-	)
-	if e != nil {
-		return nil, e
-	}
-	e = disassembler.SetOption(gapstone.CS_OPT_DETAIL, gapstone.CS_OPT_ON)
-	check(e)
-	if e != nil {
-		return nil, e
-	}
+	disassembler, e := ws.GetDisassembler()
 
 	emu := &Emulator{
 		ws:           ws,
 		u:            u,
-		disassembler: &disassembler,
+		disassembler: disassembler,
 		maps:         make([]AS.MemoryRegion, 0),
 	}
 
@@ -108,7 +95,6 @@ func (emu *Emulator) Close() error {
 	}
 	emu.disassembler.Close()
 	emu.u.Close()
-	runtime.UnlockOSThread()
 	return nil
 }
 
@@ -506,7 +492,7 @@ func (emu *Emulator) StepInto() error {
 
 func (emu *Emulator) GetCurrentInstruction() (gapstone.Instruction, error) {
 	ip := emu.GetInstructionPointer()
-	return dis.ReadInstruction(emu.disassembler, emu, ip)
+	return emu.disassembler.ReadInstruction(emu, ip)
 }
 
 func (emu *Emulator) StepOver() error {
@@ -536,7 +522,7 @@ func min(a uint64, b uint64) uint64 {
 func (emu *Emulator) FormatAddress(va AS.VA) (string, uint64, error) {
 	// assume everything is code right now
 
-	insn, e := dis.ReadInstruction(emu.disassembler, emu, va)
+	insn, e := emu.disassembler.ReadInstruction(emu, va)
 	check(e)
 
 	// fetch either instruction length, or max configured bytes, amount of data
