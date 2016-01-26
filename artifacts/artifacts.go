@@ -104,6 +104,36 @@ func (a *Artifacts) GetCodeCrossReference(from AS.VA, to AS.VA) (*CodeCrossRefer
 	}, nil
 }
 
+func (a *Artifacts) GetCodeCrossReferencesFrom(from AS.VA) ([]*CodeCrossReference, error) {
+	var ret []*CodeCrossReference
+	tos, e := a.persistence.GetEdgesFrom(P.CodeXrefData, from)
+	if e != nil {
+		return ret, e
+	}
+
+	for _, to := range tos {
+		xref, e := a.GetCodeCrossReference(from, to)
+		check(e)
+		ret = append(ret, xref)
+	}
+	return ret, nil
+}
+
+func (a *Artifacts) GetCodeCrossReferencesTo(to AS.VA) ([]*CodeCrossReference, error) {
+	var ret []*CodeCrossReference
+	froms, e := a.persistence.GetEdgesFrom(P.CodeXrefData, to)
+	if e != nil {
+		return ret, e
+	}
+
+	for _, from := range froms {
+		xref, e := a.GetCodeCrossReference(from, to)
+		check(e)
+		ret = append(ret, xref)
+	}
+	return ret, nil
+}
+
 func (a *Artifacts) AddCallCrossReference(from AS.VA, to AS.VA) (*CallCrossReference, error) {
 	// TODO: don't stomp on existing location?
 	e := a.persistence.SetEdgeValueNumber(P.CallXrefData, from, to, P.XrefExists, int64(1))
@@ -127,6 +157,36 @@ func (a *Artifacts) GetCallCrossReference(from AS.VA, to AS.VA) (*CallCrossRefer
 		From:      from,
 		To:        to,
 	}, nil
+}
+
+func (a *Artifacts) GetCallCrossReferencesFrom(from AS.VA) ([]*CallCrossReference, error) {
+	var ret []*CallCrossReference
+	tos, e := a.persistence.GetEdgesFrom(P.CallXrefData, from)
+	if e != nil {
+		return ret, e
+	}
+
+	for _, to := range tos {
+		xref, e := a.GetCallCrossReference(from, to)
+		check(e)
+		ret = append(ret, xref)
+	}
+	return ret, nil
+}
+
+func (a *Artifacts) GetCallCrossReferencesTo(to AS.VA) ([]*CallCrossReference, error) {
+	var ret []*CallCrossReference
+	froms, e := a.persistence.GetEdgesFrom(P.CallXrefData, to)
+	if e != nil {
+		return ret, e
+	}
+
+	for _, from := range froms {
+		xref, e := a.GetCallCrossReference(from, to)
+		check(e)
+		ret = append(ret, xref)
+	}
+	return ret, nil
 }
 
 func (a *Artifacts) AddBasicBlock(start AS.VA, end AS.VA) (*BasicBlock, error) {
