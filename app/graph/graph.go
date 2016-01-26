@@ -6,6 +6,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	AS "github.com/williballenthin/Lancelot/address_space"
+	"github.com/williballenthin/Lancelot/artifacts"
 	"github.com/williballenthin/Lancelot/config"
 	peloader "github.com/williballenthin/Lancelot/loader/pe"
 	"github.com/williballenthin/Lancelot/utils"
@@ -50,6 +51,9 @@ func doit(path string, fva AS.VA) error {
 	ws, e := W.New(W.ARCH_X86, W.MODE_32, persis)
 	check(e)
 
+	dis, e := ws.GetDisassembler()
+	check(e)
+
 	loader, e := peloader.New(path, exe)
 	check(e)
 
@@ -63,38 +67,51 @@ func doit(path string, fva AS.VA) error {
 	f, e := ws.Artifacts.GetFunction(fva)
 	check(e)
 
-	fmt.Printf("function:\n")
-	fmt.Printf(" va: %s\n", f.Start)
-	name, e := f.GetName()
-	check(e)
-	fmt.Printf(" name: %s\n", name)
-	stackDelta, e := f.GetStackDelta()
-	check(e)
-	fmt.Printf(" stack delta: 0x%x\n", stackDelta)
+	fmt.Printf("digraph asm {\n")
+	fmt.Printf(" node [shape=plain, style=\"rounded\", fontname=\"courier\"]\n")
+
+	var exploreBBs func(bb *artifacts.BasicBlock) error
+	exploreBBs = func(bb *artifacts.BasicBlock) error {
+		fmt.Printf("bb_%s [label=<\n", bb.Start)
+		fmt.Printf("<TABLE BORDER='1' CELLBORDER='0'>\n")
+
+		insns, e := bb.GetInstructions(dis, ws)
+		check(e)
+		for _, insn := range insns {
+			fmt.Printf("  <TR>\n")
+			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
+			fmt.Printf("      %s\n", AS.VA(insn.Address))
+			fmt.Printf("    </TD>\n")
+			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
+			fmt.Printf("      %s\n", insn.Mnemonic)
+			fmt.Printf("    </TD>\n")
+			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
+			fmt.Printf("      %s\n", insn.OpStr)
+			fmt.Printf("    </TD>\n")
+			fmt.Printf("  </TR>\n")
+		}
+		fmt.Printf("</TABLE>\n")
+		fmt.Printf(">];\n")
+
+		nextBBs, e := bb.GetNextBasicBlocks()
+		check(e)
+
+		for _, nextBB := range nextBBs {
+			exploreBBs(nextBB)
+		}
+
+		for _, nextBB := range nextBBs {
+			fmt.Printf("bb_%s -> bb_%s;\n", bb.Start, nextBB.Start)
+		}
+
+		return nil
+	}
 
 	firstBB, e := f.GetFirstBasicBlock()
 	check(e)
-	fmt.Printf("first basic block:\n")
-	fmt.Printf("  start: %s\n", firstBB.Start)
-	fmt.Printf("  end: %s\n", firstBB.End)
-	name, e = firstBB.GetName()
-	if e != nil {
-		name = fmt.Sprintf("loc_%x", uint64(firstBB.Start))
-	}
-	fmt.Printf("  name: %s\n", name)
 
-	dis, e := ws.GetDisassembler()
-	check(e)
-
-	insns, e := firstBB.GetInstructions(dis, ws)
-	check(e)
-
-	for i, insn := range insns {
-		fmt.Printf("instruction %d:\n", i)
-		fmt.Printf("  address: %s\n", AS.VA(insn.Address))
-		fmt.Printf("  mnem: %s\n", insn.Mnemonic)
-		fmt.Printf("  line: %s\n", insn.OpStr)
-	}
+	exploreBBs(firstBB)
+	defer fmt.Printf("}")
 
 	runtime.UnlockOSThread()
 	return nil
@@ -122,6 +139,5 @@ func main() {
 
 		check(doit(inputFile, AS.VA(fva)))
 	}
-	fmt.Printf("%s\n", os.Args)
 	app.Run(os.Args)
 }
