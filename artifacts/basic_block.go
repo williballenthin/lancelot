@@ -32,3 +32,19 @@ func (bb *BasicBlock) GetInstructions(dis disassembly.Disassembler, as AS.Addres
 	})
 	return instructions, e
 }
+
+func (bb *BasicBlock) GetNextBasicBlocks() ([]*BasicBlock, error) {
+	var ret []*BasicBlock
+	xrefs, e := bb.artifacts.GetCodeCrossReferencesFrom(bb.End)
+	if e != nil {
+		panic("unexpected db structure")
+	}
+	for _, xref := range xrefs {
+		nextBB, e := bb.artifacts.GetBasicBlock(xref.To)
+		if e != nil {
+			panic("unexpected db structure")
+		}
+		ret = append(ret, nextBB)
+	}
+	return ret, nil
+}
