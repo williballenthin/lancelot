@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 var inputFlag = cli.StringFlag{
@@ -78,9 +79,23 @@ func doit(path string, fva AS.VA) error {
 		insns, e := bb.GetInstructions(dis, ws)
 		check(e)
 		for _, insn := range insns {
+
+			d, e := ws.MemRead(AS.VA(insn.Address), uint64(insn.Size))
+			check(e)
+
+			// format each of those as hex
+			var bytesPrefix []string
+			for _, b := range d {
+				bytesPrefix = append(bytesPrefix, fmt.Sprintf("%02X", b))
+			}
+			prefix := strings.Join(bytesPrefix, " ")
+
 			fmt.Printf("  <TR>\n")
 			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
 			fmt.Printf("      %s\n", AS.VA(insn.Address))
+			fmt.Printf("    </TD>\n")
+			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
+			fmt.Printf("      %s\n", prefix)
 			fmt.Printf("    </TD>\n")
 			fmt.Printf("    <TD ALIGN=\"LEFT\">\n")
 			fmt.Printf("      %s\n", insn.Mnemonic)
