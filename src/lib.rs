@@ -52,17 +52,6 @@ pub enum Error {
 }
 
 
-/// compute the unique elements of the given Vec.
-fn unique<'a, T>(s: &'a Vec<T>) -> Vec<&'a T>
-    where T: Eq + hash::Hash {
-    s.iter()
-     .collect::<collections::HashSet<&T>>()
-     .iter()
-     .map(|e| {*e})
-     .collect()
-}
-
-
 fn foo(pe: &PE) -> Result<(), Error> {
     info!("foo: {}", pe.name.unwrap_or("(unknown)"));
 
