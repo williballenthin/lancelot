@@ -38,3 +38,6 @@ hexdump
 cli
 
 /app/dora/dora
+
+/target
+**/*.rs.bk
