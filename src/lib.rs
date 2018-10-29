@@ -144,47 +144,6 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
 fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
     info!("foo: {}", pe.name.unwrap_or("(unknown)"));
 
-    // like:
-    //
-    //     exports:
-    //       - Foo
-    if pe.exports.len() > 0 {
-        info!("exports:");
-        for export in pe.exports.iter() {
-            info!("  - {}", export.name.unwrap_or("(unknown)"));
-        }
-    }
-
-    // like:
-    //
-    //     imports:
-    //       - advapi32.dll
-    //         - OpenProcessToken
-    //         ...
-    if pe.imports.len() > 0 {
-        let mut dlls = pe.imports.iter()
-                         .map(|import| {import.dll.to_lowercase()})
-                         .collect::<collections::HashSet<String>>()
-                         .iter()
-                         .map(|e| {e.clone()})
-                         .collect::<Vec<String>>();
-        dlls.sort_unstable();
-
-        info!("imports:");
-        for dll in dlls.iter() {
-            info!("  - {}", dll);
-
-            let mut funcs: Vec<_> = pe.imports.iter()
-                                          .filter(|import| { import.dll.to_lowercase() == **dll })
-                                          .collect();
-            funcs.sort_unstable_by(|a, b| { a.name.cmp(&b.name) });
-
-            for func in funcs {
-                info!("    - {}", func.name);
-            }
-        }
-    }
-
     info!("bitness: {}", if pe.is_64 { "64" } else { "32"});
     info!("image base: 0x{:x}", pe.image_base);
     info!("entry rva: 0x{:x}", pe.entry);
@@ -228,9 +187,13 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
         //for ibuf in secbuf.windows(0x10) {
         //    let _ = decoder.decode(ibuf);
         //}
-        let _: Vec<_> = secbuf.par_windows(0x10).map(|ibuf| {
+        let insns: Vec<_> = secbuf.par_windows(0x10).map(|ibuf| {
             decoder.decode(ibuf)
         }).collect();
+
+        info!("l1: {}", insns.iter()
+                             .filter(|insn| insn.is_ok())
+                             .count());
     }
 
     Ok(())
