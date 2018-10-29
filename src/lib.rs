@@ -7,9 +7,7 @@ extern crate simplelog;
 
 use std::fs;
 use std::env;
-use std::hash;
 use std::collections;
-//use std::error::Error;
 use std::io::prelude::*;
 use goblin::{Object};
 use goblin::pe::{PE};
@@ -52,9 +50,12 @@ pub enum Error {
 }
 
 
-fn foo(pe: &PE) -> Result<(), Error> {
+fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
     info!("foo: {}", pe.name.unwrap_or("(unknown)"));
 
+    // like:
+    //     exports:
+    //       - Foo
     if pe.exports.len() > 0 {
         info!("exports:");
         for export in pe.exports.iter() {
@@ -63,17 +64,17 @@ fn foo(pe: &PE) -> Result<(), Error> {
     }
 
     // like:
-    //     exports:
+    //     imports:
     //       - advapi32.dll
     //         - OpenProcessToken
     //         ...
     if pe.imports.len() > 0 {
-        let dlls: Vec<_> = pe.imports.iter()
-                                     .map(|import| {import.dll.to_lowercase()})
-                                     .collect::<collections::HashSet<String>>()
-                                     .iter()
-                                     .map(|e| {e.clone()})
-                                     .collect::<Vec<String>>();
+        let mut dlls = pe.imports.iter()
+                         .map(|import| {import.dll.to_lowercase()})
+                         .collect::<collections::HashSet<String>>()
+                         .iter()
+                         .map(|e| {e.clone()})
+                         .collect::<Vec<String>>();
         dlls.sort_unstable();
 
         info!("imports:");
@@ -84,9 +85,26 @@ fn foo(pe: &PE) -> Result<(), Error> {
                                           .filter(|import| { import.dll.to_lowercase() == **dll })
                                           .collect();
             funcs.sort_unstable_by(|a, b| { a.name.cmp(&b.name) });
+
             for func in funcs {
                 info!("    - {}", func.name);
             }
+        }
+    }
+
+    info!("bitness: {}", if pe.is_64 { "64" } else { "32"});
+    info!("image base: 0x{:x}", pe.image_base);
+    info!("entry rva: 0x{:x}", pe.entry);
+
+    for section in pe.sections.iter() {
+        info!("section:");
+        if section.real_name.is_some() {
+            info!("  name: {} ({})",
+                  String::from_utf8_lossy(&section.name[..]),
+                  section.real_name.as_ref().unwrap_or(&"(unknown)".to_string())
+                  );
+        } else {
+            info!("  name: {}", String::from_utf8_lossy(&section.name[..]));
         }
     }
 
@@ -132,7 +150,7 @@ pub fn run(args: &Config) -> Result<(), Error> {
     match obj {
         Object::PE(pe) => {
             info!("found PE file");
-            foo(&pe).expect("failed to foo")
+            foo(&pe, &buf).expect("failed to foo")
         },
         Object::Elf(_) => {
             error!("found ELF file, format not yet supported");
