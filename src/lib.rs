@@ -5,9 +5,11 @@
 extern crate log;
 extern crate simplelog;
 
+use zydis;
 use std::fs;
 use std::env;
 use std::collections;
+use rayon::prelude::*;
 use std::io::prelude::*;
 use goblin::{Object};
 use goblin::pe::{PE};
@@ -208,6 +210,7 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
         info!("    virtual size: 0x{:x}", section.virtual_size);
 
         // TODO: figure out if we will work with usize, or u64, or what, then assert usize is ok.
+        // `usize::max_value()`
         let mut secbuf = vec![0; align(section.virtual_size as usize, 0x200)];
 
         {
@@ -220,6 +223,14 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
         }
 
         info!("\n{}", hexdump(&secbuf[..0x1C], pe.image_base + section.virtual_address as usize));
+
+        let decoder = zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
+        //for ibuf in secbuf.windows(0x10) {
+        //    let _ = decoder.decode(ibuf);
+        //}
+        let _: Vec<_> = secbuf.par_windows(0x10).map(|ibuf| {
+            decoder.decode(ibuf)
+        }).collect();
     }
 
     Ok(())

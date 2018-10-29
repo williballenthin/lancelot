@@ -17,3 +17,4 @@ goblin = "0.0.18"
 #   6. now you should be able to `cargo build` successfully
 # TODO: report zydis-rs issue.
 zydis = { git = "https://github.com/zyantific/zydis-rs"}
+rayon = "1.0"
