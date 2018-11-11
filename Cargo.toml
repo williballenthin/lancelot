@@ -8,13 +8,6 @@ edition = "2018"
 log = "0.4"
 simplelog = "^0.5.0"
 goblin = "0.0.18"
-# on windows, need to compile zydis first:
-#   1. use `x64 Native Tools Command Prompt for VS 2017`:
-#   2. `cargo build`, should fail with: `error: could not find native static library `Zydis`, perhaps an -L flag is missing?`
-#   3. navigate into `target\debug\build\zydis-<random>\out\build`
-#   4. `cp Debug\Zydis.lib .` 
-#   5. `cp dependencies\zycore\Debug\Zycore.lib dependencies\zycore\`
-#   6. now you should be able to `cargo build` successfully
-# TODO: report zydis-rs issue.
+# zydis-c requires `cmake`, so ensure to have that first.
 zydis = { git = "https://github.com/zyantific/zydis-rs"}
 rayon = "1.0"

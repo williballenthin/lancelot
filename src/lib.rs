@@ -5,16 +5,14 @@
 extern crate log;
 extern crate simplelog;
 
-use zydis;
-use std::fs;
-use std::env;
-use std::collections;
+use goblin::pe::PE;
+use goblin::Object;
+use log::{debug, error, info, trace};
 use rayon::prelude::*;
+use std::env;
+use std::fs;
 use std::io::prelude::*;
-use goblin::{Object};
-use goblin::pe::{PE};
-use log::{trace, debug, info, error};
-
+use zydis;
 
 pub struct Config {
     pub filename: String,
@@ -25,22 +23,18 @@ impl Config {
         let args: Vec<String> = args.collect();
 
         if args.len() < 2 {
-            return Err("not enough arguments")
+            return Err("not enough arguments");
         }
 
         let filename = args[1].clone();
         trace!("config: parsed filename: {:?}", filename);
 
-        Ok(Config {
-            filename: filename
-        })
+        Ok(Config { filename: filename })
     }
 }
 
-
 pub fn setup_logging(_args: &Config) {
-    simplelog::TermLogger::init(simplelog::LevelFilter::Info,
-                                simplelog::Config::default())
+    simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default())
         .expect("failed to setup logging");
 }
 
@@ -60,7 +54,6 @@ fn align(i: usize, b: usize) -> usize {
     }
 }
 
-
 pub fn hexdump_ascii(b: u8) -> char {
     if b.is_ascii_graphic() || b == ' ' as u8 {
         b as char
@@ -68,7 +61,6 @@ pub fn hexdump_ascii(b: u8) -> char {
         '.'
     }
 }
-
 
 pub fn hexdump(buf: &[u8], offset: usize) -> String {
     // 01234567:  00 01 02 03 04 05 06 07  ...............
@@ -81,12 +73,12 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     let ascii_col_size = 1;
     let prefix_size = 8 + 1;
     let newline_size = 1;
-    let line_size = prefix_size + 
-                    padding_size + 
-                    16 * hex_col_size + 
-                    padding_size + 
-                    16 * ascii_col_size + 
-                    newline_size;
+    let line_size = prefix_size
+        + padding_size
+        + 16 * hex_col_size
+        + padding_size
+        + 16 * ascii_col_size
+        + newline_size;
     let line_count = align(buf.len(), 0x10) / 0x10;
 
     let mut ret = String::with_capacity(line_count * line_size);
@@ -107,7 +99,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
 
         // 01234567:  00 01 02 03 04 05 06 07  ...............
         //            ^^^
-        for elem in &buf[line_index..line_index+line_elem_count] {
+        for elem in &buf[line_index..line_index + line_elem_count] {
             line.push_str(format!("{:02x} ", elem).as_str());
         }
         for _ in 0..padding_elem_count {
@@ -120,7 +112,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
 
         // 01234567:  00 01 02 03 04 05 06 07  ...............
         //                                     ^
-        for elem in &buf[line_index..line_index+line_elem_count] {
+        for elem in &buf[line_index..line_index + line_elem_count] {
             line.push(hexdump_ascii(*elem))
         }
         for _ in 0..padding_elem_count {
@@ -140,14 +132,13 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     ret
 }
 
-
 fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
     info!("foo: {}", pe.name.unwrap_or("(unknown)"));
 
-    info!("bitness: {}", if pe.is_64 { "64" } else { "32"});
+    info!("bitness: {}", if pe.is_64 { "64" } else { "32" });
     info!("image base: 0x{:x}", pe.image_base);
     info!("entry rva: 0x{:x}", pe.entry);
- 
+
     // like:
     //
     //     sections:
@@ -157,10 +148,14 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
     info!("sections:");
     for section in pe.sections.iter() {
         if section.real_name.is_some() {
-            info!("  - {} ({})",
-                  String::from_utf8_lossy(&section.name[..]),
-                  section.real_name.as_ref().unwrap_or(&"(unknown)".to_string())
-                  );
+            info!(
+                "  - {} ({})",
+                String::from_utf8_lossy(&section.name[..]),
+                section
+                    .real_name
+                    .as_ref()
+                    .unwrap_or(&"(unknown)".to_string())
+            );
         } else {
             info!("  - {}", String::from_utf8_lossy(&section.name[..]));
         }
@@ -176,29 +171,44 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
             let secsize = section.size_of_raw_data as usize;
             let rawbuf = &mut secbuf[..secsize];
             let pstart = section.pointer_to_raw_data as usize;
-            info!("pstart: 0x{:x}", pstart);
-            info!("pend: 0x{:x}", pstart + secsize);
             rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
         }
 
-        info!("\n{}", hexdump(&secbuf[..0x1C], pe.image_base + section.virtual_address as usize));
+        info!(
+            "\n{}",
+            hexdump(
+                &secbuf[..0x1C],
+                pe.image_base + section.virtual_address as usize
+            )
+        );
 
-        let decoder = zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
-        //for ibuf in secbuf.windows(0x10) {
-        //    let _ = decoder.decode(ibuf);
-        //}
-        let insns: Vec<_> = secbuf.par_windows(0x10).map(|ibuf| {
-            decoder.decode(ibuf)
-        }).collect();
+        let decoder =
+            zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
+        let insns: Vec<_> = secbuf
+            .par_windows(0x10)
+            .map(|ibuf| decoder.decode(ibuf))
+            .collect();
 
-        info!("l1: {}", insns.iter()
-                             .filter(|insn| insn.is_ok())
-                             .count());
+        info!("total instructions: {}", insns.len());
+
+        info!(
+            "successful disassembles: {}",
+            insns.par_iter().filter(|insn| insn.is_ok()).count()
+        );
+
+        info!(
+            "valid instructions: {}",
+            insns
+                .par_iter()
+                .filter(|insn| match insn {
+                    Ok(Some(_)) => true,
+                    _ => false,
+                }).count()
+        );
     }
 
     Ok(())
 }
-
 
 pub fn run(args: &Config) -> Result<(), Error> {
     debug!("filename: {:?}", args.filename);
@@ -208,16 +218,16 @@ pub fn run(args: &Config) -> Result<(), Error> {
         debug!("reading file: {}", args.filename);
         let mut f = match fs::File::open(&args.filename) {
             Ok(f) => f,
-            Err(_) => { 
+            Err(_) => {
                 error!("failed to open file: {}", args.filename);
                 return Err(Error::FileAccess);
             }
         };
         let bytes_read = match f.read_to_end(&mut buf) {
             Ok(c) => c,
-            Err(_) => { 
+            Err(_) => {
                 error!("failed to read entire file: {}", args.filename);
-                return Err(Error::FileAccess); 
+                return Err(Error::FileAccess);
             }
         };
         debug!("read {} bytes", bytes_read);
@@ -239,28 +249,30 @@ pub fn run(args: &Config) -> Result<(), Error> {
         Object::PE(pe) => {
             info!("found PE file");
             foo(&pe, &buf).expect("failed to foo")
-        },
+        }
         Object::Elf(_) => {
             error!("found ELF file, format not yet supported");
             return Err(Error::NotImplemented);
-        },
+        }
         Object::Mach(_) => {
             error!("found Mach-O file, format not yet supported");
             return Err(Error::NotImplemented);
-        },
+        }
         Object::Archive(_) => {
             error!("found archive file, format not yet supported");
             return Err(Error::NotImplemented);
-        },
+        }
         Object::Unknown(_) => {
-            error!("unknown file format, magic: | {:02X} {:02X} | '{}{}' ", 
-                   buf[0], buf[1],
-                   hexdump_ascii(buf[0]),
-                   hexdump_ascii(buf[1]));
+            error!(
+                "unknown file format, magic: | {:02X} {:02X} | '{}{}' ",
+                buf[0],
+                buf[1],
+                hexdump_ascii(buf[0]),
+                hexdump_ascii(buf[1])
+            );
             return Err(Error::NotImplemented);
         }
     }
 
     Ok(())
 }
-
