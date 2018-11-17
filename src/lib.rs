@@ -29,7 +29,7 @@ impl Config {
         let filename = args[1].clone();
         trace!("config: parsed filename: {:?}", filename);
 
-        Ok(Config { filename: filename })
+        Ok(Config { filename })
     }
 }
 
@@ -55,7 +55,7 @@ fn align(i: usize, b: usize) -> usize {
 }
 
 pub fn hexdump_ascii(b: u8) -> char {
-    if b.is_ascii_graphic() || b == ' ' as u8 {
+    if b.is_ascii_graphic() || b == b' ' {
         b as char
     } else {
         '.'
@@ -203,76 +203,131 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
                 .filter(|insn| match insn {
                     Ok(Some(_)) => true,
                     _ => false,
-                }).count()
+                })
+                .count()
         );
     }
 
     Ok(())
 }
 
-pub fn run(args: &Config) -> Result<(), Error> {
-    debug!("filename: {:?}", args.filename);
+fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
+    debug!("read_file: {:?}", filename);
 
     let mut buf = Vec::new();
     {
-        debug!("reading file: {}", args.filename);
-        let mut f = match fs::File::open(&args.filename) {
+        debug!("reading file: {}", filename);
+        let mut f = match fs::File::open(filename) {
             Ok(f) => f,
             Err(_) => {
-                error!("failed to open file: {}", args.filename);
+                error!("failed to open file: {}", filename);
                 return Err(Error::FileAccess);
             }
         };
         let bytes_read = match f.read_to_end(&mut buf) {
             Ok(c) => c,
             Err(_) => {
-                error!("failed to read entire file: {}", args.filename);
+                error!("failed to read entire file: {}", filename);
                 return Err(Error::FileAccess);
             }
         };
         debug!("read {} bytes", bytes_read);
         if bytes_read < 0x10 {
-            error!("file too small: {}", args.filename);
+            error!("file too small: {}", filename);
             return Err(Error::FileFormat);
         }
     }
 
-    let obj = match Object::parse(&buf) {
-        Ok(o) => o,
-        Err(e) => {
-            error!("failed to parse file: {} error: {:?}", args.filename, e);
-            return Err(Error::FileFormat);
-        }
-    };
+    Ok(buf)
+}
 
-    match obj {
-        Object::PE(pe) => {
-            info!("found PE file");
-            foo(&pe, &buf).expect("failed to foo")
+pub struct Workspace<'a> {
+    pub filename: String,
+    pub buf: &'a [u8],
+    pub obj: Object<'a>,
+}
+
+impl<'a> Workspace<'a> {
+    pub fn from_buf(filename: &str, buf: &'a [u8]) -> Result<Workspace<'a>, Error> {
+        let obj = match Object::parse(buf) {
+            Ok(o) => o,
+            Err(e) => {
+                error!("failed to parse file: {} error: {:?}", filename, e);
+                return Err(Error::FileFormat);
+            }
+        };
+
+        match &obj {
+            Object::PE(_) => {
+                info!("found PE file");
+            }
+            Object::Elf(_) => {
+                error!("found ELF file, format not yet supported");
+                return Err(Error::NotImplemented);
+            }
+            Object::Mach(_) => {
+                error!("found Mach-O file, format not yet supported");
+                return Err(Error::NotImplemented);
+            }
+            Object::Archive(_) => {
+                error!("found archive file, format not yet supported");
+                return Err(Error::NotImplemented);
+            }
+            Object::Unknown(_) => {
+                error!(
+                    "unknown file format, magic: | {:02X} {:02X} | '{}{}' ",
+                    buf[0],
+                    buf[1],
+                    hexdump_ascii(buf[0]),
+                    hexdump_ascii(buf[1])
+                );
+                return Err(Error::NotImplemented);
+            }
         }
-        Object::Elf(_) => {
-            error!("found ELF file, format not yet supported");
-            return Err(Error::NotImplemented);
-        }
-        Object::Mach(_) => {
-            error!("found Mach-O file, format not yet supported");
-            return Err(Error::NotImplemented);
-        }
-        Object::Archive(_) => {
-            error!("found archive file, format not yet supported");
-            return Err(Error::NotImplemented);
-        }
-        Object::Unknown(_) => {
-            error!(
-                "unknown file format, magic: | {:02X} {:02X} | '{}{}' ",
-                buf[0],
-                buf[1],
-                hexdump_ascii(buf[0]),
-                hexdump_ascii(buf[1])
-            );
-            return Err(Error::NotImplemented);
-        }
+
+        Ok(Workspace {
+            filename: filename.to_string(),
+            buf: buf,
+            obj: obj,
+        })
+    }
+}
+
+pub fn run(args: &Config) -> Result<(), Error> {
+    debug!("filename: {:?}", args.filename);
+
+    let buf = read_file(&args.filename)?;
+    let w = Workspace::from_buf(&args.filename, &buf)?;
+
+    if let Object::PE(pe) = w.obj {
+        foo(&pe, w.buf).expect("failed to foo");
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use matches::matches;
+    use std::path::PathBuf;
+
+    fn get_k32_rsrc() -> Vec<u8> {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("resources");
+        d.push("test");
+        d.push("k32.bin");
+
+        let mut buf = read_file(d.to_str().unwrap()).unwrap();
+        buf[0] = b'M';
+        buf[1] = b'Z';
+        buf
+    }
+
+    #[test]
+    fn test_load_pe() {
+        let k32 = get_k32_rsrc();
+        let w = Workspace::from_buf("k32.bin", &k32).unwrap();
+        assert!(matches!(w.obj, Object::PE(_)));
+    }
 }

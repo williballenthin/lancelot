@@ -11,3 +11,4 @@ goblin = "0.0.18"
 # zydis-c requires `cmake`, so ensure to have that first.
 zydis = { git = "https://github.com/zyantific/zydis-rs"}
 rayon = "1.0"
+matches = "0.1.8"
