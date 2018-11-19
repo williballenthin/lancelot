@@ -1,7 +1,3 @@
-// TODO:
-//   - get completion actually working
-//   - formatting
-
 extern crate log;
 extern crate simplelog;
 
@@ -13,6 +9,11 @@ use std::env;
 use std::fs;
 use std::io::prelude::*;
 use zydis;
+
+// TODO: this really shouldn't be public. only for testing.
+// TODO: what is the `cfg(doctest)` setting?
+//#[cfg(test)]
+pub mod rsrc;
 
 pub struct Config {
     pub filename: String,
@@ -43,6 +44,7 @@ pub enum Error {
     FileAccess,
     FileFormat,
     NotImplemented,
+    ValueError,
 }
 
 fn align(i: usize, b: usize) -> usize {
@@ -211,7 +213,7 @@ fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
+pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
     debug!("read_file: {:?}", filename);
 
     let mut buf = Vec::new();
@@ -241,93 +243,147 @@ fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
     Ok(buf)
 }
 
-pub struct Workspace<'a> {
+pub struct Workspace {
     pub filename: String,
-    pub buf: &'a [u8],
-    pub obj: Object<'a>,
+    pub buf: Vec<u8>,
 }
 
-impl<'a> Workspace<'a> {
-    pub fn from_buf(filename: &str, buf: &'a [u8]) -> Result<Workspace<'a>, Error> {
-        let obj = match Object::parse(buf) {
+impl Workspace {
+    /// Parse the given file into its object.
+    ///
+    /// # Errors
+    ///   - `Error::FileFormat`: when not able to be parsed by Goblin.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use goblin::Object;
+    /// use matches::matches;
+    /// use lancelot::rsrc::*;
+    /// let ws = get_workspace(Rsrc::K32);
+    /// assert!(matches!(ws.get_obj().unwrap(), Object::PE(_)));
+    /// ```
+    ///
+    /// you might be tempted to maintain a method `get_pe`,
+    /// however, i don't think this is a good idea:
+    /// its fragile because the file type may not be PE.
+    /// therefore, force clients to be explicit:
+    ///
+    /// ```
+    /// use goblin::Object;
+    /// use lancelot::rsrc::*;
+    /// let ws = get_workspace(Rsrc::K32);
+    /// if let Object::PE(_) = ws.get_obj().unwrap() {
+    ///     // everyone is happy!
+    /// }
+    /// ```
+    ///
+    /// TODO: demonstrate `Error::FileFormat`.
+    pub fn get_obj(&self) -> Result<Object, Error> {
+        let obj = match Object::parse(&self.buf) {
             Ok(o) => o,
             Err(e) => {
-                error!("failed to parse file: {} error: {:?}", filename, e);
+                error!("failed to parse file: {} error: {:?}", self.filename, e);
                 return Err(Error::FileFormat);
             }
         };
 
-        match &obj {
+        match obj {
+            Object::Unknown(_) => {
+                error!(
+                    "unknown file format, magic: | {:02X} {:02X} | '{}{}' ",
+                    self.buf[0],
+                    self.buf[1],
+                    hexdump_ascii(self.buf[0]),
+                    hexdump_ascii(self.buf[1])
+                );
+
+                Err(Error::FileFormat)
+            }
+            _ => Ok(obj),
+        }
+    }
+
+    pub fn get_pe(&self) -> Result<PE, Error> {
+        match self.get_obj()? {
+            Object::PE(pe) => {
+                return Ok(pe);
+            }
+            _ => {
+                error!("not a PE file");
+                return Err(Error::ValueError);
+            }
+        }
+    }
+
+    /// Construct a workspace from the module with the given contents.
+    ///
+    /// # Errors
+    ///   - `Error::FileFormat`: when not able to be parsed by Goblin.
+    ///   - `Error::NotImplemented`: when not a PE file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let buf = get_buf(Rsrc::K32);
+    /// let ws = Workspace::from_buf("kernel32.dll", buf).unwrap();
+    /// ```
+    ///
+    /// TODO: demonstrate ELF file behavior.
+    /// TODO: demonstrate MachO file behavior.
+    /// TODO: demonstrate unknown file behavior.
+    pub fn from_buf(filename: &str, buf: Vec<u8>) -> Result<Workspace, Error> {
+        let ws = Workspace {
+            filename: filename.to_string(),
+            buf: buf,
+        };
+
+        match ws.get_obj()? {
             Object::PE(_) => {
                 info!("found PE file");
             }
             Object::Elf(_) => {
-                error!("found ELF file, format not yet supported");
                 return Err(Error::NotImplemented);
             }
             Object::Mach(_) => {
-                error!("found Mach-O file, format not yet supported");
                 return Err(Error::NotImplemented);
             }
             Object::Archive(_) => {
-                error!("found archive file, format not yet supported");
                 return Err(Error::NotImplemented);
             }
             Object::Unknown(_) => {
-                error!(
-                    "unknown file format, magic: | {:02X} {:02X} | '{}{}' ",
-                    buf[0],
-                    buf[1],
-                    hexdump_ascii(buf[0]),
-                    hexdump_ascii(buf[1])
-                );
                 return Err(Error::NotImplemented);
             }
         }
 
-        Ok(Workspace {
-            filename: filename.to_string(),
-            buf: buf,
-            obj: obj,
-        })
+        Ok(ws)
+    }
+
+    /// Construct a workspace from the module at given a file path.
+    ///
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let path = get_path(Rsrc::K32);
+    /// // This test resource file is mangled. Needs to be fixed before parsing.
+    /// // Otherwise, the following would work:
+    /// // let ws = Workspace::from_file(&path).unwrap();
+    /// ```
+    pub fn from_file(filename: &str) -> Result<Workspace, Error> {
+        let buf = read_file(filename)?;
+        Workspace::from_buf(filename, buf)
     }
 }
 
 pub fn run(args: &Config) -> Result<(), Error> {
     debug!("filename: {:?}", args.filename);
+    let ws = Workspace::from_file(&args.filename)?;
 
-    let buf = read_file(&args.filename)?;
-    let w = Workspace::from_buf(&args.filename, &buf)?;
-
-    if let Object::PE(pe) = w.obj {
-        foo(&pe, w.buf).expect("failed to foo");
+    if let Object::PE(pe) = ws.get_obj()? {
+        foo(&pe, &ws.buf).expect("failed to foo");
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use matches::matches;
-    use std::path::PathBuf;
-
-    fn get_k32_rsrc() -> Vec<u8> {
-        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("resources");
-        d.push("test");
-        d.push("k32.bin");
-
-        let mut buf = read_file(d.to_str().unwrap()).unwrap();
-        buf[0] = b'M';
-        buf[1] = b'Z';
-        buf
-    }
-
-    #[test]
-    fn test_load_pe() {
-        let k32 = get_k32_rsrc();
-        let w = Workspace::from_buf("k32.bin", &k32).unwrap();
-        assert!(matches!(w.obj, Object::PE(_)));
-    }
 }
