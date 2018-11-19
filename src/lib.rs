@@ -134,80 +134,57 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     ret
 }
 
-fn foo(pe: &PE, buf: &[u8]) -> Result<(), Error> {
-    info!("foo: {}", pe.name.unwrap_or("(unknown)"));
+fn foo(ws: &Workspace) -> Result<(), Error> {
+    if let Object::PE(pe) = ws.get_obj().unwrap() {
+        info!("module: {}", pe.name.unwrap_or("(unknown)"));
 
-    info!("bitness: {}", if pe.is_64 { "64" } else { "32" });
-    info!("image base: 0x{:x}", pe.image_base);
-    info!("entry rva: 0x{:x}", pe.entry);
+        info!("bitness: {}", if pe.is_64 { "64" } else { "32" });
+        info!("image base: 0x{:x}", pe.image_base);
+        info!("entry rva: 0x{:x}", pe.entry);
 
-    // like:
-    //
-    //     sections:
-    //       - .text
-    //         raw size:     0x18aa00
-    //         virtual size: 0x18a9a8
-    info!("sections:");
-    for section in pe.sections.iter() {
-        if section.real_name.is_some() {
+        // like:
+        //
+        //     sections:
+        //       - .text
+        //         raw size:     0x18aa00
+        //         virtual size: 0x18a9a8
+        info!("sections:");
+        for section in ws.sections.iter() {
+            info!("  - {}", section.name);
+            info!("    virtual address: 0x{:x}", section.addr);
+            info!("    virtual size: 0x{:x}", section.buf.len());
+
             info!(
-                "  - {} ({})",
-                String::from_utf8_lossy(&section.name[..]),
-                section
-                    .real_name
-                    .as_ref()
-                    .unwrap_or(&"(unknown)".to_string())
+                "\n{}",
+                hexdump(&section.buf[..0x1C], pe.image_base + section.addr as usize)
             );
-        } else {
-            info!("  - {}", String::from_utf8_lossy(&section.name[..]));
+
+            let decoder =
+                zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
+            let insns: Vec<_> = section
+                .buf
+                .par_windows(0x10)
+                .map(|ibuf| decoder.decode(ibuf))
+                .collect();
+
+            info!("total instructions: {}", insns.len());
+
+            info!(
+                "successful disassembles: {}",
+                insns.par_iter().filter(|insn| insn.is_ok()).count()
+            );
+
+            info!(
+                "valid instructions: {}",
+                insns
+                    .par_iter()
+                    .filter(|insn| match insn {
+                        Ok(Some(_)) => true,
+                        _ => false,
+                    })
+                    .count()
+            );
         }
-
-        info!("    raw size:     0x{:x}", section.size_of_raw_data);
-        info!("    virtual size: 0x{:x}", section.virtual_size);
-
-        // TODO: figure out if we will work with usize, or u64, or what, then assert usize is ok.
-        // `usize::max_value()`
-        let mut secbuf = vec![0; align(section.virtual_size as usize, 0x200)];
-
-        {
-            let secsize = section.size_of_raw_data as usize;
-            let rawbuf = &mut secbuf[..secsize];
-            let pstart = section.pointer_to_raw_data as usize;
-            rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
-        }
-
-        info!(
-            "\n{}",
-            hexdump(
-                &secbuf[..0x1C],
-                pe.image_base + section.virtual_address as usize
-            )
-        );
-
-        let decoder =
-            zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
-        let insns: Vec<_> = secbuf
-            .par_windows(0x10)
-            .map(|ibuf| decoder.decode(ibuf))
-            .collect();
-
-        info!("total instructions: {}", insns.len());
-
-        info!(
-            "successful disassembles: {}",
-            insns.par_iter().filter(|insn| insn.is_ok()).count()
-        );
-
-        info!(
-            "valid instructions: {}",
-            insns
-                .par_iter()
-                .filter(|insn| match insn {
-                    Ok(Some(_)) => true,
-                    _ => false,
-                })
-                .count()
-        );
     }
 
     Ok(())
@@ -243,9 +220,16 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
     Ok(buf)
 }
 
+pub struct Section {
+    pub name: String,
+    pub addr: u32,
+    pub buf: Vec<u8>,
+}
+
 pub struct Workspace {
     pub filename: String,
     pub buf: Vec<u8>,
+    pub sections: Vec<Section>,
 }
 
 impl Workspace {
@@ -335,14 +319,40 @@ impl Workspace {
     /// TODO: demonstrate MachO file behavior.
     /// TODO: demonstrate unknown file behavior.
     pub fn from_buf(filename: &str, buf: Vec<u8>) -> Result<Workspace, Error> {
-        let ws = Workspace {
+        let mut ws = Workspace {
             filename: filename.to_string(),
-            buf: buf,
+            buf: buf.clone(),
+            sections: vec![],
         };
 
         match ws.get_obj()? {
-            Object::PE(_) => {
+            Object::PE(pe) => {
                 info!("found PE file");
+
+                ws.sections
+                    .extend(pe.sections.iter().map(|section| -> Section {
+                        // TODO: i'm sure this can be abused.
+                        // TODO: add tests for weird section names.
+                        let name = String::from_utf8_lossy(&section.name[..]).into_owned();
+
+                        // TODO: figure out if we will work with usize, or u64, or what,
+                        // then assert usize is ok.
+                        // ref: `usize::max_value()`
+                        let mut secbuf = vec![0; align(section.virtual_size as usize, 0x200)];
+
+                        {
+                            let secsize = section.size_of_raw_data as usize;
+                            let rawbuf = &mut secbuf[..secsize];
+                            let pstart = section.pointer_to_raw_data as usize;
+                            rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
+                        }
+
+                        Section {
+                            name: name,
+                            addr: section.virtual_address,
+                            buf: secbuf,
+                        }
+                    }));
             }
             Object::Elf(_) => {
                 return Err(Error::NotImplemented);
@@ -381,8 +391,8 @@ pub fn run(args: &Config) -> Result<(), Error> {
     debug!("filename: {:?}", args.filename);
     let ws = Workspace::from_file(&args.filename)?;
 
-    if let Object::PE(pe) = ws.get_obj()? {
-        foo(&pe, &ws.buf).expect("failed to foo");
+    if let Object::PE(_) = ws.get_obj()? {
+        foo(&ws).expect("failed to foo");
     }
 
     Ok(())
