@@ -47,7 +47,26 @@ pub enum Error {
     ValueError,
 }
 
-fn align(i: usize, b: usize) -> usize {
+/// Round the given value up to the next multiple of the given base.
+///
+/// # Panics
+///
+///   - Base `b` must be at least `2`.
+///
+/// # Examples
+///
+/// ```
+/// use lancelot::*;
+/// assert_eq!(align(0, 2), 0);
+/// assert_eq!(align(1, 2), 2);
+/// assert_eq!(align(2, 2), 2);
+/// assert_eq!(align(3, 2), 4);
+/// assert_eq!(align(4, 2), 4);
+/// ```
+pub fn align(i: usize, b: usize) -> usize {
+    if b < 2 {
+        panic!("base `b` must be at least: 2");
+    }
     let rem = i % b;
     if rem == 0 {
         i
@@ -328,6 +347,8 @@ impl Workspace {
         match ws.get_obj()? {
             Object::PE(pe) => {
                 info!("found PE file");
+
+                // TODO: load PE header, too
 
                 ws.sections
                     .extend(pe.sections.iter().map(|section| -> Section {
