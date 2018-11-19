@@ -243,6 +243,7 @@ pub struct Section {
     pub name: String,
     pub addr: u32,
     pub buf: Vec<u8>,
+    pub insns: Vec<Option<zydis::ffi::DecodedInstruction>>,
 }
 
 pub struct Workspace {
@@ -348,6 +349,19 @@ impl Workspace {
             Object::PE(pe) => {
                 info!("found PE file");
 
+                let machine;
+                let mode;
+                if pe.is_64 {
+                    machine = zydis::MachineMode::Long64;
+                    mode = zydis::AddressWidth::_64;
+                } else {
+                    // TODO: not sure what `LongCompat32` means, vs `Legacy32`.
+                    machine = zydis::MachineMode::LongCompat32;
+                    mode = zydis::AddressWidth::_32;
+                }
+                // TODO: save off decoder into workspace.
+                let decoder = zydis::Decoder::new(machine, mode).unwrap();
+
                 // TODO: load PE header, too
 
                 ws.sections
@@ -368,10 +382,19 @@ impl Workspace {
                             rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
                         }
 
+                        let insns: Vec<_> = secbuf
+                            .par_windows(0x10)
+                            .map(|ibuf| match decoder.decode(ibuf) {
+                                Ok(Some(insn)) => Some(insn),
+                                _ => None,
+                            })
+                            .collect();
+
                         Section {
                             name: name,
                             addr: section.virtual_address,
                             buf: secbuf,
+                            insns: insns,
                         }
                     }));
             }
