@@ -12,3 +12,8 @@ goblin = "0.0.18"
 zydis = { git = "https://github.com/zyantific/zydis-rs"}
 rayon = "1.0"
 matches = "0.1.8"
+
+[features]
+# The reason we do this is because doctests don't get cfg(test)
+# See: https://github.com/rust-lang/cargo/issues/4669
+test = []

@@ -9,9 +9,10 @@ use std::fs;
 use std::io::prelude::*;
 use zydis;
 
-// TODO: this really shouldn't be public. only for testing.
-// TODO: what is the `cfg(doctest)` setting?
-//#[cfg(test)]
+// enabled only during testing.
+// supports reaching into the resources dir for test data.
+// TODO: doesn't work nicely work vscode-rls (which doesn't pass along the features=test)
+// #[cfg(feature = "test")]
 pub mod rsrc;
 
 pub struct Config {
