@@ -1,7 +1,6 @@
 extern crate log;
 extern crate simplelog;
 
-use goblin::pe::PE;
 use goblin::Object;
 use log::{debug, error, info, trace};
 use rayon::prelude::*;
@@ -153,62 +152,6 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     ret
 }
 
-fn foo(ws: &Workspace) -> Result<(), Error> {
-    if let Object::PE(pe) = ws.get_obj().unwrap() {
-        info!("module: {}", pe.name.unwrap_or("(unknown)"));
-
-        info!("bitness: {}", if pe.is_64 { "64" } else { "32" });
-        info!("image base: 0x{:x}", pe.image_base);
-        info!("entry rva: 0x{:x}", pe.entry);
-
-        // like:
-        //
-        //     sections:
-        //       - .text
-        //         raw size:     0x18aa00
-        //         virtual size: 0x18a9a8
-        info!("sections:");
-        for section in ws.sections.iter() {
-            info!("  - {}", section.name);
-            info!("    virtual address: 0x{:x}", section.addr);
-            info!("    virtual size: 0x{:x}", section.buf.len());
-
-            info!(
-                "\n{}",
-                hexdump(&section.buf[..0x1C], pe.image_base + section.addr as usize)
-            );
-
-            let decoder =
-                zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64).unwrap();
-            let insns: Vec<_> = section
-                .buf
-                .par_windows(0x10)
-                .map(|ibuf| decoder.decode(ibuf))
-                .collect();
-
-            info!("total instructions: {}", insns.len());
-
-            info!(
-                "successful disassembles: {}",
-                insns.par_iter().filter(|insn| insn.is_ok()).count()
-            );
-
-            info!(
-                "valid instructions: {}",
-                insns
-                    .par_iter()
-                    .filter(|insn| match insn {
-                        Ok(Some(_)) => true,
-                        _ => false,
-                    })
-                    .count()
-            );
-        }
-    }
-
-    Ok(())
-}
-
 pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
     debug!("read_file: {:?}", filename);
 
@@ -247,6 +190,18 @@ pub struct Section {
     pub addr: Rva,
     pub buf: Vec<u8>,
     pub insns: Vec<Option<zydis::ffi::DecodedInstruction>>,
+}
+
+impl Section {
+    pub fn contains(self: &Section, rva: Rva) -> bool {
+        if rva < self.addr {
+            return false;
+        }
+        if rva >= self.addr + self.buf.len() as Rva {
+            return false;
+        }
+        return true;
+    }
 }
 
 pub struct Workspace {
@@ -311,15 +266,35 @@ impl Workspace {
         }
     }
 
-    pub fn get_pe(&self) -> Result<PE, Error> {
-        match self.get_obj()? {
-            Object::PE(pe) => {
-                return Ok(pe);
-            }
-            _ => {
-                error!("not a PE file");
-                return Err(Error::ValueError);
-            }
+    /// Fetch the section that contains the given address.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::K32);
+    /// assert_eq!(ws.get_section(0x130C0).expect("section").name, ".text");
+    /// ```
+    pub fn get_section(self: &Workspace, rva: Rva) -> Result<&Section, Error> {
+        let sec = self.sections.iter().filter(|sec| sec.contains(rva)).next();
+        match sec {
+            None => Err(Error::InvalidRva),
+            Some(sec) => Ok(sec),
+        }
+    }
+
+    pub fn get_insn(
+        self: &Workspace,
+        rva: Rva,
+    ) -> Result<Option<&zydis::ffi::DecodedInstruction>, Error> {
+        let sec = self.get_section(rva)?;
+        let insn = &(sec.insns[(rva - sec.addr) as usize]);
+
+        // jump through hoops to get an Option<&insn> (versus Option<insn>)
+        match insn {
+            None => Ok(None),
+            Some(insn) => Ok(Some(&insn)),
         }
     }
 
@@ -443,8 +418,24 @@ pub fn run(args: &Config) -> Result<(), Error> {
     debug!("filename: {:?}", args.filename);
     let ws = Workspace::from_file(&args.filename)?;
 
-    if let Object::PE(_) = ws.get_obj()? {
-        foo(&ws).expect("failed to foo");
+    if let Object::PE(pe) = ws.get_obj()? {
+        let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
+
+        let mut buffer = [0u8; 200];
+        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+        let oep: Rva = pe
+            .header
+            .optional_header
+            .unwrap()
+            .standard_fields
+            .address_of_entry_point;
+
+        let insn = ws.get_insn(oep).expect("insn").expect("valid insn");
+        formatter
+            .format_instruction(&insn, &mut buffer, Some(oep as u64), None)
+            .expect("format");
+        println!("0x{:016X}: {}", oep, buffer);
     }
 
     Ok(())
