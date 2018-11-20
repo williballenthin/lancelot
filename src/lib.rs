@@ -285,6 +285,15 @@ impl Workspace {
         }
     }
 
+    /// ```
+    /// use zydis::*;
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// use matches::matches;
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::K32);
+    /// let insn = ws.get_insn(0x130C0).unwrap().unwrap();
+    /// assert!(matches!(insn.mnemonic, zydis::enums::mnemonic::Mnemonic::MOV));
+    /// ```
     pub fn get_insn(
         self: &Workspace,
         rva: Rva,
