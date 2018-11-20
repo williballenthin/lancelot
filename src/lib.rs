@@ -285,6 +285,16 @@ impl Workspace {
         }
     }
 
+    /// Fetch the instruction at the given RVA.
+    ///
+    /// # Result
+    ///
+    /// Err: if the RVA does not fall within a section.
+    /// None: if there is not a valid instruction at the given RVA.
+    /// _: valid instruction.
+    ///
+    /// # Examples
+    ///
     /// ```
     /// use zydis::*;
     /// use lancelot::*;
