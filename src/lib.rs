@@ -44,7 +44,7 @@ pub enum Error {
     FileAccess,
     FileFormat,
     NotImplemented,
-    ValueError,
+    InvalidRva,
 }
 
 /// Round the given value up to the next multiple of the given base.
@@ -239,9 +239,12 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
     Ok(buf)
 }
 
+type Rva = u64;
+type Va = u64;
+
 pub struct Section {
     pub name: String,
-    pub addr: u32,
+    pub addr: Rva,
     pub buf: Vec<u8>,
     pub insns: Vec<Option<zydis::ffi::DecodedInstruction>>,
 }
@@ -394,9 +397,10 @@ impl Workspace {
                             })
                             .collect();
 
+                        info!("loaded section: {}", name);
                         Section {
                             name: name,
-                            addr: section.virtual_address,
+                            addr: section.virtual_address as Rva,
                             buf: secbuf,
                             insns: insns,
                         }
