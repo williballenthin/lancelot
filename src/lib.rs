@@ -368,7 +368,11 @@ impl Workspace {
                     .extend(pe.sections.iter().map(|section| -> Section {
                         // TODO: i'm sure this can be abused.
                         // TODO: add tests for weird section names.
-                        let name = String::from_utf8_lossy(&section.name[..]).into_owned();
+                        let name = String::from_utf8_lossy(&section.name[..])
+                            .into_owned()
+                            .trim_end_matches("\u{0}")
+                            .trim_end()
+                            .to_string();
 
                         // TODO: figure out if we will work with usize, or u64, or what,
                         // then assert usize is ok.
