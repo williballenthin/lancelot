@@ -350,6 +350,7 @@ impl Workspace {
 
     fn analyze_operand_xrefs(
         self: &Workspace,
+        rva: Rva,
         insn: &zydis::ffi::DecodedInstruction,
         op: &zydis::ffi::DecodedOperand,
     ) -> Result<(), Error> {
@@ -375,7 +376,10 @@ impl Workspace {
                         // this is the default encoding on x64.
                         // tools like IDA automatically compute and display the target.
                         // CALL [RIP + 0x401000]
+                        let target =
+                            (rva as i64 + op.mem.disp.displacement + insn.length as i64) as Rva;
                         println!("displacement: {:X}", op.mem.disp.displacement);
+                        println!("target: {:X}", target);
                     } else {
                         // unsupported
                         // CALL [4*RIP + 0x401000]
@@ -383,7 +387,7 @@ impl Workspace {
                 }
             }
             zydis::enums::OperandType::Pointer => {
-                println!("operand: pointerj");
+                println!("operand: pointer");
             }
             zydis::enums::OperandType::Immediate => {
                 println!("operand: immediate");
@@ -394,6 +398,7 @@ impl Workspace {
 
     fn analyze_insn_xrefs(
         self: &Workspace,
+        rva: Rva,
         insn: &zydis::ffi::DecodedInstruction,
     ) -> Result<(), Error> {
         match insn.mnemonic {
@@ -411,7 +416,7 @@ impl Workspace {
                 // TODO: need to ensure visibility == Explicit.
                 let op = &insn.operands[0];
 
-                self.analyze_operand_xrefs(insn, op)?;
+                self.analyze_operand_xrefs(rva, insn, op)?;
             }
             zydis::enums::mnemonic::Mnemonic::RET
             | zydis::enums::mnemonic::Mnemonic::IRET
@@ -493,7 +498,7 @@ impl Workspace {
                             println!("privileged!");
                         }
 
-                        self.analyze_insn_xrefs(insn)?;
+                        self.analyze_insn_xrefs(rva, insn)?;
                     }
                     None => {
                         println!("0x{:016X}: ...", rva);
