@@ -228,10 +228,16 @@ impl Section {
     }
 }
 
+pub struct Disassembler {
+    pub decoder: zydis::ffi::Decoder,
+    pub pc: zydis::enums::register::Register,
+}
+
 pub struct Workspace {
     pub filename: String,
     pub buf: Vec<u8>,
     pub sections: Vec<Section>,
+    pub dis: Disassembler,
 }
 
 impl Workspace {
@@ -496,51 +502,35 @@ impl Workspace {
         Ok(())
     }
 
-    /// Construct a workspace from the module with the given contents.
-    ///
-    /// # Errors
-    ///   - `Error::FileFormat`: when not able to be parsed by Goblin.
-    ///   - `Error::NotImplemented`: when not a PE file.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use lancelot::*;
-    /// use lancelot::rsrc::*;
-    /// let buf = get_buf(Rsrc::K32);
-    /// let ws = Workspace::from_buf("kernel32.dll", buf).unwrap();
-    /// ```
-    ///
-    /// TODO: demonstrate ELF file behavior.
-    /// TODO: demonstrate MachO file behavior.
-    /// TODO: demonstrate unknown file behavior.
-    pub fn from_buf(filename: &str, buf: Vec<u8>) -> Result<Workspace, Error> {
-        let mut ws = Workspace {
-            filename: filename.to_string(),
-            buf: buf.clone(),
-            sections: vec![],
-        };
-
-        match ws.get_obj()? {
+    fn load_disassembler(self: &mut Workspace) -> Result<(), Error> {
+        match self.get_obj()? {
             Object::PE(pe) => {
-                info!("found PE file");
-
-                let machine;
-                let mode;
-                if pe.is_64 {
-                    machine = zydis::MachineMode::Long64;
-                    mode = zydis::AddressWidth::_64;
-                } else {
-                    // TODO: not sure what `LongCompat32` means, vs `Legacy32`.
-                    machine = zydis::MachineMode::LongCompat32;
-                    mode = zydis::AddressWidth::_32;
+                if !pe.is_64 {
+                    self.dis = Disassembler {
+                        decoder: zydis::Decoder::new(
+                            zydis::MachineMode::LongCompat32,
+                            zydis::AddressWidth::_32,
+                        )
+                        .unwrap(),
+                        pc: zydis::enums::register::Register::EAX,
+                    }
                 }
-                // TODO: save off decoder into workspace.
-                let decoder = zydis::Decoder::new(machine, mode).unwrap();
+                Ok(())
+            }
+            _ => Err(Error::NotImplemented),
+        }
+    }
+
+    // this must be called *after* `load_disassembler`.
+    fn load_sections(self: &mut Workspace) -> Result<(), Error> {
+        match self.get_obj()? {
+            Object::PE(pe) => {
+                let buf = &self.buf;
+                let decoder = &self.dis.decoder;
 
                 // TODO: load PE header, too
 
-                ws.sections
+                self.sections
                     .extend(pe.sections.iter().map(|section| -> Section {
                         // TODO: i'm sure this can be abused.
                         // TODO: add tests for weird section names.
@@ -578,22 +568,52 @@ impl Workspace {
                             insns: insns,
                         }
                     }));
-            }
-            Object::Elf(_) => {
-                return Err(Error::NotImplemented);
-            }
-            Object::Mach(_) => {
-                return Err(Error::NotImplemented);
-            }
-            Object::Archive(_) => {
-                return Err(Error::NotImplemented);
-            }
-            Object::Unknown(_) => {
-                return Err(Error::NotImplemented);
-            }
-        }
 
-        ws.analyze_xrefs();
+                Ok(())
+            }
+            Object::Elf(_) => Err(Error::NotImplemented),
+            Object::Mach(_) => Err(Error::NotImplemented),
+            Object::Archive(_) => Err(Error::NotImplemented),
+            Object::Unknown(_) => Err(Error::NotImplemented),
+            }
+            }
+
+    /// Construct a workspace from the module with the given contents.
+    ///
+    /// # Errors
+    ///   - `Error::FileFormat`: when not able to be parsed by Goblin.
+    ///   - `Error::NotImplemented`: when not a PE file.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let buf = get_buf(Rsrc::K32);
+    /// let ws = Workspace::from_buf("kernel32.dll", buf).unwrap();
+    /// ```
+    ///
+    /// TODO: demonstrate ELF file behavior.
+    /// TODO: demonstrate MachO file behavior.
+    /// TODO: demonstrate unknown file behavior.
+    pub fn from_buf(filename: &str, buf: Vec<u8>) -> Result<Workspace, Error> {
+        let mut ws = Workspace {
+            filename: filename.to_string(),
+            buf: buf.clone(),
+            sections: vec![],
+            dis: Disassembler {
+                // default disassembly settings.
+                // will be updated subsequently if 32-bit.
+                decoder: zydis::Decoder::new(zydis::MachineMode::Long64, zydis::AddressWidth::_64)
+                    .unwrap(),
+                pc: zydis::enums::register::Register::RIP,
+            },
+        };
+
+        ws.load_disassembler()?;
+        ws.load_sections()?;
+
+        ws.analyze_xrefs()?;
 
         Ok(ws)
     }
