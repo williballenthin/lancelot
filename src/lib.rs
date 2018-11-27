@@ -359,7 +359,7 @@ impl Workspace {
 
                         if insn
                             .attributes
-                            .contains(zydis::enums::InstructionAttributes::IS_PRIVILIGED)
+                            .contains(zydis::enums::InstructionAttributes::IS_PRIVILEGED)
                         // [sic]: https://github.com/zyantific/zydis-rs/issues/15
                         {
                             println!("privileged!");

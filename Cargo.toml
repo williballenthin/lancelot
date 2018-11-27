@@ -9,9 +9,7 @@ log = "0.4"
 simplelog = "^0.5.0"
 goblin = "0.0.18"
 # zydis-c requires `cmake`, so ensure to have that first.
-# can't enable `serialization` until the following is handled: https://github.com/zyantific/zydis-rs/issues/16
-#zydis = { git = "https://github.com/zyantific/zydis-rs", features=["serialization"]}
-zydis = { git = "https://github.com/williballenthin/zydis-rs", branch="patch-1", features=["serialization"]}
+zydis = { git = "https://github.com/zyantific/zydis-rs", features=["serialization"] }
 rayon = "1.0"
 matches = "0.1.8"
 serde_json = "1.0"
