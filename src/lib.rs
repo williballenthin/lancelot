@@ -224,7 +224,8 @@ impl Section {
         if rva >= self.addr + self.buf.len() as Rva {
             return false;
         }
-        return true;
+
+        true
     }
 }
 
@@ -307,7 +308,7 @@ impl Workspace {
     /// assert_eq!(ws.get_section(0x130C0).expect("section").name, ".text");
     /// ```
     pub fn get_section(self: &Workspace, rva: Rva) -> Result<&Section, Error> {
-        let sec = self.sections.iter().filter(|sec| sec.contains(rva)).next();
+        let sec = self.sections.iter().find(|sec| sec.contains(rva));
         match sec {
             None => Err(Error::InvalidRva),
             Some(sec) => Ok(sec),
@@ -600,7 +601,7 @@ impl Workspace {
     pub fn from_buf(filename: &str, buf: Vec<u8>) -> Result<Workspace, Error> {
         let mut ws = Workspace {
             filename: filename.to_string(),
-            buf: buf.clone(),
+            buf: buf,
             sections: vec![],
             dis: Disassembler {
                 // default disassembly settings.
