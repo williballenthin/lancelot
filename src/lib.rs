@@ -1,6 +1,9 @@
 extern crate log;
 extern crate simplelog;
 
+#[macro_use]
+extern crate serde_json;
+
 use goblin::Object;
 use log::{debug, error, info, trace};
 use rayon::prelude::*;
@@ -186,6 +189,26 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 type Rva = u64;
 type Va = u64;
 
+enum Xref {
+    // mov eax, eax
+    // push ebp
+    Fallthrough { src: Rva, dst: Rva },
+    // call [0x401000]
+    Call { src: Rva, dst: Rva },
+    // call [eax]
+    IndirectCall { src: Rva },
+    // jmp 0x401000
+    UnconditionalJump { src: Rva, dst: Rva },
+    // jmp eax
+    UnconditionalIndirectJump { src: Rva, dst: Rva },
+    // jnz 0x401000
+    ConditionalJump { src: Rva, dst: Rva },
+    // jnz eax
+    ConditionalIndirectJump { src: Rva, dst: Rva },
+    // cmov 0x1
+    ConditionalMove { src: Rva, dst: Rva },
+}
+
 pub struct Section {
     pub name: String,
     pub addr: Rva,
@@ -318,6 +341,161 @@ impl Workspace {
         }
     }
 
+    fn analyze_xrefs(self: &Workspace) -> Result<(), Error> {
+        let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
+        for section in self.sections.iter() {
+            println!("section: {}", section.name);
+            for (offset, insn) in section.insns.iter().enumerate() {
+                let rva = section.addr + offset as Rva;
+                match insn {
+                    Some(insn) => {
+                        let mut buffer = [0u8; 200];
+                        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+                        formatter
+                            .format_instruction(insn, &mut buffer, Some(rva as u64), None)
+                            .expect("format");
+                        println!("0x{:016X}: {}", rva, buffer);
+
+                        if insn
+                            .attributes
+                            .contains(zydis::enums::InstructionAttributes::IS_PRIVILIGED)
+                        // [sic]: https://github.com/zyantific/zydis-rs/issues/15
+                        {
+                            println!("privileged!");
+                        }
+
+                        // is priv?
+
+                        match insn.mnemonic {
+                            // see InstructionCategory
+                            // syscall, sysexit, sysret
+                            // vmcall, vmmcall
+                            zydis::enums::mnemonic::Mnemonic::CALL => {
+                                println!("call");
+
+                                if insn.operand_count != 1 {
+                                    // zydis considers the registers implicitly read/written to as operands.
+                                    // TODO: need to assert count of insns with visibility==Explicit.
+                                    println!(
+                                        "unexpected CALL operand count: {}",
+                                        insn.operand_count
+                                    );
+                                }
+                                // TODO: need to ensure visibility == Explicit.
+                                let op = &insn.operands[0];
+
+                                println!("insn: {}", json!(insn).to_string());
+
+                                // if is indirect:
+                                // else:
+                                match op.ty {
+                                    zydis::enums::OperandType::Unused => {
+                                        println!("operand: unused");
+                                    }
+                                    zydis::enums::OperandType::Register => {
+                                        println!("operand: register");
+                                    }
+                                    zydis::enums::OperandType::Memory => {
+                                        // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
+                                        //           0x0000000000001041:                       call    [0x0000000000079980]
+                                        println!("operand: memory");
+
+                                        if let zydis::enums::register::Register::NONE =
+                                            op.mem.segment
+                                        {
+                                            println!("empty segment");
+                                            // segment probably DS??? (x64)
+                                        }
+                                        if let zydis::enums::register::Register::NONE = op.mem.base
+                                        {
+                                            println!("empty base");
+                                            // if base == RIP, then RIP-relative (e.g. x64)
+                                        }
+                                        if let zydis::enums::register::Register::NONE = op.mem.index
+                                        {
+                                            println!("empty index");
+                                        }
+                                        println!("scale: {}", op.mem.scale);
+                                        if op.mem.disp.has_displacement {
+                                            println!(
+                                                "displacement: {:X}",
+                                                op.mem.disp.displacement
+                                            );
+                                        }
+                                    }
+                                    zydis::enums::OperandType::Pointer => {
+                                        println!("operand: pointerj");
+                                    }
+                                    zydis::enums::OperandType::Immediate => {
+                                        println!("operand: immediate");
+                                    }
+                                }
+                            }
+                            zydis::enums::mnemonic::Mnemonic::RET
+                            | zydis::enums::mnemonic::Mnemonic::IRET
+                            | zydis::enums::mnemonic::Mnemonic::IRETD
+                            | zydis::enums::mnemonic::Mnemonic::IRETQ => {
+                                println!("return");
+                            }
+                            zydis::enums::mnemonic::Mnemonic::JMP => {
+                                println!("unconditional jump");
+                            }
+                            zydis::enums::mnemonic::Mnemonic::JB
+                            | zydis::enums::mnemonic::Mnemonic::JBE
+                            | zydis::enums::mnemonic::Mnemonic::JCXZ
+                            | zydis::enums::mnemonic::Mnemonic::JECXZ
+                            | zydis::enums::mnemonic::Mnemonic::JKNZD
+                            | zydis::enums::mnemonic::Mnemonic::JKZD
+                            | zydis::enums::mnemonic::Mnemonic::JL
+                            | zydis::enums::mnemonic::Mnemonic::JLE
+                            | zydis::enums::mnemonic::Mnemonic::JNB
+                            | zydis::enums::mnemonic::Mnemonic::JNBE
+                            | zydis::enums::mnemonic::Mnemonic::JNL
+                            | zydis::enums::mnemonic::Mnemonic::JNLE
+                            | zydis::enums::mnemonic::Mnemonic::JNO
+                            | zydis::enums::mnemonic::Mnemonic::JNP
+                            | zydis::enums::mnemonic::Mnemonic::JNS
+                            | zydis::enums::mnemonic::Mnemonic::JNZ
+                            | zydis::enums::mnemonic::Mnemonic::JO
+                            | zydis::enums::mnemonic::Mnemonic::JP
+                            | zydis::enums::mnemonic::Mnemonic::JRCXZ
+                            | zydis::enums::mnemonic::Mnemonic::JS
+                            | zydis::enums::mnemonic::Mnemonic::JZ => {
+                                println!("conditional jump");
+                            }
+                            zydis::enums::mnemonic::Mnemonic::CMOVB
+                            | zydis::enums::mnemonic::Mnemonic::CMOVBE
+                            | zydis::enums::mnemonic::Mnemonic::CMOVL
+                            | zydis::enums::mnemonic::Mnemonic::CMOVLE
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNB
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNBE
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNL
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNLE
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNO
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNP
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNS
+                            | zydis::enums::mnemonic::Mnemonic::CMOVNZ
+                            | zydis::enums::mnemonic::Mnemonic::CMOVO
+                            | zydis::enums::mnemonic::Mnemonic::CMOVP
+                            | zydis::enums::mnemonic::Mnemonic::CMOVS
+                            | zydis::enums::mnemonic::Mnemonic::CMOVZ => {
+                                println!("conditional mov");
+                            }
+                            _ => {
+                                println!("simple fallthrough");
+                            }
+                        }
+                    }
+                    None => {
+                        println!("0x{:016X}: ...", rva);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Construct a workspace from the module with the given contents.
     ///
     /// # Errors
@@ -414,6 +592,8 @@ impl Workspace {
                 return Err(Error::NotImplemented);
             }
         }
+
+        ws.analyze_xrefs();
 
         Ok(ws)
     }
