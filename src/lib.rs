@@ -468,8 +468,6 @@ impl Workspace {
             // syscall, sysexit, sysret
             // vmcall, vmmcall
             zydis::enums::mnemonic::Mnemonic::CALL => {
-                println!("call");
-
                 let op = insn
                     .operands
                     .iter()
@@ -493,8 +491,6 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::IRETD
             | zydis::enums::mnemonic::Mnemonic::IRETQ => Ok(vec![]),
             zydis::enums::mnemonic::Mnemonic::JMP => {
-                println!("unconditional jump");
-
                 let op = insn
                     .operands
                     .iter()
@@ -528,7 +524,6 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::JRCXZ
             | zydis::enums::mnemonic::Mnemonic::JS
             | zydis::enums::mnemonic::Mnemonic::JZ => {
-                println!("conditional jump");
                 let op = insn
                     .operands
                     .iter()
@@ -565,7 +560,6 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::CMOVP
             | zydis::enums::mnemonic::Mnemonic::CMOVS
             | zydis::enums::mnemonic::Mnemonic::CMOVZ => {
-                println!("conditional mov");
                 Ok(vec![
                     Xref::Fallthrough {
                         src: rva,
@@ -599,13 +593,6 @@ impl Workspace {
                             .format_instruction(insn, &mut buffer, Some(rva as u64), None)
                             .expect("format");
                         println!("0x{:016X}: {}", rva, buffer);
-
-                        if insn
-                            .attributes
-                            .contains(zydis::enums::InstructionAttributes::IS_PRIVILEGED)
-                        {
-                            println!("privileged!");
-                        }
 
                         let xs = self.analyze_insn_xrefs(rva, insn)?;
                         for x in xs {
