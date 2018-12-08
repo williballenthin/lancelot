@@ -205,7 +205,7 @@ enum Xref {
     // jnz 0x401000
     ConditionalJump { src: Rva, dst: Rva },
     // jnz eax
-    ConditionalIndirectJump { src: Rva, dst: Rva },
+    ConditionalIndirectJump { src: Rva },
     // cmov 0x1
     ConditionalMove { src: Rva, dst: Rva },
 }
@@ -359,10 +359,6 @@ impl Workspace {
         insn: &zydis::ffi::DecodedInstruction,
         op: &zydis::ffi::DecodedOperand,
     ) -> Result<Option<Rva>, Error> {
-        println!("op: {}", json!(op).to_string());
-
-        // if is indirect:
-        // else:
         match op.ty {
             zydis::enums::OperandType::Unused => {
                 println!("operand: unused");
@@ -495,7 +491,25 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::JS
             | zydis::enums::mnemonic::Mnemonic::JZ => {
                 println!("conditional jump");
-                Err(Error::NotImplemented)
+                let op = insn
+                    .operands
+                    .iter()
+                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
+                    // a J* always has an operand, so assume this is ok.
+                    .unwrap();
+
+                let fallthrough = Xref::Fallthrough {
+                    src: rva,
+                    dst: rva + u64::from(insn.length),
+                };
+
+                match self.analyze_operand_xrefs(rva, insn, op)? {
+                    Some(dst) => Ok(vec![
+                        Xref::ConditionalJump { src: rva, dst: dst },
+                        fallthrough,
+                    ]),
+                    None => Ok(vec![fallthrough]),
+                }
             }
             zydis::enums::mnemonic::Mnemonic::CMOVB
             | zydis::enums::mnemonic::Mnemonic::CMOVBE
