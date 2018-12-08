@@ -5,7 +5,7 @@ extern crate simplelog;
 extern crate serde_json;
 
 use goblin::Object;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use rayon::prelude::*;
 use std::env;
 use std::fs;
@@ -391,9 +391,9 @@ impl Workspace {
                         if self.is_rva_valid(target) {
                             Ok(Some(target))
                         } else {
-                            // TODO: problem: invalid call target.
-                            println!("TODO: problem: invalid call target.");
-                            Err(Error::NotImplemented)
+                            // TODO: record this anomaly somewhere.
+                            warn!("problem: invalid xref target: memory not in sections");
+                            Ok(None)
                         }
                     } else {
                         // unsupported
@@ -412,8 +412,25 @@ impl Workspace {
                 Err(Error::NotImplemented)
             }
             zydis::enums::OperandType::Immediate => {
-                println!("operand: immediate");
-                Err(Error::NotImplemented)
+                if !op.imm.is_relative {
+                    println!("TODO: absolute immediate operand");
+                    Err(Error::NotImplemented)
+                } else if op.imm.is_signed && op.imm.value & 1 << 63 != 0 {
+                    // TODO: the op.imm.value u64 must be re-interpreted as a i64
+                    println!("TODO: negative signed immediate operand");
+                    Err(Error::NotImplemented)
+                } else {
+                    // TODO: cast from rva (u64) to i64 is lossy.
+                    // TODO: cast from imm (u64) to i64 is lossy.
+                    let dst = (rva as i64 + op.imm.value as i64 + i64::from(insn.length)) as Rva;
+                    if self.is_rva_valid(dst) {
+                        Ok(Some(dst))
+                    } else {
+                        // TODO: record this anomaly somewhere.
+                        warn!("problem: invalid xref target: relative immediate not in sections");
+                        Ok(None)
+                    }
+                }
             }
         }
     }
