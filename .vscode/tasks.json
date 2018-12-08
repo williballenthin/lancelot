@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "command": "cargo",
+    "tasks": [
+        {
+            // oddly, this is used by cargo to define the subcommand,
+            // so we can't set it to something more convenient in the UI.
+            "label": "test",
+            "args": [
+                // set feature=test to enable flag in doctests
+                // ref: https://github.com/rust-lang/rust/issues/45599
+                "--features",
+                "test"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        }
+    ]
+}
