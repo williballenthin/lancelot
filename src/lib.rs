@@ -552,7 +552,16 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::CMOVS
             | zydis::enums::mnemonic::Mnemonic::CMOVZ => {
                 println!("conditional mov");
-                Err(Error::NotImplemented)
+                Ok(vec![
+                    Xref::Fallthrough {
+                        src: rva,
+                        dst: rva + u64::from(insn.length),
+                    },
+                    Xref::ConditionalMove {
+                        src: rva,
+                        dst: rva + u64::from(insn.length),
+                    },
+                ])
             }
             _ => Ok(vec![Xref::Fallthrough {
                 src: rva,
