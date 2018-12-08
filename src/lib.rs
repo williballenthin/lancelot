@@ -189,6 +189,7 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 type Rva = u64;
 type Va = u64;
 
+#[derive(Debug)]
 enum Xref {
     // mov eax, eax
     // push ebp
@@ -315,6 +316,10 @@ impl Workspace {
         }
     }
 
+    pub fn is_rva_valid(self: &Workspace, rva: Rva) -> bool {
+        self.sections.iter().any(|sec| sec.contains(rva))
+    }
+
     /// Fetch the instruction at the given RVA.
     ///
     /// # Result
@@ -353,7 +358,7 @@ impl Workspace {
         rva: Rva,
         insn: &zydis::ffi::DecodedInstruction,
         op: &zydis::ffi::DecodedOperand,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Rva>, Error> {
         println!("op: {}", json!(op).to_string());
 
         // if is indirect:
@@ -361,9 +366,11 @@ impl Workspace {
         match op.ty {
             zydis::enums::OperandType::Unused => {
                 println!("operand: unused");
+                Err(Error::NotImplemented)
             }
             zydis::enums::OperandType::Register => {
                 println!("operand: register");
+                Err(Error::NotImplemented)
             }
             zydis::enums::OperandType::Memory => {
                 // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
@@ -376,31 +383,46 @@ impl Workspace {
                         // this is the default encoding on x64.
                         // tools like IDA automatically compute and display the target.
                         // CALL [RIP + 0x401000]
+
+                        // TODO: cast from rva (u64) to i64 is lossy.
                         let target =
-                            (rva as i64 + op.mem.disp.displacement + insn.length as i64) as Rva;
-                        println!("displacement: {:X}", op.mem.disp.displacement);
-                        println!("target: {:X}", target);
+                            (rva as i64 + op.mem.disp.displacement + i64::from(insn.length)) as Rva;
+
+                        if self.is_rva_valid(target) {
+                            Ok(Some(target))
+                        } else {
+                            // TODO: problem: invalid call target.
+                            println!("TODO: problem: invalid call target.");
+                            Err(Error::NotImplemented)
+                        }
                     } else {
                         // unsupported
-                        // CALL [4*RIP + 0x401000]
+                        // CALL [RIP + 4*RCX + 0x401000] ??
+                        println!("CALL [RIP + 4*RCX + 0x401000] ??");
+                        Err(Error::NotImplemented)
                     }
+                } else {
+                    // TODO
+                    println!("TODO: other OperandType::Memory branch");
+                    Err(Error::NotImplemented)
                 }
             }
             zydis::enums::OperandType::Pointer => {
                 println!("operand: pointer");
+                Err(Error::NotImplemented)
             }
             zydis::enums::OperandType::Immediate => {
                 println!("operand: immediate");
+                Err(Error::NotImplemented)
             }
         }
-        Ok(())
     }
 
     fn analyze_insn_xrefs(
         self: &Workspace,
         rva: Rva,
         insn: &zydis::ffi::DecodedInstruction,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<Xref>, Error> {
         match insn.mnemonic {
             // see InstructionCategory
             // syscall, sysexit, sysret
@@ -408,24 +430,31 @@ impl Workspace {
             zydis::enums::mnemonic::Mnemonic::CALL => {
                 println!("call");
 
-                if insn.operand_count != 1 {
-                    // zydis considers the registers implicitly read/written to as operands.
-                    // TODO: need to assert count of insns with visibility==Explicit.
-                    println!("unexpected CALL operand count: {}", insn.operand_count);
-                }
-                // TODO: need to ensure visibility == Explicit.
-                let op = &insn.operands[0];
+                let op = insn
+                    .operands
+                    .iter()
+                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
+                    // a CALL always has an operand, so assume this is ok.
+                    .unwrap();
 
-                self.analyze_operand_xrefs(rva, insn, op)?;
+                let fallthrough = Xref::Fallthrough {
+                    src: rva,
+                    dst: rva + u64::from(insn.length),
+                };
+
+                match self.analyze_operand_xrefs(rva, insn, op)? {
+                    // TODO: fallthrough is not guaranteed if the function is noret
+                    Some(dst) => Ok(vec![Xref::Call { src: rva, dst: dst }, fallthrough]),
+                    None => Ok(vec![fallthrough]),
+                }
             }
             zydis::enums::mnemonic::Mnemonic::RET
             | zydis::enums::mnemonic::Mnemonic::IRET
             | zydis::enums::mnemonic::Mnemonic::IRETD
-            | zydis::enums::mnemonic::Mnemonic::IRETQ => {
-                println!("return");
-            }
+            | zydis::enums::mnemonic::Mnemonic::IRETQ => Ok(vec![]),
             zydis::enums::mnemonic::Mnemonic::JMP => {
                 println!("unconditional jump");
+                Err(Error::NotImplemented)
             }
             zydis::enums::mnemonic::Mnemonic::JB
             | zydis::enums::mnemonic::Mnemonic::JBE
@@ -449,6 +478,7 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::JS
             | zydis::enums::mnemonic::Mnemonic::JZ => {
                 println!("conditional jump");
+                Err(Error::NotImplemented)
             }
             zydis::enums::mnemonic::Mnemonic::CMOVB
             | zydis::enums::mnemonic::Mnemonic::CMOVBE
@@ -467,12 +497,13 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::CMOVS
             | zydis::enums::mnemonic::Mnemonic::CMOVZ => {
                 println!("conditional mov");
+                Err(Error::NotImplemented)
             }
-            _ => {
-                println!("simple fallthrough");
-            }
+            _ => Ok(vec![Xref::Fallthrough {
+                src: rva,
+                dst: rva + u64::from(insn.length),
+            }]),
         }
-        Ok(())
     }
 
     fn analyze_xrefs(self: &Workspace) -> Result<(), Error> {
@@ -498,7 +529,10 @@ impl Workspace {
                             println!("privileged!");
                         }
 
-                        self.analyze_insn_xrefs(rva, insn)?;
+                        let xs = self.analyze_insn_xrefs(rva, insn)?;
+                        for x in xs {
+                            println!("  xref: {:?}", x);
+                        }
                     }
                     None => {
                         println!("0x{:016X}: ...", rva);
