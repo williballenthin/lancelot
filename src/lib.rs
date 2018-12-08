@@ -15,6 +15,8 @@ use zydis;
 // #[cfg(feature = "test")]
 pub mod rsrc;
 
+pub mod analysis;
+
 pub struct Config {
     pub filename: String,
 }
@@ -50,11 +52,11 @@ pub enum Error {
 /// Static cast the given 64-bit unsigned integer to a 64-bit signed integer.
 /// This is probably only useful when some other code provides you a u64
 ///  that is meant to be an i64 (aka. uncommon).
-/// 
+///
 /// In C: `*(int64_t *)&i`
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use lancelot::*;
 /// assert_eq!(0, u64_i64(0));
@@ -214,7 +216,7 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 type Rva = u64;
 
 #[derive(Debug)]
-enum Xref {
+pub enum Xref {
     // mov eax, eax
     // push ebp
     Fallthrough { src: Rva, dst: Rva },
@@ -242,6 +244,7 @@ pub struct Xrefs {
 pub enum Instruction {
     Invalid,
     Valid {
+        addr: Rva,
         insn: zydis::ffi::DecodedInstruction,
         xrefs: Xrefs,
     },
@@ -270,6 +273,33 @@ impl Section {
 pub struct Disassembler {
     pub decoder: zydis::ffi::Decoder,
     pub pc: zydis::enums::register::Register,
+}
+
+pub struct SectionLayout {
+    pub addr: Rva,
+    pub len: u64,
+}
+
+impl SectionLayout {
+    pub fn contains(self: &SectionLayout, rva: Rva) -> bool {
+        if rva < self.addr {
+            return false;
+        }
+        if rva >= self.addr + self.len as Rva {
+            return false;
+        }
+        true
+    }
+}
+
+pub struct ModuleLayout {
+    pub sections: Vec<SectionLayout>,
+}
+
+impl ModuleLayout {
+    pub fn is_rva_valid(self: &ModuleLayout, rva: Rva) -> bool {
+        self.sections.iter().any(|sec| sec.contains(rva))
+    }
 }
 
 pub struct Workspace {
@@ -353,6 +383,27 @@ impl Workspace {
         }
     }
 
+    fn get_section_mut(self: &mut Workspace, rva: Rva) -> Result<&mut Section, Error> {
+        let sec = self.sections.iter_mut().find(|sec| sec.contains(rva));
+        match sec {
+            None => Err(Error::InvalidRva),
+            Some(sec) => Ok(sec),
+        }
+    }
+
+    pub fn get_section_layout(self: &Workspace) -> ModuleLayout {
+        ModuleLayout {
+            sections: self
+                .sections
+                .iter()
+                .map(|sec| SectionLayout {
+                    addr: sec.addr,
+                    len: sec.insns.len() as u64,
+                })
+                .collect(),
+        }
+    }
+
     pub fn is_rva_valid(self: &Workspace, rva: Rva) -> bool {
         self.sections.iter().any(|sec| sec.contains(rva))
     }
@@ -376,268 +427,89 @@ impl Workspace {
     /// let insn = ws.get_insn(0x130C0).unwrap().unwrap();
     /// assert!(matches!(insn.mnemonic, zydis::enums::mnemonic::Mnemonic::MOV));
     /// ```
-    pub fn get_insn(
-        self: &Workspace,
-        rva: Rva,
-    ) -> Result<&Instruction, Error> {
+    pub fn get_insn(self: &Workspace, rva: Rva) -> Result<&Instruction, Error> {
         let sec = self.get_section(rva)?;
         let insn = &(sec.insns[(rva - sec.addr) as usize]);
         Ok(insn)
     }
 
-    fn analyze_operand_xrefs(
-        self: &Workspace,
-        rva: Rva,
+    fn get_insn_mut(self: &mut Workspace, rva: Rva) -> Result<&mut Instruction, Error> {
+        let sec = self.get_section_mut(rva)?;
+        let insn = &mut (sec.insns[(rva - sec.addr) as usize]);
+        Ok(insn)
+    }
+
+    fn get_first_operand(
         insn: &zydis::ffi::DecodedInstruction,
-        op: &zydis::ffi::DecodedOperand,
-    ) -> Result<Option<Rva>, Error> {
-        match op.ty {
-            zydis::enums::OperandType::Unused => Err(Error::NotImplemented("xref from unused register")),
-            zydis::enums::OperandType::Register => {
-                // like: CALL rbx
-                // TODO: for now, don't index unresolved indirect branches
-                Ok(None)
-            }
-            zydis::enums::OperandType::Memory => {
-                // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
-                //           0x0000000000001041:                       call    [0x0000000000079980]
-                if self.dis.pc == op.mem.base && op.mem.disp.has_displacement && op.mem.scale == 0 {
-                    // RIP-relative
-                    // this is the default encoding on x64.
-                    // tools like IDA automatically compute and display the target.
-                    // CALL [RIP + 0x401000]
-                    if let zydis::enums::register::Register::NONE = op.mem.index {
-                        let target =
-                            (rva as i64 
-                            // TODO: cast from rva (u64) to i64 is lossy.
-                            + op.mem.disp.displacement 
-                            + i64::from(insn.length)) as Rva;
-
-                        if self.is_rva_valid(target) {
-                            Ok(Some(target))
-                        } else {
-                            // TODO: record this anomaly somewhere.
-                            warn!("problem: invalid xref target: memory not in sections");
-                            Ok(None)
-                        }
-                    } else {
-                        // unsupported
-                        // like: CALL [RIP + 4*RCX + 0x401000] ??
-                        println!("CALL [RIP + 4*RCX + 0x401000] ??");
-                        Err(Error::NotImplemented("xref from RIP-relative, non-zero index memory"))
-                    }
-                } else if op.mem.base == zydis::enums::register::Register::NONE {
-                    // like: CALL [0x401000] ??
-                    println!("TODO: other OperandType::Memory branch");
-                    Err(Error::NotImplemented("xref from non-RIP-relative memory"))
-                } else {
-                    // like: CALL [rbx]
-                    // like: CALL [rbx + 0x10]
-                    // TODO: for now, don't index unresolved indirect branches
-                    Ok(None)
-                }
-            }
-            zydis::enums::OperandType::Pointer => {
-                println!("operand: pointer");
-                Err(Error::NotImplemented("xref from pointer"))
-            }
-            zydis::enums::OperandType::Immediate => {
-                if !op.imm.is_relative {
-                    println!("TODO: absolute immediate operand");
-                    Err(Error::NotImplemented("xref from absolute immediate"))
-                } else {
-                    let imm = if op.imm.is_signed {
-                        u64_i64(op.imm.value)
-                    } else {
-                        op.imm.value as i64
-                    };
-
-                    // TODO: cast from rva (u64) to i64 is lossy.
-                    let dst = (rva as i64 + imm + i64::from(insn.length)) as Rva;
-                    if self.is_rva_valid(dst) {
-                        Ok(Some(dst))
-                    } else {
-                        // TODO: record this anomaly somewhere.
-                        warn!("problem: invalid xref target: relative immediate not in sections");
-                        Ok(None)
-                    }
-                }
-            }
-        }
+    ) -> Option<&zydis::ffi::DecodedOperand> {
+        insn.operands
+            .iter()
+            .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
     }
 
-    fn get_first_operand(insn: &zydis::ffi::DecodedInstruction) -> Option<&zydis::ffi::DecodedOperand> {
-        insn
-        .operands
-        .iter()
-        .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
-    }
+    fn analyze_xrefs(self: &mut Workspace) -> Result<(), Error> {
+        let sec_layout = self.get_section_layout();
+        let pc = self.dis.pc;
 
-    fn analyze_insn_xrefs(
-        self: &Workspace,
-        rva: Rva,
-        insn: &zydis::ffi::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
-        match insn.mnemonic {
-            // see InstructionCategory
-            // syscall, sysexit, sysret
-            // vmcall, vmmcall
-            zydis::enums::mnemonic::Mnemonic::CALL => {
-                    // a CALL always has an operand, so assume this is ok.
-                let op = Workspace::get_first_operand(insn).unwrap();
-
-                let fallthrough = Xref::Fallthrough {
-                    src: rva,
-                    dst: rva + u64::from(insn.length),
-                };
-
-                match self.analyze_operand_xrefs(rva, insn, op)? {
-                    // TODO: fallthrough is not guaranteed if the function is noret
-                    Some(dst) => Ok(vec![Xref::Call { src: rva, dst: dst }, fallthrough]),
-                    None => Ok(vec![fallthrough]),
-                }
-            }
-            zydis::enums::mnemonic::Mnemonic::RET
-            | zydis::enums::mnemonic::Mnemonic::IRET
-            | zydis::enums::mnemonic::Mnemonic::IRETD
-            | zydis::enums::mnemonic::Mnemonic::IRETQ => Ok(vec![]),
-            zydis::enums::mnemonic::Mnemonic::JMP => {
-                // a JMP always has an operand, so assume this is ok.
-                let op = Workspace::get_first_operand(insn).unwrap();
-
-                match self.analyze_operand_xrefs(rva, insn, op)? {
-                    Some(dst) => Ok(vec![Xref::UnconditionalJump { src: rva, dst: dst }]),
-                    None => Ok(vec![]),
-                }
-            }
-            zydis::enums::mnemonic::Mnemonic::JB
-            | zydis::enums::mnemonic::Mnemonic::JBE
-            | zydis::enums::mnemonic::Mnemonic::JCXZ
-            | zydis::enums::mnemonic::Mnemonic::JECXZ
-            | zydis::enums::mnemonic::Mnemonic::JKNZD
-            | zydis::enums::mnemonic::Mnemonic::JKZD
-            | zydis::enums::mnemonic::Mnemonic::JL
-            | zydis::enums::mnemonic::Mnemonic::JLE
-            | zydis::enums::mnemonic::Mnemonic::JNB
-            | zydis::enums::mnemonic::Mnemonic::JNBE
-            | zydis::enums::mnemonic::Mnemonic::JNL
-            | zydis::enums::mnemonic::Mnemonic::JNLE
-            | zydis::enums::mnemonic::Mnemonic::JNO
-            | zydis::enums::mnemonic::Mnemonic::JNP
-            | zydis::enums::mnemonic::Mnemonic::JNS
-            | zydis::enums::mnemonic::Mnemonic::JNZ
-            | zydis::enums::mnemonic::Mnemonic::JO
-            | zydis::enums::mnemonic::Mnemonic::JP
-            | zydis::enums::mnemonic::Mnemonic::JRCXZ
-            | zydis::enums::mnemonic::Mnemonic::JS
-            | zydis::enums::mnemonic::Mnemonic::JZ => {
-                    // a J* always has an operand, so assume this is ok.
-                let op = Workspace::get_first_operand(insn).unwrap();
-
-                let fallthrough = Xref::Fallthrough {
-                    src: rva,
-                    dst: rva + u64::from(insn.length),
-                };
-
-                match self.analyze_operand_xrefs(rva, insn, op)? {
-                    Some(dst) => Ok(vec![
-                        Xref::ConditionalJump { src: rva, dst: dst },
-                        fallthrough,
-                    ]),
-                    None => Ok(vec![fallthrough]),
-                }
-            }
-            zydis::enums::mnemonic::Mnemonic::CMOVB
-            | zydis::enums::mnemonic::Mnemonic::CMOVBE
-            | zydis::enums::mnemonic::Mnemonic::CMOVL
-            | zydis::enums::mnemonic::Mnemonic::CMOVLE
-            | zydis::enums::mnemonic::Mnemonic::CMOVNB
-            | zydis::enums::mnemonic::Mnemonic::CMOVNBE
-            | zydis::enums::mnemonic::Mnemonic::CMOVNL
-            | zydis::enums::mnemonic::Mnemonic::CMOVNLE
-            | zydis::enums::mnemonic::Mnemonic::CMOVNO
-            | zydis::enums::mnemonic::Mnemonic::CMOVNP
-            | zydis::enums::mnemonic::Mnemonic::CMOVNS
-            | zydis::enums::mnemonic::Mnemonic::CMOVNZ
-            | zydis::enums::mnemonic::Mnemonic::CMOVO
-            | zydis::enums::mnemonic::Mnemonic::CMOVP
-            | zydis::enums::mnemonic::Mnemonic::CMOVS
-            | zydis::enums::mnemonic::Mnemonic::CMOVZ => {
-                Ok(vec![
-                    Xref::Fallthrough {
-                        src: rva,
-                        dst: rva + u64::from(insn.length),
-                    },
-                    Xref::ConditionalMove {
-                        src: rva,
-                        dst: rva + u64::from(insn.length),
-                    },
-                ])
-            }
-            _ => Ok(vec![Xref::Fallthrough {
-                src: rva,
-                dst: rva + u64::from(insn.length),
-            }]),
-        }
-    }
-
-    fn analyze_xrefs(self: &Workspace) -> Result<(), Error> {
-
-        let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
-        for section in self.sections.iter() {
+        for section in self.sections.iter_mut() {
             println!("section: {}", section.name);
 
-            // TODO: optimization: store small number (2?) of xrefs on stack when appropriate.
-            let xrefs_from: Vec<Vec<Xref>> = section.insns.iter().enumerate().map(|(offset, insn)| {
-                let rva = section.addr + offset as Rva;
-                match insn {
-                    Instruction::Valid{insn, ..} => {
-                        self.analyze_insn_xrefs(rva, insn).expect("analyze xrefs")
-                    },
-                    Instruction::Invalid => vec![]
+            section.insns.par_iter_mut().for_each(|insn| {
+                // wow, this is ugly...
+                if let Instruction::Valid {
+                    addr, insn, xrefs, ..
+                } = insn
+                {
+                    xrefs.from = analysis::analyze_insn_xrefs(&sec_layout, pc, *addr, insn)
+                        .expect("analyze xrefs");
                 }
-            }).collect();
+            })
+        }
 
-            let xrefs_to: Vec<Vec<Xref>> = section.insns.iter().map(|_| vec![]).collect();
+        let mut all_xrefs = Vec::new();
+        for section in self.sections.iter_mut() {
+            for insn in section.insns.iter_mut() {
+                if let Instruction::Valid { xrefs, .. } = insn {
+                    all_xrefs.extend(xrefs.from.iter());
+                }
+            }
+        }
 
-            for xrefs in xrefs_from {
-                for xref in xrefs {
-                    match xref {
-                        Xref::Fallthrough{src, dst} => (),
-                            // this is not guaranteed to be in the section...
-                            //xrefs_to[dst as usize].append(xref.clone());
-                        //},
-                        Xref::Call{src, dst} => (),
-                        Xref::UnconditionalJump{src, dst} => (),
-                        Xref::ConditionalJump{src, dst} => (),
-                        Xref::ConditionalMove{src, dst} => (),
+        for xref in all_xrefs {
+            match xref {
+                Xref::Fallthrough { dst, .. } => {
+                    let insn = self.get_insn_mut(*dst)?;
+                    if let Instruction::Valid { xrefs, .. } = insn {
+                        xrefs.to.push(*xref);
                     }
                 }
-            };
-
-            for (offset, insn) in section.insns.iter().enumerate() {
-                let rva = section.addr + offset as Rva;
-                match insn {
-                    Instruction::Valid{insn, ..} => {
-                        let mut buffer = [0u8; 200];
-                        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
-
-                        formatter
-                            .format_instruction(insn, &mut buffer, Some(rva as u64), None)
-                            .expect("format");
-                        println!("0x{:016X}: {}", rva, buffer);
-
-                        let xs = self.analyze_insn_xrefs(rva, insn)?;
-                        for x in xs {
-                            println!("  xref: {:?}", x);
-                        }
+                Xref::Call { dst, .. } => {
+                    let insn = self.get_insn(*dst)?;
+                    if let Instruction::Valid { xrefs, .. } = insn {
+                        xrefs.to.push(*xref);
                     }
-                    Instruction::Invalid => {
-                        println!("0x{:016X}: ...", rva);
+                }
+                Xref::UnconditionalJump { dst, .. } => {
+                    let insn = self.get_insn(*dst)?;
+                    if let Instruction::Valid { xrefs, .. } = insn {
+                        xrefs.to.push(*xref);
+                    }
+                }
+                Xref::ConditionalJump { dst, .. } => {
+                    let insn = self.get_insn(*dst)?;
+                    if let Instruction::Valid { xrefs, .. } = insn {
+                        xrefs.to.push(*xref);
+                    }
+                }
+                Xref::ConditionalMove { dst, .. } => {
+                    let insn = self.get_insn(*dst)?;
+                    if let Instruction::Valid { xrefs, .. } = insn {
+                        xrefs.to.push(*xref);
                     }
                 }
             }
         }
+
         Ok(())
     }
 
@@ -693,8 +565,10 @@ impl Workspace {
 
                         let insns: Vec<Instruction> = secbuf
                             .par_windows(0x10)
-                            .map(|ibuf| match decoder.decode(ibuf) {
+                            .enumerate()
+                            .map(|(sec_offset, ibuf)| match decoder.decode(ibuf) {
                                 Ok(Some(insn)) => Instruction::Valid {
+                                    addr: u64::from(section.virtual_address) + sec_offset as u64,
                                     insn: insn,
                                     xrefs: Xrefs {
                                         to: vec![],
@@ -797,15 +671,15 @@ pub fn run(args: &Config) -> Result<(), Error> {
             .address_of_entry_point;
 
         match ws.get_insn(oep)? {
-            Instruction::Valid{insn, ..} => {
+            Instruction::Valid { insn, .. } => {
                 formatter
                     .format_instruction(&insn, &mut buffer, Some(oep as u64), None)
                     .expect("format");
                 println!("0x{:016X}: {}", oep, buffer);
-            },
+            }
             _ => {
                 panic!("failed to fetch valid instruction at OEP");
-            },
+            }
         };
     }
 
