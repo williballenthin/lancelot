@@ -41,3 +41,10 @@ cli
 
 /target
 **/*.rs.bk
+resources/test/k32.dll.id0
+
+
+*.id1
+*.id2
+*.nam
+*.til
