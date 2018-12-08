@@ -50,6 +50,18 @@ pub enum Error {
     InvalidRva,
 }
 
+pub fn u64_i64(i: u64) -> i64 {
+    if i & 1 << 63 > 0 {
+        let bits = i & 0x7FFF_FFFF_FFFF_FFFF;
+        let bits = !bits;
+        let bits = bits + 1;
+        let bits = bits & 0x7FFF_FFFF_FFFF_FFFF;
+        bits as i64
+    } else {
+        i as i64
+    }
+}
+
 /// Round the given value up to the next multiple of the given base.
 ///
 /// # Panics
@@ -411,14 +423,15 @@ impl Workspace {
                 if !op.imm.is_relative {
                     println!("TODO: absolute immediate operand");
                     Err(Error::NotImplemented)
-                } else if op.imm.is_signed && op.imm.value & 1 << 63 != 0 {
-                    // TODO: the op.imm.value u64 must be re-interpreted as a i64
-                    println!("TODO: negative signed immediate operand");
-                    Err(Error::NotImplemented)
                 } else {
+                    let imm = if op.imm.is_signed {
+                        u64_i64(op.imm.value)
+                    } else {
+                        op.imm.value as i64
+                    };
+
                     // TODO: cast from rva (u64) to i64 is lossy.
-                    // TODO: cast from imm (u64) to i64 is lossy.
-                    let dst = (rva as i64 + op.imm.value as i64 + i64::from(insn.length)) as Rva;
+                    let dst = (rva as i64 + imm + i64::from(insn.length)) as Rva;
                     if self.is_rva_valid(dst) {
                         Ok(Some(dst))
                     } else {
