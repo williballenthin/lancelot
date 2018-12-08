@@ -466,6 +466,13 @@ impl Workspace {
         }
     }
 
+    fn get_first_operand(insn: &zydis::ffi::DecodedInstruction) -> Option<&zydis::ffi::DecodedOperand> {
+        insn
+        .operands
+        .iter()
+        .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
+    }
+
     fn analyze_insn_xrefs(
         self: &Workspace,
         rva: Rva,
@@ -476,12 +483,8 @@ impl Workspace {
             // syscall, sysexit, sysret
             // vmcall, vmmcall
             zydis::enums::mnemonic::Mnemonic::CALL => {
-                let op = insn
-                    .operands
-                    .iter()
-                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
                     // a CALL always has an operand, so assume this is ok.
-                    .unwrap();
+                let op = Workspace::get_first_operand(insn).unwrap();
 
                 let fallthrough = Xref::Fallthrough {
                     src: rva,
@@ -499,12 +502,8 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::IRETD
             | zydis::enums::mnemonic::Mnemonic::IRETQ => Ok(vec![]),
             zydis::enums::mnemonic::Mnemonic::JMP => {
-                let op = insn
-                    .operands
-                    .iter()
-                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
-                    // a J* always has an operand, so assume this is ok.
-                    .unwrap();
+                // a JMP always has an operand, so assume this is ok.
+                let op = Workspace::get_first_operand(insn).unwrap();
 
                 match self.analyze_operand_xrefs(rva, insn, op)? {
                     Some(dst) => Ok(vec![Xref::UnconditionalJump { src: rva, dst: dst }]),
@@ -532,12 +531,8 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::JRCXZ
             | zydis::enums::mnemonic::Mnemonic::JS
             | zydis::enums::mnemonic::Mnemonic::JZ => {
-                let op = insn
-                    .operands
-                    .iter()
-                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
                     // a J* always has an operand, so assume this is ok.
-                    .unwrap();
+                let op = Workspace::get_first_operand(insn).unwrap();
 
                 let fallthrough = Xref::Fallthrough {
                     src: rva,
