@@ -234,11 +234,24 @@ enum Xref {
     ConditionalMove { src: Rva, dst: Rva },
 }
 
+pub struct Xrefs {
+    from: Vec<Xref>,
+    to: Vec<Xref>,
+}
+
+pub enum Instruction {
+    Invalid,
+    Valid {
+        insn: zydis::ffi::DecodedInstruction,
+        xrefs: Xrefs,
+    },
+}
+
 pub struct Section {
     pub name: String,
     pub addr: Rva,
     pub buf: Vec<u8>,
-    pub insns: Vec<Option<zydis::ffi::DecodedInstruction>>,
+    pub insns: Vec<Instruction>,
 }
 
 impl Section {
@@ -366,15 +379,10 @@ impl Workspace {
     pub fn get_insn(
         self: &Workspace,
         rva: Rva,
-    ) -> Result<Option<&zydis::ffi::DecodedInstruction>, Error> {
+    ) -> Result<&Instruction, Error> {
         let sec = self.get_section(rva)?;
         let insn = &(sec.insns[(rva - sec.addr) as usize]);
-
-        // jump through hoops to get an Option<&insn> (versus Option<insn>)
-        match insn {
-            None => Ok(None),
-            Some(insn) => Ok(Some(&insn)),
-        }
+        Ok(insn)
     }
 
     fn analyze_operand_xrefs(
@@ -579,13 +587,43 @@ impl Workspace {
     }
 
     fn analyze_xrefs(self: &Workspace) -> Result<(), Error> {
+
         let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
         for section in self.sections.iter() {
             println!("section: {}", section.name);
+
+            // TODO: optimization: store small number (2?) of xrefs on stack when appropriate.
+            let xrefs_from: Vec<Vec<Xref>> = section.insns.iter().enumerate().map(|(offset, insn)| {
+                let rva = section.addr + offset as Rva;
+                match insn {
+                    Instruction::Valid{insn, ..} => {
+                        self.analyze_insn_xrefs(rva, insn).expect("analyze xrefs")
+                    },
+                    Instruction::Invalid => vec![]
+                }
+            }).collect();
+
+            let xrefs_to: Vec<Vec<Xref>> = section.insns.iter().map(|_| vec![]).collect();
+
+            for xrefs in xrefs_from {
+                for xref in xrefs {
+                    match xref {
+                        Xref::Fallthrough{src, dst} => (),
+                            // this is not guaranteed to be in the section...
+                            //xrefs_to[dst as usize].append(xref.clone());
+                        //},
+                        Xref::Call{src, dst} => (),
+                        Xref::UnconditionalJump{src, dst} => (),
+                        Xref::ConditionalJump{src, dst} => (),
+                        Xref::ConditionalMove{src, dst} => (),
+                    }
+                }
+            };
+
             for (offset, insn) in section.insns.iter().enumerate() {
                 let rva = section.addr + offset as Rva;
                 match insn {
-                    Some(insn) => {
+                    Instruction::Valid{insn, ..} => {
                         let mut buffer = [0u8; 200];
                         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
 
@@ -599,7 +637,7 @@ impl Workspace {
                             println!("  xref: {:?}", x);
                         }
                     }
-                    None => {
+                    Instruction::Invalid => {
                         println!("0x{:016X}: ...", rva);
                     }
                 }
@@ -658,11 +696,17 @@ impl Workspace {
                             rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
                         }
 
-                        let insns: Vec<_> = secbuf
+                        let insns: Vec<Instruction> = secbuf
                             .par_windows(0x10)
                             .map(|ibuf| match decoder.decode(ibuf) {
-                                Ok(Some(insn)) => Some(insn),
-                                _ => None,
+                                Ok(Some(insn)) => Instruction::Valid {
+                                    insn: insn,
+                                    xrefs: Xrefs {
+                                        to: vec![],
+                                        from: vec![],
+                                    },
+                                },
+                                _ => Instruction::Invalid,
                             })
                             .collect();
 
@@ -757,11 +801,17 @@ pub fn run(args: &Config) -> Result<(), Error> {
             .standard_fields
             .address_of_entry_point;
 
-        let insn = ws.get_insn(oep).expect("insn").expect("valid insn");
-        formatter
-            .format_instruction(&insn, &mut buffer, Some(oep as u64), None)
-            .expect("format");
-        println!("0x{:016X}: {}", oep, buffer);
+        match ws.get_insn(oep)? {
+            Instruction::Valid{insn, ..} => {
+                formatter
+                    .format_instruction(&insn, &mut buffer, Some(oep as u64), None)
+                    .expect("format");
+                println!("0x{:016X}: {}", oep, buffer);
+            },
+            _ => {
+                panic!("failed to fetch valid instruction at OEP");
+            },
+        };
     }
 
     Ok(())
