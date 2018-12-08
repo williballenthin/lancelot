@@ -1,9 +1,6 @@
 extern crate log;
 extern crate simplelog;
 
-#[macro_use]
-extern crate serde_json;
-
 use goblin::Object;
 use log::{debug, error, info, trace, warn};
 use rayon::prelude::*;
@@ -46,17 +43,33 @@ pub fn setup_logging(_args: &Config) {
 pub enum Error {
     FileAccess,
     FileFormat,
-    NotImplemented,
+    NotImplemented(&'static str),
     InvalidRva,
 }
 
+/// Static cast the given 64-bit unsigned integer to a 64-bit signed integer.
+/// This is probably only useful when some other code provides you a u64
+///  that is meant to be an i64 (aka. uncommon).
+/// 
+/// In C: `*(int64_t *)&i`
+/// 
+/// # Examples
+/// 
+/// ```
+/// use lancelot::*;
+/// assert_eq!(0, u64_i64(0));
+/// assert_eq!(1, u64_i64(0x1));
+/// assert_eq!(-1, u64_i64(0xFFFF_FFFF_FFFF_FFFF));
+/// ```
 pub fn u64_i64(i: u64) -> i64 {
     if i & 1 << 63 > 0 {
+        // TODO: there's probably some elegant rust-way to do this.
+        // in the meantime, manually compute twos-complement.
         let bits = i & 0x7FFF_FFFF_FFFF_FFFF;
         let bits = !bits;
         let bits = bits + 1;
         let bits = bits & 0x7FFF_FFFF_FFFF_FFFF;
-        bits as i64
+        -(bits as i64)
     } else {
         i as i64
     }
@@ -199,7 +212,6 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 }
 
 type Rva = u64;
-type Va = u64;
 
 #[derive(Debug)]
 enum Xref {
@@ -209,15 +221,15 @@ enum Xref {
     // call [0x401000]
     Call { src: Rva, dst: Rva },
     // call [eax]
-    IndirectCall { src: Rva },
+    //IndirectCall { src: Rva },
     // jmp 0x401000
     UnconditionalJump { src: Rva, dst: Rva },
     // jmp eax
-    UnconditionalIndirectJump { src: Rva, dst: Rva },
+    //UnconditionalIndirectJump { src: Rva, dst: Rva },
     // jnz 0x401000
     ConditionalJump { src: Rva, dst: Rva },
     // jnz eax
-    ConditionalIndirectJump { src: Rva },
+    //ConditionalIndirectJump { src: Rva },
     // cmov 0x1
     ConditionalMove { src: Rva, dst: Rva },
 }
@@ -372,29 +384,26 @@ impl Workspace {
         op: &zydis::ffi::DecodedOperand,
     ) -> Result<Option<Rva>, Error> {
         match op.ty {
-            zydis::enums::OperandType::Unused => {
-                println!("operand: unused");
-                Err(Error::NotImplemented)
-            }
+            zydis::enums::OperandType::Unused => Err(Error::NotImplemented("xref from unused register")),
             zydis::enums::OperandType::Register => {
-                println!("operand: register");
-                Err(Error::NotImplemented)
+                // like: CALL rbx
+                // TODO: for now, don't index unresolved indirect branches
+                Ok(None)
             }
             zydis::enums::OperandType::Memory => {
                 // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
                 //           0x0000000000001041:                       call    [0x0000000000079980]
-                println!("operand: memory");
-
                 if self.dis.pc == op.mem.base && op.mem.disp.has_displacement && op.mem.scale == 0 {
                     // RIP-relative
+                    // this is the default encoding on x64.
+                    // tools like IDA automatically compute and display the target.
+                    // CALL [RIP + 0x401000]
                     if let zydis::enums::register::Register::NONE = op.mem.index {
-                        // this is the default encoding on x64.
-                        // tools like IDA automatically compute and display the target.
-                        // CALL [RIP + 0x401000]
-
-                        // TODO: cast from rva (u64) to i64 is lossy.
                         let target =
-                            (rva as i64 + op.mem.disp.displacement + i64::from(insn.length)) as Rva;
+                            (rva as i64 
+                            // TODO: cast from rva (u64) to i64 is lossy.
+                            + op.mem.disp.displacement 
+                            + i64::from(insn.length)) as Rva;
 
                         if self.is_rva_valid(target) {
                             Ok(Some(target))
@@ -405,24 +414,29 @@ impl Workspace {
                         }
                     } else {
                         // unsupported
-                        // CALL [RIP + 4*RCX + 0x401000] ??
+                        // like: CALL [RIP + 4*RCX + 0x401000] ??
                         println!("CALL [RIP + 4*RCX + 0x401000] ??");
-                        Err(Error::NotImplemented)
+                        Err(Error::NotImplemented("xref from RIP-relative, non-zero index memory"))
                     }
-                } else {
-                    // TODO
+                } else if op.mem.base == zydis::enums::register::Register::NONE {
+                    // like: CALL [0x401000] ??
                     println!("TODO: other OperandType::Memory branch");
-                    Err(Error::NotImplemented)
+                    Err(Error::NotImplemented("xref from non-RIP-relative memory"))
+                } else {
+                    // like: CALL [rbx]
+                    // like: CALL [rbx + 0x10]
+                    // TODO: for now, don't index unresolved indirect branches
+                    Ok(None)
                 }
             }
             zydis::enums::OperandType::Pointer => {
                 println!("operand: pointer");
-                Err(Error::NotImplemented)
+                Err(Error::NotImplemented("xref from pointer"))
             }
             zydis::enums::OperandType::Immediate => {
                 if !op.imm.is_relative {
                     println!("TODO: absolute immediate operand");
-                    Err(Error::NotImplemented)
+                    Err(Error::NotImplemented("xref from absolute immediate"))
                 } else {
                     let imm = if op.imm.is_signed {
                         u64_i64(op.imm.value)
@@ -622,7 +636,7 @@ impl Workspace {
                 }
                 Ok(())
             }
-            _ => Err(Error::NotImplemented),
+            _ => Err(Error::NotImplemented("disassembler for non-PE module")),
         }
     }
 
@@ -676,10 +690,10 @@ impl Workspace {
 
                 Ok(())
             }
-            Object::Elf(_) => Err(Error::NotImplemented),
-            Object::Mach(_) => Err(Error::NotImplemented),
-            Object::Archive(_) => Err(Error::NotImplemented),
-            Object::Unknown(_) => Err(Error::NotImplemented),
+            Object::Elf(_) => Err(Error::NotImplemented("load sections for ELF module")),
+            Object::Mach(_) => Err(Error::NotImplemented("load sections for MachO module")),
+            Object::Archive(_) => Err(Error::NotImplemented("load sections for archive module")),
+            Object::Unknown(_) => Err(Error::NotImplemented("load sections for unknown module")),
         }
     }
 
