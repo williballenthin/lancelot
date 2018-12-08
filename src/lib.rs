@@ -467,7 +467,18 @@ impl Workspace {
             | zydis::enums::mnemonic::Mnemonic::IRETQ => Ok(vec![]),
             zydis::enums::mnemonic::Mnemonic::JMP => {
                 println!("unconditional jump");
-                Err(Error::NotImplemented)
+
+                let op = insn
+                    .operands
+                    .iter()
+                    .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
+                    // a J* always has an operand, so assume this is ok.
+                    .unwrap();
+
+                match self.analyze_operand_xrefs(rva, insn, op)? {
+                    Some(dst) => Ok(vec![Xref::UnconditionalJump { src: rva, dst: dst }]),
+                    None => Ok(vec![]),
+                }
             }
             zydis::enums::mnemonic::Mnemonic::JB
             | zydis::enums::mnemonic::Mnemonic::JBE
