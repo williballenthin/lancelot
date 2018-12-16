@@ -215,25 +215,32 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 
 type Rva = u64;
 
-#[derive(Debug)]
-pub enum Xref {
+#[derive(Debug, Clone)]
+pub enum XrefType {
     // mov eax, eax
     // push ebp
-    Fallthrough { src: Rva, dst: Rva },
+    Fallthrough,
     // call [0x401000]
-    Call { src: Rva, dst: Rva },
+    Call,
     // call [eax]
     //IndirectCall { src: Rva },
     // jmp 0x401000
-    UnconditionalJump { src: Rva, dst: Rva },
+    UnconditionalJump,
     // jmp eax
     //UnconditionalIndirectJump { src: Rva, dst: Rva },
     // jnz 0x401000
-    ConditionalJump { src: Rva, dst: Rva },
+    ConditionalJump,
     // jnz eax
     //ConditionalIndirectJump { src: Rva },
     // cmov 0x1
-    ConditionalMove { src: Rva, dst: Rva },
+    ConditionalMove,
+}
+
+#[derive(Debug, Clone)]
+pub struct Xref {
+    src: Rva,
+    dst: Rva,
+    typ: XrefType,
 }
 
 pub struct Xrefs {
@@ -452,8 +459,6 @@ impl Workspace {
         let pc = self.dis.pc;
 
         for section in self.sections.iter_mut() {
-            println!("section: {}", section.name);
-
             section.insns.par_iter_mut().for_each(|insn| {
                 // wow, this is ugly...
                 if let Instruction::Valid {
@@ -470,43 +475,17 @@ impl Workspace {
         for section in self.sections.iter_mut() {
             for insn in section.insns.iter_mut() {
                 if let Instruction::Valid { xrefs, .. } = insn {
-                    all_xrefs.extend(xrefs.from.iter());
+                    for xref in xrefs.from.iter() {
+                        all_xrefs.push(xref.clone());
+                    }
                 }
             }
         }
 
         for xref in all_xrefs {
-            match xref {
-                Xref::Fallthrough { dst, .. } => {
-                    let insn = self.get_insn_mut(*dst)?;
-                    if let Instruction::Valid { xrefs, .. } = insn {
-                        xrefs.to.push(*xref);
-                    }
-                }
-                Xref::Call { dst, .. } => {
-                    let insn = self.get_insn(*dst)?;
-                    if let Instruction::Valid { xrefs, .. } = insn {
-                        xrefs.to.push(*xref);
-                    }
-                }
-                Xref::UnconditionalJump { dst, .. } => {
-                    let insn = self.get_insn(*dst)?;
-                    if let Instruction::Valid { xrefs, .. } = insn {
-                        xrefs.to.push(*xref);
-                    }
-                }
-                Xref::ConditionalJump { dst, .. } => {
-                    let insn = self.get_insn(*dst)?;
-                    if let Instruction::Valid { xrefs, .. } = insn {
-                        xrefs.to.push(*xref);
-                    }
-                }
-                Xref::ConditionalMove { dst, .. } => {
-                    let insn = self.get_insn(*dst)?;
-                    if let Instruction::Valid { xrefs, .. } = insn {
-                        xrefs.to.push(*xref);
-                    }
-                }
+            let insn = self.get_insn_mut(xref.dst)?;
+            if let Instruction::Valid { xrefs, .. } = insn {
+                xrefs.to.push(xref);
             }
         }
 

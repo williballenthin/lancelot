@@ -62,7 +62,7 @@ fn analyze_operand_xrefs(
             }
         }
         zydis::enums::OperandType::Pointer => {
-            println!("operand: pointer");
+            println!("TOEO: operand: pointer");
             Err(Error::NotImplemented("xref from pointer"))
         }
         zydis::enums::OperandType::Immediate => {
@@ -104,14 +104,15 @@ pub fn analyze_insn_xrefs(
             // a CALL always has an operand, so assume this is ok.
             let op = Workspace::get_first_operand(insn).unwrap();
 
-            let fallthrough = Xref::Fallthrough {
+            let fallthrough = Xref {
                 src: rva,
                 dst: rva + u64::from(insn.length),
+                typ: XrefType::Fallthrough,
             };
 
             match analyze_operand_xrefs(layout, pc, rva, insn, op)? {
                 // TODO: fallthrough is not guaranteed if the function is noret
-                Some(dst) => Ok(vec![Xref::Call { src: rva, dst: dst }, fallthrough]),
+                Some(dst) => Ok(vec![Xref { src: rva, dst: dst, typ: XrefType::Call }, fallthrough]),
                 None => Ok(vec![fallthrough]),
             }
         }
@@ -124,7 +125,7 @@ pub fn analyze_insn_xrefs(
             let op = Workspace::get_first_operand(insn).unwrap();
 
             match analyze_operand_xrefs(layout, pc, rva, insn, op)? {
-                Some(dst) => Ok(vec![Xref::UnconditionalJump { src: rva, dst: dst }]),
+                Some(dst) => Ok(vec![Xref { src: rva, dst: dst, typ: XrefType::UnconditionalJump }]),
                 None => Ok(vec![]),
             }
         }
@@ -152,14 +153,15 @@ pub fn analyze_insn_xrefs(
             // a J* always has an operand, so assume this is ok.
             let op = Workspace::get_first_operand(insn).unwrap();
 
-            let fallthrough = Xref::Fallthrough {
+            let fallthrough = Xref {
                 src: rva,
                 dst: rva + u64::from(insn.length),
+                typ: XrefType::Fallthrough,
             };
 
             match analyze_operand_xrefs(layout, pc, rva, insn, op)? {
                 Some(dst) => Ok(vec![
-                    Xref::ConditionalJump { src: rva, dst: dst },
+                    Xref { src: rva, dst: dst, typ: XrefType::ConditionalJump, },
                     fallthrough,
                 ]),
                 None => Ok(vec![fallthrough]),
@@ -181,18 +183,21 @@ pub fn analyze_insn_xrefs(
         | zydis::enums::mnemonic::Mnemonic::CMOVP
         | zydis::enums::mnemonic::Mnemonic::CMOVS
         | zydis::enums::mnemonic::Mnemonic::CMOVZ => Ok(vec![
-            Xref::Fallthrough {
+            Xref {
                 src: rva,
                 dst: rva + u64::from(insn.length),
+                typ: XrefType::Fallthrough
             },
-            Xref::ConditionalMove {
+            Xref {
                 src: rva,
                 dst: rva + u64::from(insn.length),
+                typ: XrefType::ConditionalMove
             },
         ]),
-        _ => Ok(vec![Xref::Fallthrough {
+        _ => Ok(vec![Xref {
             src: rva,
             dst: rva + u64::from(insn.length),
+            typ: XrefType::Fallthrough,
         }]),
     }
 }
