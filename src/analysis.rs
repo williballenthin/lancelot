@@ -202,3 +202,20 @@ pub fn analyze_insn_xrefs(
     }
 }
 
+pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    let mut roots: Vec<Rva> = vec![];
+
+    for section in ws.sections.iter() {
+        roots.par_extend(section.insns.par_iter().map(|insn| {
+            match insn {
+                Instruction::Valid {addr, xrefs, ..} => (xrefs.to.is_empty(), addr),
+                Instruction::Invalid {addr} => (false, addr),
+            }
+        })
+        .filter(|(is_root, _)| *is_root)
+        .map(|(_, addr)| *addr))
+    };
+
+    Ok(roots)
+}
+

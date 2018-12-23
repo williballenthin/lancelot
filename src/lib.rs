@@ -711,5 +711,6 @@ pub fn run(args: &Config) -> Result<(), Error> {
         println!("entrypoint: {:}", ws.get_insn(oep)?);
     }
 
+    println!("roots: {:}", analysis::find_roots(&ws).expect("foo").len());
     Ok(())
 }
