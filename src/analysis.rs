@@ -202,12 +202,15 @@ pub fn analyze_insn_xrefs(
     }
 }
 
+/// find instructions that have no code xrefs to them.
 pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     let mut roots: Vec<Rva> = vec![];
 
     for section in ws.sections.iter() {
         roots.par_extend(section.insns.par_iter().map(|insn| {
             match insn {
+                // TODO: once we add data xrefs, need to do something like:
+                //    xrefs.to.iter().filter(|xref| xref.is_code()).is_empty()
                 Instruction::Valid {addr, xrefs, ..} => (xrefs.to.is_empty(), addr),
                 Instruction::Invalid {addr} => (false, addr),
             }
@@ -219,3 +222,36 @@ pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     Ok(roots)
 }
 
+fn has_call(xrefs: &[Xref]) -> bool {
+    xrefs.iter().any(|xref| match xref.typ {
+        XrefType::Call => true,
+        _ => false
+    })
+}
+
+pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    let mut ret: Vec<Rva> = vec![];
+
+    for section in ws.sections.iter() {
+        ret.par_extend(section.insns.par_iter().map(|insn| {
+            match insn {
+                Instruction::Valid {addr, xrefs, ..} => (has_call(&xrefs.to), addr),
+                Instruction::Invalid {addr} => (false, addr),
+            }
+        })
+        .filter(|(ok, _)| *ok)
+        .map(|(_, addr)| *addr))
+    };
+
+    Ok(ret)
+}
+
+// pub fn find_entrypoints
+
+// pub fn find_sigs
+
+// pub fn find_impossible_paths
+// like:
+//   MOV
+//   MOV
+//   INVALID

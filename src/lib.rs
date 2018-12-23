@@ -712,5 +712,10 @@ pub fn run(args: &Config) -> Result<(), Error> {
     }
 
     println!("roots: {:}", analysis::find_roots(&ws).expect("foo").len());
+    println!(
+        "call targets: {:}",
+        analysis::find_call_targets(&ws).expect("foo").len()
+    );
+
     Ok(())
 }
