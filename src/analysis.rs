@@ -62,7 +62,7 @@ fn analyze_operand_xrefs(
             }
         }
         zydis::enums::OperandType::Pointer => {
-            println!("TOEO: operand: pointer");
+            println!("TODO: operand: pointer");
             Err(Error::NotImplemented("xref from pointer"))
         }
         zydis::enums::OperandType::Immediate => {
@@ -82,7 +82,7 @@ fn analyze_operand_xrefs(
                     Ok(Some(dst))
                 } else {
                     // TODO: record this anomaly somewhere.
-                    warn!("problem: invalid xref target: relative immediate not in sections");
+                    debug!("problem: invalid xref target: relative immediate not in sections");
                     Ok(None)
                 }
             }
