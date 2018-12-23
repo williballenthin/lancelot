@@ -557,8 +557,7 @@ impl Workspace {
         }
 
         for xref in all_xrefs {
-            let insn = self.get_insn_mut(xref.dst)?;
-            if let Instruction::Valid { xrefs, .. } = insn {
+            if let Ok(Instruction::Valid { xrefs, .. }) = self.get_insn_mut(xref.dst) {
                 xrefs.to.push(xref);
             }
         }
