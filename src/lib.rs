@@ -5,6 +5,7 @@ use goblin::Object;
 use log::{debug, error, info, trace, warn};
 use rayon::prelude::*;
 use std::env;
+use std::fmt;
 use std::fs;
 use std::io::prelude::*;
 use zydis;
@@ -249,7 +250,9 @@ pub struct Xrefs {
 }
 
 pub enum Instruction {
-    Invalid,
+    Invalid {
+        addr: Rva,
+    },
     Valid {
         addr: Rva,
         insn: zydis::ffi::DecodedInstruction,
@@ -314,6 +317,77 @@ pub struct Workspace {
     pub buf: Vec<u8>,
     pub sections: Vec<Section>,
     pub dis: Disassembler,
+}
+
+impl Instruction {
+    pub fn from(decoder: &zydis::ffi::Decoder, buf: &[u8], addr: Rva) -> Instruction {
+        match decoder.decode(buf) {
+            Ok(Some(insn)) => Instruction::Valid {
+                addr,
+                insn,
+                xrefs: Xrefs {
+                    to: vec![],
+                    from: vec![],
+                },
+            },
+            _ => Instruction::Invalid { addr },
+        }
+    }
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
+        let mut buffer = [0u8; 200];
+        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+        match &self {
+            Instruction::Valid { insn, addr, .. } => {
+                formatter
+                    .format_instruction(&insn, &mut buffer, Some(*addr), None)
+                    .expect("format");
+                write!(f, "0x{:016X}: {}", *addr, buffer)
+            }
+            Instruction::Invalid { addr, .. } => write!(f, "0x{:016X}: invalid instruction", *addr),
+        }
+    }
+}
+
+pub fn disassemble(
+    decoder: &zydis::ffi::Decoder,
+    buf: &[u8],
+    start_offset: Rva,
+) -> Vec<Instruction> {
+    let mut insns: Vec<Instruction> = vec![];
+
+    insns.par_extend(buf.par_windows(0x10).enumerate().map(|(sec_offset, ibuf)| {
+        Instruction::from(decoder, ibuf, start_offset + sec_offset as u64)
+    }));
+
+    // TODO: ensure section is at least 0x10 bytes long
+
+    /*
+    len = 13
+    0 1 2 3 4 5 6 7 8 9 10 11 12
+    -------------------
+      --------------------
+        ---------------------
+          ----------------------
+            xxxxxxxxxxxxxxxxxxxx 13 - 9
+              xxxxxxxxxxxxxxxxxx
+                xx
+                        ...
+                              .. 13 - 1
+                              */
+
+    for i in buf.len() - 0xF..buf.len() {
+        insns.push(Instruction::from(
+            decoder,
+            &buf[i..],
+            start_offset + i as Rva,
+        ));
+    }
+
+    insns
 }
 
 impl Workspace {
@@ -542,21 +616,7 @@ impl Workspace {
                             rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
                         }
 
-                        let insns: Vec<Instruction> = secbuf
-                            .par_windows(0x10)
-                            .enumerate()
-                            .map(|(sec_offset, ibuf)| match decoder.decode(ibuf) {
-                                Ok(Some(insn)) => Instruction::Valid {
-                                    addr: u64::from(section.virtual_address) + sec_offset as u64,
-                                    insn: insn,
-                                    xrefs: Xrefs {
-                                        to: vec![],
-                                        from: vec![],
-                                    },
-                                },
-                                _ => Instruction::Invalid,
-                            })
-                            .collect();
+                        let insns = disassemble(decoder, &secbuf, section.virtual_address as Rva);
 
                         info!("loaded section: {}", name);
                         Section {
@@ -610,7 +670,6 @@ impl Workspace {
 
         ws.load_disassembler()?;
         ws.load_sections()?;
-
         ws.analyze_xrefs()?;
 
         Ok(ws)
@@ -637,11 +696,6 @@ pub fn run(args: &Config) -> Result<(), Error> {
     let ws = Workspace::from_file(&args.filename)?;
 
     if let Object::PE(pe) = ws.get_obj()? {
-        let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
-
-        let mut buffer = [0u8; 200];
-        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
-
         let oep: Rva = pe
             .header
             .optional_header
@@ -649,17 +703,7 @@ pub fn run(args: &Config) -> Result<(), Error> {
             .standard_fields
             .address_of_entry_point;
 
-        match ws.get_insn(oep)? {
-            Instruction::Valid { insn, .. } => {
-                formatter
-                    .format_instruction(&insn, &mut buffer, Some(oep as u64), None)
-                    .expect("format");
-                println!("0x{:016X}: {}", oep, buffer);
-            }
-            _ => {
-                panic!("failed to fetch valid instruction at OEP");
-            }
-        };
+        println!("entrypoint: {:}", ws.get_insn(oep)?);
     }
 
     Ok(())
