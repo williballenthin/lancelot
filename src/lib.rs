@@ -617,7 +617,13 @@ impl Workspace {
 
                         let insns = disassemble(decoder, &secbuf, section.virtual_address as Rva);
 
-                        info!("loaded section: {}", name);
+                        info!(
+                            "loaded section: {}\t{:x}\t{:x}",
+                            name,
+                            section.virtual_address,
+                            section.virtual_address
+                                + align(section.virtual_size as usize, 0x200) as u32
+                        );
                         Section {
                             name: name,
                             addr: section.virtual_address as Rva,
