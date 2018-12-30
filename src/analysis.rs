@@ -202,51 +202,75 @@ pub fn analyze_insn_xrefs(
     }
 }
 
-/// find instructions that have no code xrefs to them.
-pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
-    let mut roots: Vec<Rva> = vec![];
-
-    for section in ws.sections.iter() {
-        roots.par_extend(section.insns.par_iter().map(|insn| {
-            match insn {
-                // TODO: once we add data xrefs, need to do something like:
-                //    xrefs.to.iter().filter(|xref| xref.is_code()).is_empty()
-                Instruction::Valid {addr, xrefs, ..} => (xrefs.to.is_empty(), addr),
-                Instruction::Invalid {addr} => (false, addr),
-            }
-        })
-        .filter(|(is_root, _)| *is_root)
-        .map(|(_, addr)| *addr))
-    };
-
-    Ok(roots)
-}
-
-fn has_call(xrefs: &[Xref]) -> bool {
-    xrefs.iter().any(|xref| match xref.typ {
-        XrefType::Call => true,
-        _ => false
-    })
-}
-
-pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+pub fn find_insns(ws: &Workspace, predicate: fn(&Instruction) -> bool) -> Result<Vec<Rva>, Error> {
     let mut ret: Vec<Rva> = vec![];
 
     for section in ws.sections.iter() {
-        ret.par_extend(section.insns.par_iter().map(|insn| {
-            match insn {
-                Instruction::Valid {addr, xrefs, ..} => (has_call(&xrefs.to), addr),
-                Instruction::Invalid {addr} => (false, addr),
-            }
-        })
-        .filter(|(ok, _)| *ok)
-        .map(|(_, addr)| *addr))
+        ret.extend(
+            section.insns
+            .iter()
+            .filter(|insn| predicate(insn))
+            .map(|insn| match insn {
+                Instruction::Valid {addr, ..} => addr,
+                Instruction::Invalid {addr, ..} => addr,
+            }));
     };
 
     Ok(ret)
+            }
+
+pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    find_insns(ws, |insn| match insn {
+        Instruction::Valid{xrefs, ..} => xrefs.to.is_empty(),
+        _ => false,
+        })
 }
 
-// pub fn find_entrypoints
+pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    find_insns(ws, |insn| match insn {
+        Instruction::Valid{xrefs, ..} => xrefs.to.iter().any(|xref| match xref.typ {
+            XrefType::Call => true,
+            _ => false,
+        }),
+        _ => false,
+    })
+}
+
+pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    find_insns(ws, |insn| match insn {
+        Instruction::Valid{xrefs, ..} => xrefs.to.iter().any(|xref| match xref.typ {
+            XrefType::UnconditionalJump => true,
+            XrefType::ConditionalJump => true,
+            _ => false,
+        }),
+        _ => false,
+    })
+}
+
+// pub fn find_fixups
+
+// pub fn find_ptrs
+//  relies on the image being loaded at the base address
+//  should do fixups first
+
+// for k32, there should be 1630
+pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    match ws.get_obj()? {
+        Object::PE(pe) => {
+    let mut ret: Vec<Rva> = vec![];
+
+            let optional_header = pe.header.optional_header.expect("optional header is not optional");
+            ret.push(optional_header.standard_fields.address_of_entry_point);
+
+            ret.extend(
+                pe.exports.iter().map(|export| export.rva as Rva)
+            );
+
+    Ok(ret)
+        },
+        _ => Err(Error::NotImplemented("disassembler for non-PE module"))
+    }
+}
 
 // pub fn find_sigs
 
