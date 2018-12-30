@@ -560,6 +560,12 @@ impl Workspace {
             if let Ok(Instruction::Valid { xrefs, .. }) = self.get_insn_mut(xref.dst) {
                 xrefs.to.push(xref);
             }
+            // TODO: what if the target is invalid?
+            // then the src insn has a link, but the destination does not.
+            // this asymmetry is scary.
+            // should .xrefs be on a Location object:
+            // struct Location { addr, insn, xrefs}
+            // might make sense as a global ptr variable is not an insn, but has an xref.
         }
 
         Ok(())
@@ -715,6 +721,14 @@ pub fn run(args: &Config) -> Result<(), Error> {
     println!(
         "call targets: {:}",
         analysis::find_call_targets(&ws).expect("foo").len()
+    );
+    println!(
+        "branch targets: {:}",
+        analysis::find_branch_targets(&ws).expect("foo").len()
+    );
+    println!(
+        "entry points: {:}",
+        analysis::find_entrypoints(&ws).expect("foo").len()
     );
 
     Ok(())

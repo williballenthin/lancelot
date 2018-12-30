@@ -217,13 +217,13 @@ pub fn find_insns(ws: &Workspace, predicate: fn(&Instruction) -> bool) -> Result
     };
 
     Ok(ret)
-            }
+}
 
 pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
         Instruction::Valid{xrefs, ..} => xrefs.to.is_empty(),
         _ => false,
-        })
+    })
 }
 
 pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
@@ -257,7 +257,7 @@ pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     match ws.get_obj()? {
         Object::PE(pe) => {
-    let mut ret: Vec<Rva> = vec![];
+            let mut ret: Vec<Rva> = vec![];
 
             let optional_header = pe.header.optional_header.expect("optional header is not optional");
             ret.push(optional_header.standard_fields.address_of_entry_point);
@@ -266,7 +266,7 @@ pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
                 pe.exports.iter().map(|export| export.rva as Rva)
             );
 
-    Ok(ret)
+            Ok(ret)
         },
         _ => Err(Error::NotImplemented("disassembler for non-PE module"))
     }
