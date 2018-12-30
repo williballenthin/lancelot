@@ -2,6 +2,8 @@
 
 use super::*;
 use zydis;
+use byteorder::{ByteOrder, LittleEndian};
+use std::mem;
 
 fn analyze_operand_xrefs(
     // used to determine valid addresses
@@ -247,11 +249,67 @@ pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     })
 }
 
+fn get_section_by_name<'a>(ws: &'a Workspace, name: &[u8]) -> Result<Option<&'a Section>, Error> {
+    match ws.get_obj()? {
+        Object::PE(pe) => {
+            match pe.sections.iter()
+                .enumerate()
+                .map(|(index, section)| (index, section.name))
+                .find(|(_, sec_name)| sec_name == name) {
+                    Some((index, _)) => Ok(Some(&ws.sections[index])),
+                    None => Ok(None),
+            }
+        },
+        _ => Err(Error::NotImplemented("analyzer for non-PE module"))
+    }
+}
+
+// pub fn find_runtime_functions
+//  on pe64, entries in .pdata are struct RUNTIME_FUNCTION
+//
+//  00000000 FunctionStart   dd ?                    ; offset rva
+//  00000004 FunctionEnd     dd ?                    ; offset rva pastend
+//  00000008 UnwindInfo      dd ?                    ; offset rva
+//
+// ref: https://stackoverflow.com/a/9794688/87207
+//
+// for k32, the first three entries should be:
+//  - 1010
+//  - 1060
+//  - 1140
+pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    match ws.get_obj()? {
+        Object::PE(pe) => {
+            let mut ret: Vec<Rva> = vec![];
+
+            if let Some(sec) = get_section_by_name(ws, b".pdata\x00\x00")? {
+                let layout = ws.get_section_layout();
+                for runtime_function in sec.buf.chunks_exact(mem::size_of::<u32>() * 3) {
+                    let rva = LittleEndian::read_u32(&runtime_function) as Rva;
+                    if rva == 0 {
+                        // must be end of (valid) .pdata section
+                        break;
+                    } else if layout.is_rva_valid(rva) {
+                        ret.push(rva);
+                    } else {
+                        warn!("malformed .pdata section: entry points outside of image");
+                        return Ok(vec![]);
+                    }
+                }
+            }
+
+            Ok(ret)
+        },
+        _ => Err(Error::NotImplemented("analyzer for non-PE module"))
+    }
+}
+
+
 // pub fn find_fixups
 
 // pub fn find_ptrs
 //  relies on the image being loaded at the base address
-//  should do fixups first
+//  also relies on loc vs insn to be figured out.
 
 // for k32, there should be 1630
 pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
@@ -268,7 +326,7 @@ pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 
             Ok(ret)
         },
-        _ => Err(Error::NotImplemented("disassembler for non-PE module"))
+        _ => Err(Error::NotImplemented("analyzer for non-PE module"))
     }
 }
 

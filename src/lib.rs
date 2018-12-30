@@ -730,6 +730,10 @@ pub fn run(args: &Config) -> Result<(), Error> {
         "entry points: {:}",
         analysis::find_entrypoints(&ws).expect("foo").len()
     );
+    println!(
+        "runtime functions: {:}",
+        analysis::find_runtime_functions(&ws).expect("foo").len()
+    );
 
     Ok(())
 }
