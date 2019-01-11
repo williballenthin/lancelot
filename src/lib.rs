@@ -756,13 +756,11 @@ pub fn run(args: &Config) -> Result<(), Error> {
     let ws = Workspace::from_file(&args.filename)?;
 
     if let Object::PE(pe) = ws.get_obj()? {
-        let oep: Rva = pe
-            .header
-            .optional_header
-            .unwrap()
-            .standard_fields
-            .address_of_entry_point;
-
+        let oep = if let Some(opt) = pe.header.optional_header {
+            opt.standard_fields.address_of_entry_point
+        } else {
+            0x0
+        };
         println!("entrypoint: {:}", ws.get_insn(oep)?);
     }
 
