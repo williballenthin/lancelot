@@ -589,13 +589,54 @@ impl Workspace {
         }
     }
 
+    fn load_header(self: &mut Workspace) -> Result<(), Error> {
+        match self.get_obj()? {
+            Object::PE(pe) => {
+                let buf = &self.buf;
+                let hdr_raw_size = if let Some(opt) = pe.header.optional_header {
+                    opt.windows_fields.size_of_headers
+                } else {
+                    // assumption: header is 0x200 bytes. *shrug*.
+                    0x200
+                };
+
+                let hdr_raw_size = cmp::min(hdr_raw_size as usize, buf.len());
+
+                let virt_size = align(hdr_raw_size, 0x200);
+                let mut headerbuf = vec![0; virt_size];
+                {
+                    let rawbuf = &mut headerbuf[..hdr_raw_size];
+                    rawbuf.copy_from_slice(&buf[0x0..hdr_raw_size]);
+                }
+
+                self.sections.push(Section {
+                    name: String::from("header"),
+                    addr: 0x0,
+                    buf: headerbuf,
+                    locs: (0..virt_size as Rva)
+                        .map(|addr| Location {
+                            addr: addr.into(),
+                            xrefs: Xrefs {
+                                to: vec![],
+                                from: vec![],
+                            },
+                        })
+                        .collect(),
+                });
+                Ok(())
+            }
+            Object::Elf(_) => Err(Error::NotImplemented("load header for ELF module")),
+            Object::Mach(_) => Err(Error::NotImplemented("load header for MachO module")),
+            Object::Archive(_) => Err(Error::NotImplemented("load header for archive module")),
+            Object::Unknown(_) => Err(Error::NotImplemented("load header for unknown module")),
+        }
+    }
+
     // this must be called *after* `load_disassembler`.
     fn load_sections(self: &mut Workspace) -> Result<(), Error> {
         match self.get_obj()? {
             Object::PE(pe) => {
                 let buf = &self.buf;
-
-                // TODO: load PE header, too
 
                 self.sections
                     .extend(pe.sections.iter().map(|section| -> Section {
@@ -642,6 +683,9 @@ impl Workspace {
                         }
                     }));
 
+                // keep sections in sorted order.
+                self.sections.sort_by_key(|sec| sec.addr);
+
                 Ok(())
             }
             Object::Elf(_) => Err(Error::NotImplemented("load sections for ELF module")),
@@ -684,6 +728,7 @@ impl Workspace {
         };
 
         ws.load_disassembler()?;
+        ws.load_header()?;
         ws.load_sections()?;
         ws.analyze_xrefs()?;
 
