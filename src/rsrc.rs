@@ -5,6 +5,11 @@ use std::path::PathBuf;
 pub enum Rsrc {
     /// A defanged 64-bit version of kernel32.dll.
     K32,
+    /// from: https://www.bigmessowires.com/2015/10/08/a-handmade-executable-file/
+    /// since it doesn't have any sections or optional header, good for testing corner cases.
+    TINY,
+    /// from: https://joenord.com/apps/nop/
+    NOP,
 }
 
 /// Fetch the file system path of the given resource.
@@ -21,6 +26,12 @@ pub fn get_path(rsrc: Rsrc) -> String {
     match rsrc {
         Rsrc::K32 => {
             d.push("k32.bin");
+        }
+        Rsrc::TINY => {
+            d.push("tiny.exe");
+        }
+        Rsrc::NOP => {
+            d.push("nop.exe");
         }
     }
 
@@ -42,6 +53,12 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
             buf[0] = b'M';
             buf[1] = b'Z';
         }
+        Rsrc::TINY => {
+            // pass
+        }
+        Rsrc::NOP => {
+            // pass
+        }
     }
     buf
 }
@@ -50,7 +67,7 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
 ///
 /// ```
 /// use lancelot::rsrc::*;
-/// let ws = get_workspace(Rsrc::K32);
+/// let ws = get_workspace(Rsrc::TINY);
 /// ```
 pub fn get_workspace(rsrc: Rsrc) -> super::Workspace {
     let path = get_path(rsrc);
