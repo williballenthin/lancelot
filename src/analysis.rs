@@ -313,18 +313,28 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 //  relies on the image being loaded at the base address
 //  also relies on loc vs insn to be figured out.
 
-// for k32, there should be 1630
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::TINY);
+/// assert_eq!(0, find_entrypoints(&ws).unwrap().len());
+/// 
+/// //let ws = get_workspace(Rsrc::K32);
+/// //assert_eq!(1630, find_entrypoints(&ws).unwrap().len());
+/// ```
 pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     match ws.get_obj()? {
         Object::PE(pe) => {
             let mut ret: Vec<Rva> = vec![];
-
-            let optional_header = pe.header.optional_header.expect("optional header is not optional");
-            ret.push(optional_header.standard_fields.address_of_entry_point);
-
+            if let Some(opt) = pe.header.optional_header {
+                ret.push(opt.standard_fields.address_of_entry_point);
             ret.extend(
                 pe.exports.iter().map(|export| export.rva as Rva)
             );
+            } else {
+                info!("no optional header")
+            }
 
             Ok(ret)
         },
