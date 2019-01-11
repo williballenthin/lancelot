@@ -207,30 +207,32 @@ pub fn analyze_insn_xrefs(
 pub fn find_insns(ws: &Workspace, predicate: fn(&Instruction) -> bool) -> Result<Vec<Rva>, Error> {
     let mut ret: Vec<Rva> = vec![];
 
-    for section in ws.sections.iter() {
+        // empirically, doing this in parallel (par_extend/par_bridge) is not worth it.
+        // the predicates are likely too simple,
+        // so the majority of time is spent synchronizing.
         ret.extend(
-            section.insns
-            .iter()
+            ws
+            .iter_insns()
             .filter(|insn| predicate(insn))
             .map(|insn| match insn {
-                Instruction::Valid {addr, ..} => addr,
-                Instruction::Invalid {addr, ..} => addr,
-            }));
-    };
+                Instruction::Valid {loc, ..} => loc.addr,
+                Instruction::Invalid {loc, ..} => loc.addr,
+            })
+        );
 
     Ok(ret)
 }
 
 pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
-        Instruction::Valid{xrefs, ..} => xrefs.to.is_empty(),
+        Instruction::Valid{loc, ..} => loc.xrefs.to.is_empty(),
         _ => false,
     })
 }
 
 pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
-        Instruction::Valid{xrefs, ..} => xrefs.to.iter().any(|xref| match xref.typ {
+        Instruction::Valid{loc, ..} => loc.xrefs.to.iter().any(|xref| match xref.typ {
             XrefType::Call => true,
             _ => false,
         }),
@@ -240,7 +242,7 @@ pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 
 pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
-        Instruction::Valid{xrefs, ..} => xrefs.to.iter().any(|xref| match xref.typ {
+        Instruction::Valid{loc, ..} => loc.xrefs.to.iter().any(|xref| match xref.typ {
             XrefType::UnconditionalJump => true,
             XrefType::ConditionalJump => true,
             _ => false,
@@ -279,7 +281,7 @@ fn get_section_by_name<'a>(ws: &'a Workspace, name: &[u8]) -> Result<Option<&'a 
 //  - 1140
 pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     match ws.get_obj()? {
-        Object::PE(pe) => {
+        Object::PE(_) => {
             let mut ret: Vec<Rva> = vec![];
 
             if let Some(sec) = get_section_by_name(ws, b".pdata\x00\x00")? {

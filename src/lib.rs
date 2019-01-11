@@ -249,14 +249,18 @@ pub struct Xrefs {
     to: Vec<Xref>,
 }
 
-pub enum Instruction {
+pub struct Location {
+    addr: Rva,
+    xrefs: Xrefs,
+}
+
+pub enum Instruction<'a> {
     Invalid {
-        addr: Rva,
+        loc: &'a Location,
     },
     Valid {
-        addr: Rva,
+        loc: &'a Location,
         insn: zydis::ffi::DecodedInstruction,
-        xrefs: Xrefs,
     },
 }
 
@@ -264,7 +268,7 @@ pub struct Section {
     pub name: String,
     pub addr: Rva,
     pub buf: Vec<u8>,
-    pub insns: Vec<Instruction>,
+    pub locs: Vec<Location>,
 }
 
 impl Section {
@@ -319,75 +323,58 @@ pub struct Workspace {
     pub dis: Disassembler,
 }
 
-impl Instruction {
-    pub fn from(decoder: &zydis::ffi::Decoder, buf: &[u8], addr: Rva) -> Instruction {
+impl<'a> Instruction<'a> {
+    pub fn from<'b>(
+        decoder: &zydis::ffi::Decoder,
+        buf: &[u8],
+        loc: &'b Location,
+    ) -> Instruction<'b> {
         match decoder.decode(buf) {
-            Ok(Some(insn)) => Instruction::Valid {
-                addr,
-                insn,
-                xrefs: Xrefs {
-                    to: vec![],
-                    from: vec![],
-                },
-            },
-            _ => Instruction::Invalid { addr },
+            Ok(Some(insn)) => Instruction::Valid { loc, insn },
+            _ => Instruction::Invalid { loc },
         }
     }
 }
 
-impl fmt::Display for Instruction {
+impl<'a> fmt::Display for Instruction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let formatter = zydis::Formatter::new(zydis::FormatterStyle::Intel).expect("formatter");
         let mut buffer = [0u8; 200];
         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
         match &self {
-            Instruction::Valid { insn, addr, .. } => {
+            Instruction::Valid { insn, loc } => {
                 formatter
-                    .format_instruction(&insn, &mut buffer, Some(*addr), None)
+                    .format_instruction(&insn, &mut buffer, Some(loc.addr), None)
                     .expect("format");
-                write!(f, "0x{:016X}: {}", *addr, buffer)
+                write!(f, "0x{:016X}: {}", loc.addr, buffer)
             }
-            Instruction::Invalid { addr, .. } => write!(f, "0x{:016X}: invalid instruction", *addr),
+            Instruction::Invalid { loc } => write!(f, "0x{:016X}: invalid instruction", loc.addr),
         }
     }
 }
 
-pub fn disassemble(
-    decoder: &zydis::ffi::Decoder,
-    buf: &[u8],
-    start_offset: Rva,
-) -> Vec<Instruction> {
-    let mut insns: Vec<Instruction> = vec![];
+pub struct InstructionIterator<'a> {
+    workspace: &'a Workspace,
+    current_section: usize,
+    current_address: Rva,
+}
 
-    insns.par_extend(buf.par_windows(0x10).enumerate().map(|(sec_offset, ibuf)| {
-        Instruction::from(decoder, ibuf, start_offset + sec_offset as u64)
-    }));
+impl<'a> Iterator for InstructionIterator<'a> {
+    type Item = Instruction<'a>;
 
-    // TODO: ensure section is at least 0x10 bytes long
-
-    /*
-    len = 13
-    0 1 2 3 4 5 6 7 8 9 10 11 12
-    -------------------
-      --------------------
-        ---------------------
-          ----------------------
-            xxxxxxxxxxxxxxxxxxxx 13 - 9
-              xxxxxxxxxxxxxxxxxx
-                xx
-                        ...
-                              .. 13 - 1
-                              */
-
-    for i in buf.len() - 0xF..buf.len() {
-        insns.push(Instruction::from(
-            decoder,
-            &buf[i..],
-            start_offset + i as Rva,
-        ));
+    fn next(&mut self) -> Option<Instruction<'a>> {
+        let current_address = self.current_address + 1;
+        if self.workspace.sections[self.current_section].contains(current_address) {
+            self.current_address = current_address;
+            Some(self.workspace.get_insn(self.current_address).unwrap())
+        } else if self.current_section + 1 < self.workspace.sections.len() {
+            self.current_section += 1;
+            self.current_address = self.workspace.sections[self.current_section].addr;
+            Some(self.workspace.get_insn(self.current_address).unwrap())
+        } else {
+            None
+        }
     }
-
-    insns
 }
 
 impl Workspace {
@@ -479,7 +466,7 @@ impl Workspace {
                 .iter()
                 .map(|sec| SectionLayout {
                     addr: sec.addr,
-                    len: sec.insns.len() as u64,
+                    len: sec.locs.len() as u64,
                 })
                 .collect(),
         }
@@ -508,16 +495,34 @@ impl Workspace {
     /// let insn = ws.get_insn(0x130C0).unwrap().unwrap();
     /// assert!(matches!(insn.mnemonic, zydis::enums::mnemonic::Mnemonic::MOV));
     /// ```
-    pub fn get_insn(self: &Workspace, rva: Rva) -> Result<&Instruction, Error> {
+    pub fn get_insn(self: &Workspace, rva: Rva) -> Result<Instruction, Error> {
         let sec = self.get_section(rva)?;
-        let insn = &(sec.insns[(rva - sec.addr) as usize]);
-        Ok(insn)
+        // hack: the typing here.
+        let index: usize = rva as usize - sec.addr as usize;
+        let loc = &sec.locs[index];
+        let buf = &sec.buf[index..];
+        Ok(Instruction::from(&self.dis.decoder, buf, loc))
     }
 
-    fn get_insn_mut(self: &mut Workspace, rva: Rva) -> Result<&mut Instruction, Error> {
+    pub fn iter_insns(self: &Workspace) -> InstructionIterator {
+        InstructionIterator {
+            workspace: self,
+            current_section: 0,
+            // TODO: ensure there are some sections
+            current_address: self.sections[0].addr,
+        }
+    }
+
+    fn get_loc_mut(self: &mut Workspace, rva: Rva) -> Result<&mut Location, Error> {
         let sec = self.get_section_mut(rva)?;
-        let insn = &mut (sec.insns[(rva - sec.addr) as usize]);
-        Ok(insn)
+        let index: usize = rva as usize - sec.addr as usize;
+        Ok(&mut sec.locs[index])
+    }
+
+    pub fn get_loc(self: &Workspace, rva: Rva) -> Result<&Location, Error> {
+        let sec = self.get_section(rva)?;
+        let index: usize = rva as usize - sec.addr as usize;
+        Ok(&sec.locs[index])
     }
 
     fn get_first_operand(
@@ -528,44 +533,38 @@ impl Workspace {
             .find(|op| op.visibility == zydis::enums::OperandVisibility::Explicit)
     }
 
+    fn add_xref(self: &mut Workspace, xref: Xref) -> Result<(), Error> {
+        if let Ok(loc) = self.get_loc_mut(xref.dst) {
+            loc.xrefs.to.push(xref.clone());
+        }
+        if let Ok(loc) = self.get_loc_mut(xref.src) {
+            loc.xrefs.from.push(xref);
+        }
+        Ok(())
+    }
+
     fn analyze_xrefs(self: &mut Workspace) -> Result<(), Error> {
         let sec_layout = self.get_section_layout();
         let pc = self.dis.pc;
 
-        for section in self.sections.iter_mut() {
-            section.insns.par_iter_mut().for_each(|insn| {
-                // wow, this is ugly...
-                if let Instruction::Valid {
-                    addr, insn, xrefs, ..
-                } = insn
-                {
-                    xrefs.from = analysis::analyze_insn_xrefs(&sec_layout, pc, *addr, insn)
-                        .expect("analyze xrefs");
+        let xrefs: Vec<Vec<Xref>> = self
+            .iter_insns()
+            // empirically, this doesn't seem to be worth it.
+            // i wonder if perhaps par_bridge is pretty slow.
+            //.par_bridge()
+            .map(|insn| {
+                if let Instruction::Valid { insn, loc, .. } = insn {
+                    analysis::analyze_insn_xrefs(&sec_layout, pc, loc.addr, &insn).unwrap()
+                } else {
+                    Vec::new()
                 }
             })
-        }
+            .collect();
 
-        let mut all_xrefs = Vec::new();
-        for section in self.sections.iter_mut() {
-            for insn in section.insns.iter_mut() {
-                if let Instruction::Valid { xrefs, .. } = insn {
-                    for xref in xrefs.from.iter() {
-                        all_xrefs.push(xref.clone());
-                    }
-                }
+        for xrefs_ in xrefs {
+            for xref in xrefs_ {
+                self.add_xref(xref)?;
             }
-        }
-
-        for xref in all_xrefs {
-            if let Ok(Instruction::Valid { xrefs, .. }) = self.get_insn_mut(xref.dst) {
-                xrefs.to.push(xref);
-            }
-            // TODO: what if the target is invalid?
-            // then the src insn has a link, but the destination does not.
-            // this asymmetry is scary.
-            // should .xrefs be on a Location object:
-            // struct Location { addr, insn, xrefs}
-            // might make sense as a global ptr variable is not an insn, but has an xref.
         }
 
         Ok(())
@@ -595,7 +594,6 @@ impl Workspace {
         match self.get_obj()? {
             Object::PE(pe) => {
                 let buf = &self.buf;
-                let decoder = &self.dis.decoder;
 
                 // TODO: load PE header, too
 
@@ -612,7 +610,8 @@ impl Workspace {
                         // TODO: figure out if we will work with usize, or u64, or what,
                         // then assert usize is ok.
                         // ref: `usize::max_value()`
-                        let mut secbuf = vec![0; align(section.virtual_size as usize, 0x200)];
+                        let virtual_size: u32 = align(section.virtual_size as usize, 0x200) as u32;
+                        let mut secbuf = vec![0; virtual_size as usize];
 
                         {
                             let secsize = section.size_of_raw_data as usize;
@@ -621,20 +620,25 @@ impl Workspace {
                             rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
                         }
 
-                        let insns = disassemble(decoder, &secbuf, section.virtual_address as Rva);
-
                         info!(
                             "loaded section: {}\t{:x}\t{:x}",
                             name,
                             section.virtual_address,
-                            section.virtual_address
-                                + align(section.virtual_size as usize, 0x200) as u32
+                            section.virtual_address + virtual_size
                         );
                         Section {
                             name: name,
                             addr: section.virtual_address as Rva,
                             buf: secbuf,
-                            insns: insns,
+                            locs: (section.virtual_address..section.virtual_address + virtual_size)
+                                .map(|addr| Location {
+                                    addr: addr.into(),
+                                    xrefs: Xrefs {
+                                        to: vec![],
+                                        from: vec![],
+                                    },
+                                })
+                                .collect(),
                         }
                     }));
 
