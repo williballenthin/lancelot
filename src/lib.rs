@@ -655,10 +655,14 @@ impl Workspace {
                         let mut secbuf = vec![0; virtual_size as usize];
 
                         {
-                            let secsize = section.size_of_raw_data as usize;
-                            let rawbuf = &mut secbuf[..secsize];
+                            // in nop.exe, we have virtualsize=0x12FE and rawsize=0x2000.
+                            // this teaches us that we have to handle the case where rawsize > virtualsize.
+                            //
+                            // TODO: do we pick align(virtualsize, 0x200) or just virtualsize?
+                            let secsize = cmp::min(section.virtual_size, section.size_of_raw_data);
+                            let rawbuf = &mut secbuf[..secsize as usize];
                             let pstart = section.pointer_to_raw_data as usize;
-                            rawbuf.copy_from_slice(&buf[pstart..pstart + secsize]);
+                            rawbuf.copy_from_slice(&buf[pstart..pstart + secsize as usize]);
                         }
 
                         info!(
