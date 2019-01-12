@@ -4,6 +4,7 @@ extern crate simplelog;
 use goblin::Object;
 use log::{debug, error, info, trace, warn};
 use rayon::prelude::*;
+use std::cmp;
 use std::env;
 use std::fmt;
 use std::fs;
@@ -48,6 +49,7 @@ pub enum Error {
     FileFormat,
     NotImplemented(&'static str),
     InvalidRva,
+    InvalidVa,
 }
 
 /// Static cast the given 64-bit unsigned integer to a 64-bit signed integer.
@@ -215,6 +217,7 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 }
 
 type Rva = u64;
+type Va = u64;
 
 #[derive(Debug, Clone)]
 pub enum XrefType {
@@ -307,12 +310,28 @@ impl SectionLayout {
 }
 
 pub struct ModuleLayout {
+    pub base_address: u64,
     pub sections: Vec<SectionLayout>,
 }
 
 impl ModuleLayout {
     pub fn is_rva_valid(self: &ModuleLayout, rva: Rva) -> bool {
         self.sections.iter().any(|sec| sec.contains(rva))
+    }
+
+    pub fn va2rva(self: &ModuleLayout, va: Va) -> Result<Rva, Error> {
+        if va < self.base_address {
+            Err(Error::InvalidVa)
+        } else {
+            Ok(va - self.base_address)
+        }
+    }
+
+    pub fn is_va_valid(self: &ModuleLayout, va: Va) -> bool {
+        match self.va2rva(va) {
+            Ok(rva) => self.is_rva_valid(rva),
+            Err(_) => false,
+        }
     }
 }
 
@@ -459,8 +478,25 @@ impl Workspace {
         }
     }
 
-    pub fn get_section_layout(self: &Workspace) -> ModuleLayout {
-        ModuleLayout {
+    pub fn get_layout(self: &Workspace) -> Result<ModuleLayout, Error> {
+        let base_address = match self.get_obj()? {
+            Object::PE(pe) => {
+                if let Some(opt) = pe.header.optional_header {
+                    opt.windows_fields.image_base
+                } else {
+                    // default base address???
+                    0x40000
+                }
+            }
+            _ => {
+                return Err(Error::NotImplemented(
+                    "compute base address for non-PE module",
+                ));
+            }
+        };
+
+        Ok(ModuleLayout {
+            base_address: base_address,
             sections: self
                 .sections
                 .iter()
@@ -469,7 +505,7 @@ impl Workspace {
                     len: sec.locs.len() as u64,
                 })
                 .collect(),
-        }
+        })
     }
 
     pub fn is_rva_valid(self: &Workspace, rva: Rva) -> bool {
@@ -544,7 +580,7 @@ impl Workspace {
     }
 
     fn analyze_xrefs(self: &mut Workspace) -> Result<(), Error> {
-        let sec_layout = self.get_section_layout();
+        let sec_layout = self.get_layout()?;
         let pc = self.dis.pc;
 
         let xrefs: Vec<Vec<Xref>> = self

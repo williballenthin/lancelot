@@ -285,7 +285,7 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
             let mut ret: Vec<Rva> = vec![];
 
             if let Some(sec) = get_section_by_name(ws, b".pdata\x00\x00")? {
-                let layout = ws.get_section_layout();
+                let layout = ws.get_layout()?;
                 for runtime_function in sec.buf.chunks_exact(mem::size_of::<u32>() * 3) {
                     let rva = LittleEndian::read_u32(&runtime_function) as Rva;
                     if rva == 0 {
@@ -329,9 +329,9 @@ pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
             let mut ret: Vec<Rva> = vec![];
             if let Some(opt) = pe.header.optional_header {
                 ret.push(opt.standard_fields.address_of_entry_point);
-            ret.extend(
-                pe.exports.iter().map(|export| export.rva as Rva)
-            );
+                ret.extend(
+                    pe.exports.iter().map(|export| export.rva as Rva)
+                );
             } else {
                 info!("no optional header")
             }
