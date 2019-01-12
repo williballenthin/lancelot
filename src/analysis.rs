@@ -109,6 +109,7 @@ fn analyze_operand_xrefs(
                     }
                 }
             } else {
+                // this is probably more likely, and not relevant on modern OSes.
                 warn!("problem: 0x{:x}: pointer using non-zero segment: 0x{:x}", rva, op.ptr.segment);
                 Ok(None)
             }
@@ -297,49 +298,49 @@ pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     })
 }
 
-fn get_section_by_name<'a>(ws: &'a Workspace, name: &[u8]) -> Result<Option<&'a Section>, Error> {
-    match ws.get_obj()? {
-        Object::PE(pe) => {
-            match pe.sections.iter()
-                .enumerate()
-                .map(|(index, section)| (index, section.name))
-                .find(|(_, sec_name)| sec_name == name) {
-                    Some((index, _)) => Ok(Some(&ws.sections[index])),
-                    None => Ok(None),
-            }
-        },
-        _ => Err(Error::NotImplemented("analyzer for non-PE module"))
-    }
+fn get_section_by_name<'a>(ws: &'a Workspace, name: &str) -> Option<&'a Section> {
+    ws.sections.iter().find(|section| section.name == name)
 }
 
-// pub fn find_runtime_functions
-//  on pe64, entries in .pdata are struct RUNTIME_FUNCTION
-//
-//  00000000 FunctionStart   dd ?                    ; offset rva
-//  00000004 FunctionEnd     dd ?                    ; offset rva pastend
-//  00000008 UnwindInfo      dd ?                    ; offset rva
-//
-// ref: https://stackoverflow.com/a/9794688/87207
-//
-// for k32, the first three entries should be:
-//  - 1010
-//  - 1060
-//  - 1140
+/// Find functions registered as a runtime function via the .pdata section.
+///  on pe64, entries in .pdata are `struct RUNTIME_FUNCTION`.
+///
+/// ```text
+///  00000000 FunctionStart   dd ?                    ; offset rva
+///  00000004 FunctionEnd     dd ?                    ; offset rva pastend
+///  00000008 UnwindInfo      dd ?                    ; offset rva
+/// ```
+///
+/// ref: https://stackoverflow.com/a/9794688/87207
+///
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::K32);
+/// let f = find_runtime_functions(&ws).unwrap();
+/// assert_eq!(1800, f.len());
+/// assert_eq!(f[0..3], [0x1010, 0x1068, 0x1310]);
+/// ```
 pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     match ws.get_obj()? {
         Object::PE(_) => {
             let mut ret: Vec<Rva> = vec![];
 
-            if let Some(sec) = get_section_by_name(ws, b".pdata\x00\x00")? {
+            if let Some(sec) = get_section_by_name(ws, ".pdata") {
+                println!("found section");
+                println!("{:}", hexdump(&sec.buf[..0x30], 0x0));
                 let layout = ws.get_layout()?;
                 for runtime_function in sec.buf.chunks_exact(mem::size_of::<u32>() * 3) {
                     let rva = LittleEndian::read_u32(&runtime_function) as Rva;
                     if rva == 0 {
                         // must be end of (valid) .pdata section
+                        println!("found end");
                         break;
                     } else if layout.is_rva_valid(rva) {
                         ret.push(rva);
                     } else {
+                        println!("found invalid");
                         warn!("malformed .pdata section: entry points outside of image");
                         return Ok(vec![]);
                     }
@@ -366,9 +367,10 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 /// let ws = get_workspace(Rsrc::TINY);
 /// assert_eq!(0, find_entrypoints(&ws).unwrap().len());
 /// 
-/// //let ws = get_workspace(Rsrc::K32);
-/// //assert_eq!(1630, find_entrypoints(&ws).unwrap().len());
+/// let ws = get_workspace(Rsrc::K32);
+/// assert_eq!(1630, find_entrypoints(&ws).unwrap().len());
 /// ```
+/// 
 pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     match ws.get_obj()? {
         Object::PE(pe) => {
