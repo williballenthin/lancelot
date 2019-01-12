@@ -88,8 +88,30 @@ fn analyze_operand_xrefs(
             }
         }
         zydis::enums::OperandType::Pointer => {
-            println!("TODO: operand: pointer");
-            Err(Error::NotImplemented("xref from pointer"))
+            // like: EA 33 D2 B9 60 80 40  jmp  far ptr 4080h:60B9D233h 
+            // "ptr": {
+            //    "segment": 16512,
+            //    "offset": 1622790707
+            // },
+            if op.ptr.segment == 0x0 {
+                // i guess we can treat this like a memory reference???
+                let target = op.ptr.offset as Va;
+                match layout.va2rva(target) {
+                    Ok(target) => {
+                        debug!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
+                            target, op.mem.disp.displacement, layout.base_address);
+                        Ok(Some(target))
+                    }
+                    Err(_) => {
+                        warn!("problem: 0x{:x}: VA 0x{:x} not mapped using base address 0x{:x}",
+                              rva, target, layout.base_address);
+                        Ok(None)
+                    }
+                }
+            } else {
+                warn!("problem: 0x{:x}: pointer using non-zero segment: 0x{:x}", rva, op.ptr.segment);
+                Ok(None)
+            }
         }
         zydis::enums::OperandType::Immediate => {
             if !op.imm.is_relative {
