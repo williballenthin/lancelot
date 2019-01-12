@@ -96,17 +96,18 @@ fn analyze_operand_xrefs(
             if op.ptr.segment == 0x0 {
                 // i guess we can treat this like a memory reference???
                 let target = op.ptr.offset as Va;
-                match layout.va2rva(target) {
-                    Ok(target) => {
+                if layout.is_va_valid(target) {
+                    if let Ok(target) = layout.va2rva(target) {
                         debug!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
                             target, op.mem.disp.displacement, layout.base_address);
                         Ok(Some(target))
-                    }
-                    Err(_) => {
-                        warn!("problem: 0x{:x}: VA 0x{:x} not mapped using base address 0x{:x}",
-                              rva, target, layout.base_address);
+                    } else {
                         Ok(None)
                     }
+                } else {
+                    warn!("problem: 0x{:x}: VA 0x{:x} not mapped using base address 0x{:x}",
+                            rva, target, layout.base_address);
+                    Ok(None)
                 }
             } else {
                 // this is probably more likely, and not relevant on modern OSes.
