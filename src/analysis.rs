@@ -52,10 +52,34 @@ fn analyze_operand_xrefs(
                     println!("CALL [RIP + 4*RCX + 0x401000] ??");
                     Err(Error::NotImplemented("xref from RIP-relative, non-zero index memory"))
                 }
-            } else if op.mem.base == zydis::enums::register::Register::NONE {
-                // like: CALL [0x401000] ??
-                println!("TODO: other OperandType::Memory branch");
-                Err(Error::NotImplemented("xref from non-RIP-relative memory"))
+            } else if op.mem.base == zydis::enums::register::Register::NONE &&
+                      op.mem.disp.has_displacement &&
+                      op.mem.scale == 0 {
+                // like: .text:00401078 FF 15 40 80 40 00    call   DWORD PTR ds:0x408040
+                // "mem": {
+                //    "ty": "Register",
+                //    "segment": "DS",
+                //    "base": "NONE",
+                //    "index": "NONE",
+                //    "scale": 0,
+                //    "disp": {
+                //        "has_displacement": true,
+                //        "displacement": 4227136
+                //    }
+                // },
+
+                let target = op.mem.disp.displacement as Va;
+                match layout.va2rva(target) {
+                    Ok(target) => {
+                        debug!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
+                            target, op.mem.disp.displacement, layout.base_address);
+                        Ok(Some(target))
+                    }
+                    Err(_) => {
+                        warn!("problem: VA 0x{:x} not mapped using base address 0x{:x}", target, layout.base_address);
+                        Ok(None)
+                    }
+                }
             } else {
                 // like: CALL [rbx]
                 // like: CALL [rbx + 0x10]
