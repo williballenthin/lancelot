@@ -270,6 +270,14 @@ pub fn find_insns(ws: &Workspace, predicate: fn(&Instruction) -> bool) -> Result
     Ok(ret)
 }
 
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::NOP);
+/// let roots = find_roots(&ws).unwrap();
+/// assert_eq!(roots.len(), 7324);
+/// ```
 pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
         Instruction::Valid{loc, ..} => loc.xrefs.to.is_empty(),
@@ -277,6 +285,14 @@ pub fn find_roots(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     })
 }
 
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::NOP);
+/// let call_targets = find_call_targets(&ws).unwrap();
+/// assert_eq!(call_targets.len(), 154);
+/// ```
 pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
         Instruction::Valid{loc, ..} => loc.xrefs.to.iter().any(|xref| match xref.typ {
@@ -287,6 +303,14 @@ pub fn find_call_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     })
 }
 
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::NOP);
+/// let branch_targets = find_branch_targets(&ws).unwrap();
+/// assert_eq!(branch_targets.len(), 1903);
+/// ```
 pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     find_insns(ws, |insn| match insn {
         Instruction::Valid{loc, ..} => loc.xrefs.to.iter().any(|xref| match xref.typ {
@@ -298,7 +322,15 @@ pub fn find_branch_targets(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     })
 }
 
-fn get_section_by_name<'a>(ws: &'a Workspace, name: &str) -> Option<&'a Section> {
+/// ```
+/// use lancelot::*;
+/// use lancelot::rsrc::*;
+/// use lancelot::analysis::*;
+/// let ws = get_workspace(Rsrc::NOP);
+/// let sec = get_section_by_name(&ws, ".text").unwrap();
+/// assert_eq!(sec.buf.len(), 0x5000);
+/// ```
+pub fn get_section_by_name<'a>(ws: &'a Workspace, name: &str) -> Option<&'a Section> {
     ws.sections.iter().find(|section| section.name == name)
 }
 
@@ -368,7 +400,7 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 /// assert_eq!(0, find_entrypoints(&ws).unwrap().len());
 /// 
 /// let ws = get_workspace(Rsrc::K32);
-/// assert_eq!(1630, find_entrypoints(&ws).unwrap().len());
+/// assert_eq!(1622, find_entrypoints(&ws).unwrap().len());
 /// ```
 /// 
 pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
