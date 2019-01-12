@@ -3,7 +3,6 @@ extern crate simplelog;
 
 use goblin::Object;
 use log::{debug, error, info, trace, warn};
-use rayon::prelude::*;
 use std::cmp;
 use std::env;
 use std::fmt;
@@ -315,10 +314,29 @@ pub struct ModuleLayout {
 }
 
 impl ModuleLayout {
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::NOP);
+    /// let layout = ws.get_layout().unwrap();
+    /// assert_eq!(layout.is_rva_valid(0x0), true);
+    /// assert_eq!(layout.is_rva_valid(0x1000), true);
+    /// assert_eq!(layout.is_rva_valid(0xF_FFFF), false);
+    /// ```
     pub fn is_rva_valid(self: &ModuleLayout, rva: Rva) -> bool {
         self.sections.iter().any(|sec| sec.contains(rva))
     }
 
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::NOP);
+    /// let layout = ws.get_layout().unwrap();
+    /// assert_eq!(layout.va2rva(0x0).is_ok(), false);
+    /// assert_eq!(layout.va2rva(0x400000).unwrap(), 0x0);
+    /// assert_eq!(layout.va2rva(0x401000).unwrap(), 0x1000);
+    /// //assert_eq!(layout.va2rva(0x4FFFFF).is_ok(), false);
+    /// ```
     pub fn va2rva(self: &ModuleLayout, va: Va) -> Result<Rva, Error> {
         if va < self.base_address {
             Err(Error::InvalidVa)
@@ -327,6 +345,16 @@ impl ModuleLayout {
         }
     }
 
+    /// ```
+    /// use lancelot::*;
+    /// use lancelot::rsrc::*;
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::NOP);
+    /// let layout = ws.get_layout().unwrap();
+    /// assert_eq!(layout.is_va_valid(0x0), false);
+    /// assert_eq!(layout.is_va_valid(0x400000), true);
+    /// assert_eq!(layout.is_va_valid(0x401000), true);
+    /// assert_eq!(layout.is_va_valid(0x4FFFFF), false);
+    /// ```
     pub fn is_va_valid(self: &ModuleLayout, va: Va) -> bool {
         match self.va2rva(va) {
             Ok(rva) => self.is_rva_valid(rva),
@@ -408,7 +436,7 @@ impl Workspace {
     /// use goblin::Object;
     /// use matches::matches;
     /// use lancelot::rsrc::*;
-    /// let ws = get_workspace(Rsrc::K32);
+    /// let ws = get_workspace(Rsrc::TINY);
     /// assert!(matches!(ws.get_obj().unwrap(), Object::PE(_)));
     /// ```
     ///
@@ -420,7 +448,7 @@ impl Workspace {
     /// ```
     /// use goblin::Object;
     /// use lancelot::rsrc::*;
-    /// let ws = get_workspace(Rsrc::K32);
+    /// let ws = get_workspace(Rsrc::TINY);
     /// if let Object::PE(_) = ws.get_obj().unwrap() {
     ///     // everyone is happy!
     /// }
@@ -459,8 +487,8 @@ impl Workspace {
     /// ```
     /// use lancelot::*;
     /// use lancelot::rsrc::*;
-    /// let ws = rsrc::get_workspace(rsrc::Rsrc::K32);
-    /// assert_eq!(ws.get_section(0x130C0).expect("section").name, ".text");
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::NOP);
+    /// assert_eq!(ws.get_section(0x1000).expect("section").name, ".text");
     /// ```
     pub fn get_section(self: &Workspace, rva: Rva) -> Result<&Section, Error> {
         let sec = self.sections.iter().find(|sec| sec.contains(rva));
@@ -508,10 +536,6 @@ impl Workspace {
         })
     }
 
-    pub fn is_rva_valid(self: &Workspace, rva: Rva) -> bool {
-        self.sections.iter().any(|sec| sec.contains(rva))
-    }
-
     /// Fetch the instruction at the given RVA.
     ///
     /// # Result
@@ -527,9 +551,13 @@ impl Workspace {
     /// use lancelot::*;
     /// use lancelot::rsrc::*;
     /// use matches::matches;
-    /// let ws = rsrc::get_workspace(rsrc::Rsrc::K32);
-    /// let insn = ws.get_insn(0x130C0).unwrap().unwrap();
-    /// assert!(matches!(insn.mnemonic, zydis::enums::mnemonic::Mnemonic::MOV));
+    /// let ws = rsrc::get_workspace(rsrc::Rsrc::NOP);
+    /// match ws.get_insn(0x1000).unwrap() {
+    ///   Instruction::Valid{insn, ..} => {
+    ///     assert!(matches!(insn.mnemonic, zydis::enums::mnemonic::Mnemonic::CMP));
+    ///   },
+    ///   _ => panic!("invalid instruction"),
+    /// }
     /// ```
     pub fn get_insn(self: &Workspace, rva: Rva) -> Result<Instruction, Error> {
         let sec = self.get_section(rva)?;
@@ -544,7 +572,7 @@ impl Workspace {
         InstructionIterator {
             workspace: self,
             current_section: 0,
-            // TODO: ensure there are some sections
+            // as long as the file is not empty, there will be at least a header section.
             current_address: self.sections[0].addr,
         }
     }
@@ -746,8 +774,8 @@ impl Workspace {
     /// ```
     /// use lancelot::*;
     /// use lancelot::rsrc::*;
-    /// let buf = get_buf(Rsrc::K32);
-    /// let ws = Workspace::from_buf("kernel32.dll", buf).unwrap();
+    /// let buf = get_buf(Rsrc::NOP);
+    /// let ws = Workspace::from_buf("nop.exe", buf).unwrap();
     /// ```
     ///
     /// TODO: demonstrate ELF file behavior.
@@ -780,10 +808,8 @@ impl Workspace {
     /// ```
     /// use lancelot::*;
     /// use lancelot::rsrc::*;
-    /// let path = get_path(Rsrc::K32);
-    /// // This test resource file is mangled. Needs to be fixed before parsing.
-    /// // Otherwise, the following would work:
-    /// // let ws = Workspace::from_file(&path).unwrap();
+    /// let path = get_path(Rsrc::NOP);
+    /// let ws = Workspace::from_file(&path).unwrap();
     /// ```
     pub fn from_file(filename: &str) -> Result<Workspace, Error> {
         let buf = read_file(filename)?;
