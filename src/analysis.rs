@@ -69,17 +69,18 @@ fn analyze_operand_xrefs(
                 // },
 
                 let target = op.mem.disp.displacement as Va;
-                match layout.va2rva(target) {
-                    Ok(target) => {
+                if layout.is_va_valid(target) {
+                    if let Ok(target) = layout.va2rva(target) {
                         debug!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
                             target, op.mem.disp.displacement, layout.base_address);
                         Ok(Some(target))
-                    }
-                    Err(_) => {
-                        warn!("problem: VA 0x{:x} not mapped using base address 0x{:x}", target, layout.base_address);
+                    } else {
                         Ok(None)
                     }
-                }
+                } else {
+                    warn!("problem: VA 0x{:x} not mapped using base address 0x{:x}", target, layout.base_address);
+                    Ok(None)
+                 }
             } else {
                 // like: CALL [rbx]
                 // like: CALL [rbx + 0x10]
