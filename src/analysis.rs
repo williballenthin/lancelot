@@ -4,6 +4,8 @@ use super::*;
 use zydis;
 use byteorder::{ByteOrder, LittleEndian};
 use std::mem;
+use std::collections::HashSet;
+use std::collections::VecDeque;
 
 fn analyze_operand_xrefs(
     // used to determine valid addresses
@@ -387,7 +389,6 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     }
 }
 
-
 // pub fn find_fixups
 
 // pub fn find_ptrs
@@ -431,3 +432,117 @@ pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 //   MOV
 //   MOV
 //   INVALID
+
+pub fn iter_func_loc(ws: &Workspace, fva: Rva) -> FunctionLocationIterator {
+    let mut q = VecDeque::new();
+    q.push_back(fva);
+
+    FunctionLocationIterator {
+        workspace: ws,
+        seen: HashSet::new(),
+        q: q,
+    }
+}
+
+pub struct FunctionLocationIterator<'a> {
+    workspace: &'a Workspace,
+    seen: HashSet<Rva>,
+    q: VecDeque<Rva>,
+}
+
+pub fn is_flow(xref: &Xref) -> bool {
+    match xref.typ {
+        XrefType::Fallthrough => true,
+        XrefType::UnconditionalJump => true,
+        XrefType::ConditionalJump => true,
+        XrefType::ConditionalMove => true,
+
+        XrefType::Call => false,
+        _ => false,
+    }
+}
+
+impl<'a> Iterator for FunctionLocationIterator<'a> {
+    type Item = &'a Location;
+
+    fn next(&mut self) -> Option<&'a Location> {
+        while let Some(rva) = self.q.pop_front() {
+            if self.seen.contains(&rva) {
+                continue
+            } else {
+                self.seen.insert(rva);
+
+                // warning: assume that the loc is valid
+                let loc = self.workspace.get_loc(rva).unwrap();
+
+                self.q.extend(loc.xrefs.from.iter()
+                    .filter(|xref| is_flow(xref))
+                    .map(|xref| xref.dst));
+
+                // note: early return here if there's an available item
+                return Some(loc);
+            }
+        }
+        None
+    }
+}
+
+pub fn is_call(xref: &Xref) -> bool {
+    match xref.typ {
+        XrefType::Call => true,
+        _ => false,
+    }
+}
+
+pub fn get_call_target(loc: &Location) -> Rva {
+    loc.xrefs.from
+        .iter()
+        .find(|xref| is_call(xref))
+        .unwrap()
+        .dst
+}
+
+/// Compute the start addresses of all functions that are called from the given function.
+pub fn recursive_descent(ws: &Workspace, rva: Rva) -> Result<Vec<Rva>, Error> {
+
+    let mut q: VecDeque<Rva> = VecDeque::new();
+    let mut seen: HashSet<Rva> = HashSet::new();
+
+    q.push_back(rva);
+
+    while let Some(fva) = q.pop_front() {
+        if seen.contains(&fva) {
+            continue;
+        }
+
+        seen.insert(fva);
+
+        for rva in iter_func_loc(ws, fva)
+                    .filter_map(|loc| {
+                        if let Some(xref) = loc.xrefs.from.iter().find(|xref| is_call(xref)) {
+                            Some(xref.dst)
+                        } else {
+                            None
+                        }
+                    }) {
+            q.push_back(rva);
+        }
+    }
+
+    Ok(seen.iter().cloned().collect())
+}
+
+pub fn find_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
+    let mut candidates = Vec::new();
+    candidates.extend(find_entrypoints(ws)?);
+    candidates.extend(find_runtime_functions(ws)?);
+
+    let mut seen: HashSet<Rva> = HashSet::new();
+    for candidate in candidates.iter() {
+        // TODO: need to pass in existing context to avoid O(n^2) behavior
+        for fva in recursive_descent(ws, *candidate)?.iter() {
+            seen.insert(*fva);
+        }
+    }
+    Ok(seen.iter().cloned().collect())
+}

@@ -618,7 +618,13 @@ impl Workspace {
             //.par_bridge()
             .map(|insn| {
                 if let Instruction::Valid { insn, loc, .. } = insn {
-                    analysis::analyze_insn_xrefs(&sec_layout, pc, loc.addr, &insn).unwrap()
+                    match analysis::analyze_insn_xrefs(&sec_layout, pc, loc.addr, &insn) {
+                        Ok(xrefs) => xrefs,
+                        Err(e) => {
+                            warn!("swallowing: {:?}", e);
+                            Vec::new()
+                        }
+                    }
                 } else {
                     Vec::new()
                 }
@@ -846,6 +852,11 @@ pub fn run(args: &Config) -> Result<(), Error> {
     println!(
         "runtime functions: {:}",
         analysis::find_runtime_functions(&ws).expect("foo").len()
+    );
+
+    println!(
+        "find functions: {:}",
+        analysis::find_functions(&ws).expect("foo").len()
     );
 
     Ok(())
