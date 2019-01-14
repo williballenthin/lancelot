@@ -839,7 +839,8 @@ pub fn run(args: &Config) -> Result<(), Error> {
         println!("entrypoint: {:}", ws.get_insn(oep)?);
     }
 
-    println!("roots: {:}", analysis::find_roots(&ws).expect("foo").len());
+    //println!("roots: {:}", analysis::find_roots(&ws).expect("foo").len());
+    /*
     println!(
         "call targets: {:}",
         analysis::find_call_targets(&ws).expect("foo").len()
@@ -848,6 +849,7 @@ pub fn run(args: &Config) -> Result<(), Error> {
         "branch targets: {:}",
         analysis::find_branch_targets(&ws).expect("foo").len()
     );
+    */
     println!(
         "entry points: {:}",
         analysis::find_entrypoints(&ws).expect("foo").len()
@@ -857,10 +859,11 @@ pub fn run(args: &Config) -> Result<(), Error> {
         analysis::find_runtime_functions(&ws).expect("foo").len()
     );
 
-    println!(
-        "find functions: {:}",
-        analysis::find_functions(&ws).expect("foo").len()
-    );
+    let fvas = analysis::find_functions(&ws).expect("foo");
+
+    println!("find functions: {:}", fvas.len());
+
+    analysis::compute_coverage(&ws, &fvas);
 
     Ok(())
 }

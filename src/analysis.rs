@@ -6,6 +6,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::mem;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use bit_vec::BitVec;
 
 fn analyze_operand_xrefs(
     // used to determine valid addresses
@@ -535,4 +536,28 @@ pub fn find_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     candidates.extend(find_runtime_functions(ws)?);
 
     recursive_descents(ws, &candidates)
+}
+
+
+pub fn compute_coverage(ws: &Workspace, fvas: &[Rva]) -> Result<(), Error> {
+    let maxrva = ws.sections.iter()
+                            .map(|section| section.addr+(section.buf.len() as u64))
+                            .max()
+                            .unwrap();
+    println!("capacity: 0x{:x}", maxrva as usize);
+    let mut active = BitVec::from_elem(maxrva as usize, false);
+
+    for fva in fvas.iter() {
+        for loc in iter_func_loc(ws, *fva) {
+            if let Instruction::Valid{insn, ..} = ws.get_insn(loc.addr)? {
+                for iva in loc.addr..loc.addr+(insn.length as u64) {
+                    active.set(iva as usize, true);
+                }
+            }
+        }
+    }
+
+    println!("coverage: {:}/{:}", active.iter().filter(|x| *x).count(), active.len());
+
+    Ok(())
 }

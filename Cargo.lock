@@ -7,6 +7,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "bit-vec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "bitflags"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -99,6 +104,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "lancelot"
 version = "0.1.0"
 dependencies = [
+ "bit-vec 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "goblin 0.0.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -383,6 +389,7 @@ dependencies = [
 
 [metadata]
 "checksum arrayvec 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)" = "f405cc4c21cd8b784f6c8fc2adf9bc00f59558f0049b5ec21517f875963040cc"
+"checksum bit-vec 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4440d5cb623bb7390ae27fec0bb6c61111969860f8e3ae198bfa0663645e67cf"
 "checksum bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "228047a76f468627ca71776ecdebd732a3423081fcf5125585bcd7c49886ce12"
 "checksum byteorder 1.2.7 (registry+https://github.com/rust-lang/crates.io-index)" = "94f88df23a25417badc922ab0f5716cc1330e87f71ddd9203b3a3ccd9cedf75d"
 "checksum cc 1.0.25 (registry+https://github.com/rust-lang/crates.io-index)" = "f159dfd43363c4d08055a07703eb7a3406b0dac4d0584d96965a3262db3c9d16"
