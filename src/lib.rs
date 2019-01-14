@@ -3,6 +3,7 @@ extern crate simplelog;
 
 use goblin::Object;
 use log::{debug, error, info, trace, warn};
+use smallvec::*;
 use std::cmp;
 use std::env;
 use std::fmt;
@@ -247,8 +248,10 @@ pub struct Xref {
 }
 
 pub struct Xrefs {
-    from: Vec<Xref>,
-    to: Vec<Xref>,
+    // arbitrarily pick the smallvec constant 2,
+    // as most branching instructions have out-degree 2?
+    from: SmallVec<[Xref; 2]>,
+    to: SmallVec<[Xref; 2]>,
 }
 
 pub struct Location {
@@ -687,8 +690,8 @@ impl Workspace {
                         .map(|addr| Location {
                             addr: addr.into(),
                             xrefs: Xrefs {
-                                to: vec![],
-                                from: vec![],
+                                to: smallvec![],
+                                from: smallvec![],
                             },
                         })
                         .collect(),
@@ -749,8 +752,8 @@ impl Workspace {
                                 .map(|addr| Location {
                                     addr: addr.into(),
                                     xrefs: Xrefs {
-                                        to: vec![],
-                                        from: vec![],
+                                        to: smallvec![],
+                                        from: smallvec![],
                                     },
                                 })
                                 .collect(),

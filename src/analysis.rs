@@ -364,19 +364,15 @@ pub fn find_runtime_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
             let mut ret: Vec<Rva> = vec![];
 
             if let Some(sec) = get_section_by_name(ws, ".pdata") {
-                println!("found section");
-                println!("{:}", hexdump(&sec.buf[..0x30], 0x0));
                 let layout = ws.get_layout()?;
                 for runtime_function in sec.buf.chunks_exact(mem::size_of::<u32>() * 3) {
                     let rva = LittleEndian::read_u32(&runtime_function) as Rva;
                     if rva == 0 {
                         // must be end of (valid) .pdata section
-                        println!("found end");
                         break;
                     } else if layout.is_rva_valid(rva) {
                         ret.push(rva);
                     } else {
-                        println!("found invalid");
                         warn!("malformed .pdata section: entry points outside of image");
                         return Ok(vec![]);
                     }
