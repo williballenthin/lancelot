@@ -498,13 +498,13 @@ pub fn get_call_target(loc: &Location) -> Rva {
         .dst
 }
 
-/// Compute the start addresses of all functions that are called from the given function.
-pub fn recursive_descent(ws: &Workspace, rva: Rva) -> Result<Vec<Rva>, Error> {
+/// Compute the start addresses of all functions that are called from the given functions.
+pub fn recursive_descents(ws: &Workspace, fvas: &[Rva]) -> Result<Vec<Rva>, Error> {
 
     let mut q: VecDeque<Rva> = VecDeque::new();
     let mut seen: HashSet<Rva> = HashSet::new();
 
-    q.push_back(rva);
+    q.extend(fvas);
 
     while let Some(fva) = q.pop_front() {
         if seen.contains(&fva) {
@@ -528,17 +528,11 @@ pub fn recursive_descent(ws: &Workspace, rva: Rva) -> Result<Vec<Rva>, Error> {
     Ok(seen.iter().cloned().collect())
 }
 
+
 pub fn find_functions(ws: &Workspace) -> Result<Vec<Rva>, Error> {
     let mut candidates = Vec::new();
     candidates.extend(find_entrypoints(ws)?);
     candidates.extend(find_runtime_functions(ws)?);
 
-    let mut seen: HashSet<Rva> = HashSet::new();
-    for candidate in candidates.iter() {
-        // TODO: need to pass in existing context to avoid O(n^2) behavior
-        for fva in recursive_descent(ws, *candidate)?.iter() {
-            seen.insert(*fva);
-        }
-    }
-    Ok(seen.iter().cloned().collect())
+    recursive_descents(ws, &candidates)
 }
