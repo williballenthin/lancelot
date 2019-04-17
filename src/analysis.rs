@@ -455,7 +455,7 @@ pub fn is_flow(xref: &Xref) -> bool {
         XrefType::ConditionalMove => true,
 
         XrefType::Call => false,
-        _ => false,
+        // _ => false,
     }
 }
 
