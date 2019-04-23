@@ -3,7 +3,7 @@ extern crate lancelot;
 
 use std::env;
 use std::process;
-use log::{debug, error, trace};
+use log::{error, info, trace};
 use goblin::Object;
 
 use lancelot::{Workspace, Error};
@@ -34,7 +34,7 @@ pub fn setup_logging(_args: &Config) {
 }
 
 pub fn run(args: &Config) -> Result<(), Error> {
-    debug!("filename: {:?}", args.filename);
+    info!("filename: {:?}", args.filename);
     let ws = Workspace::from_file(&args.filename)?;
 
     if let Object::PE(pe) = ws.get_obj()? {
