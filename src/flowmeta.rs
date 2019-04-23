@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::arch;
+use super::arch::{Arch};
 
 // TODO: figure out how to use failure for error (or some other pattern)
 #[derive(Debug)]
@@ -137,11 +137,17 @@ impl fmt::Display for FlowMeta {
         write!(f, "FlowMeta{{length: {}, fallthrough: {}, xrefs to: {}, xrefs from: {}}}",
                match self.get_insn_length() {
                    Ok(v) => format!("0x{:x}", v),
-                   Err(Error::LongInstruction) => "more than 0xE".to_string(),
+                   Err(Error::LongInstruction) => ">=0xF".to_string(),
                    Err(Error::NotAnInstruction) => "not an instruction".to_string(),
                },
                self.does_fallthrough(),
                self.has_xrefs_to(),
                self.has_xrefs_from())
     }
+}
+
+/// FlowMeta metadata attached to a location (relative to base address).
+struct LocFlowMeta<A: Arch> {
+    loc: A::RVA,
+    meta: FlowMeta,
 }
