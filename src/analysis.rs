@@ -37,7 +37,7 @@ fn analyze_operand_xrefs(
                 // CALL [RIP + 0x401000]
                 if let zydis::enums::register::Register::NONE = op.mem.index {
                     let target =
-                        (rva as i64 
+                        (rva as i64
                         // TODO: cast from rva (u64) to i64 is lossy.
                         + op.mem.disp.displacement 
                         + i64::from(insn.length)) as Rva;
@@ -74,7 +74,7 @@ fn analyze_operand_xrefs(
                 let target = op.mem.disp.displacement as Va;
                 if layout.is_va_valid(target) {
                     if let Ok(target) = layout.va2rva(target) {
-                        debug!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
+                        info!("found RVA 0x{:x} from VA 0x{:x} using base address 0x{:x}",
                             target, op.mem.disp.displacement, layout.base_address);
                         Ok(Some(target))
                     } else {
@@ -430,6 +430,11 @@ pub fn find_entrypoints(ws: &Workspace) -> Result<Vec<Rva>, Error> {
 //   MOV
 //   INVALID
 
+/// enumerate the Locations of the instructions reachable from the given address.
+///
+/// does not follow calls, but does follow jumps and fallthroughs.
+/// intended to be used as an iterator over the locations in a function,
+///  identified by the function start address.
 pub fn iter_func_loc(ws: &Workspace, fva: Rva) -> FunctionLocationIterator {
     let mut q = VecDeque::new();
     q.push_back(fva);
@@ -463,21 +468,28 @@ impl<'a> Iterator for FunctionLocationIterator<'a> {
     type Item = &'a Location;
 
     fn next(&mut self) -> Option<&'a Location> {
+        // this is a breadth first enumeration of the instructions.
+        //
+        // given a start instruction, enumerate its xrefs, pushing them
+        //  into the todo-stack. yield entries from this stack, filtering
+        //  out locations that have already been yielded.
         while let Some(rva) = self.q.pop_front() {
             if self.seen.contains(&rva) {
                 continue
             } else {
                 self.seen.insert(rva);
 
-                // warning: assume that the loc is valid
-                let loc = self.workspace.get_loc(rva).unwrap();
+                if let Ok(loc) = self.workspace.get_loc(rva) {
+                    self.q.extend(loc.xrefs.from.iter()
+                                  .filter(|xref| is_flow(xref))
+                                  .map(|xref| xref.dst));
 
-                self.q.extend(loc.xrefs.from.iter()
-                    .filter(|xref| is_flow(xref))
-                    .map(|xref| xref.dst));
-
-                // note: early return here if there's an available item
-                return Some(loc);
+                    // note: early return here if there's an available item
+                    return Some(loc);
+                } else {
+                    warn!("found invalid location: {:x}", rva);
+                    continue
+                }
             }
         }
         None
