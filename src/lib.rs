@@ -2,10 +2,9 @@ extern crate log;
 extern crate simplelog;
 
 use goblin::Object;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, warn};
 use smallvec::*;
 use std::cmp;
-use std::env;
 use std::fmt;
 use std::fs;
 use std::io::prelude::*;
@@ -18,6 +17,9 @@ use zydis;
 pub mod rsrc;
 
 pub mod analysis;
+
+pub mod arch;
+pub mod flowmeta;
 
 #[derive(Debug)]
 pub enum Error {
