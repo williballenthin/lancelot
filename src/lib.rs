@@ -197,41 +197,6 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
 type Rva = u64;
 type Va = u64;
 
-#[derive(Debug, Clone)]
-pub enum XrefType {
-    // mov eax, eax
-    // push ebp
-    Fallthrough,
-    // call [0x401000]
-    Call,
-    // call [eax]
-    //IndirectCall { src: Rva },
-    // jmp 0x401000
-    UnconditionalJump,
-    // jmp eax
-    //UnconditionalIndirectJump { src: Rva, dst: Rva },
-    // jnz 0x401000
-    ConditionalJump,
-    // jnz eax
-    //ConditionalIndirectJump { src: Rva },
-    // cmov 0x1
-    ConditionalMove,
-}
-
-#[derive(Debug, Clone)]
-pub struct Xref {
-    src: Rva,
-    dst: Rva,
-    typ: XrefType,
-}
-
-pub struct Xrefs {
-    // arbitrarily pick the smallvec constant 2,
-    // as most branching instructions have out-degree 2?
-    from: SmallVec<[Xref; 2]>,
-    to: SmallVec<[Xref; 2]>,
-}
-
 pub struct Location {
     addr: Rva,
     xrefs: Xrefs,
