@@ -1,3 +1,7 @@
+use std::fmt;
+
+use super::arch;
+
 // TODO: figure out how to use failure for error (or some other pattern)
 #[derive(Debug)]
 pub enum Error {
@@ -125,5 +129,19 @@ impl FlowMeta {
     /// ```
     pub fn unset_xrefs_to(&mut self) {
         self.0 = self.0 & 0b1011_1111
+    }
+}
+
+impl fmt::Display for FlowMeta {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FlowMeta{{length: {}, fallthrough: {}, xrefs to: {}, xrefs from: {}}}",
+               match self.get_insn_length() {
+                   Ok(v) => format!("0x{:x}", v),
+                   Err(Error::LongInstruction) => "more than 0xE".to_string(),
+                   Err(Error::NotAnInstruction) => "not an instruction".to_string(),
+               },
+               self.does_fallthrough(),
+               self.has_xrefs_to(),
+               self.has_xrefs_from())
     }
 }
