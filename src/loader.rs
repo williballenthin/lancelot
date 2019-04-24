@@ -8,31 +8,30 @@ pub enum Error {
     Foo
 }
 
-#[derive(Display)]
+#[derive(Display, Clone, Copy)]
 pub enum DetectedArch {
     X32,
     X64
 }
 
-#[derive(Display)]
+#[derive(Display, Clone, Copy)]
 pub enum FileFormat {
     Raw,  // shellcode
     PE,
 }
 
-#[derive(Display)]
+#[derive(Display, Clone, Copy)]
 pub enum Platform {
     Windows,
 }
 
-struct Section<A: Arch> {
-    addr: A::RVA,
-    buf: Vec<u8>,
+pub struct Section<A: Arch> {
+    pub addr: A::RVA,
+    pub buf: Vec<u8>,
     // TODO
-    perms: u8,
-    name: String,
+    pub perms: u8,
+    pub name: String,
 }
-
 
 impl <A: Arch> Section<A> {
     pub fn contains(self: &Section<A>, rva: A::RVA) -> bool {
@@ -52,16 +51,15 @@ impl <A: Arch> Section<A> {
     }
 }
 
-struct LoadedModule<A: Arch> {
-    base_address: A::VA,
-    sections: Vec<Section<A>>,
+pub struct LoadedModule<A: Arch> {
+    pub base_address: A::VA,
+    pub sections: Vec<Section<A>>,
 }
 
-trait Loader {
+pub trait Loader {
     fn get_arch(&self) -> DetectedArch;
     fn get_plat(&self) -> Platform;
     fn get_file_format(&self) -> FileFormat;
-    // TODO: compiler?
 
     fn get_name(&self) -> String {
         return format!("{}/{}/{}", self.get_plat(), self.get_arch(), self.get_file_format());
@@ -69,26 +67,25 @@ trait Loader {
 
     fn taste(&self, buf: &[u8]) -> bool;
 
+    /// Load the given buffer as a 32-bit module.
+    ///
+    /// Panics if this isn't a loader that supports 32-bit modules.
     fn load32(&self, buf: &[u8]) -> Result<LoadedModule<Arch32>, Error>;
 }
 
 
-// TODO: implement loaders/x32/windows/shellcode
 // TODO: implement loaders/x32/windows/pe
-// TODO: implement loaders/x64/windows/shellcode
 // TODO: implement loaders/x64/windows/pe
 
 
-/*******
-
-struct ShellcodeLoader {
-    arch: Arch,
+pub struct ShellcodeLoader {
+    arch: DetectedArch,
     plat: Platform,
     file_format: FileFormat,
 }
 
 impl ShellcodeLoader {
-    pub fn new(arch: impl Arch, plat: Platform, file_format: FileFormat) -> ShellcodeLoader {
+    pub fn new(arch: DetectedArch, plat: Platform, file_format: FileFormat) -> ShellcodeLoader {
         ShellcodeLoader {
             arch,
             plat,
@@ -98,7 +95,7 @@ impl ShellcodeLoader {
 }
 
 impl Loader for ShellcodeLoader {
-    fn get_arch(&self) -> impl Arch {
+    fn get_arch(&self) -> DetectedArch {
         self.arch
     }
 
@@ -115,47 +112,44 @@ impl Loader for ShellcodeLoader {
     }
 
     /// ```
-    /// use lancelot::arch::ARCH32;
-    /// use lancelot::loader::{ShellcodeLoader, Platform, FileFormat};
-    /// let loader = lancelot::loader::ShellcodeLoader::new(ARCH32, Platform::Windows, FileFormat::Raw);
-    /// match loader.load32(b"MZ\x90\x00".as_bytes()) {
-    ///   Ok(mod) => {
-    ///     assert_eq!(mod.name, "raw");
-    ///   },
-    ///   Err(e) => panic!(e),
-    /// };
+    /// use lancelot::loader::*;
+    ///
+    /// let loader = lancelot::loader::ShellcodeLoader::new(DetectedArch::X32, Platform::Windows, FileFormat::Raw);
+    /// loader.load32(b"MZ\x90\x00").map(|module| {
+    ///   assert_eq!(module.base_address,     0x0);
+    ///   assert_eq!(module.sections[0].name, "raw");
+    /// }).map_err(|e| panic!(e));
     /// ```
     fn load32(&self, buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
-        if self.arch != ARCH32 {
+        if let DetectedArch::X32 = self.arch {
+            Ok(LoadedModule::<Arch32>{
+                base_address: 0x0,
+                sections: vec![
+                    Section::<Arch32> {
+                        addr: 0x0,
+                        buf: buf.to_vec(),
+                        perms: 0x0, // TODO
+                        name: "raw".to_string(),
+                    }
+                ]
+            })
+        } else {
             panic!("not a 32-bit loader")
         }
-
-        Ok(LoadedModule::<Arch32>{
-            base_address: 0x0,
-            sections: vec![
-                Section::<Arch32> {
-                    addr: 0x0,
-                    buf: buf.clone(),
-                    perms: 0x0, // TODO
-                    name: "raw".to_string(),
-                }
-            ]
-        })
     }
 }
 
 
-fn taste(buf: &[u8]) -> Vec<Loader> {
-    vec![
-        ShellcodeLoader::new(ARCH32, Platform::Windows, FileFormat::Raw),
-        ShellcodeLoader::new(ARCH64, Platform::Windows, FileFormat::Raw),
-    ].iter()
+fn taste(buf: &[u8]) -> Vec<Box<dyn Loader>> {
+    let mut loaders: Vec<Box<dyn Loader>> = vec![];
+    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X32, Platform::Windows, FileFormat::Raw)));
+    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X64, Platform::Windows, FileFormat::Raw)));
+
+    loaders.into_iter()
         .filter(|loader| loader.taste(buf))
         .collect()
 }
 
-fn load(buf: &[u8]) -> Result<LoadedModule, Error> {
+fn load32(buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
     Err(Error::Foo)
 }
-
-*********/
