@@ -1,11 +1,11 @@
-use num::FromPrimitive;
 use strum_macros::{Display};
 use super::arch::{Arch, Arch32, rva_plus_usize};
 
 // TODO: figure out how to use failure for error (or some other pattern)
 #[derive(Debug)]
 pub enum Error {
-    Foo
+    /// The given buffer is not supported (arch/plat/file format).
+    NotSupported,
 }
 
 #[derive(Display, Clone, Copy)]
@@ -81,15 +81,13 @@ pub trait Loader {
 pub struct ShellcodeLoader {
     arch: DetectedArch,
     plat: Platform,
-    file_format: FileFormat,
 }
 
 impl ShellcodeLoader {
-    pub fn new(arch: DetectedArch, plat: Platform, file_format: FileFormat) -> ShellcodeLoader {
+    pub fn new(arch: DetectedArch, plat: Platform) -> ShellcodeLoader {
         ShellcodeLoader {
             arch,
             plat,
-            file_format,
         }
     }
 }
@@ -104,21 +102,24 @@ impl Loader for ShellcodeLoader {
     }
 
     fn get_file_format(&self) -> FileFormat {
-        self.file_format
+        FileFormat::Raw
     }
 
-    fn taste(&self, buf: &[u8]) -> bool {
+    fn taste(&self, _buf: &[u8]) -> bool {
+        // we can load anything as shellcode
         true
     }
 
     /// ```
     /// use lancelot::loader::*;
     ///
-    /// let loader = lancelot::loader::ShellcodeLoader::new(DetectedArch::X32, Platform::Windows, FileFormat::Raw);
-    /// loader.load32(b"MZ\x90\x00").map(|module| {
-    ///   assert_eq!(module.base_address,     0x0);
-    ///   assert_eq!(module.sections[0].name, "raw");
-    /// }).map_err(|e| panic!(e));
+    /// let loader = lancelot::loader::ShellcodeLoader::new(DetectedArch::X32, Platform::Windows);
+    /// loader.load32(b"MZ\x90\x00")
+    ///   .map(|module| {
+    ///     assert_eq!(module.base_address,     0x0);
+    ///     assert_eq!(module.sections[0].name, "raw");
+    ///   })
+    ///   .map_err(|e| panic!(e));
     /// ```
     fn load32(&self, buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
         if let DetectedArch::X32 = self.arch {
@@ -139,17 +140,62 @@ impl Loader for ShellcodeLoader {
     }
 }
 
-
-fn taste(buf: &[u8]) -> Vec<Box<dyn Loader>> {
+pub fn default_loaders() -> Vec<Box<dyn Loader>> {
+    // we might like these to come from a lazy_static global,
+    //  however, then these have to be Sync.
+    // I'm not sure if that's a good idea yet.
     let mut loaders: Vec<Box<dyn Loader>> = vec![];
-    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X32, Platform::Windows, FileFormat::Raw)));
-    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X64, Platform::Windows, FileFormat::Raw)));
-
-    loaders.into_iter()
-        .filter(|loader| loader.taste(buf))
-        .collect()
+    // the order here matters!
+    // the default `load32` routine will pick the first matching loader,
+    //  so the earlier entries here have higher precedence.
+    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X32, Platform::Windows)));
+    loaders.push(Box::new(ShellcodeLoader::new(DetectedArch::X64, Platform::Windows)));
+    loaders
 }
 
-fn load32(buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
-    Err(Error::Foo)
+/// Find the loaders that support loading the given sample.
+///
+/// The result is an iterator so that the caller can use the first
+///  matching result without waiting for all Loaders to taste the bytes.
+///
+/// Loaders are tasted in the order defined in `default_loaders`.
+///
+/// Example:
+///
+/// ```
+/// use lancelot::loader::*;
+///
+/// match taste(b"\xEB\xFE").nth(0) {
+///   Some(loader) => assert_eq!(loader.get_name(), "Windows/X32/Raw"),
+///   None => panic!("no matching loaders"),
+/// };
+/// ```
+pub fn taste(buf: &[u8]) -> impl Iterator<Item=Box<dyn Loader>> {
+    default_loaders()
+        .into_iter()
+        .filter(move |loader| loader.taste(buf))
+}
+
+/// Load the given sample as a 32-bit module using the first matching
+///  loader from `default_loaders`.
+///
+/// Example:
+///
+/// ```
+/// use lancelot::loader::*;
+///
+/// load32(b"\xEB\xFE")
+///   .map(|module| {
+///     assert_eq!(module.base_address,     0x0);
+///     assert_eq!(module.sections[0].name, "raw");
+///   })
+///   .map_err(|e| panic!(e));
+/// ```
+pub fn load32(buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
+    match taste(buf).nth(0) {
+        Some(loader) => {
+            loader.load32(buf)
+        },
+        None => Err(Error::NotSupported),
+    }
 }
