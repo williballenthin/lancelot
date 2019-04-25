@@ -1,7 +1,8 @@
 use num::Zero;
 use strum_macros::{Display};
 use std::marker::PhantomData;
-use super::arch::{Arch, Arch32, Arch64, rva_plus_usize};
+use super::arch;
+use super::arch::{Arch, Arch32, Arch64};
 
 use failure::{Error, Fail};
 
@@ -36,7 +37,7 @@ impl <A: Arch> Section<A> {
             return false;
         }
 
-        if let Some(max) = rva_plus_usize::<A>(self.addr, self.buf.len()) {
+        if let Some(max) = arch::rva_add_usize::<A>(self.addr, self.buf.len()) {
             if rva >= max {
                 return false
             }
@@ -54,6 +55,7 @@ pub struct LoadedModule<A: Arch> {
 }
 
 pub trait Loader<A: Arch> {
+    /// Fetch the number of bits for a pointer in this architecture.
     fn get_arch(&self) -> u8;
     fn get_plat(&self) -> Platform;
     fn get_file_format(&self) -> FileFormat;
@@ -62,18 +64,22 @@ pub trait Loader<A: Arch> {
         return format!("{}/{}/{}", self.get_plat(), self.get_arch(), self.get_file_format());
     }
 
+    /// Returns True if this Loader knows how to load the given bytes.
     fn taste(&self, buf: &[u8]) -> bool;
 
+    /// Load the given bytes into a Module.
     fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error>;
 }
 
 
-// TODO: implement loaders/x32/windows/pe
-// TODO: implement loaders/x64/windows/pe
-
-
 pub struct ShellcodeLoader<A: Arch> {
     plat: Platform,
+    // ShellcodeLoader must have a type parameter for it
+    //  to implement Loader<A>.
+    // however, it doesn't actually use this type itself.
+    // so, we use a phantom data marker which has zero type,
+    //  to ensure there is not an unused type parameter,
+    //  which is a compile error.
     _phantom: PhantomData<A>,
 }
 

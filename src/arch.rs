@@ -1,10 +1,9 @@
 use std::fmt;
 use num::{Zero};
-use std::ops::Add;
+use std::ops::{Add, Sub};
 
 extern crate num;
-use num::FromPrimitive;
-use num::CheckedAdd;
+use num::{ToPrimitive, FromPrimitive, CheckedAdd, CheckedSub};
 
 /// Type infrastructure that describes an architecture,
 ///  with details such as pointer size.
@@ -55,11 +54,14 @@ pub trait Arch {
         // trait Add so that we can do VA + RVA -> VA.
         //  see note above.
         + Add<Output=Self::RVA>
+        + Sub<Output=Self::RVA>
         // trait Add so that we can do RVA + RVA -> RVA.
         + Add<Self::RVA, Output=Self::RVA>
         + CheckedAdd<Output=Self::RVA>
+        + CheckedSub<Output=Self::RVA>
         // trait FromPrimitive so that we can convert from usize (vec length) to offset.
         + FromPrimitive
+        + ToPrimitive
         // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
         ;
@@ -114,16 +116,45 @@ impl fmt::Display for Arch64 {
 /// use lancelot::arch::*;
 ///
 /// // returns Some if the operation does not wrap:
-/// assert_eq!(true, rva_plus_usize::<Arch32>(0x0, 0x1).is_some());
-/// assert_eq!(0x1, rva_plus_usize::<Arch32>(0x0, 0x1).unwrap());
+/// assert_eq!(true, rva_add_usize::<Arch32>(0x0, 0x1).is_some());
+/// assert_eq!(0x1,  rva_add_usize::<Arch32>(0x0, 0x1).unwrap());
 ///
 /// // returns None if the operation wraps.
-/// assert_eq!(true, rva_plus_usize::<Arch32>(0x0, 0xFFFFFFFF).is_none());
+/// assert_eq!(true, rva_add_usize::<Arch32>(0x0, 0xFFFFFFFF).is_none());
 /// ```
-pub fn rva_plus_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
+pub fn rva_add_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
     if let Some(v) = A::RVA::from_usize(offset) {
         base.checked_add(&v)
     } else {
         None
     }
 }
+
+/// Checked arithmetic across RVA and usize.
+///
+/// We'd like RVA to be trait `Sub<usize, Output=RVA>`.
+/// However, this cannot be the case when `<RVA=u32>`
+///  as we then have `i32 - u32` which can underflow `i32`.
+/// So, we have to do checked arithmetic.
+///
+/// Example:
+///
+/// ```
+/// use std::i32;
+/// use lancelot::arch::*;
+///
+/// // returns Some if the operation does not wrap:
+/// assert_eq!(true, rva_sub_usize::<Arch32>(0x1, 0x0).is_some());
+/// assert_eq!(0x1,  rva_sub_usize::<Arch32>(0x1, 0x0).unwrap());
+///
+/// // returns None if the operation wraps.
+/// assert_eq!(true, rva_sub_usize::<Arch32>(std::i32::MAX, 0xFFFFFFFF).is_none());
+/// ```
+pub fn rva_sub_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
+    if let Some(v) = A::RVA::from_usize(offset) {
+        base.checked_sub(&v)
+    } else {
+        None
+    }
+}
+
