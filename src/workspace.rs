@@ -1,11 +1,11 @@
 use num::{ToPrimitive};
-use failure::{Error, Fail, bail, ensure};
+use byteorder::{ByteOrder, LittleEndian};
+use failure::{Error, Fail};
 
 use super::util;
 use super::loader;
-use super::arch;
 use super::arch::{Arch};
-use super::loader::{LoadedModule, Loader, Section};
+use super::loader::{LoadedModule, Loader};
 
 
 #[derive(Debug, Fail)]
@@ -80,7 +80,7 @@ impl<A: Arch + 'static> Workspace<A> {
         Workspace::from_bytes(filename, &buf)
     }
 
-    /// Create a workspace and load the given bytes.
+    /// Read bytes from the given RVA.
     ///
     /// Errors:
     ///
@@ -126,6 +126,67 @@ impl<A: Arch + 'static> Workspace<A> {
                     })
             })
     }
+
+    /// Read a byte from the given RVA.
+    ///
+    /// Errors: same as `read_bytes`.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::Workspace;
+    ///
+    /// // TODO: use exactly the shellcode loader.
+    ///
+    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
+    ///   .map(|ws| {
+    ///     assert_eq!(ws.read_u8(0x0).unwrap(), 0xEB);
+    ///     assert_eq!(ws.read_u8(0x1).unwrap(), 0xFE);
+    ///     assert_eq!(ws.read_u8(0x2).is_err(), true);
+    ///   })
+    ///   .map_err(|e| panic!(e));
+    /// ```
+    pub fn read_u8(&self, rva: A::RVA) -> Result<u8, Error> {
+        self.read_bytes(rva, 1)
+            .and_then(|buf| Ok(buf[0]))
+    }
+
+    /// Read a word from the given RVA.
+    ///
+    /// Errors: same as `read_bytes`.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::Workspace;
+    ///
+    /// // TODO: use exactly the shellcode loader.
+    ///
+    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
+    ///   .map(|ws| {
+    ///     assert_eq!(ws.read_u16(0x0).unwrap(), 0xFEEB);
+    ///     assert_eq!(ws.read_u16(0x1).is_err(), true);
+    ///     assert_eq!(ws.read_u16(0x2).is_err(), true);
+    ///   })
+    ///   .map_err(|e| panic!(e));
+    /// ```
+    pub fn read_u16(&self, rva: A::RVA) -> Result<u16, Error> {
+        self.read_bytes(rva, 2)
+            .and_then(|buf| Ok(LittleEndian::read_u16(buf)))
+    }
+
+    pub fn read_u32(&self, rva: A::RVA) -> Result<u32, Error> {
+        self.read_bytes(rva, 4)
+            .and_then(|buf| Ok(LittleEndian::read_u32(buf)))
+    }
+
+    pub fn read_u64(&self, rva: A::RVA) -> Result<u64, Error> {
+        self.read_bytes(rva, 8)
+            .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
+    }
+
 
     // API:
     //   get_insn
