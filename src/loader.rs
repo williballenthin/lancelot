@@ -2,7 +2,7 @@ use num::Zero;
 use strum_macros::{Display};
 use std::marker::PhantomData;
 use super::arch;
-use super::arch::{Arch, Arch32, Arch64};
+use super::arch::{Arch};
 
 use failure::{Error, Fail};
 

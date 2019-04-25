@@ -1,7 +1,5 @@
 use std::fmt;
 
-use super::arch::{Arch};
-
 // TODO: figure out how to use failure for error (or some other pattern)
 #[derive(Debug)]
 pub enum Error {
@@ -144,10 +142,4 @@ impl fmt::Display for FlowMeta {
                self.has_xrefs_to(),
                self.has_xrefs_from())
     }
-}
-
-/// FlowMeta metadata attached to a location (relative to base address).
-struct LocFlowMeta<A: Arch> {
-    loc: A::RVA,
-    meta: FlowMeta,
 }
