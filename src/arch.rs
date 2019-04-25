@@ -63,6 +63,8 @@ pub trait Arch {
         // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
         ;
+
+    fn get_bits() -> u8;
 }
 
 /// 32-bit Intel architecture.
@@ -70,6 +72,9 @@ pub struct Arch32;
 impl Arch for Arch32 {
     type VA = u32;
     type RVA = i32;
+    fn get_bits() -> u8 {
+        32
+    }
 }
 
 
@@ -84,6 +89,9 @@ pub struct Arch64;
 impl Arch for Arch64 {
     type VA = u64;
     type RVA = i64;
+    fn get_bits() -> u8 {
+        64
+    }
 }
 
 impl fmt::Display for Arch64 {
