@@ -1,4 +1,4 @@
-use num::{ToPrimitive};
+use num::{ToPrimitive, FromPrimitive};
 use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 
@@ -187,6 +187,43 @@ impl<A: Arch + 'static> Workspace<A> {
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
     }
 
+
+    /// Read an RVA from the given RVA.
+    /// Note that the size of the read is dependent on the architecture.
+    ///
+    /// Errors: same as `read_bytes`.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::Workspace;
+    ///
+    /// // TODO: use exactly the shellcode loader.
+    ///
+    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\x00\x11\x22\x33")
+    ///   .map(|ws| {
+    ///     assert_eq!(ws.read_rva(0x0).unwrap(), 0x33221100);
+    ///   })
+    ///   .map_err(|e| panic!(e));
+    /// ```
+    pub fn read_rva(&self, rva: A::RVA) -> Result<A::RVA, Error> {
+        match A::get_bits() {
+            32 => Ok(A::RVA::from_u32(self.read_u32(rva)?).unwrap()),
+            64 => Ok(A::RVA::from_u64(self.read_u64(rva)?).unwrap()),
+            _  => panic!("unexpected architecture"),
+        }
+    }
+
+    /// Read a VA from the given RVA.
+    /// Note that the size of the read is dependent on the architecture.
+    pub fn read_va(&self, rva: A::RVA) -> Result<A::VA, Error> {
+        match A::get_bits() {
+            32 => Ok(A::VA::from_u32(self.read_u32(rva)?).unwrap()),
+            64 => Ok(A::VA::from_u64(self.read_u64(rva)?).unwrap()),
+            _  => panic!("unexpected architecture"),
+        }
+    }
 
     // API:
     //   get_insn

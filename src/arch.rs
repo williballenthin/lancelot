@@ -42,6 +42,8 @@ pub trait Arch {
         //  TODO: provide helper routines to make this easy.
         + Add<Output=Self::VA>
         + Zero
+        + FromPrimitive
+        + ToPrimitive
         // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
         ;
