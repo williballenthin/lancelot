@@ -12,7 +12,7 @@ pub enum LoaderError {
 #[derive(Display, Clone, Copy)]
 pub enum DetectedArch {
     X32,
-    X64
+    X64,
 }
 
 #[derive(Display, Clone, Copy)]
@@ -186,16 +186,19 @@ pub fn taste(buf: &[u8]) -> impl Iterator<Item=Box<dyn Loader>> {
 /// use lancelot::loader::*;
 ///
 /// load32(b"\xEB\xFE")
-///   .map(|module| {
+///   .map(|(loader, module)| {
+///     assert_eq!(loader.get_name(),       "Windows/X32/Raw");
 ///     assert_eq!(module.base_address,     0x0);
 ///     assert_eq!(module.sections[0].name, "raw");
 ///   })
 ///   .map_err(|e| panic!(e));
 /// ```
-pub fn load32(buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
+pub fn load32(buf: &[u8]) -> Result<(Box<dyn Loader>, LoadedModule<Arch32>), Error> {
     match taste(buf).nth(0) {
         Some(loader) => {
-            loader.load32(buf)
+            loader.load32(buf).map(|module|
+                (loader, module)
+            )
         },
         None => Err(LoaderError::NotSupported.into()),
     }
