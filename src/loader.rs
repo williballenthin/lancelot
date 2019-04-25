@@ -1,10 +1,11 @@
 use strum_macros::{Display};
 use super::arch::{Arch, Arch32, rva_plus_usize};
 
-// TODO: figure out how to use failure for error (or some other pattern)
-#[derive(Debug)]
-pub enum Error {
-    /// The given buffer is not supported (arch/plat/file format).
+use failure::{Error, Fail};
+
+#[derive(Debug, Fail)]
+pub enum LoaderError {
+    #[fail(display = "The given buffer is not supported (arch/plat/file format)")]
     NotSupported,
 }
 
@@ -196,6 +197,6 @@ pub fn load32(buf: &[u8]) -> Result<LoadedModule<Arch32>, Error> {
         Some(loader) => {
             loader.load32(buf)
         },
-        None => Err(Error::NotSupported),
+        None => Err(LoaderError::NotSupported.into()),
     }
 }

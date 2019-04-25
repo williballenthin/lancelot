@@ -20,6 +20,7 @@ num = "0.2"
 num-traits = "0.2"
 strum = "0.15"
 strum_macros = "0.15"
+failure = "0.1.5"
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)

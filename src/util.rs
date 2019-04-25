@@ -1,3 +1,17 @@
+use std::fs;
+use std::io::prelude::*;
+use log::{debug, error};
+
+use failure::{Error, Fail};
+
+#[derive(Debug, Fail)]
+pub enum UtilError {
+    #[fail(display = "insufficient file access")]
+    FileAccess,
+    #[fail(display = "invalid file format")]
+    FileFormat,
+}
+
 /// Static cast the given 64-bit unsigned integer to a 64-bit signed integer.
 /// This is probably only useful when some other code provides you a u64
 ///  that is meant to be an i64 (aka. uncommon).
@@ -130,4 +144,34 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     }
 
     ret
+}
+
+pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
+    debug!("read_file: {:?}", filename);
+
+    let mut buf = Vec::new();
+    {
+        debug!("reading file: {}", filename);
+        let mut f = match fs::File::open(filename) {
+            Ok(f) => f,
+            Err(_) => {
+                error!("failed to open file: {}", filename);
+                return Err(UtilError::FileAccess.into());
+            }
+        };
+        let bytes_read = match f.read_to_end(&mut buf) {
+            Ok(c) => c,
+            Err(_) => {
+                error!("failed to read entire file: {}", filename);
+                return Err(UtilError::FileAccess.into());
+            }
+        };
+        debug!("read {} bytes", bytes_read);
+        if bytes_read < 0x10 {
+            error!("file too small: {}", filename);
+            return Err(UtilError::FileFormat.into());
+        }
+    }
+
+    Ok(buf)
 }
