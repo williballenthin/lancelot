@@ -1,6 +1,7 @@
 use std::fmt;
 use num::{Zero};
 use std::ops::{Add, Sub};
+use std::hash::Hash;
 
 extern crate num;
 use num::{ToPrimitive, FromPrimitive, CheckedAdd, CheckedSub};
@@ -53,6 +54,8 @@ pub trait Arch {
         // trait Ord so that we can compare offsets.
         Ord
         + Zero
+        + Hash
+        + fmt::LowerHex
         // trait Add so that we can do VA + RVA -> VA.
         //  see note above.
         + Add<Output=Self::RVA>
