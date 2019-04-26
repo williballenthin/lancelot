@@ -12,10 +12,14 @@ pub enum Error {
 /// The metadata is packed into a single byte, with the expectation that,
 ///  there may be one `FlowMeta` instance for each (code) offset in a program.
 /// However, the you should not be worried about the representation, just the interface.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FlowMeta(u8);
 
 impl FlowMeta {
+    pub fn zero() -> FlowMeta {
+        FlowMeta(0x0)
+    }
+
     /// Create a new FlowMeta.
     ///
     /// Args:
