@@ -81,6 +81,10 @@ impl FlowMeta {
         }
     }
 
+    pub fn is_insn(&self) -> bool {
+        self.0 & 0b0000_1111 != 0
+    }
+
     /// Does the instruction fallthrough?
     pub fn does_fallthrough(&self) -> bool {
         self.0 & 0b0001_0000 > 0
