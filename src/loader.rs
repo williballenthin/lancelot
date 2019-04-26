@@ -47,6 +47,11 @@ impl <A: Arch> Section<A> {
 
         true
     }
+
+    pub fn is_executable(&self) -> bool {
+        // TODO
+        true
+    }
 }
 
 pub struct LoadedModule<A: Arch> {
