@@ -14,4 +14,5 @@ pub mod util;
 pub mod xref;
 pub mod loader;
 pub mod flowmeta;
+pub mod analysis;
 pub mod workspace;

@@ -1,5 +1,6 @@
 use num::{ToPrimitive, FromPrimitive};
 use std::collections::VecDeque;
+
 use failure::{Error, Fail};
 use byteorder::{ByteOrder, LittleEndian};
 
@@ -7,6 +8,7 @@ use super::util;
 use super::loader;
 use super::arch::{Arch};
 use super::loader::{LoadedModule, Loader};
+use super::analysis::{Analysis, AnalysisCommand};
 
 
 #[derive(Debug, Fail)]
@@ -18,12 +20,6 @@ pub enum WorkspaceError {
     #[fail(display = "Buffer overrun")]
     BufferOverrun,
 }
-
-
-pub enum AnalysisCommand<A: Arch> {
-    MakeInsn(A::RVA),
-}
-
 
 pub struct WorkspaceBuilder<A: Arch> {
     filename: String,
@@ -90,6 +86,8 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
             None => loader::load::<A>(&self.buf)?,
         };
 
+        let analysis = Analysis::new(&module);
+
         Ok(Workspace::<A>{
             filename: self.filename,
             buf: self.buf,
@@ -97,7 +95,7 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
             loader: ldr,
             module: module,
 
-            analysis_queue: VecDeque::new(),
+            analysis: analysis,
         })
     }
 }
@@ -111,14 +109,8 @@ pub struct Workspace<A: Arch> {
     pub loader: Box<dyn Loader<A>>,
     pub module: LoadedModule<A>,
 
-    // analysis {
-    //   flowmeta,
-    //   datameta,
-    //   symbols,
-    //   functions,
-    // }
-
-    analysis_queue: VecDeque<AnalysisCommand<A>>,
+    // pub only so that we can split the impl
+    pub analysis: Analysis<A>,
 }
 
 impl<A: Arch + 'static> Workspace<A> {
@@ -304,26 +296,6 @@ impl<A: Arch + 'static> Workspace<A> {
     //   call graph
     //   control flow graph
 
-    pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
-        self.analysis_queue.push_back(AnalysisCommand::MakeInsn(rva));
-        Ok(())
-    }
 
-    fn handle_make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
-        // 1. ensure not exists
-        // 2. compute len
-        // 3. compute fallthrough
-        // 4. compute flow ref
-        Ok(())
-    }
-
-    pub fn analyze(&mut self) -> Result<(), Error> {
-        while let Some(cmd) = self.analysis_queue.pop_front() {
-            match cmd {
-                AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
-            }
-        }
-
-        Ok(())
-    }
+    // see: `analysis::impl Workspace`
 }
