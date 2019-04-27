@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 
 use failure::{Error, Fail};
 use byteorder::{ByteOrder, LittleEndian};
+use zydis::gen::*;
+use zydis::{Decoder};
 
 use super::util;
 use super::loader;
@@ -19,6 +21,8 @@ pub enum WorkspaceError {
     InvalidAddress,
     #[fail(display = "Buffer overrun")]
     BufferOverrun,
+    #[fail(display = "The instruction at the given address is invalid")]
+    InvalidInstruction
 }
 
 pub struct WorkspaceBuilder<A: Arch> {
@@ -88,12 +92,26 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
 
         let analysis = Analysis::new(&module);
 
+        let decoder = if A::get_bits() == 32 {
+            Decoder::new(
+                ZYDIS_MACHINE_MODE_LEGACY_32,
+                ZYDIS_ADDRESS_WIDTH_32
+            ).unwrap()
+        } else {
+            Decoder::new(
+                ZYDIS_MACHINE_MODE_LONG_64,
+                ZYDIS_ADDRESS_WIDTH_64
+            ).unwrap()
+        };
+
         Ok(Workspace::<A>{
             filename: self.filename,
             buf: self.buf,
 
             loader: ldr,
             module: module,
+
+            decoder: decoder,
 
             analysis: analysis,
         })
@@ -108,6 +126,8 @@ pub struct Workspace<A: Arch> {
 
     pub loader: Box<dyn Loader<A>>,
     pub module: LoadedModule<A>,
+
+    pub decoder: Decoder,
 
     // pub only so that we can split the impl
     pub analysis: Analysis<A>,
@@ -283,6 +303,68 @@ impl<A: Arch + 'static> Workspace<A> {
             32 => Ok(A::VA::from_u32(self.read_u32(rva)?).unwrap()),
             64 => Ok(A::VA::from_u64(self.read_u64(rva)?).unwrap()),
             _  => panic!("unexpected architecture"),
+        }
+    }
+
+
+    /// Decode an instruction at the given RVA.
+    ///
+    /// Errors:
+    ///
+    ///   - InvalidAddress - if the address is not mapped.
+    ///   - BufferOverrun - if the requested region runs beyond the matching section.
+    ///   - InvalidInstruction - if an instruction cannot be decoded.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use zydis::gen::*;
+    ///
+    /// use lancelot::arch::*;
+    /// use lancelot::loader;
+    /// use lancelot::workspace::Workspace;
+    ///
+    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
+    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
+    ///   .load()
+    ///   .map(|ws| {
+    ///     assert_eq!(ws.read_insn(0x0).is_ok(), true);
+    ///     assert_eq!(ws.read_insn(0x0).unwrap().length, 2);
+    ///     assert_eq!(ws.read_insn(0x0).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
+    ///   })
+    ///   .map_err(|e| panic!(e));
+    /// ```
+    pub fn read_insn(&self, rva: A::RVA) -> Result<ZydisDecodedInstruction, Error> {
+        // this is `read_bytes` except that it reads at most 0x10 bytes.
+        // if less are available, then less are returned.
+        let buf = self.module.sections
+            .iter()
+            .filter(|section| section.contains(rva))
+            .nth(0)
+            .ok_or(WorkspaceError::InvalidAddress.into())
+            .and_then(|section| -> Result<&[u8], Error> {
+                // rva is guaranteed to be within this section,
+                // so we can do an unchecked subtract here.
+                let offset = rva - section.addr;
+                A::RVA::to_usize(&offset)
+                    .ok_or(WorkspaceError::InvalidAddress.into())
+                    .and_then(|offset| {
+                        if offset + 0x10> section.buf.len() {
+                            Ok(&section.buf[offset..])
+                        } else {
+                            Ok(&section.buf[offset..offset+0x10])
+                        }
+                    })
+            })?;
+
+        // RVA will always be either u32 or u64 (never bigger),
+        // so we can always fit this into a u64.
+        let pc = A::RVA::to_u64(&rva).unwrap();
+
+        match self.decoder.decode(&buf, pc) {
+            Ok(Some(insn)) => Ok(insn),
+            Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
+            Err(status) => Err(WorkspaceError::InvalidInstruction.into()),
         }
     }
 
