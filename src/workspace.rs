@@ -10,7 +10,7 @@ use super::util;
 use super::loader;
 use super::arch::{Arch};
 use super::loader::{LoadedModule, Loader};
-use super::analysis::{Analysis, AnalysisCommand};
+use super::analysis::{Analysis};
 
 
 #[derive(Debug, Fail)]
@@ -364,7 +364,7 @@ impl<A: Arch + 'static> Workspace<A> {
         match self.decoder.decode(&buf, pc) {
             Ok(Some(insn)) => Ok(insn),
             Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
-            Err(status) => Err(WorkspaceError::InvalidInstruction.into()),
+            Err(_) => Err(WorkspaceError::InvalidInstruction.into()),
         }
     }
 

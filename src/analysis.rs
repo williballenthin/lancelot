@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use num::{ToPrimitive, FromPrimitive};
+use num::{ToPrimitive};
 
 use failure::{Error, Fail};
-use log::{error, warn, info, debug, trace};
+use log::{warn, debug};
 
 use super::arch::{Arch};
 use super::loader::{LoadedModule, Section};
@@ -74,7 +74,7 @@ impl<A: Arch> Analysis<A> {
 
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
-impl<A: Arch> Workspace<A> {
+impl<A: Arch + 'static> Workspace<A> {
     pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
         self.analysis.queue.push_back(AnalysisCommand::MakeInsn(rva));
         Ok(())
@@ -84,7 +84,7 @@ impl<A: Arch> Workspace<A> {
         self.module.sections
             .iter()
             .enumerate()
-            .filter(|(i, section)| section.contains(rva))
+            .filter(|(_, section)| section.contains(rva))
             .nth(0)
             .and_then(|(i, section): (usize, &Section<A>)| -> Option<FlowMeta> {
                 // rva is guaranteed to be within this section,
@@ -102,7 +102,7 @@ impl<A: Arch> Workspace<A> {
 
         // TODO: 0. probe address
 
-        // 1. ensure not exists
+        // 1. ensure instruction doesn't already exist
         //
         // if we get a result here, then there's not yet an instruction at the rva.
         // otherwise, we will have returned early, and there's no work to be done.
@@ -131,9 +131,20 @@ impl<A: Arch> Workspace<A> {
             }
         };
 
-        // 2. compute len
+        let insn = match self.read_insn(rva) {
+            Err(e) => {
+                warn!("invalid instruction: {:}: {:x}", e, rva);
+                return Ok(vec![]);
+            },
+            Ok(insn) => insn,
+        };
+
+        // 2. compute instruction len
+        let length = insn.length;
+
         // 3. compute fallthrough
         // 4. compute flow ref
+        // 5. update flowmeta
         Ok(ret)
     }
 
