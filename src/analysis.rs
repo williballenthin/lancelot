@@ -7,6 +7,7 @@ use failure::{Error, Fail};
 use zydis::gen::*;
 
 use super::arch::{Arch};
+use super::xref::{Xref, XrefType};
 use super::loader::{LoadedModule, Section};
 use super::flowmeta::FlowMeta;
 use super::workspace::{Workspace};
@@ -130,6 +131,83 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
+    fn get_call_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        // TODO
+        Ok(vec![])
+    }
+    fn get_jmp_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        // TODO
+        Ok(vec![])
+    }
+    fn get_ret_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        // TODO
+        Ok(vec![])
+    }
+    fn get_cjmp_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        // TODO
+        Ok(vec![])
+    }
+    fn get_cmov_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        // TODO
+        Ok(vec![])
+    }
+
+    fn get_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+        match insn.mnemonic as i32 {
+            ZYDIS_MNEMONIC_CALL => self.get_call_insn_flow(rva, insn),
+
+            ZYDIS_MNEMONIC_JMP => self.get_jmp_insn_flow(rva, insn),
+
+            ZYDIS_MNEMONIC_RET
+            | ZYDIS_MNEMONIC_IRET
+            | ZYDIS_MNEMONIC_IRETD
+            | ZYDIS_MNEMONIC_IRETQ => self.get_ret_insn_flow(rva, insn),
+
+            ZYDIS_MNEMONIC_JB
+            | ZYDIS_MNEMONIC_JBE
+            | ZYDIS_MNEMONIC_JCXZ
+            | ZYDIS_MNEMONIC_JECXZ
+            | ZYDIS_MNEMONIC_JKNZD
+            | ZYDIS_MNEMONIC_JKZD
+            | ZYDIS_MNEMONIC_JL
+            | ZYDIS_MNEMONIC_JLE
+            | ZYDIS_MNEMONIC_JNB
+            | ZYDIS_MNEMONIC_JNBE
+            | ZYDIS_MNEMONIC_JNL
+            | ZYDIS_MNEMONIC_JNLE
+            | ZYDIS_MNEMONIC_JNO
+            | ZYDIS_MNEMONIC_JNP
+            | ZYDIS_MNEMONIC_JNS
+            | ZYDIS_MNEMONIC_JNZ
+            | ZYDIS_MNEMONIC_JO
+            | ZYDIS_MNEMONIC_JP
+            | ZYDIS_MNEMONIC_JRCXZ
+            | ZYDIS_MNEMONIC_JS
+            | ZYDIS_MNEMONIC_JZ => self.get_cjmp_insn_flow(rva, insn),
+
+            ZYDIS_MNEMONIC_CMOVB
+            | ZYDIS_MNEMONIC_CMOVBE
+            | ZYDIS_MNEMONIC_CMOVL
+            | ZYDIS_MNEMONIC_CMOVLE
+            | ZYDIS_MNEMONIC_CMOVNB
+            | ZYDIS_MNEMONIC_CMOVNBE
+            | ZYDIS_MNEMONIC_CMOVNL
+            | ZYDIS_MNEMONIC_CMOVNLE
+            | ZYDIS_MNEMONIC_CMOVNO
+            | ZYDIS_MNEMONIC_CMOVNP
+            | ZYDIS_MNEMONIC_CMOVNS
+            | ZYDIS_MNEMONIC_CMOVNZ
+            | ZYDIS_MNEMONIC_CMOVO
+            | ZYDIS_MNEMONIC_CMOVP
+            | ZYDIS_MNEMONIC_CMOVS
+            | ZYDIS_MNEMONIC_CMOVZ => self.get_cmov_insn_flow(rva, insn),
+
+            // TODO: syscall, sysexit, sysret, vmcall, vmmcall
+
+            _ => Ok(vec![]),
+        }
+    }
+
     fn handle_make_insn(&mut self, rva: A::RVA) -> Result<Vec<AnalysisCommand<A>>, Error> {
         let mut ret = vec![];
 
@@ -179,6 +257,8 @@ impl<A: Arch + 'static> Workspace<A> {
         let does_fallthrough = Workspace::<A>::does_insn_fallthrough(&insn);
 
         // 4. compute flow ref
+        let flows = self.get_insn_flow(rva, &insn)?;
+
         // 5. update flowmeta
         Ok(ret)
     }
