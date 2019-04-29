@@ -1,5 +1,4 @@
 use num::{ToPrimitive, FromPrimitive};
-use std::collections::VecDeque;
 
 use failure::{Error, Fail};
 use byteorder::{ByteOrder, LittleEndian};

@@ -103,20 +103,18 @@ impl<A: Arch + 'static> Workspace<A> {
             })
     }
 
-    /// ```
-    /// use zydis::gen::*;
+    /// Does the given instruction have a fallthrough flow?
     ///
+    /// ```
     /// use lancelot::test;
     ///
     /// // JMP $+0;
-    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), false);
+    /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(0x0).unwrap();
+    /// assert_eq!(ws::does_insn_fallthrough(&insn), false);
     ///
     /// // PUSH 0x11
-    /// let ws = test::get_shellcode32_workspace(b"\x6A\x11");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), true);
+    /// let ws = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(0x0).unwrap();
+    /// assert_eq!(ws::does_insn_fallthrough(&insn), true);
     /// ```
     pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
         match insn.mnemonic as i32 {
