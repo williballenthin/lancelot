@@ -20,8 +20,10 @@ pub enum AnalysisError {
     InvalidInstruction
 }
 
+#[derive(Copy, Clone)]
 pub enum AnalysisCommand<A: Arch> {
     MakeInsn(A::RVA),
+    MakeXref(Xref<A>),
 }
 
 pub struct XrefAnalysis<A: Arch> {
@@ -257,16 +259,36 @@ impl<A: Arch + 'static> Workspace<A> {
         let does_fallthrough = Workspace::<A>::does_insn_fallthrough(&insn);
 
         // 4. compute flow ref
+        // TODO: maybe don't fail, but just return empty list?
         let flows = self.get_insn_flow(rva, &insn)?;
+        //for flow in flows.iter() {
+        //    ret.push(AnalysisCommand::MakeXref(*flow.clone()))
+        //}
 
         // 5. update flowmeta
+        meta.set_insn_length(length);
+
+        if does_fallthrough {
+            meta.set_fallthrough();
+        }
+
+        if flows.len() > 0 {
+            meta.set_xrefs_from();
+            // TODO: do reverse link
+        }
+
         Ok(ret)
+    }
+
+    fn handle_make_xref(&mut self, xref: Xref<A>) -> Result<Vec<AnalysisCommand<A>>, Error> {
+        Ok(vec![])
     }
 
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
+                AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
             };
             self.analysis.queue.extend(cmds);
         }
