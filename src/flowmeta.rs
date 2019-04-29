@@ -16,6 +16,18 @@ pub enum Error {
 pub struct FlowMeta(u8);
 
 impl FlowMeta {
+    // layout:
+    //
+    //     +-+-+-+-+-+-+-+-+
+    //     |A|B|C|D|   E   |
+    //     +-+-+-+-+-+-+-+-+
+    //
+    //  A - unused
+    //  B - has xrefs to
+    //  C - has xrefs from
+    //  D - does fallthrough
+    //  E - insn size
+
     pub fn zero() -> FlowMeta {
         FlowMeta(0x0)
     }
@@ -81,6 +93,45 @@ impl FlowMeta {
         }
     }
 
+    /// ```
+    /// use matches::matches;
+    /// use lancelot::flowmeta::*;
+    ///
+    /// let mut m = FlowMeta::zero();
+    ///
+    /// m.set_insn_length(0);
+    /// assert_eq!(m.is_insn(), false);
+    /// assert!(matches!(m.get_insn_length().err().unwrap(), Error::NotAnInstruction));
+    ///
+    /// m.set_insn_length(1);
+    /// assert_eq!(m.is_insn(), true);
+    /// assert_eq!(m.get_insn_length().unwrap(), 0x1);
+    ///
+    /// m.set_insn_length(2);
+    /// assert_eq!(m.get_insn_length().unwrap(), 0x2);
+    ///
+    /// m.set_insn_length(0xE);
+    /// assert_eq!(m.get_insn_length().unwrap(), 0xE);
+    ///
+    /// m.set_insn_length(0xF);
+    /// assert_eq!(m.is_insn(), true);
+    /// assert!(matches!(m.get_insn_length().err().unwrap(), Error::LongInstruction));
+    /// ```
+    pub fn set_insn_length(&mut self, length: u8) {
+        let len = if length >= 0xF {
+            // instrunction length too long
+            0x0F
+        } else if length == 0x0 {
+            // not an instruction
+            0x00
+        } else {
+            // good flow
+            length & 0x0F
+        };
+
+        self.0 = (self.0 & 0b1111_0000) | len;
+    }
+
     pub fn is_insn(&self) -> bool {
         self.0 & 0b0000_1111 != 0
     }
@@ -90,10 +141,38 @@ impl FlowMeta {
         self.0 & 0b0001_0000 > 0
     }
 
+    /// ```
+    /// use matches::matches;
+    /// use lancelot::flowmeta::*;
+    ///
+    /// let mut m = FlowMeta::zero();
+    /// assert_eq!(m.does_fallthrough(), false);
+    ///
+    /// m.set_fallthrough();
+    /// assert_eq!(m.does_fallthrough(), true);
+    /// ```
+    pub fn set_fallthrough(&mut self) {
+        self.0 = self.0 | 0b0001_0000;
+    }
+
     /// Does the instruction have flow xrefs from it?
     /// This does not include the fallthrough flow.
     pub fn has_xrefs_from(&self) -> bool {
         self.0 & 0b0010_0000 > 0
+    }
+
+    /// ```
+    /// use matches::matches;
+    /// use lancelot::flowmeta::*;
+    ///
+    /// let mut m = FlowMeta::zero();
+    /// assert_eq!(m.has_xrefs_from(), false);
+    ///
+    /// m.set_xrefs_from();
+    /// assert_eq!(m.has_xrefs_from(), true);
+    /// ```
+    pub fn set_xrefs_from(&mut self) {
+        self.0 = self.0 | 0b0010_0000;
     }
 
     /// Does the instruction have flow xrefs to it?
