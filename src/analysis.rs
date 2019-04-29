@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use num::{ToPrimitive};
 
-use failure::{Error, Fail};
 use log::{warn, debug};
+use failure::{Error, Fail};
+use zydis::gen::*;
 
 use super::arch::{Arch};
 use super::loader::{LoadedModule, Section};
@@ -23,6 +24,10 @@ pub enum AnalysisCommand<A: Arch> {
 }
 
 pub struct XrefAnalysis<A: Arch> {
+    // TODO: use FNV because the keys are small.
+    // TODO: use SmallVec(1) for `.from` values,
+    // TODO: use SmallVec(X) for `.to` values,
+
     // dst rva -> src rva
     to: HashMap<A::RVA, A::RVA>,
     // src rva -> dst rva
@@ -33,6 +38,7 @@ pub struct FlowAnalysis<A: Arch> {
     // one entry for each section in the module.
     // if executable, then one FlowMeta for each address in the section.
     // that is, Vec<FlowMeta>.len() == Section.buf.len()
+    // TODO: order these entries so that the most common sections are first (`.code`?)
     meta: Vec<Vec<FlowMeta>>,
     xrefs: XrefAnalysis<A>,
 }
@@ -97,6 +103,35 @@ impl<A: Arch + 'static> Workspace<A> {
             })
     }
 
+    /// ```
+    /// use zydis::gen::*;
+    ///
+    /// use lancelot::test;
+    ///
+    /// // JMP $+0;
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), false);
+    ///
+    /// // PUSH 0x11
+    /// let ws = test::get_shellcode32_workspace(b"\x6A\x11");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), true);
+    /// ```
+    pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
+        match insn.mnemonic as i32 {
+            ZYDIS_MNEMONIC_JMP => false,
+            ZYDIS_MNEMONIC_RET => false,
+            ZYDIS_MNEMONIC_IRET => false,
+            ZYDIS_MNEMONIC_IRETD => false,
+            ZYDIS_MNEMONIC_IRETQ => false,
+            // TODO: call may not fallthrough if function is noret.
+            // will need another pass to clean this up.
+            ZYDIS_MNEMONIC_CALL => true,
+            _ => true,
+        }
+    }
+
     fn handle_make_insn(&mut self, rva: A::RVA) -> Result<Vec<AnalysisCommand<A>>, Error> {
         let mut ret = vec![];
 
@@ -143,6 +178,8 @@ impl<A: Arch + 'static> Workspace<A> {
         let length = insn.length;
 
         // 3. compute fallthrough
+        let does_fallthrough = Workspace::<A>::does_insn_fallthrough(&insn);
+
         // 4. compute flow ref
         // 5. update flowmeta
         Ok(ret)
