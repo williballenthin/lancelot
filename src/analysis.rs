@@ -110,14 +110,16 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::*;
     ///
     /// // JMP $+0;
     /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(0x0).unwrap();
-    /// assert_eq!(ws::does_insn_fallthrough(&insn), false);
+    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), false);
     ///
     /// // PUSH 0x11
-    /// let ws = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(0x0).unwrap();
-    /// assert_eq!(ws::does_insn_fallthrough(&insn), true);
+    /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(0x0).unwrap();
+    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), true);
     /// ```
     pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
         match insn.mnemonic as i32 {
@@ -261,9 +263,11 @@ impl<A: Arch + 'static> Workspace<A> {
         // 4. compute flow ref
         // TODO: maybe don't fail, but just return empty list?
         let flows = self.get_insn_flow(rva, &insn)?;
-        //for flow in flows.iter() {
-        //    ret.push(AnalysisCommand::MakeXref(*flow.clone()))
-        //}
+        ret.extend(
+            flows
+                .iter()
+                .map(|f| AnalysisCommand::MakeXref(*f))
+        );
 
         // 5. update flowmeta
         meta.set_insn_length(length);

@@ -21,9 +21,21 @@ pub enum XrefType {
     ConditionalMove,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct Xref<A: Arch> {
     src: A::RVA,
     dst: A::RVA,
     typ: XrefType,
 }
+
+// we have to implement `Clone` manually, as described in
+// https://github.com/rust-lang/rust/issues/41481
+// and https://github.com/rust-lang/rust/issues/26925
+impl<A: Arch> Clone for Xref<A> {
+    fn clone(&self) -> Self {
+        Xref{
+            ..*self
+        }
+    }
+}
+impl<A: Arch> Copy for Xref<A> {}
