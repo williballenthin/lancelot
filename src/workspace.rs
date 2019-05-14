@@ -200,6 +200,10 @@ impl<A: Arch + 'static> Workspace<A> {
             })
     }
 
+    pub fn probe(&self, rva: A::RVA, length: usize) -> bool {
+        self.read_bytes(rva, length).is_ok()
+    }
+
     /// Read a byte from the given RVA.
     ///
     /// Errors: same as `read_bytes`.
