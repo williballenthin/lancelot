@@ -1,6 +1,6 @@
 use super::arch::{Arch};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum XrefType {
     // mov eax, eax
     // push ebp
@@ -21,7 +21,7 @@ pub enum XrefType {
     ConditionalMove,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Xref<A: Arch> {
     pub src: A::RVA,
     pub dst: A::RVA,

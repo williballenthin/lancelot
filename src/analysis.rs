@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use num::{ToPrimitive, FromPrimitive};
+use std::fmt::Debug;
+use std::hash::Hash;
 
 use log::{warn, info, debug};
 use failure::{Error, Fail};
@@ -20,7 +23,7 @@ pub enum AnalysisError {
     InvalidInstruction
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum AnalysisCommand<A: Arch> {
     MakeInsn(A::RVA),
     MakeXref(Xref<A>),
@@ -81,9 +84,9 @@ pub struct XrefAnalysis<A: Arch> {
     // TODO: use SmallVec(X) for `.to` values,
 
     // dst rva -> src rva
-    to: HashMap<A::RVA, A::RVA>,
+    to: HashMap<A::RVA, HashSet<Xref<A>>>,
     // src rva -> dst rva
-    from: HashMap<A::RVA, A::RVA>,
+    from: HashMap<A::RVA, HashSet<Xref<A>>>,
 }
 
 pub struct FlowAnalysis<A: Arch> {
@@ -132,7 +135,7 @@ impl<A: Arch> Analysis<A> {
 
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
-impl<A: Arch + 'static> Workspace<A> {
+impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
         self.analysis.queue.push_back(AnalysisCommand::MakeInsn(rva));
         Ok(())
@@ -479,7 +482,74 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(ret)
     }
 
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // JMP $+0;
+    /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// let meta = ws.get_meta(0x0).unwrap();
+    /// assert_eq!(meta.has_xrefs_from(), false);
+    /// assert_eq!(meta.has_xrefs_to(),   false);
+    ///
+    /// ws.make_insn(0x0).unwrap();
+    /// ws.analyze();
+    ///
+    /// let meta = ws.get_meta(0x0).unwrap();
+    /// assert_eq!(meta.has_xrefs_from(), true);
+    /// assert_eq!(meta.has_xrefs_to(),   true);
+    /// ```
     fn handle_make_xref(&mut self, xref: Xref<A>) -> Result<Vec<AnalysisCommand<A>>, Error> {
+        // outline:
+        //  1. validate arguments
+        //  2. insert xref-from src, if not exists
+        //  3. if did (2), insert xref-to dst
+
+        // step 1. validate arguments
+        if !self.probe(xref.src, 1) {
+            warn!("invalid xref src address: {:#x}", xref.src);
+            return Ok(vec![]);
+        }
+        if !self.probe(xref.dst, 1) {
+            warn!("invalid xref dst address: {:#x}", xref.dst);
+            return Ok(vec![]);
+        }
+
+        // since we already validated the xref,
+        // unwrap should be safe here.
+        //
+        // TODO: we are duplicating the validation here.
+        let srcco = self.get_coords(xref.src).unwrap();
+        let dstco = self.get_coords(xref.dst).unwrap();
+
+        // step 2a: update src flowmeta flag indicating xrefs-from
+        {
+            let srcmeta = &mut self.analysis.flow.meta[srcco.0][srcco.1];
+            if !srcmeta.has_xrefs_from() {
+                srcmeta.set_xrefs_from();
+            }
+        }
+
+        // step 2b: update src xrefs-from with xref, it not exists
+        let is_new = {
+            let xrefs = self.analysis.flow.xrefs.from.entry(xref.src).or_insert(HashSet::new());
+            xrefs.insert(xref)
+        };
+
+        // step 3: only if new entry, then insert dst xrefs-to
+        if is_new {
+            {
+                let dstmeta = &mut self.analysis.flow.meta[dstco.0][dstco.1];
+                if !dstmeta.has_xrefs_to() {
+                    dstmeta.set_xrefs_to();
+                }
+            }
+
+            {
+                let xrefs = self.analysis.flow.xrefs.to.entry(xref.dst).or_insert(HashSet::new());
+                xrefs.insert(xref);
+            }
+        }
+
         Ok(vec![])
     }
 
@@ -496,8 +566,8 @@ impl<A: Arch + 'static> Workspace<A> {
     /// assert_eq!(meta.does_fallthrough(), false);
     /// ```
     pub fn analyze(&mut self) -> Result<(), Error> {
-        println!("hi");
         while let Some(cmd) = self.analysis.queue.pop_front() {
+            debug!("dispatching command: {:?}", cmd);
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
