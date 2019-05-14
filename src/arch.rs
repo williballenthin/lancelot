@@ -1,7 +1,9 @@
 use std::fmt;
+use std::hash;
 use num::{Zero};
 use std::ops::{Add, Sub};
 use std::hash::Hash;
+use std::fmt::Debug;
 
 extern crate num;
 use num::{ToPrimitive, FromPrimitive, CheckedAdd, CheckedSub};
@@ -47,6 +49,7 @@ pub trait Arch {
         + ToPrimitive
         // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
+        + Debug
         ;
 
     /// The type used for Relative Virtual Addresses (signed).
@@ -69,6 +72,7 @@ pub trait Arch {
         + ToPrimitive
         // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
+        + Debug
         ;
 
     fn get_bits() -> u8;
@@ -91,6 +95,27 @@ impl fmt::Display for Arch32 {
     }
 }
 
+impl fmt::Debug for Arch32 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "x32")
+    }
+}
+
+impl hash::Hash for Arch32 {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "x32".hash(state);
+    }
+}
+
+impl PartialEq for Arch32 {
+    fn eq(&self, other: &Arch32) -> bool {
+        true
+    }
+}
+
+impl Eq for Arch32 {}
+
+
 /// 64-bit Intel architecture.
 pub struct Arch64;
 impl Arch for Arch64 {
@@ -106,6 +131,26 @@ impl fmt::Display for Arch64 {
         write!(f, "x64")
     }
 }
+
+impl fmt::Debug for Arch64 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "x64")
+    }
+}
+
+impl hash::Hash for Arch64 {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        "x64".hash(state);
+    }
+}
+
+impl PartialEq for Arch64 {
+    fn eq(&self, other: &Arch64) -> bool {
+        true
+    }
+}
+
+impl Eq for Arch64 {}
 
 
 /// Checked arithmetic across RVA and usize.
