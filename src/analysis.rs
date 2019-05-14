@@ -9,6 +9,7 @@ use log::{warn, info, debug};
 use failure::{Error, Fail};
 use zydis::gen::*;
 
+use super::arch;
 use super::arch::{Arch};
 use super::xref::{Xref, XrefType};
 use super::loader::{LoadedModule, Section};
@@ -199,12 +200,74 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         Ok(vec![])
     }
 
-    fn get_memory_operand_xref(&self,
+    /// ## test simple memory ptr operand
+    ///
+    /// ```
+    /// use lancelot::test;
+    /// use lancelot::analysis;
+    ///
+    /// // 0:  ff 25 06 00 00 00       jmp    DWORD PTR ds:0x6
+    /// // 6:  00 00 00 00             dw     0x0
+    /// let mut ws = test::get_shellcode32_workspace(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let op = analysis::get_first_operand(&insn).unwrap();
+    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    ///
+    /// assert_eq!(xref.is_some(), true);
+    /// assert_eq!(xref.unwrap(), 0x0);
+    /// ```
+    pub fn get_memory_operand_xref(&self,
                                rva: A::RVA,
                                insn: &ZydisDecodedInstruction,
                                op: &ZydisDecodedOperand) -> Result<Option<A::RVA>, Error> {
 
         println!("get mem op xref");
+
+        if op.mem.base == 0 &&
+            op.mem.index == 0 &&
+            op.mem.scale == 0 &&
+            op.mem.disp.hasDisplacement == 1 {
+                // the operand is a deref of a memory address.
+                // for example: JMP [0x0]
+                // this means: read the ptr from 0x0, and then jump to it.
+                //
+                // we'll have to make some assumptions here:
+                //  - the ptr doesn't change (can detect via mem segment perms)
+                //  - the ptr is fixed up (TODO)
+                //
+                // see doctest: [test simple memory ptr operand]()
+
+                let ptr = match A::VA::from_i64(op.mem.disp.value) {
+                    Some(ptr) => ptr,
+                    None => return Ok(None),
+                };
+
+                let ptr = match arch::va_compute_rva::<A>(self.module.base_address, ptr) {
+                    Some(ptr) => ptr,
+                    None => return Ok(None),
+                };
+
+                let dst = match self.read_va(ptr) {
+                    Ok(dst) => dst,
+                    Err(_) => return Ok(None),
+                };
+
+                let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
+                    Some(dst) => dst,
+                    None => return Ok(None),
+                };
+
+                if !self.probe(dst, 1) {
+                    return Ok(None);
+                };
+
+                // this is the happy path!
+                return Ok(Some(dst));
+        }
+
+
+        print_op(op);
+
         Ok(None)
     }
 
@@ -568,9 +631,12 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// assert_eq!(meta.get_insn_length().unwrap(), 2);
     /// assert_eq!(meta.does_fallthrough(), false);
     /// ```
+    ///
+    ///
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
             debug!("dispatching command: {:?}", cmd);
+            println!("dispatching command: {:?}", cmd);
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,

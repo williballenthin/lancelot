@@ -208,3 +208,14 @@ pub fn rva_sub_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
     }
 }
 
+
+pub fn va_compute_rva<A: Arch>(base: A::VA, va: A::VA) -> Option<A::RVA> {
+    if va < base {
+        None
+    } else {
+        let base = A::VA::to_u64(&base).unwrap();
+        let va = A::VA::to_u64(&va).unwrap();
+        let rva = va - base;
+        A::RVA::from_u64(rva)
+    }
+}
