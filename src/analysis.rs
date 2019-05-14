@@ -89,21 +89,28 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(())
     }
 
-    fn get_meta(&self, rva: A::RVA) -> Option<FlowMeta> {
+    /// fetch the (section, offset) indices for the given RVA.
+    fn get_coords(&self, rva: A::RVA) -> Option<(usize, usize)> {
         self.module.sections
             .iter()
             .enumerate()
             .filter(|(_, section)| section.contains(rva))
             .nth(0)
-            .and_then(|(i, section): (usize, &Section<A>)| -> Option<FlowMeta> {
+            .and_then(|(i, section): (usize, &Section<A>)| -> Option<(usize, usize)> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
                 let offset = rva - section.addr;
                 A::RVA::to_usize(&offset)
                     .and_then(|offset| {
-                        Some(self.analysis.flow.meta[i][offset].clone())
+                        Some((i, offset))
                     })
             })
+    }
+
+    pub fn get_meta(&self, rva: A::RVA) -> Option<FlowMeta> {
+        self.get_coords(rva).and_then(|(section, offset)| {
+            Some(self.analysis.flow.meta[section][offset].clone())
+        })
     }
 
     /// Does the given instruction have a fallthrough flow?
@@ -225,7 +232,7 @@ impl<A: Arch + 'static> Workspace<A> {
         // now, we might worry about lots of extra allocations for the Vec if the insn already exists.
         //  but, its not a problem: Vec only allocates when there's a non-zero element in it!
         // so, its mostly ok to spam `make_insn`.
-        let mut meta = match self.get_meta(rva) {
+        let meta = match self.get_meta(rva) {
             None => {
                 // this might happen if:
                 //   - the instruction is in a non-executable section
@@ -270,16 +277,24 @@ impl<A: Arch + 'static> Workspace<A> {
         );
 
         // 5. update flowmeta
-        meta.set_insn_length(length);
+        {
+            let (section, offset) = self.get_coords(rva).unwrap();
+            let meta = &mut self.analysis.flow.meta[section][offset];
 
-        if does_fallthrough {
-            meta.set_fallthrough();
+            meta.set_insn_length(length);
+
+            if does_fallthrough {
+                meta.set_fallthrough();
+            }
         }
 
+        /*
+         * TODO: push this into handle_make_xref?
         if flows.len() > 0 {
             meta.set_xrefs_from();
             // TODO: do reverse link
         }
+        */
 
         Ok(ret)
     }
@@ -288,6 +303,20 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(vec![])
     }
 
+
+    /// ```
+    /// use lancelot::test;
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::*;
+    ///
+    /// // JMP $+0;
+    /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// ws.make_insn(0x0).unwrap();
+    /// ws.analyze();
+    /// let meta = ws.get_meta(0x0).unwrap();
+    /// assert_eq!(meta.get_insn_length().unwrap(), 2);
+    /// assert_eq!(meta.does_fallthrough(), false);
+    /// ```
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
             let cmds = match cmd {
