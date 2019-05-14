@@ -23,9 +23,9 @@ pub enum XrefType {
 
 #[derive(Debug)]
 pub struct Xref<A: Arch> {
-    src: A::RVA,
-    dst: A::RVA,
-    typ: XrefType,
+    pub src: A::RVA,
+    pub dst: A::RVA,
+    pub typ: XrefType,
 }
 
 // we have to implement `Clone` manually, as described in
