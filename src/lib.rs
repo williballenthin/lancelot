@@ -10,5 +10,5 @@ pub mod analysis;
 pub mod workspace;
 
 // helpers that are useful during doctests, tests.
-#[cfg(feature = "test")]
+//#[cfg(feature="test")]
 pub mod test;

@@ -4,10 +4,16 @@ extern crate lancelot;
 use std::env;
 use std::process;
 use log::{error, info, trace};
-use goblin::Object;
+use failure::{Error, Fail};
 
-use lancelot::{Workspace, Error};
-use lancelot::analysis;
+use lancelot::arch::*;
+use lancelot::workspace::Workspace;
+
+#[derive(Debug, Fail)]
+pub enum MainError {
+    #[fail(display = "foo")]
+    Foo,
+}
 
 pub struct Config {
     pub filename: String,
@@ -35,42 +41,9 @@ pub fn setup_logging(_args: &Config) {
 
 pub fn run(args: &Config) -> Result<(), Error> {
     info!("filename: {:?}", args.filename);
-    let ws = Workspace::from_file(&args.filename)?;
 
-    if let Object::PE(pe) = ws.get_obj()? {
-        let oep = if let Some(opt) = pe.header.optional_header {
-            opt.standard_fields.address_of_entry_point
-        } else {
-            0x0
-        };
-        println!("entrypoint: {:}", ws.get_insn(oep)?);
-    }
-
-    //println!("roots: {:}", analysis::find_roots(&ws).expect("foo").len());
-    /*
-    println!(
-        "call targets: {:}",
-        analysis::find_call_targets(&ws).expect("foo").len()
-    );
-    println!(
-        "branch targets: {:}",
-        analysis::find_branch_targets(&ws).expect("foo").len()
-    );
-    */
-    println!(
-        "entry points: {:}",
-        analysis::find_entrypoints(&ws).expect("foo").len()
-    );
-    println!(
-        "runtime functions: {:}",
-        analysis::find_runtime_functions(&ws).expect("foo").len()
-    );
-
-    let fvas = analysis::find_functions(&ws).expect("foo");
-
-    println!("find functions: {:}", fvas.len());
-
-    analysis::compute_coverage(&ws, &fvas)?;
+    let _ = Workspace::<Arch32>::from_file(&args.filename)?
+      .load()?;
 
     Ok(())
 }
