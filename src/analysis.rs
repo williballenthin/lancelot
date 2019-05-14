@@ -458,6 +458,17 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                 .iter()
                 .map(|f| AnalysisCommand::MakeXref(*f))
         );
+        ret.extend(
+            flows
+                .iter()
+                .map(|f| AnalysisCommand::MakeInsn(f.dst))
+        );
+
+        if does_fallthrough {
+            // u8 can always go into an RVA (u32 or greater).
+            let len = A::RVA::from_u8(insn.length).unwrap();
+            ret.push(AnalysisCommand::MakeInsn(rva + len));
+        }
 
         // 5. update flowmeta
         {
@@ -470,14 +481,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                 meta.set_fallthrough();
             }
         }
-
-        /*
-         * TODO: push this into handle_make_xref?
-        if flows.len() > 0 {
-            meta.set_xrefs_from();
-            // TODO: do reverse link
-        }
-        */
 
         Ok(ret)
     }
