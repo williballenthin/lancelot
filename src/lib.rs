@@ -13,3 +13,4 @@ pub mod xref;
 // helpers that are useful during doctests, tests.
 //#[cfg(feature="test")]
 pub mod test;
+pub mod rsrc;

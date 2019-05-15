@@ -25,7 +25,7 @@ use num::{CheckedAdd, CheckedSub, FromPrimitive, ToPrimitive};
 ///   name: String,
 /// }
 ///
-/// let s: Section::<Arch32> = Section {
+/// let s: Section<Arch32> = Section {
 ///   addr: 0x0,
 ///   buf: vec![],
 ///   name: "foo".to_string(),

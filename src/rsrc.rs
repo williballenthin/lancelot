@@ -1,6 +1,9 @@
 //! A module to assist with fetching test data from the crate's resources.
 use std::path::PathBuf;
 
+use super::util;
+
+
 #[derive(Copy, Clone)]
 pub enum Rsrc {
     /// A defanged 64-bit version of kernel32.dll.
@@ -10,6 +13,26 @@ pub enum Rsrc {
     TINY,
     /// from: https://joenord.com/apps/nop/
     NOP,
+}
+
+/// Fetch the file system name of the given resource.
+///
+/// ```
+/// use lancelot::rsrc::*;
+/// assert_eq!(get_name(Rsrc::K32), "k32.bin");
+/// ```
+pub fn get_name(rsrc: Rsrc) -> String {
+    match rsrc {
+        Rsrc::K32 => {
+            String::from("k32.bin")
+        }
+        Rsrc::TINY => {
+            String::from("tiny.exe")
+        }
+        Rsrc::NOP => {
+            String::from("nop.exe")
+        }
+    }
 }
 
 /// Fetch the file system path of the given resource.
@@ -22,19 +45,7 @@ pub fn get_path(rsrc: Rsrc) -> String {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("resources");
     d.push("test");
-
-    match rsrc {
-        Rsrc::K32 => {
-            d.push("k32.bin");
-        }
-        Rsrc::TINY => {
-            d.push("tiny.exe");
-        }
-        Rsrc::NOP => {
-            d.push("nop.exe");
-        }
-    }
-
+    d.push(get_name(rsrc));
     String::from(d.to_str().unwrap())
 }
 
@@ -47,7 +58,7 @@ pub fn get_path(rsrc: Rsrc) -> String {
 /// ```
 pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
     let path = get_path(rsrc);
-    let mut buf = super::read_file(&path).unwrap();
+    let mut buf = util::read_file(&path).unwrap();
     match rsrc {
         Rsrc::K32 => {
             buf[0] = b'M';
@@ -61,16 +72,4 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
         }
     }
     buf
-}
-
-/// Fetch a parsed and loaded workspace from the given resource.
-///
-/// ```
-/// use lancelot::rsrc::*;
-/// let ws = get_workspace(Rsrc::TINY);
-/// ```
-pub fn get_workspace(rsrc: Rsrc) -> super::Workspace {
-    let path = get_path(rsrc);
-    let buf = get_buf(rsrc);
-    super::Workspace::from_buf(&path, buf).unwrap()
 }
