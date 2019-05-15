@@ -1,4 +1,4 @@
-use super::arch::{Arch};
+use super::arch::Arch;
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum XrefType {
@@ -33,9 +33,7 @@ pub struct Xref<A: Arch> {
 // and https://github.com/rust-lang/rust/issues/26925
 impl<A: Arch> Clone for Xref<A> {
     fn clone(&self) -> Self {
-        Xref{
-            ..*self
-        }
+        Xref { ..*self }
     }
 }
 impl<A: Arch> Copy for Xref<A> {}

@@ -1,12 +1,12 @@
+use num::Zero;
 use std::fmt;
-use std::hash;
-use num::{Zero};
-use std::ops::{Add, Sub};
-use std::hash::Hash;
 use std::fmt::Debug;
+use std::hash;
+use std::hash::Hash;
+use std::ops::{Add, Sub};
 
 extern crate num;
-use num::{ToPrimitive, FromPrimitive, CheckedAdd, CheckedSub};
+use num::{CheckedAdd, CheckedSub, FromPrimitive, ToPrimitive};
 
 /// Type infrastructure that describes an architecture,
 ///  with details such as pointer size.
@@ -35,45 +35,22 @@ use num::{ToPrimitive, FromPrimitive, CheckedAdd, CheckedSub};
 /// see: https://stackoverflow.com/q/55785858/87207
 pub trait Arch {
     /// The type used for Virtual Addresses (which are unsigned).
-    type VA:
-        // trait Ord so that we can compare addresses.
-        Ord
-        // trait Add so that we can do VA + RVA -> VA
-        //  technically, we should constrain Add to Add<RHS=RVA>
-        //  but, signed + unsigned addition is not implemented.
-        //  atm, we push this down to the user.
-        //  TODO: provide helper routines to make this easy.
-        + Add<Output=Self::VA>
-        + Zero
-        + FromPrimitive
-        + ToPrimitive
-        // trait Copy because this is just a number, so prefer copy semantics.
-        + Copy
-        + Debug
-        ;
+    type VA: Ord + Add<Output = Self::VA> + Zero + FromPrimitive + ToPrimitive + Copy + Debug;
 
     /// The type used for Relative Virtual Addresses (signed).
-    type RVA:
-        // trait Ord so that we can compare offsets.
-        Ord
+    type RVA: Ord
         + Zero
         + Hash
         + fmt::LowerHex
-        // trait Add so that we can do VA + RVA -> VA.
-        //  see note above.
-        + Add<Output=Self::RVA>
-        + Sub<Output=Self::RVA>
-        // trait Add so that we can do RVA + RVA -> RVA.
-        + Add<Self::RVA, Output=Self::RVA>
-        + CheckedAdd<Output=Self::RVA>
-        + CheckedSub<Output=Self::RVA>
-        // trait FromPrimitive so that we can convert from usize (vec length) to offset.
+        + Add<Output = Self::RVA>
+        + Sub<Output = Self::RVA>
+        + Add<Self::RVA, Output = Self::RVA>
+        + CheckedAdd<Output = Self::RVA>
+        + CheckedSub<Output = Self::RVA>
         + FromPrimitive
         + ToPrimitive
-        // trait Copy because this is just a number, so prefer copy semantics.
         + Copy
-        + Debug
-        ;
+        + Debug;
 
     fn get_bits() -> u8;
 }
@@ -87,7 +64,6 @@ impl Arch for Arch32 {
         32
     }
 }
-
 
 impl fmt::Display for Arch32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -114,7 +90,6 @@ impl PartialEq for Arch32 {
 }
 
 impl Eq for Arch32 {}
-
 
 /// 64-bit Intel architecture.
 pub struct Arch64;
@@ -151,7 +126,6 @@ impl PartialEq for Arch64 {
 }
 
 impl Eq for Arch64 {}
-
 
 /// Checked arithmetic across RVA and usize.
 ///
@@ -207,7 +181,6 @@ pub fn rva_sub_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
         None
     }
 }
-
 
 pub fn va_compute_rva<A: Arch>(base: A::VA, va: A::VA) -> Option<A::RVA> {
     if va < base {

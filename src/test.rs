@@ -4,7 +4,6 @@ use super::arch::*;
 use super::loader;
 use super::workspace::Workspace;
 
-
 /// Helper to construct a 32-bit Windows shellcode workspace from raw bytes.
 ///
 /// It may panic when the workspace cannot be created/loaded.
@@ -18,7 +17,9 @@ use super::workspace::Workspace;
 /// ```
 pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace<Arch32> {
     Workspace::<Arch32>::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
+        .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(
+            loader::Platform::Windows,
+        )))
         .load()
         .unwrap()
 }

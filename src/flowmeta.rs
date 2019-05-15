@@ -45,7 +45,7 @@ impl FlowMeta {
         match v {
             0x00 => Err(Error::NotAnInstruction),
             0x0F => Err(Error::LongInstruction),
-            v @ _ => Ok(v)
+            v @ _ => Ok(v),
         }
     }
 
@@ -170,14 +170,17 @@ impl FlowMeta {
 
 impl fmt::Display for FlowMeta {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FlowMeta{{length: {}, fallthrough: {}, xrefs to: {}, xrefs from: {}}}",
-               match self.get_insn_length() {
-                   Ok(v) => format!("0x{:x}", v),
-                   Err(Error::LongInstruction) => ">=0xF".to_string(),
-                   Err(Error::NotAnInstruction) => "not an instruction".to_string(),
-               },
-               self.does_fallthrough(),
-               self.has_xrefs_to(),
-               self.has_xrefs_from())
+        write!(
+            f,
+            "FlowMeta{{length: {}, fallthrough: {}, xrefs to: {}, xrefs from: {}}}",
+            match self.get_insn_length() {
+                Ok(v) => format!("0x{:x}", v),
+                Err(Error::LongInstruction) => ">=0xF".to_string(),
+                Err(Error::NotAnInstruction) => "not an instruction".to_string(),
+            },
+            self.does_fallthrough(),
+            self.has_xrefs_to(),
+            self.has_xrefs_from()
+        )
     }
 }

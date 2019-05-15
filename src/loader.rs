@@ -1,8 +1,8 @@
-use num::Zero;
-use strum_macros::{Display};
-use std::marker::PhantomData;
 use super::arch;
-use super::arch::{Arch};
+use super::arch::Arch;
+use num::Zero;
+use std::marker::PhantomData;
+use strum_macros::Display;
 
 use failure::{Error, Fail};
 
@@ -14,7 +14,7 @@ pub enum LoaderError {
 
 #[derive(Display, Clone, Copy)]
 pub enum FileFormat {
-    Raw,  // shellcode
+    Raw, // shellcode
     PE,
 }
 
@@ -31,7 +31,7 @@ pub struct Section<A: Arch> {
     pub name: String,
 }
 
-impl <A: Arch> Section<A> {
+impl<A: Arch> Section<A> {
     pub fn contains(self: &Section<A>, rva: A::RVA) -> bool {
         if rva < self.addr {
             return false;
@@ -39,10 +39,10 @@ impl <A: Arch> Section<A> {
 
         if let Some(max) = arch::rva_add_usize::<A>(self.addr, self.buf.len()) {
             if rva >= max {
-                return false
+                return false;
             }
         } else {
-            return false
+            return false;
         }
 
         true
@@ -66,7 +66,12 @@ pub trait Loader<A: Arch> {
     fn get_file_format(&self) -> FileFormat;
 
     fn get_name(&self) -> String {
-        return format!("{}/{}/{}", self.get_plat(), self.get_arch(), self.get_file_format());
+        return format!(
+            "{}/{}/{}",
+            self.get_plat(),
+            self.get_arch(),
+            self.get_file_format()
+        );
     }
 
     /// Returns True if this Loader knows how to load the given bytes.
@@ -75,7 +80,6 @@ pub trait Loader<A: Arch> {
     /// Load the given bytes into a Module.
     fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error>;
 }
-
 
 pub struct ShellcodeLoader<A: Arch> {
     plat: Platform,
@@ -92,12 +96,12 @@ impl<A: Arch> ShellcodeLoader<A> {
     pub fn new(plat: Platform) -> ShellcodeLoader<A> {
         ShellcodeLoader {
             plat,
-            _phantom: PhantomData{},
+            _phantom: PhantomData {},
         }
     }
 }
 
-impl <A: Arch> Loader<A> for ShellcodeLoader<A> {
+impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
     fn get_arch(&self) -> u8 {
         A::get_bits()
     }
@@ -128,16 +132,14 @@ impl <A: Arch> Loader<A> for ShellcodeLoader<A> {
     ///   .map_err(|e| panic!(e));
     /// ```
     fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error> {
-        Ok(LoadedModule::<A>{
+        Ok(LoadedModule::<A> {
             base_address: A::VA::zero(),
-            sections: vec![
-                Section::<A> {
-                    addr: A::RVA::zero(),
-                    buf: buf.to_vec(),
-                    perms: 0x0, // TODO
-                    name: "raw".to_string(),
-                }
-            ]
+            sections: vec![Section::<A> {
+                addr: A::RVA::zero(),
+                buf: buf.to_vec(),
+                perms: 0x0, // TODO
+                name: "raw".to_string(),
+            }],
         })
     }
 }
@@ -174,7 +176,7 @@ pub fn default_loaders<A: Arch + 'static>() -> Vec<Box<dyn Loader<A>>> {
 ///   None => panic!("no matching loaders"),
 /// };
 /// ```
-pub fn taste<A: Arch + 'static>(buf: &[u8]) -> impl Iterator<Item=Box<dyn Loader<A>>> {
+pub fn taste<A: Arch + 'static>(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader<A>>> {
     default_loaders::<A>()
         .into_iter()
         .filter(move |loader| loader.taste(buf))
@@ -199,11 +201,7 @@ pub fn taste<A: Arch + 'static>(buf: &[u8]) -> impl Iterator<Item=Box<dyn Loader
 /// ```
 pub fn load<A: Arch + 'static>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>, LoadedModule<A>), Error> {
     match taste::<A>(buf).nth(0) {
-        Some(loader) => {
-            loader.load(buf).map(|module|
-                (loader, module)
-            )
-        },
+        Some(loader) => loader.load(buf).map(|module| (loader, module)),
         None => Err(LoaderError::NotSupported.into()),
     }
 }

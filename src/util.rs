@@ -1,6 +1,6 @@
+use log::{debug, error};
 use std::fs;
 use std::io::prelude::*;
-use log::{debug, error};
 
 use failure::{Error, Fail};
 

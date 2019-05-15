@@ -1,16 +1,15 @@
-use num::{ToPrimitive, FromPrimitive};
+use num::{FromPrimitive, ToPrimitive};
 
-use failure::{Error, Fail};
 use byteorder::{ByteOrder, LittleEndian};
+use failure::{Error, Fail};
 use zydis::gen::*;
-use zydis::{Decoder};
+use zydis::Decoder;
 
-use super::util;
+use super::analysis::Analysis;
+use super::arch::Arch;
 use super::loader;
-use super::arch::{Arch};
 use super::loader::{LoadedModule, Loader};
-use super::analysis::{Analysis};
-
+use super::util;
 
 #[derive(Debug, Fail)]
 pub enum WorkspaceError {
@@ -21,7 +20,7 @@ pub enum WorkspaceError {
     #[fail(display = "Buffer overrun")]
     BufferOverrun,
     #[fail(display = "The instruction at the given address is invalid")]
-    InvalidInstruction
+    InvalidInstruction,
 }
 
 pub struct WorkspaceBuilder<A: Arch> {
@@ -33,10 +32,13 @@ pub struct WorkspaceBuilder<A: Arch> {
 
 impl<A: Arch + 'static> WorkspaceBuilder<A> {
     /// Override the default loader picker with the given loader.
-    pub fn with_loader(self: WorkspaceBuilder<A>, loader: Box<dyn Loader<A>>) -> WorkspaceBuilder<A> {
+    pub fn with_loader(
+        self: WorkspaceBuilder<A>,
+        loader: Box<dyn Loader<A>>,
+    ) -> WorkspaceBuilder<A> {
         WorkspaceBuilder {
             loader: Some(loader),
-            .. self
+            ..self
         }
     }
 
@@ -92,18 +94,12 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
         let analysis = Analysis::new(&module);
 
         let decoder = if A::get_bits() == 32 {
-            Decoder::new(
-                ZYDIS_MACHINE_MODE_LEGACY_32,
-                ZYDIS_ADDRESS_WIDTH_32
-            ).unwrap()
+            Decoder::new(ZYDIS_MACHINE_MODE_LEGACY_32, ZYDIS_ADDRESS_WIDTH_32).unwrap()
         } else {
-            Decoder::new(
-                ZYDIS_MACHINE_MODE_LONG_64,
-                ZYDIS_ADDRESS_WIDTH_64
-            ).unwrap()
+            Decoder::new(ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64).unwrap()
         };
 
-        Ok(Workspace::<A>{
+        Ok(Workspace::<A> {
             filename: self.filename,
             buf: self.buf,
 
@@ -179,7 +175,8 @@ impl<A: Arch + 'static> Workspace<A> {
     ///   .map_err(|e| panic!(e));
     /// ```
     pub fn read_bytes(&self, rva: A::RVA, length: usize) -> Result<&[u8], Error> {
-        self.module.sections
+        self.module
+            .sections
             .iter()
             .filter(|section| section.contains(rva))
             .nth(0)
@@ -194,7 +191,7 @@ impl<A: Arch + 'static> Workspace<A> {
                         if offset + length > section.buf.len() {
                             Err(WorkspaceError::BufferOverrun.into())
                         } else {
-                            Ok(&section.buf[offset..offset+length])
+                            Ok(&section.buf[offset..offset + length])
                         }
                     })
             })
@@ -226,8 +223,7 @@ impl<A: Arch + 'static> Workspace<A> {
     ///   .map_err(|e| panic!(e));
     /// ```
     pub fn read_u8(&self, rva: A::RVA) -> Result<u8, Error> {
-        self.read_bytes(rva, 1)
-            .and_then(|buf| Ok(buf[0]))
+        self.read_bytes(rva, 1).and_then(|buf| Ok(buf[0]))
     }
 
     /// Read a word from the given RVA.
@@ -294,7 +290,7 @@ impl<A: Arch + 'static> Workspace<A> {
             // these conversions will never fail
             32 => Ok(A::RVA::from_u32(self.read_u32(rva)?).unwrap()),
             64 => Ok(A::RVA::from_u64(self.read_u64(rva)?).unwrap()),
-            _  => panic!("unexpected architecture"),
+            _ => panic!("unexpected architecture"),
         }
     }
 
@@ -305,10 +301,9 @@ impl<A: Arch + 'static> Workspace<A> {
             // these conversions will never fail
             32 => Ok(A::VA::from_u32(self.read_u32(rva)?).unwrap()),
             64 => Ok(A::VA::from_u64(self.read_u64(rva)?).unwrap()),
-            _  => panic!("unexpected architecture"),
+            _ => panic!("unexpected architecture"),
         }
     }
-
 
     /// Decode an instruction at the given RVA.
     ///
@@ -340,7 +335,9 @@ impl<A: Arch + 'static> Workspace<A> {
     pub fn read_insn(&self, rva: A::RVA) -> Result<ZydisDecodedInstruction, Error> {
         // this is `read_bytes` except that it reads at most 0x10 bytes.
         // if less are available, then less are returned.
-        let buf = self.module.sections
+        let buf = self
+            .module
+            .sections
             .iter()
             .filter(|section| section.contains(rva))
             .nth(0)
@@ -352,10 +349,10 @@ impl<A: Arch + 'static> Workspace<A> {
                 A::RVA::to_usize(&offset)
                     .ok_or(WorkspaceError::InvalidAddress.into())
                     .and_then(|offset| {
-                        if offset + 0x10> section.buf.len() {
+                        if offset + 0x10 > section.buf.len() {
                             Ok(&section.buf[offset..])
                         } else {
-                            Ok(&section.buf[offset..offset+0x10])
+                            Ok(&section.buf[offset..offset + 0x10])
                         }
                     })
             })?;
@@ -380,7 +377,6 @@ impl<A: Arch + 'static> Workspace<A> {
     // elsewhere:
     //   call graph
     //   control flow graph
-
 
     // see: `analysis::impl Workspace`
 }

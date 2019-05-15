@@ -1,10 +1,10 @@
-extern crate log;
 extern crate lancelot;
+extern crate log;
 
+use failure::{Error, Fail};
+use log::{error, info, trace};
 use std::env;
 use std::process;
-use log::{error, info, trace};
-use failure::{Error, Fail};
 
 use lancelot::arch::*;
 use lancelot::workspace::Workspace;
@@ -42,8 +42,7 @@ pub fn setup_logging(_args: &Config) {
 pub fn run(args: &Config) -> Result<(), Error> {
     info!("filename: {:?}", args.filename);
 
-    let _ = Workspace::<Arch32>::from_file(&args.filename)?
-      .load()?;
+    let _ = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
 
     Ok(())
 }

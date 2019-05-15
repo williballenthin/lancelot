@@ -1,27 +1,27 @@
+use num::{FromPrimitive, ToPrimitive};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
-use num::{ToPrimitive, FromPrimitive};
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use log::{warn, info, debug};
 use failure::{Error, Fail};
+use log::{debug, info, warn};
 use zydis::gen::*;
 
 use super::arch;
-use super::arch::{Arch};
-use super::xref::{Xref, XrefType};
-use super::loader::{LoadedModule, Section};
+use super::arch::Arch;
 use super::flowmeta::FlowMeta;
-use super::workspace::{Workspace};
+use super::loader::{LoadedModule, Section};
+use super::workspace::Workspace;
+use super::xref::{Xref, XrefType};
 
 #[derive(Debug, Fail)]
 pub enum AnalysisError {
     #[fail(display = "Not implemented")]
     NotImplemented,
     #[fail(display = "foo")]
-    InvalidInstruction
+    InvalidInstruction,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -30,10 +30,7 @@ pub enum AnalysisCommand<A: Arch> {
     MakeXref(Xref<A>),
 }
 
-
-pub fn get_first_operand(
-    insn: &ZydisDecodedInstruction
-) -> Option<&ZydisDecodedOperand> {
+pub fn get_first_operand(insn: &ZydisDecodedInstruction) -> Option<&ZydisDecodedOperand> {
     insn.operands
         .iter()
         .find(|op| op.visibility == ZYDIS_OPERAND_VISIBILITY_EXPLICIT as u8)
@@ -54,28 +51,35 @@ fn print_op(op: &ZydisDecodedOperand) {
             println!("  mem.base: {}", op.mem.base);
             println!("  mem.index: {}", op.mem.index);
             println!("  mem.scale: {}", op.mem.scale);
-            println!("  mem.disp.hasDisplacement: {}", op.mem.disp.hasDisplacement);
+            println!(
+                "  mem.disp.hasDisplacement: {}",
+                op.mem.disp.hasDisplacement
+            );
             if op.mem.disp.hasDisplacement != 0 {
                 println!("  mem.disp.value: 0x{:x}", op.mem.disp.value);
             }
-        },
+        }
         ZYDIS_OPERAND_TYPE_POINTER => {
             println!("  ptr.segment: 0x{:x}", op.ptr.segment);
             println!("  ptr.offset: 0x{:x}", op.ptr.offset);
-        },
+        }
         ZYDIS_OPERAND_TYPE_IMMEDIATE => {
             println!("  imm.signed: {}", op.imm.isSigned);
             println!("  imm.relative: {}", op.imm.isRelative);
             if op.imm.isSigned != 0 {
-                println!("  imm.value: (signed) {:#x}", *unsafe{op.imm.value.s.as_ref()});
+                println!("  imm.value: (signed) {:#x}", *unsafe {
+                    op.imm.value.s.as_ref()
+                });
             } else {
-                println!("  imm.value: (unsigned) {:#x}", *unsafe{op.imm.value.u.as_ref()});
+                println!("  imm.value: (unsigned) {:#x}", *unsafe {
+                    op.imm.value.u.as_ref()
+                });
             }
-        },
+        }
         ZYDIS_OPERAND_TYPE_REGISTER => {
             println!("  reg: {}", op.reg.value);
-        },
-        _ => {},
+        }
+        _ => {}
     }
 }
 
@@ -110,7 +114,9 @@ pub struct Analysis<A: Arch> {
 
 impl<A: Arch> Analysis<A> {
     pub fn new(module: &LoadedModule<A>) -> Analysis<A> {
-        let flow_meta: Vec<Vec<FlowMeta>> = module.sections.iter()
+        let flow_meta: Vec<Vec<FlowMeta>> = module
+            .sections
+            .iter()
             .map(|section| -> Vec<FlowMeta> {
                 if section.is_executable() {
                     vec![FlowMeta::zero(); section.buf.len()]
@@ -127,43 +133,43 @@ impl<A: Arch> Analysis<A> {
                 xrefs: XrefAnalysis {
                     to: HashMap::new(),
                     from: HashMap::new(),
-                }
-            }
+                },
+            },
         }
     }
-
 }
 
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
 impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
-        self.analysis.queue.push_back(AnalysisCommand::MakeInsn(rva));
+        self.analysis
+            .queue
+            .push_back(AnalysisCommand::MakeInsn(rva));
         Ok(())
     }
 
     /// fetch the (section, offset) indices for the given RVA.
     fn get_coords(&self, rva: A::RVA) -> Option<(usize, usize)> {
-        self.module.sections
+        self.module
+            .sections
             .iter()
             .enumerate()
             .filter(|(_, section)| section.contains(rva))
             .nth(0)
-            .and_then(|(i, section): (usize, &Section<A>)| -> Option<(usize, usize)> {
-                // rva is guaranteed to be within this section,
-                // so we can do an unchecked subtract here.
-                let offset = rva - section.addr;
-                A::RVA::to_usize(&offset)
-                    .and_then(|offset| {
-                        Some((i, offset))
-                    })
-            })
+            .and_then(
+                |(i, section): (usize, &Section<A>)| -> Option<(usize, usize)> {
+                    // rva is guaranteed to be within this section,
+                    // so we can do an unchecked subtract here.
+                    let offset = rva - section.addr;
+                    A::RVA::to_usize(&offset).and_then(|offset| Some((i, offset)))
+                },
+            )
     }
 
     pub fn get_meta(&self, rva: A::RVA) -> Option<FlowMeta> {
-        self.get_coords(rva).and_then(|(section, offset)| {
-            Some(self.analysis.flow.meta[section][offset].clone())
-        })
+        self.get_coords(rva)
+            .and_then(|(section, offset)| Some(self.analysis.flow.meta[section][offset].clone()))
     }
 
     /// Does the given instruction have a fallthrough flow?
@@ -195,7 +201,11 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_call_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_call_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         // TODO
         Ok(vec![])
     }
@@ -206,8 +216,8 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// use lancelot::test;
     /// use lancelot::analysis;
     ///
-    /// // 0:  ff 25 06 00 00 00       jmp    DWORD PTR ds:0x6
-    /// // 6:  00 00 00 00             dw     0x0
+    /// // 0:  ff 25 06 00 00 00   +->  jmp    DWORD PTR ds:0x6
+    /// // 6:  00 00 00 00         +--  dw     0x0
     /// let mut ws = test::get_shellcode32_workspace(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
     /// let insn = ws.read_insn(0x0).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
@@ -216,65 +226,68 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// assert_eq!(xref.is_some(), true);
     /// assert_eq!(xref.unwrap(), 0x0);
     /// ```
-    pub fn get_memory_operand_xref(&self,
-                               rva: A::RVA,
-                               insn: &ZydisDecodedInstruction,
-                               op: &ZydisDecodedOperand) -> Result<Option<A::RVA>, Error> {
-
+    pub fn get_memory_operand_xref(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+        op: &ZydisDecodedOperand,
+    ) -> Result<Option<A::RVA>, Error> {
         println!("get mem op xref");
 
-        if op.mem.base == 0 &&
-            op.mem.index == 0 &&
-            op.mem.scale == 0 &&
-            op.mem.disp.hasDisplacement == 1 {
-                // the operand is a deref of a memory address.
-                // for example: JMP [0x0]
-                // this means: read the ptr from 0x0, and then jump to it.
-                //
-                // we'll have to make some assumptions here:
-                //  - the ptr doesn't change (can detect via mem segment perms)
-                //  - the ptr is fixed up (TODO)
-                //
-                // see doctest: [test simple memory ptr operand]()
+        if op.mem.base == 0
+            && op.mem.index == 0
+            && op.mem.scale == 0
+            && op.mem.disp.hasDisplacement == 1
+        {
+            // the operand is a deref of a memory address.
+            // for example: JMP [0x0]
+            // this means: read the ptr from 0x0, and then jump to it.
+            //
+            // we'll have to make some assumptions here:
+            //  - the ptr doesn't change (can detect via mem segment perms)
+            //  - the ptr is fixed up (TODO)
+            //
+            // see doctest: [test simple memory ptr operand]()
 
-                let ptr = match A::VA::from_i64(op.mem.disp.value) {
-                    Some(ptr) => ptr,
-                    None => return Ok(None),
-                };
+            let ptr = match A::VA::from_i64(op.mem.disp.value) {
+                Some(ptr) => ptr,
+                None => return Ok(None),
+            };
 
-                let ptr = match arch::va_compute_rva::<A>(self.module.base_address, ptr) {
-                    Some(ptr) => ptr,
-                    None => return Ok(None),
-                };
+            let ptr = match arch::va_compute_rva::<A>(self.module.base_address, ptr) {
+                Some(ptr) => ptr,
+                None => return Ok(None),
+            };
 
-                let dst = match self.read_va(ptr) {
-                    Ok(dst) => dst,
-                    Err(_) => return Ok(None),
-                };
+            let dst = match self.read_va(ptr) {
+                Ok(dst) => dst,
+                Err(_) => return Ok(None),
+            };
 
-                let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
-                    Some(dst) => dst,
-                    None => return Ok(None),
-                };
+            let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
+                Some(dst) => dst,
+                None => return Ok(None),
+            };
 
-                if !self.probe(dst, 1) {
-                    return Ok(None);
-                };
+            if !self.probe(dst, 1) {
+                return Ok(None);
+            };
 
-                // this is the happy path!
-                return Ok(Some(dst));
+            // this is the happy path!
+            return Ok(Some(dst));
         }
-
 
         print_op(op);
 
         Ok(None)
     }
 
-    fn get_pointer_operand_xref(&self,
-                                rva: A::RVA,
-                                insn: &ZydisDecodedInstruction,
-                                op: &ZydisDecodedOperand) -> Result<Option<A::RVA>, Error> {
+    fn get_pointer_operand_xref(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+        op: &ZydisDecodedOperand,
+    ) -> Result<Option<A::RVA>, Error> {
         // TODO
         println!("get ptr op xref");
         Ok(None)
@@ -306,10 +319,12 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     ///
     /// assert_eq!(xref.is_some(), false);
     /// ```
-    pub fn get_immediate_operand_xref(&self,
-                                      rva: A::RVA,
-                                      insn: &ZydisDecodedInstruction,
-                                      op: &ZydisDecodedOperand) -> Result<Option<A::RVA>, Error> {
+    pub fn get_immediate_operand_xref(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+        op: &ZydisDecodedOperand,
+    ) -> Result<Option<A::RVA>, Error> {
         // TODO
         println!("get imm op xref");
 
@@ -323,9 +338,9 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
 
             // the use of `unsafe` here is an artifact of the zydis API.
             let imm = if op.imm.isSigned != 0 {
-                A::RVA::from_i64(*unsafe{op.imm.value.s.as_ref()})
+                A::RVA::from_i64(*unsafe { op.imm.value.s.as_ref() })
             } else {
-                A::RVA::from_u64(*unsafe{op.imm.value.u.as_ref()})
+                A::RVA::from_u64(*unsafe { op.imm.value.u.as_ref() })
             };
 
             let len = A::RVA::from_u8(insn.length);
@@ -353,10 +368,12 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_operand_xref(&self,
-                        rva: A::RVA,
-                        insn: &ZydisDecodedInstruction,
-                        op: &ZydisDecodedOperand) -> Result<Option<A::RVA>, Error> {
+    fn get_operand_xref(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+        op: &ZydisDecodedOperand,
+    ) -> Result<Option<A::RVA>, Error> {
         println!("get op xref: {:x}", op.type_);
         match op.type_ as i32 {
             // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
@@ -378,14 +395,18 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_jmp_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_jmp_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         println!("jmp insn");
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
         let op = get_first_operand(insn).unwrap();
 
         match self.get_operand_xref(rva, insn, op)? {
-            Some(dst) => Ok(vec![Xref{
+            Some(dst) => Ok(vec![Xref {
                 src: rva,
                 dst: dst,
                 typ: XrefType::UnconditionalJump,
@@ -394,53 +415,54 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_ret_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_ret_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         // TODO
         Ok(vec![])
     }
 
-    fn get_cjmp_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_cjmp_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         // TODO
         Ok(vec![])
     }
 
-    fn get_cmov_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_cmov_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         // TODO
         Ok(vec![])
     }
 
-    fn get_insn_flow(&self, rva: A::RVA, insn: &ZydisDecodedInstruction) -> Result<Vec<Xref<A>>, Error> {
+    fn get_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         match insn.mnemonic as i32 {
             ZYDIS_MNEMONIC_CALL => self.get_call_insn_flow(rva, insn),
 
             ZYDIS_MNEMONIC_JMP => self.get_jmp_insn_flow(rva, insn),
 
-            ZYDIS_MNEMONIC_RET
-            | ZYDIS_MNEMONIC_IRET
-            | ZYDIS_MNEMONIC_IRETD
+            ZYDIS_MNEMONIC_RET | ZYDIS_MNEMONIC_IRET | ZYDIS_MNEMONIC_IRETD
             | ZYDIS_MNEMONIC_IRETQ => self.get_ret_insn_flow(rva, insn),
 
-            ZYDIS_MNEMONIC_JB
-            | ZYDIS_MNEMONIC_JBE
-            | ZYDIS_MNEMONIC_JCXZ
-            | ZYDIS_MNEMONIC_JECXZ
-            | ZYDIS_MNEMONIC_JKNZD
-            | ZYDIS_MNEMONIC_JKZD
-            | ZYDIS_MNEMONIC_JL
-            | ZYDIS_MNEMONIC_JLE
-            | ZYDIS_MNEMONIC_JNB
-            | ZYDIS_MNEMONIC_JNBE
-            | ZYDIS_MNEMONIC_JNL
-            | ZYDIS_MNEMONIC_JNLE
-            | ZYDIS_MNEMONIC_JNO
-            | ZYDIS_MNEMONIC_JNP
-            | ZYDIS_MNEMONIC_JNS
-            | ZYDIS_MNEMONIC_JNZ
-            | ZYDIS_MNEMONIC_JO
-            | ZYDIS_MNEMONIC_JP
-            | ZYDIS_MNEMONIC_JRCXZ
-            | ZYDIS_MNEMONIC_JS
-            | ZYDIS_MNEMONIC_JZ => self.get_cjmp_insn_flow(rva, insn),
+            ZYDIS_MNEMONIC_JB | ZYDIS_MNEMONIC_JBE | ZYDIS_MNEMONIC_JCXZ | ZYDIS_MNEMONIC_JECXZ
+            | ZYDIS_MNEMONIC_JKNZD | ZYDIS_MNEMONIC_JKZD | ZYDIS_MNEMONIC_JL
+            | ZYDIS_MNEMONIC_JLE | ZYDIS_MNEMONIC_JNB | ZYDIS_MNEMONIC_JNBE
+            | ZYDIS_MNEMONIC_JNL | ZYDIS_MNEMONIC_JNLE | ZYDIS_MNEMONIC_JNO
+            | ZYDIS_MNEMONIC_JNP | ZYDIS_MNEMONIC_JNS | ZYDIS_MNEMONIC_JNZ | ZYDIS_MNEMONIC_JO
+            | ZYDIS_MNEMONIC_JP | ZYDIS_MNEMONIC_JRCXZ | ZYDIS_MNEMONIC_JS | ZYDIS_MNEMONIC_JZ => {
+                self.get_cjmp_insn_flow(rva, insn)
+            }
 
             ZYDIS_MNEMONIC_CMOVB
             | ZYDIS_MNEMONIC_CMOVBE
@@ -460,7 +482,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             | ZYDIS_MNEMONIC_CMOVZ => self.get_cmov_insn_flow(rva, insn),
 
             // TODO: syscall, sysexit, sysret, vmcall, vmmcall
-
             _ => Ok(vec![]),
         }
     }
@@ -485,25 +506,20 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                 //   - the memory is not mapped
                 warn!("invalid instruction: no flow meta: {:x}", rva);
                 return Ok(vec![]);
-            },
-            Some(meta) => {
-                if meta.is_insn() {
-                    debug!("duplicate instruction: {:x}", rva);
-                    return Ok(vec![]);
-                } else {
-                    // this is the happy path:
-                    //   - this is a valid place for an instruction
-                    //   - and it doesn't yet exist
-                    meta
-                }
             }
+            Some(meta) => meta,
         };
+
+        if meta.is_insn() {
+            debug!("duplicate instruction: {:x}", rva);
+            return Ok(vec![]);
+        }
 
         let insn = match self.read_insn(rva) {
             Err(e) => {
                 warn!("invalid instruction: {:}: {:x}", e, rva);
                 return Ok(vec![]);
-            },
+            }
             Ok(insn) => insn,
         };
 
@@ -516,16 +532,8 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         // 4. compute flow ref
         // TODO: maybe don't fail, but just return empty list?
         let flows = self.get_insn_flow(rva, &insn)?;
-        ret.extend(
-            flows
-                .iter()
-                .map(|f| AnalysisCommand::MakeXref(*f))
-        );
-        ret.extend(
-            flows
-                .iter()
-                .map(|f| AnalysisCommand::MakeInsn(f.dst))
-        );
+        ret.extend(flows.iter().map(|f| AnalysisCommand::MakeXref(*f)));
+        ret.extend(flows.iter().map(|f| AnalysisCommand::MakeInsn(f.dst)));
 
         if does_fallthrough {
             // u8 can always go into an RVA (u32 or greater).
@@ -597,7 +605,13 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
 
         // step 2b: update src xrefs-from with xref, it not exists
         let is_new = {
-            let xrefs = self.analysis.flow.xrefs.from.entry(xref.src).or_insert(HashSet::new());
+            let xrefs = self
+                .analysis
+                .flow
+                .xrefs
+                .from
+                .entry(xref.src)
+                .or_insert(HashSet::new());
             xrefs.insert(xref)
         };
 
@@ -611,14 +625,19 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             }
 
             {
-                let xrefs = self.analysis.flow.xrefs.to.entry(xref.dst).or_insert(HashSet::new());
+                let xrefs = self
+                    .analysis
+                    .flow
+                    .xrefs
+                    .to
+                    .entry(xref.dst)
+                    .or_insert(HashSet::new());
                 xrefs.insert(xref);
             }
         }
 
         Ok(vec![])
     }
-
 
     /// ```
     /// use lancelot::test;
