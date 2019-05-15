@@ -120,7 +120,7 @@ impl hash::Hash for Arch64 {
 }
 
 impl PartialEq for Arch64 {
-    fn eq(&self, other: &Arch64) -> bool {
+    fn eq(&self, _: &Arch64) -> bool {
         true
     }
 }

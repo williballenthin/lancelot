@@ -191,6 +191,20 @@ impl<A: Arch + 'static> Workspace<A> {
             })
     }
 
+    /// Is the given range mapped?
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert!( ws.probe(0x0, 1));
+    /// assert!( ws.probe(0x0, 2));
+    /// assert!(!ws.probe(0x0, 3));
+    /// assert!( ws.probe(0x1, 1));
+    /// assert!(!ws.probe(0x2, 1));
+    /// ```
     pub fn probe(&self, rva: A::RVA, length: usize) -> bool {
         self.read_bytes(rva, length).is_ok()
     }
