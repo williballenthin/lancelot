@@ -9,6 +9,10 @@ use std::process;
 use lancelot::arch::*;
 use lancelot::workspace::Workspace;
 
+// TODO: removeme
+use goblin::{Object};
+
+
 #[derive(Debug, Fail)]
 pub enum MainError {
     #[fail(display = "foo")]
@@ -16,6 +20,7 @@ pub enum MainError {
 }
 
 pub struct Config {
+    pub mode: u8,
     pub filename: String,
 }
 
@@ -23,14 +28,20 @@ impl Config {
     pub fn from_args(args: env::Args) -> Result<Config, &'static str> {
         let args: Vec<String> = args.collect();
 
-        if args.len() < 2 {
-            return Err("not enough arguments");
+        if args.len() < 3 {
+            return Err("not enough arguments: provide `lancelot.exe 32|64 /path/to/input`");
         }
 
-        let filename = args[1].clone();
+        let mode = match args[1].as_ref() {
+            "32" => 32,
+            "64" => 64,
+            _ => return Err("invalid mode, pick one of `32` or `64`"),
+        };
+
+        let filename = args[2].clone();
         trace!("config: parsed filename: {:?}", filename);
 
-        Ok(Config { filename })
+        Ok(Config { mode, filename })
     }
 }
 
@@ -42,7 +53,26 @@ pub fn setup_logging(_args: &Config) {
 pub fn run(args: &Config) -> Result<(), Error> {
     info!("filename: {:?}", args.filename);
 
-    let _ = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
+    if args.mode == 32 {
+        let mut ws = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
+    } else if args.mode == 64 {
+        let mut ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
+
+        if ws.loader.get_name() == "Windows/64/PE" {
+            if let Ok(Object::PE(pe)) = Object::parse(&ws.buf) {
+                let entry = pe.entry;
+                let exports: Vec<usize> = pe.exports.iter().map(|exp| exp.offset).collect();
+
+                info!("PE entry: {:#x}", entry);
+                ws.make_insn(entry as i64);
+                for export in exports.iter() {
+                    info!("export: {:#x}", export);
+                    ws.make_insn(*export as i64);
+                }
+                ws.analyze();
+            }
+        }
+    }
 
     Ok(())
 }
