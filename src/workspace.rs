@@ -67,11 +67,12 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
     ///
     /// ```
     /// use lancelot::arch::*;
-    /// use lancelot::loader;
+    /// use lancelot::loader::Platform;
     /// use lancelot::workspace::Workspace;
+    /// use lancelot::loaders::sc::ShellcodeLoader;
     ///
     /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
+    ///   .with_loader(Box::new(ShellcodeLoader::<Arch32>::new(Platform::Windows)))
     ///   .load()
     ///   .map(|ws| {
     ///     assert_eq!(ws.loader.get_name(),       "Windows/32/Raw");
@@ -158,21 +159,14 @@ impl<A: Arch + 'static> Workspace<A> {
     /// Example:
     ///
     /// ```
-    /// use lancelot::arch::*;
-    /// use lancelot::loader;
-    /// use lancelot::workspace::Workspace;
+    /// use lancelot::test;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
-    ///   .load()
-    ///   .map(|ws| {
-    ///     assert_eq!(ws.read_bytes(0x0, 0x1).unwrap().to_vec(), b"\xEB");
-    ///     assert_eq!(ws.read_bytes(0x1, 0x1).unwrap().to_vec(), b"\xFE");
-    ///     assert_eq!(ws.read_bytes(0x0, 0x2).unwrap().to_vec(), b"\xEB\xFE");
-    ///     assert_eq!(ws.read_bytes(0x0, 0x3).is_err(), true);
-    ///     assert_eq!(ws.read_bytes(0x2, 0x1).is_err(), true);
-    ///   })
-    ///   .map_err(|e| panic!(e));
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert_eq!(ws.read_bytes(0x0, 0x1).unwrap().to_vec(), b"\xEB");
+    /// assert_eq!(ws.read_bytes(0x1, 0x1).unwrap().to_vec(), b"\xFE");
+    /// assert_eq!(ws.read_bytes(0x0, 0x2).unwrap().to_vec(), b"\xEB\xFE");
+    /// assert_eq!(ws.read_bytes(0x0, 0x3).is_err(), true);
+    /// assert_eq!(ws.read_bytes(0x2, 0x1).is_err(), true);
     /// ```
     pub fn read_bytes(&self, rva: A::RVA, length: usize) -> Result<&[u8], Error> {
         self.module
@@ -208,19 +202,12 @@ impl<A: Arch + 'static> Workspace<A> {
     /// Example:
     ///
     /// ```
-    /// use lancelot::arch::*;
-    /// use lancelot::loader;
-    /// use lancelot::workspace::Workspace;
+    /// use lancelot::test;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
-    ///   .load()
-    ///   .map(|ws| {
-    ///     assert_eq!(ws.read_u8(0x0).unwrap(), 0xEB);
-    ///     assert_eq!(ws.read_u8(0x1).unwrap(), 0xFE);
-    ///     assert_eq!(ws.read_u8(0x2).is_err(), true);
-    ///   })
-    ///   .map_err(|e| panic!(e));
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert_eq!(ws.read_u8(0x0).unwrap(), 0xEB);
+    /// assert_eq!(ws.read_u8(0x1).unwrap(), 0xFE);
+    /// assert_eq!(ws.read_u8(0x2).is_err(), true);
     /// ```
     pub fn read_u8(&self, rva: A::RVA) -> Result<u8, Error> {
         self.read_bytes(rva, 1).and_then(|buf| Ok(buf[0]))
@@ -233,19 +220,12 @@ impl<A: Arch + 'static> Workspace<A> {
     /// Example:
     ///
     /// ```
-    /// use lancelot::arch::*;
-    /// use lancelot::loader;
-    /// use lancelot::workspace::Workspace;
+    /// use lancelot::test;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
-    ///   .load()
-    ///   .map(|ws| {
-    ///     assert_eq!(ws.read_u16(0x0).unwrap(), 0xFEEB);
-    ///     assert_eq!(ws.read_u16(0x1).is_err(), true);
-    ///     assert_eq!(ws.read_u16(0x2).is_err(), true);
-    ///   })
-    ///   .map_err(|e| panic!(e));
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert_eq!(ws.read_u16(0x0).unwrap(), 0xFEEB);
+    /// assert_eq!(ws.read_u16(0x1).is_err(), true);
+    /// assert_eq!(ws.read_u16(0x2).is_err(), true);
     /// ```
     pub fn read_u16(&self, rva: A::RVA) -> Result<u16, Error> {
         self.read_bytes(rva, 2)
@@ -272,18 +252,11 @@ impl<A: Arch + 'static> Workspace<A> {
     /// Example:
     ///
     /// ```
-    /// use lancelot::arch::*;
-    /// use lancelot::loader;
-    /// use lancelot::workspace::Workspace;
+    /// use lancelot::test;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\x00\x11\x22\x33")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
-    ///   .load()
-    ///   .map(|ws| {
-    ///     assert_eq!(ws.read_rva(0x0).unwrap(), 0x33221100);
-    ///     assert_eq!(ws.read_rva(0x1).is_err(), true);
-    ///   })
-    ///   .map_err(|e| panic!(e));
+    /// let ws = test::get_shellcode32_workspace(b"\x00\x11\x22\x33");
+    /// assert_eq!(ws.read_rva(0x0).unwrap(), 0x33221100);
+    /// assert_eq!(ws.read_rva(0x1).is_err(), true);
     /// ```
     pub fn read_rva(&self, rva: A::RVA) -> Result<A::RVA, Error> {
         match A::get_bits() {
@@ -317,20 +290,12 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use zydis::gen::*;
+    /// use lancelot::test;
     ///
-    /// use lancelot::arch::*;
-    /// use lancelot::loader;
-    /// use lancelot::workspace::Workspace;
-    ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(loader::ShellcodeLoader::<Arch32>::new(loader::Platform::Windows)))
-    ///   .load()
-    ///   .map(|ws| {
-    ///     assert_eq!(ws.read_insn(0x0).is_ok(), true);
-    ///     assert_eq!(ws.read_insn(0x0).unwrap().length, 2);
-    ///     assert_eq!(ws.read_insn(0x0).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
-    ///   })
-    ///   .map_err(|e| panic!(e));
+    /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert_eq!(ws.read_insn(0x0).is_ok(), true);
+    /// assert_eq!(ws.read_insn(0x0).unwrap().length, 2);
+    /// assert_eq!(ws.read_insn(0x0).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
     /// ```
     pub fn read_insn(&self, rva: A::RVA) -> Result<ZydisDecodedInstruction, Error> {
         // this is `read_bytes` except that it reads at most 0x10 bytes.

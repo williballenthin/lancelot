@@ -5,6 +5,7 @@ pub mod analysis;
 pub mod arch;
 pub mod flowmeta;
 pub mod loader;
+pub mod loaders;
 pub mod util;
 pub mod workspace;
 pub mod xref;

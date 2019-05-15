@@ -649,8 +649,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// assert_eq!(meta.get_insn_length().unwrap(), 2);
     /// assert_eq!(meta.does_fallthrough(), false);
     /// ```
-    ///
-    ///
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
             debug!("dispatching command: {:?}", cmd);
