@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 use failure::{Error, Fail};
 use strum_macros::Display;
+use log::{debug, info, warn};
 
 use super::arch;
 use super::arch::Arch;
@@ -145,7 +146,10 @@ pub fn taste<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> impl Iterator<I
 /// ```
 pub fn load<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>, LoadedModule<A>), Error> {
     match taste::<A>(buf).nth(0) {
-        Some(loader) => loader.load(buf).map(|module| (loader, module)),
+        Some(loader) => {
+            info!("auto-detected loader: {}", loader.get_name());
+            loader.load(buf).map(|module| (loader, module))
+        },
         None => Err(LoaderError::NotSupported.into()),
     }
 }
