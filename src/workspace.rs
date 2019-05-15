@@ -4,6 +4,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 use zydis::gen::*;
 use zydis::Decoder;
+use log::{debug, info, warn};
 
 use super::analysis::Analysis;
 use super::arch::Arch;
@@ -36,6 +37,7 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
         self: WorkspaceBuilder<A>,
         loader: Box<dyn Loader<A>>,
     ) -> WorkspaceBuilder<A> {
+        info!("using explicitly chosen loader: {}", loader.get_name());
         WorkspaceBuilder {
             loader: Some(loader),
             ..self
@@ -91,6 +93,11 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
             }
             None => loader::load::<A>(&self.buf)?,
         };
+
+        info!("loaded {} sections:", module.sections.len());
+        module.sections.iter().for_each(|sec| {
+            info!("  - {:8} {:>8x}", sec.name, sec.addr);
+        });
 
         let analysis = Analysis::new(&module);
 
