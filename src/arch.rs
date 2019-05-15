@@ -84,7 +84,7 @@ impl hash::Hash for Arch32 {
 }
 
 impl PartialEq for Arch32 {
-    fn eq(&self, other: &Arch32) -> bool {
+    fn eq(&self, _other: &Arch32) -> bool {
         true
     }
 }

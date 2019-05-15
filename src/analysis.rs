@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use failure::{Error, Fail};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use zydis::gen::*;
 
 use super::arch;
@@ -44,7 +44,7 @@ fn print_op(op: &ZydisDecodedOperand) {
     println!("  action: {}", op.action);
     println!("  encoding: {}", op.encoding);
     println!("  size: {}", op.size);
-    match op.type_ as i32 {
+    match i32::from(op.type_) {
         ZYDIS_OPERAND_TYPE_MEMORY => {
             println!("  mem.addr gen only: {}", op.mem.isAddressGenOnly);
             println!("  mem.segment: {}", op.mem.segment);
@@ -188,7 +188,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), true);
     /// ```
     pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
-        match insn.mnemonic as i32 {
+        match i32::from(insn.mnemonic) {
             ZYDIS_MNEMONIC_JMP => false,
             ZYDIS_MNEMONIC_RET => false,
             ZYDIS_MNEMONIC_IRET => false,
@@ -375,7 +375,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         op: &ZydisDecodedOperand,
     ) -> Result<Option<A::RVA>, Error> {
         println!("get op xref: {:x}", op.type_);
-        match op.type_ as i32 {
+        match i32::from(op.type_) {
             // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
             //           0x0000000000001041:                       call    [0x0000000000079980]
             ZYDIS_OPERAND_TYPE_MEMORY => self.get_memory_operand_xref(rva, insn, op),
@@ -446,7 +446,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
-        match insn.mnemonic as i32 {
+        match i32::from(insn.mnemonic) {
             ZYDIS_MNEMONIC_CALL => self.get_call_insn_flow(rva, insn),
 
             ZYDIS_MNEMONIC_JMP => self.get_jmp_insn_flow(rva, insn),

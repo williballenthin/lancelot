@@ -104,11 +104,11 @@ impl<A: Arch + 'static> WorkspaceBuilder<A> {
             buf: self.buf,
 
             loader: ldr,
-            module: module,
+            module,
 
-            decoder: decoder,
+            decoder,
 
-            analysis: analysis,
+            analysis,
         })
     }
 }
