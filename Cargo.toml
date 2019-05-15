@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 simplelog = "^0.5.0"
-goblin = "0.0.18"
+goblin = "0.0.22"
 # zydis==0.0.3 requires rust-bindgen, which requires clang 3.9
 zydis = "0.0.3"
 matches = "0.1.8"
