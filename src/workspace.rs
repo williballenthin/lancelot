@@ -180,13 +180,13 @@ impl<A: Arch + 'static> Workspace<A> {
             .iter()
             .filter(|section| section.contains(rva))
             .nth(0)
-            .ok_or(WorkspaceError::InvalidAddress.into())
+            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
             .and_then(|section| -> Result<&[u8], Error> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
                 let offset = rva - section.addr;
                 A::RVA::to_usize(&offset)
-                    .ok_or(WorkspaceError::InvalidAddress.into())
+                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
                     .and_then(|offset| {
                         if offset + length > section.buf.len() {
                             Err(WorkspaceError::BufferOverrun.into())
@@ -341,13 +341,13 @@ impl<A: Arch + 'static> Workspace<A> {
             .iter()
             .filter(|section| section.contains(rva))
             .nth(0)
-            .ok_or(WorkspaceError::InvalidAddress.into())
+            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
             .and_then(|section| -> Result<&[u8], Error> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
                 let offset = rva - section.addr;
                 A::RVA::to_usize(&offset)
-                    .ok_or(WorkspaceError::InvalidAddress.into())
+                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
                     .and_then(|offset| {
                         if offset + 0x10 > section.buf.len() {
                             Ok(&section.buf[offset..])

@@ -169,7 +169,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
 
     pub fn get_meta(&self, rva: A::RVA) -> Option<FlowMeta> {
         self.get_coords(rva)
-            .and_then(|(section, offset)| Some(self.analysis.flow.meta[section][offset].clone()))
+            .and_then(|(section, offset)| Some(self.analysis.flow.meta[section][offset]))
     }
 
     /// Does the given instruction have a fallthrough flow?
@@ -390,7 +390,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             // which cannot be resolved without emulation.
             ZYDIS_OPERAND_TYPE_REGISTER => Ok(None),
             ZYDIS_OPERAND_TYPE_UNUSED => Ok(None),
-            ZYDIS_OPERAND_TYPE_MAX_VALUE => Ok(None),
             _ => Ok(None),
         }
     }
@@ -611,7 +610,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                 .xrefs
                 .from
                 .entry(xref.src)
-                .or_insert(HashSet::new());
+                .or_insert_with(HashSet::new);
             xrefs.insert(xref)
         };
 
@@ -631,7 +630,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                     .xrefs
                     .to
                     .entry(xref.dst)
-                    .or_insert(HashSet::new());
+                    .or_insert_with(HashSet::new);
                 xrefs.insert(xref);
             }
         }

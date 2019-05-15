@@ -40,12 +40,12 @@ impl FlowMeta {
     /// Errors:
     ///   - NotAnInstruction
     ///   - LongInstruction
-    pub fn get_insn_length(&self) -> Result<u8, Error> {
+    pub fn get_insn_length(self) -> Result<u8, Error> {
         let v = self.0 & 0b0000_1111;
         match v {
             0x00 => Err(Error::NotAnInstruction),
             0x0F => Err(Error::LongInstruction),
-            v @ _ => Ok(v),
+            v => Ok(v),
         }
     }
 
@@ -88,12 +88,12 @@ impl FlowMeta {
         self.0 = (self.0 & 0b1111_0000) | len;
     }
 
-    pub fn is_insn(&self) -> bool {
+    pub fn is_insn(self) -> bool {
         self.0 & 0b0000_1111 != 0
     }
 
     /// Does the instruction fallthrough?
-    pub fn does_fallthrough(&self) -> bool {
+    pub fn does_fallthrough(self) -> bool {
         self.0 & 0b0001_0000 > 0
     }
 
@@ -108,12 +108,12 @@ impl FlowMeta {
     /// assert_eq!(m.does_fallthrough(), true);
     /// ```
     pub fn set_fallthrough(&mut self) {
-        self.0 = self.0 | 0b0001_0000;
+        self.0 |= 0b0001_0000;
     }
 
     /// Does the instruction have flow xrefs from it?
     /// This does not include the fallthrough flow.
-    pub fn has_xrefs_from(&self) -> bool {
+    pub fn has_xrefs_from(self) -> bool {
         self.0 & 0b0010_0000 > 0
     }
 
@@ -128,11 +128,11 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_from(), true);
     /// ```
     pub fn set_xrefs_from(&mut self) {
-        self.0 = self.0 | 0b0010_0000;
+        self.0 |= 0b0010_0000;
     }
 
     /// Does the instruction have flow xrefs to it?
-    pub fn has_xrefs_to(&self) -> bool {
+    pub fn has_xrefs_to(self) -> bool {
         self.0 & 0b0100_0000 > 0
     }
 
@@ -147,7 +147,7 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_to(), true);
     /// ```
     pub fn set_xrefs_to(&mut self) {
-        self.0 = self.0 | 0b0100_0000;
+        self.0 |= 0b0100_0000;
     }
 
     /// Unset the bit indicating that there are flow xrefs to this instruction.
@@ -164,7 +164,7 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_to(), false);
     /// ```
     pub fn unset_xrefs_to(&mut self) {
-        self.0 = self.0 & 0b1011_1111
+        self.0 &= 0b1011_1111
     }
 }
 
