@@ -2,11 +2,12 @@ use num::{FromPrimitive, ToPrimitive};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::fmt::Debug;
 use std::hash::Hash;
 
 use failure::{Error, Fail};
-use log::{debug, warn};
+use log::{debug, info, warn};
 use zydis::gen::*;
 
 use super::arch;
@@ -28,6 +29,15 @@ pub enum AnalysisError {
 pub enum AnalysisCommand<A: Arch> {
     MakeInsn(A::RVA),
     MakeXref(Xref<A>),
+}
+
+impl<A: Arch + Debug> Display for AnalysisCommand<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
+            AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
+        }
+    }
 }
 
 pub fn get_first_operand(insn: &ZydisDecodedInstruction) -> Option<&ZydisDecodedOperand> {
@@ -201,15 +211,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_call_insn_flow(
-        &self,
-        rva: A::RVA,
-        insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
-        // TODO
-        Ok(vec![])
-    }
-
     /// ## test simple memory ptr operand
     ///
     /// ```
@@ -226,14 +227,29 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// assert_eq!(xref.is_some(), true);
     /// assert_eq!(xref.unwrap(), 0x0);
     /// ```
+    ///
+    /// ## test RIP-relative
+    ///
+    /// ```
+    /// use lancelot::test;
+    /// use lancelot::analysis;
+    ///
+    /// // FF 15 00 00 00 00         CALL $+5
+    /// // 00 00 00 00 00 00 00 00   dq 0x0
+    /// let mut ws = test::get_shellcode64_workspace(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let op = analysis::get_first_operand(&insn).unwrap();
+    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    ///
+    /// assert_eq!(xref.is_some(), true);
+    /// assert_eq!(xref.unwrap(), 0x0);
+    /// ```
     pub fn get_memory_operand_xref(
         &self,
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
     ) -> Result<Option<A::RVA>, Error> {
-        println!("get mem op xref");
-
         if op.mem.base == 0
             && op.mem.index == 0
             && op.mem.scale == 0
@@ -275,11 +291,48 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
 
             // this is the happy path!
             return Ok(Some(dst));
+        } else if op.mem.base == ZYDIS_REGISTER_RIP as u8
+            // only valid on x64
+            && op.mem.index == 0
+            && op.mem.scale == 0
+            && op.mem.disp.hasDisplacement == 1 {
+
+                // this is RIP-relative addressing.
+                // it works like a relative immediate,
+                // that is: dst = *(rva + displacement + instruction len)
+
+                let disp = A::RVA::from_i64(op.mem.disp.value);
+                let len = A::RVA::from_u8(insn.length);
+
+                let (disp, len) = match (disp, len) {
+                    (Some(disp), Some(len)) => (disp, len),
+                    _ => return Ok(None),
+                };
+
+                // TODO: this should be checked add
+                let ptr = rva + disp + len;
+
+                let dst = match self.read_va(ptr) {
+                    Ok(dst) => dst,
+                    Err(_) => return Ok(None),
+                };
+
+                let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
+                    Some(dst) => dst,
+                    None => return Ok(None),
+                };
+
+                if !self.probe(dst, 1) {
+                    return Ok(None);
+                };
+
+                // this is the happy path!
+                return Ok(Some(dst));
+        } else {
+            println!("get mem op xref");
+            print_op(op);
+            panic!("not supported");
         }
-
-        print_op(op);
-
-        Ok(None)
     }
 
     fn get_pointer_operand_xref(
@@ -290,6 +343,8 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     ) -> Result<Option<A::RVA>, Error> {
         // TODO
         println!("get ptr op xref");
+        print_op(op);
+        panic!("not supported");
         Ok(None)
     }
 
@@ -326,10 +381,6 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         op: &ZydisDecodedOperand,
     ) -> Result<Option<A::RVA>, Error> {
         // TODO
-        println!("get imm op xref");
-
-        print_op(op);
-
         if op.imm.isRelative != 0 {
             // the operand is an immediate constant relative to $PC.
             // destination = $pc + immediate + insn.len
@@ -362,9 +413,10 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             }
         } else {
             // the operand is an immediate absolute address.
-            // TODO
-            warn!("not implemented: immediate absolute address");
-            Err(AnalysisError::NotImplemented.into())
+            println!("get imm op xref");
+            println!("not implemented: immediate absolute address");
+            print_op(op);
+            panic!("not implemented");
         }
     }
 
@@ -374,8 +426,8 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
     ) -> Result<Option<A::RVA>, Error> {
-        println!("get op xref: {:x}", op.type_);
         match i32::from(op.type_) {
+            // TODO: need a way to add xrefs for the pointer for something like `CALL [0x0]`
             // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
             //           0x0000000000001041:                       call    [0x0000000000079980]
             ZYDIS_OPERAND_TYPE_MEMORY => self.get_memory_operand_xref(rva, insn, op),
@@ -394,12 +446,50 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_jmp_insn_flow(
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // E8 00 00 00 00  CALL $+5
+    /// // 90              NOP
+    /// let mut ws = test::get_shellcode32_workspace(b"\xE8\x00\x00\x00\x00\x90");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let xrefs = ws.get_call_insn_flow(0x0, &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// ```
+    pub fn get_call_insn_flow(
         &self,
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
-        println!("jmp insn");
+        // if this is not a CALL, then its a programming error. panic!
+        // all CALLs should have an operand.
+        let op = get_first_operand(insn).unwrap();
+
+        match self.get_operand_xref(rva, insn, op)? {
+            Some(dst) => Ok(vec![Xref {
+                src: rva,
+                dst: dst,
+                typ: XrefType::Call,
+            }]),
+            None => Ok(vec![]),
+        }
+    }
+
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // E9 00 00 00 00  JMP $+5
+    /// // 90              NOP
+    /// let mut ws = test::get_shellcode32_workspace(b"\xE9\x00\x00\x00\x00\x90");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let xrefs = ws.get_jmp_insn_flow(0x0, &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// ```
+    pub fn get_jmp_insn_flow(
+        &self,
+        rva: A::RVA,
+        insn: &ZydisDecodedInstruction,
+    ) -> Result<Vec<Xref<A>>, Error> {
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
         let op = get_first_operand(insn).unwrap();
@@ -414,31 +504,76 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
     }
 
-    fn get_ret_insn_flow(
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // C3  RETN
+    /// let mut ws = test::get_shellcode32_workspace(b"\xC3");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let xrefs = ws.get_ret_insn_flow(0x0, &insn).unwrap();
+    /// assert_eq!(xrefs.len(), 0);
+    /// ```
+    pub fn get_ret_insn_flow(
         &self,
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
-        // TODO
         Ok(vec![])
     }
 
-    fn get_cjmp_insn_flow(
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // 75 01 JNZ $+1
+    /// // CC    BREAK
+    /// // 90    NOP
+    /// let mut ws = test::get_shellcode32_workspace(b"\x75\x01\xCC\x90");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let xrefs = ws.get_cjmp_insn_flow(0x0, &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// ```
+    pub fn get_cjmp_insn_flow(
         &self,
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
-        // TODO
-        Ok(vec![])
+        // if this is not a CJMP, then its a programming error. panic!
+        // all conditional jumps should have an operand.
+        let op = get_first_operand(insn).unwrap();
+
+        match self.get_operand_xref(rva, insn, op)? {
+            Some(dst) => Ok(vec![Xref {
+                src: rva,
+                dst: dst,
+                typ: XrefType::ConditionalJump,
+            }]),
+            None => Ok(vec![]),
+        }
     }
 
-    fn get_cmov_insn_flow(
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // 0F 44 C3  CMOVZ EAX, EBX
+    /// // 90        NOP
+    /// let mut ws = test::get_shellcode32_workspace(b"\x0F\x44\xC3\x90");
+    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let xrefs = ws.get_cmov_insn_flow(0x0, &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// ```
+    pub fn get_cmov_insn_flow(
         &self,
         rva: A::RVA,
         insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
-        // TODO
-        Ok(vec![])
+        let len = A::RVA::from_u8(insn.length).unwrap();
+        let dst = rva + len;
+
+        Ok(vec![Xref {
+            src: rva,
+            dst: dst,
+            typ: XrefType::ConditionalMove,
+        }])
     }
 
     fn get_insn_flow(
@@ -651,8 +786,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// ```
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
-            debug!("dispatching command: {:?}", cmd);
-            println!("dispatching command: {:?}", cmd);
+            //info!("dispatching command: {:}", cmd);
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
