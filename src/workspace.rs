@@ -30,7 +30,7 @@ pub struct WorkspaceBuilder<A: Arch> {
     loader: Option<Box<dyn Loader<A>>>,
 }
 
-impl<A: Arch + 'static> WorkspaceBuilder<A> {
+impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
     /// Override the default loader picker with the given loader.
     pub fn with_loader(
         self: WorkspaceBuilder<A>,

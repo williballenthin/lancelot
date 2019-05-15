@@ -1,19 +1,20 @@
 use num::Zero;
 use std::marker::PhantomData;
 
-use strum_macros::Display;
 use failure::{Error, Fail};
+use strum_macros::Display;
 
 use super::arch;
 use super::arch::Arch;
 use super::loaders::pe::PELoader;
 use super::loaders::sc::ShellcodeLoader;
 
-
 #[derive(Debug, Fail)]
 pub enum LoaderError {
     #[fail(display = "The given buffer is not supported (arch/plat/file format)")]
     NotSupported,
+    #[fail(display = "The given buffer uses a bitness incompatible with the architecture")]
+    MismatchedBitness,
 }
 
 #[derive(Display, Clone, Copy)]
@@ -27,6 +28,7 @@ pub enum Platform {
     Windows,
 }
 
+#[derive(Debug)]
 pub struct Section<A: Arch> {
     pub addr: A::RVA,
     pub buf: Vec<u8>,
@@ -85,9 +87,7 @@ pub trait Loader<A: Arch> {
     fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error>;
 }
 
-
-
-pub fn default_loaders<A: Arch + 'static>() -> Vec<Box<dyn Loader<A>>> {
+pub fn default_loaders<A: Arch + 'static + std::fmt::Debug>() -> Vec<Box<dyn Loader<A>>> {
     // we might like these to come from a lazy_static global,
     //  however, then these have to be Sync.
     // I'm not sure if that's a good idea yet.
@@ -96,6 +96,7 @@ pub fn default_loaders<A: Arch + 'static>() -> Vec<Box<dyn Loader<A>>> {
     // the default `load` routine will pick the first matching loader,
     //  so the earlier entries here have higher precedence.
 
+    loaders.push(Box::new(PELoader::<A>::new()));
     loaders.push(Box::new(ShellcodeLoader::<A>::new(Platform::Windows)));
 
     loaders
@@ -119,7 +120,7 @@ pub fn default_loaders<A: Arch + 'static>() -> Vec<Box<dyn Loader<A>>> {
 ///   None => panic!("no matching loaders"),
 /// };
 /// ```
-pub fn taste<A: Arch + 'static>(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader<A>>> {
+pub fn taste<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader<A>>> {
     default_loaders::<A>()
         .into_iter()
         .filter(move |loader| loader.taste(buf))
@@ -142,7 +143,7 @@ pub fn taste<A: Arch + 'static>(buf: &[u8]) -> impl Iterator<Item = Box<dyn Load
 ///   })
 ///   .map_err(|e| panic!(e));
 /// ```
-pub fn load<A: Arch + 'static>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>, LoadedModule<A>), Error> {
+pub fn load<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>, LoadedModule<A>), Error> {
     match taste::<A>(buf).nth(0) {
         Some(loader) => loader.load(buf).map(|module| (loader, module)),
         None => Err(LoaderError::NotSupported.into()),

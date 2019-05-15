@@ -1,9 +1,10 @@
 //< Helpers that are useful for tests and doctests.
 
+use super::rsrc::*;
 use super::arch::*;
 use super::loader;
-use super::workspace::Workspace;
 use super::loaders::sc::ShellcodeLoader;
+use super::workspace::Workspace;
 
 /// Helper to construct a 32-bit Windows shellcode workspace from raw bytes.
 ///
@@ -21,6 +22,12 @@ pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace<Arch32> {
         .with_loader(Box::new(ShellcodeLoader::<Arch32>::new(
             loader::Platform::Windows,
         )))
+        .load()
+        .unwrap()
+}
+
+pub fn get_rsrc_workspace32(rsrc: Rsrc) -> Workspace<Arch32> {
+    Workspace::<Arch32>::from_bytes("foo.bin", &get_buf(rsrc))
         .load()
         .unwrap()
 }
