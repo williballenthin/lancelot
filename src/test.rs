@@ -26,6 +26,15 @@ pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace<Arch32> {
         .unwrap()
 }
 
+pub fn get_shellcode64_workspace(buf: &[u8]) -> Workspace<Arch64> {
+    Workspace::<Arch64>::from_bytes("foo.bin", buf)
+        .with_loader(Box::new(ShellcodeLoader::<Arch64>::new(
+            loader::Platform::Windows,
+        )))
+        .load()
+        .unwrap()
+}
+
 pub fn get_rsrc_workspace32(rsrc: Rsrc) -> Workspace<Arch32> {
     Workspace::<Arch32>::from_bytes("foo.bin", &get_buf(rsrc))
         .load()
