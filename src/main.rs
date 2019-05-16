@@ -61,15 +61,20 @@ pub fn run(args: &Config) -> Result<(), Error> {
         if ws.loader.get_name() == "Windows/64/PE" {
             if let Ok(Object::PE(pe)) = Object::parse(&ws.buf) {
                 let entry = pe.entry;
-                let exports: Vec<usize> = pe.exports.iter().map(|exp| exp.offset).collect();
+                let exports: Vec<usize> = pe.exports.iter()
+                    // re-exports are simply strings that point to a `DLL.export_name` ASCII string.
+                    // therefore, they're not functions/code.
+                    .filter(|exp| exp.reexport.is_none())
+                    .map(|exp| exp.rva).collect();
 
                 info!("PE entry: {:#x}", entry);
                 ws.make_insn(entry as i64);
+                ws.analyze();
                 for export in exports.iter() {
                     info!("export: {:#x}", export);
                     ws.make_insn(*export as i64);
+                    ws.analyze();
                 }
-                ws.analyze();
             }
         }
     }
