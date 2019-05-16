@@ -2,7 +2,7 @@ extern crate lancelot;
 extern crate log;
 
 use failure::{Error, Fail};
-use log::{error, info, trace};
+use log::{error, info, debug, trace};
 use std::env;
 use std::process;
 
@@ -71,18 +71,20 @@ pub fn run(args: &Config) -> Result<(), Error> {
 
                 // TODO: need to add symbols for re-exports
 
-                info!("PE entry: {:#x}", entry);
+                debug!("PE entry: {:#x}", entry);
                 ws.make_symbol(entry as i64, "entry")?;
                 ws.make_function(entry as i64)?;
                 ws.analyze()?;
                 for (rva, name) in exports.iter() {
-                    info!("export: {:#x}", rva);
+                    debug!("export: {:#x}", rva);
                     if let Some(name) = name {
                         ws.make_symbol(*rva as i64, &name)?;
                     }
                     ws.make_function(*rva as i64)?;
                     ws.analyze()?;
                 }
+
+                info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
             }
         }
     }

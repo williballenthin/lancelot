@@ -855,7 +855,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
 
         self.analysis.symbols.entry(rva).or_insert_with(|| {
-            info!("adding symbol: {:#x} -> {}", rva, name);
+            debug!("adding symbol: {:#x} -> {}", rva, name);
             name.to_string()
         });
 
@@ -870,7 +870,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
 
         if self.analysis.functions.insert(rva) {
-            info!("adding function: {:#x}", rva);
+            debug!("adding function: {:#x}", rva);
         };
 
         Ok(vec![AnalysisCommand::MakeInsn(rva)])
@@ -889,7 +889,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     /// ```
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
-            //info!("dispatching command: {:}", cmd);
+            debug!("dispatching command: {:}", cmd);
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
