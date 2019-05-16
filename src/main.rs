@@ -69,11 +69,11 @@ pub fn run(args: &Config) -> Result<(), Error> {
 
                 info!("PE entry: {:#x}", entry);
                 ws.make_insn(entry as i64);
-                ws.analyze();
+                ws.analyze()?;
                 for export in exports.iter() {
                     info!("export: {:#x}", export);
                     ws.make_insn(*export as i64);
-                    ws.analyze();
+                    ws.analyze()?;
                 }
             }
         }
