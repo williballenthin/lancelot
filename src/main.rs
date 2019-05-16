@@ -72,15 +72,15 @@ pub fn run(args: &Config) -> Result<(), Error> {
                 // TODO: need to add symbols for re-exports
 
                 info!("PE entry: {:#x}", entry);
-                ws.make_symbol(entry as i64, "entry");
-                ws.make_insn(entry as i64)?;
+                ws.make_symbol(entry as i64, "entry")?;
+                ws.make_function(entry as i64)?;
                 ws.analyze()?;
                 for (rva, name) in exports.iter() {
                     info!("export: {:#x}", rva);
-                    ws.make_insn(*rva as i64)?;
                     if let Some(name) = name {
                         ws.make_symbol(*rva as i64, &name)?;
                     }
+                    ws.make_function(*rva as i64)?;
                     ws.analyze()?;
                 }
             }
