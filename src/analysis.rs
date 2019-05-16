@@ -25,10 +25,14 @@ pub enum AnalysisError {
     InvalidInstruction,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum AnalysisCommand<A: Arch> {
     MakeInsn(A::RVA),
     MakeXref(Xref<A>),
+    MakeSymbol {
+        addr: A::RVA,
+        name: String
+    },
 }
 
 impl<A: Arch + Debug> Display for AnalysisCommand<A> {
@@ -36,6 +40,7 @@ impl<A: Arch + Debug> Display for AnalysisCommand<A> {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
+            AnalysisCommand::MakeSymbol{addr, name} => write!(f, "MakeSymbol({:?}, {})", addr, name),
         }
     }
 }
@@ -116,6 +121,10 @@ pub struct FlowAnalysis<A: Arch> {
 pub struct Analysis<A: Arch> {
     queue: VecDeque<AnalysisCommand<A>>,
 
+
+    // TODO: FNV
+    symbols: HashMap<A::RVA, String>,
+
     flow: FlowAnalysis<A>,
     // datameta
     // symbols
@@ -138,6 +147,7 @@ impl<A: Arch> Analysis<A> {
 
         Analysis {
             queue: VecDeque::new(),
+            symbols: HashMap::new(),
             flow: FlowAnalysis {
                 meta: flow_meta,
                 xrefs: XrefAnalysis {
@@ -157,6 +167,27 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             .queue
             .push_back(AnalysisCommand::MakeInsn(rva));
         Ok(())
+    }
+
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // JMP $+0;
+    /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert!(ws.get_symbol(0x0).is_none());
+    /// ws.make_symbol(0x0, "entry");
+    /// ws.analyze();
+    /// assert_eq!(ws.get_symbol(0x0).unwrap(), "entry");
+    /// ```
+    pub fn make_symbol(&mut self, rva: A::RVA, name: &str) -> Result<(), Error> {
+        self.analysis
+            .queue
+            .push_back(AnalysisCommand::MakeSymbol{addr: rva, name: name.to_string()});
+        Ok(())
+    }
+
+    pub fn get_symbol(&self,  rva: A::RVA) -> Option<&String> {
+        self.analysis.symbols.get(&rva)
     }
 
     /// fetch the (section, offset) indices for the given RVA.
@@ -773,6 +804,20 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         Ok(vec![])
     }
 
+    fn handle_make_symbol(&mut self, rva: A::RVA, name: &str) -> Result<Vec<AnalysisCommand<A>>, Error> {
+        if !self.probe(rva, 1) {
+            warn!("invalid symbol address: {:#x}", rva);
+            return Ok(vec![]);
+        }
+
+        self.analysis.symbols.entry(rva).or_insert_with(|| {
+            info!("adding symbol: {:#x} -> {}", rva, name);
+            name.to_string()
+        });
+
+        Ok(vec![])
+    }
+
     /// ```
     /// use lancelot::test;
     ///
@@ -790,6 +835,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
+                AnalysisCommand::MakeSymbol{addr, name} => self.handle_make_symbol(addr, &name)?,
             };
             self.analysis.queue.extend(cmds);
         }
