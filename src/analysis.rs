@@ -739,7 +739,10 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         // TODO: maybe don't fail, but just return empty list?
         let flows = self.get_insn_flow(rva, &insn)?;
         ret.extend(flows.iter().map(|f| AnalysisCommand::MakeXref(*f)));
-        ret.extend(flows.iter().map(|f| AnalysisCommand::MakeInsn(f.dst)));
+        ret.extend(flows.iter().map(|f| match f.typ {
+            XrefType::Call => AnalysisCommand::MakeFunction(f.dst),
+            _ => AnalysisCommand::MakeInsn(f.dst),
+        }));
 
         if does_fallthrough {
             // u8 can always go into an RVA (u32 or greater).
