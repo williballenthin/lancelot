@@ -68,11 +68,11 @@ pub fn run(args: &Config) -> Result<(), Error> {
                     .map(|exp| exp.rva).collect();
 
                 info!("PE entry: {:#x}", entry);
-                ws.make_insn(entry as i64);
+                ws.make_insn(entry as i64)?;
                 ws.analyze()?;
                 for export in exports.iter() {
                     info!("export: {:#x}", export);
-                    ws.make_insn(*export as i64);
+                    ws.make_insn(*export as i64)?;
                     ws.analyze()?;
                 }
             }
