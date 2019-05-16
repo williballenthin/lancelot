@@ -33,6 +33,7 @@ pub enum AnalysisCommand<A: Arch> {
         rva: A::RVA,
         name: String
     },
+    MakeFunction(A::RVA),
 }
 
 impl<A: Arch + Debug> Display for AnalysisCommand<A> {
@@ -41,6 +42,7 @@ impl<A: Arch + Debug> Display for AnalysisCommand<A> {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
             AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({:?}, {})", rva, name),
+            AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({:?})", rva),
         }
     }
 }
@@ -121,6 +123,8 @@ pub struct FlowAnalysis<A: Arch> {
 pub struct Analysis<A: Arch> {
     queue: VecDeque<AnalysisCommand<A>>,
 
+    // TODO: FNV
+    functions: HashSet<A::RVA>,
 
     // TODO: FNV
     symbols: HashMap<A::RVA, String>,
@@ -147,6 +151,7 @@ impl<A: Arch> Analysis<A> {
 
         Analysis {
             queue: VecDeque::new(),
+            functions: HashSet::new(),
             symbols: HashMap::new(),
             flow: FlowAnalysis {
                 meta: flow_meta,
@@ -196,6 +201,29 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         self.analysis
             .queue
             .push_back(AnalysisCommand::MakeSymbol{rva: rva, name: name.to_string()});
+        Ok(())
+    }
+
+    pub fn get_functions(&self ) -> impl Iterator<Item=&A::RVA> {
+        self.analysis.functions.iter()
+    }
+
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // JMP $+0;
+    /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
+    /// assert!(ws.get_functions().collect::<Vec<_>>().is_empty());
+    /// ws.make_function(0x0);
+    /// ws.analyze();
+    ///
+    /// assert!(ws.get_meta(0x0).unwrap().is_insn());
+    /// assert_eq!(ws.get_functions().collect::<Vec<_>>().len(), 1);
+    /// ```
+    pub fn make_function(&mut self, rva: A::RVA) -> Result<(), Error> {
+        self.analysis
+            .queue
+            .push_back(AnalysisCommand::MakeFunction(rva));
         Ok(())
     }
 
@@ -831,6 +859,20 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         Ok(vec![])
     }
 
+    fn handle_make_function(&mut self, rva: A::RVA) -> Result<Vec<AnalysisCommand<A>>, Error> {
+        // TODO: probably ensure this is code, not just readable.
+        if !self.probe(rva, 1) {
+            warn!("invalid function address: {:#x}", rva);
+            return Ok(vec![]);
+        }
+
+        if self.analysis.functions.insert(rva) {
+            info!("adding function: {:#x}", rva);
+        };
+
+        Ok(vec![AnalysisCommand::MakeInsn(rva)])
+    }
+
     /// ```
     /// use lancelot::test;
     ///
@@ -849,6 +891,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
                 AnalysisCommand::MakeSymbol{rva, name} => self.handle_make_symbol(rva, &name)?,
+                AnalysisCommand::MakeFunction(rva) => self.handle_make_function(rva)?,
             };
             self.analysis.queue.extend(cmds);
         }
