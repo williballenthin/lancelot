@@ -162,6 +162,19 @@ impl<A: Arch> Analysis<A> {
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
 impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
+    /// ```
+    /// use lancelot::test;
+    ///
+    /// // NOP
+    /// // JMP $+0;
+    /// let mut ws = test::get_shellcode32_workspace(b"\x90\xEB\xFE");
+    /// ws.make_insn(0x0);
+    /// ws.analyze();
+    ///
+    /// assert!( ws.get_meta(0x0).unwrap().is_insn());
+    /// assert!( ws.get_meta(0x1).unwrap().is_insn());
+    /// assert!(!ws.get_meta(0x2).unwrap().is_insn());
+    /// ```
     pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
         self.analysis
             .queue
