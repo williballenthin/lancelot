@@ -30,7 +30,7 @@ pub enum AnalysisCommand<A: Arch> {
     MakeInsn(A::RVA),
     MakeXref(Xref<A>),
     MakeSymbol {
-        addr: A::RVA,
+        rva: A::RVA,
         name: String
     },
 }
@@ -40,7 +40,7 @@ impl<A: Arch + Debug> Display for AnalysisCommand<A> {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
-            AnalysisCommand::MakeSymbol{addr, name} => write!(f, "MakeSymbol({:?}, {})", addr, name),
+            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({:?}, {})", rva, name),
         }
     }
 }
@@ -182,7 +182,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
     pub fn make_symbol(&mut self, rva: A::RVA, name: &str) -> Result<(), Error> {
         self.analysis
             .queue
-            .push_back(AnalysisCommand::MakeSymbol{addr: rva, name: name.to_string()});
+            .push_back(AnalysisCommand::MakeSymbol{rva: rva, name: name.to_string()});
         Ok(())
     }
 
@@ -835,7 +835,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
-                AnalysisCommand::MakeSymbol{addr, name} => self.handle_make_symbol(addr, &name)?,
+                AnalysisCommand::MakeSymbol{rva, name} => self.handle_make_symbol(rva, &name)?,
             };
             self.analysis.queue.extend(cmds);
         }
