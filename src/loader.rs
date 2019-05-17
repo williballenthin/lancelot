@@ -138,7 +138,7 @@ pub fn taste<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> impl Iterator<I
 /// use lancelot::loader::*;
 ///
 /// load::<Arch32>(b"\xEB\xFE")
-///   .map(|(loader, module)| {
+///   .map(|(loader, module, analyzers)| {
 ///     assert_eq!(loader.get_name(),       "Windows/32/Raw");
 ///     assert_eq!(module.base_address,     0x0);
 ///     assert_eq!(module.sections[0].name, "raw");

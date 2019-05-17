@@ -146,7 +146,7 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
     /// use lancelot::loader::*;
     ///
     /// let loader = lancelot::loaders::pe::PELoader::<Arch64>::new();
-    /// let module = loader.load(&get_buf(Rsrc::K32)).unwrap();
+    /// let (module, analyzers) = loader.load(&get_buf(Rsrc::K32)).unwrap();
     /// assert_eq!(module.base_address, 0x180000000);
     ///
     /// // mismatched bitness

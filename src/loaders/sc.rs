@@ -50,7 +50,7 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
     ///
     /// let loader = lancelot::loaders::sc::ShellcodeLoader::<Arch32>::new(Platform::Windows);
     /// loader.load(b"MZ\x90\x00")
-    ///   .map(|module| {
+    ///   .map(|(module, analyzers)| {
     ///     assert_eq!(module.base_address,     0x0);
     ///     assert_eq!(module.sections[0].name, "raw");
     ///   })
