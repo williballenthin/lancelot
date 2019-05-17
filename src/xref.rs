@@ -21,7 +21,6 @@ pub enum XrefType {
     ConditionalMove,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Xref<A: Arch> {
     pub src: A::RVA,
     pub dst: A::RVA,
@@ -37,3 +36,33 @@ impl<A: Arch> Clone for Xref<A> {
     }
 }
 impl<A: Arch> Copy for Xref<A> {}
+
+impl<A: Arch> std::fmt::Display for Xref<A>{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "xref(type: {:?}, src: {:#x}, dst: {:#x})", self.typ, self.src, self.dst)
+    }
+}
+
+impl<A: Arch> std::fmt::Debug for Xref<A>{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // just use the `Display` impl for now
+        write!(f, "{}", self)
+    }
+}
+
+impl<A: Arch> PartialEq for Xref<A> {
+    fn eq(&self, other: &Xref<A>) -> bool {
+        self.src == other.src &&
+            self.dst == other.dst &&
+            self.typ == other.typ
+    }
+}
+impl<A: Arch> Eq for Xref<A> {}
+
+impl<A: Arch> std::hash::Hash for Xref<A> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.src.hash(state);
+        self.dst.hash(state);
+        self.typ.hash(state);
+    }
+}
