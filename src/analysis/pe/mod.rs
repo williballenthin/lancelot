@@ -4,6 +4,9 @@ pub use entrypoint::EntryPointAnalyzer;
 pub mod exports;
 pub use exports::ExportsAnalyzer;
 
+pub mod imports;
+pub use imports::ImportsAnalyzer;
+
 // TODO: analyzer for imports to set symbols
 // TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
 // TODO: analyzer for RUNTIME_FUNCTION metadata
@@ -13,6 +16,7 @@ pub use exports::ExportsAnalyzer;
 // TODO: analyzer for RTTI
 // TODO: analyzer for FLIRT-like signatures to set function names
 // TODO: analyzer for jump-tables
+// TODO: analyzer for import thunks
 
 
 // for k32.dll, the entrypoint + exports does not catch 0x1800012d4
