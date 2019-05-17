@@ -1,6 +1,7 @@
 use num::{FromPrimitive};
 use std::marker::PhantomData;
 
+use log::{debug};
 use goblin::{Object};
 use failure::{Error};
 
@@ -42,6 +43,8 @@ impl<A: Arch + 'static> Analyzer<A> for EntryPointAnalyzer<A> {
             Some(entry) => entry,
             None => return Err(AnalysisError::NotSupported.into()),
         };
+
+        debug!("entry point: {:#x}", entry);
 
         ws.make_symbol(entry, "entry")?;
         ws.make_function(entry)?;

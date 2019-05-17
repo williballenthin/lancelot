@@ -9,6 +9,8 @@ use goblin::pe::section_table::SectionTable;
 use super::super::util;
 use super::super::arch::Arch;
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError};
+use super::super::analysis::{Analyzer};
+use super::super::analysis::pe;
 
 pub struct PELoader<A: Arch> {
     // PELoader must have a type parameter for it
@@ -101,7 +103,7 @@ impl<A: Arch> PELoader<A> {
     }
 }
 
-impl<A: Arch + std::fmt::Debug> Loader<A> for PELoader<A> {
+impl<A: Arch + 'static> Loader<A> for PELoader<A> {
     fn get_arch(&self) -> u8 {
         A::get_bits()
     }
@@ -151,7 +153,7 @@ impl<A: Arch + std::fmt::Debug> Loader<A> for PELoader<A> {
     /// let loader = lancelot::loaders::pe::PELoader::<Arch32>::new();
     /// assert!(loader.load(&get_buf(Rsrc::K32)).is_err());
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error> {
+    fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error> {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
             if pe.is_64 && self.get_arch() == 32 {
                 return Err(LoaderError::MismatchedBitness.into());
@@ -184,10 +186,13 @@ impl<A: Arch + std::fmt::Debug> Loader<A> for PELoader<A> {
             //
             // via: https://doc.rust-lang.org/rust-by-example/error/iter_result.html
             match sections.into_iter().collect::<Result<Vec<Section<A>>, Error>>() {
-                Ok(sections) => Ok(LoadedModule {
-                    base_address,
-                    sections,
-                }),
+                Ok(sections) => Ok(
+                    (LoadedModule {
+                        base_address,
+                        sections,
+                     },
+                     vec![Box::new(pe::EntryPointAnalyzer::new()),
+                          Box::new(pe::ExportsAnalyzer::new()),])),
                 Err(e) => Err(e),
             }
         } else {

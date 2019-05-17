@@ -86,10 +86,11 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
     pub fn load(self: WorkspaceBuilder<A>) -> Result<Workspace<A>, Error> {
         // if the user provided a loader, use that.
         // otherwise, use the default detected loader.
-        let (ldr, module) = match self.loader {
+        let (ldr, module, analyzers) = match self.loader {
+            // TODO: let users specify analyzers via builder
             Some(ldr) => {
-                let module = ldr.load(&self.buf)?;
-                (ldr, module)
+                let (module, analyzers) = ldr.load(&self.buf)?;
+                (ldr, module, analyzers)
             }
             None => loader::load::<A>(&self.buf)?,
         };

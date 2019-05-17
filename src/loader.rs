@@ -6,6 +6,7 @@ use super::arch;
 use super::arch::Arch;
 use super::loaders::pe::PELoader;
 use super::loaders::sc::ShellcodeLoader;
+use super::analysis::{Analyzer};
 
 #[derive(Debug, Fail)]
 pub enum LoaderError {
@@ -82,7 +83,7 @@ pub trait Loader<A: Arch> {
     fn taste(&self, buf: &[u8]) -> bool;
 
     /// Load the given bytes into a Module.
-    fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error>;
+    fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error>;
 }
 
 pub fn default_loaders<A: Arch + 'static + std::fmt::Debug>() -> Vec<Box<dyn Loader<A>>> {
@@ -141,11 +142,13 @@ pub fn taste<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> impl Iterator<I
 ///   })
 ///   .map_err(|e| panic!(e));
 /// ```
-pub fn load<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>, LoadedModule<A>), Error> {
+pub fn load<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> Result<(Box<dyn Loader<A>>,
+                                                                        LoadedModule<A>,
+                                                                        Vec<Box<dyn Analyzer<A>>>), Error> {
     match taste::<A>(buf).nth(0) {
         Some(loader) => {
             info!("auto-detected loader: {}", loader.get_name());
-            loader.load(buf).map(|module| (loader, module))
+            loader.load(buf).map(|(module, analyzers)| (loader, module, analyzers))
         },
         None => Err(LoaderError::NotSupported.into()),
     }

@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use super::super::arch::Arch;
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section};
+use super::super::analysis::{Analyzer};
 
 pub struct ShellcodeLoader<A: Arch> {
     plat: Platform,
@@ -55,8 +56,8 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
     ///   })
     ///   .map_err(|e| panic!(e));
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<LoadedModule<A>, Error> {
-        Ok(LoadedModule::<A> {
+    fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error> {
+        Ok((LoadedModule::<A> {
             base_address: A::VA::zero(),
             sections: vec![Section::<A> {
                 addr: A::RVA::zero(),
@@ -64,6 +65,7 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
                 perms: 0x0, // TODO
                 name: "raw".to_string(),
             }],
-        })
+        },
+        vec![]))
     }
 }
