@@ -32,7 +32,6 @@ _testmain.go
 
 # binaries
 CrystalTiger
-pe
 emudbg
 hexdump
 cli
