@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::fmt::Debug;
-use std::hash::Hash;
+use std::marker::PhantomData;
 
 use failure::{Error, Fail};
 use log::{debug, info, warn};
 use zydis::gen::*;
+use goblin::{Object};
 
 use super::arch;
 use super::arch::Arch;
@@ -21,6 +21,8 @@ use super::xref::{Xref, XrefType};
 pub enum AnalysisError {
     #[fail(display = "Not implemented")]
     NotImplemented,
+    #[fail(display = "Not supported")]
+    NotSupported,
     #[fail(display = "foo")]
     InvalidInstruction,
 }
@@ -36,7 +38,7 @@ pub enum AnalysisCommand<A: Arch> {
     MakeFunction(A::RVA),
 }
 
-impl<A: Arch + Debug> Display for AnalysisCommand<A> {
+impl<A: Arch> Display for AnalysisCommand<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
@@ -166,7 +168,7 @@ impl<A: Arch> Analysis<A> {
 
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
-impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
+impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use lancelot::test;
     ///
@@ -417,7 +419,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         println!("get ptr op xref");
         print_op(op);
         panic!("not supported");
-        Ok(None)
+        //Ok(None)
     }
 
     /// ## test relative immediate operand
@@ -870,7 +872,7 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
         }
 
         if self.analysis.functions.insert(rva) {
-            debug!("adding function: {:#x}", rva);
+            info!("adding function: {:#x}", rva);
         };
 
         Ok(vec![AnalysisCommand::MakeInsn(rva)])
@@ -898,6 +900,55 @@ impl<A: Arch + 'static + Debug + Eq + Hash> Workspace<A> {
             };
             self.analysis.queue.extend(cmds);
         }
+
+        Ok(())
+    }
+}
+
+
+pub trait Analyzer<A: Arch + 'static> {
+    fn get_name(&self) -> String;
+    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error>;
+}
+
+
+pub struct EntryPointAnalyzer<A: Arch> {
+    // This Analyzer must have a type parameter for it
+    //  to implement Loader<A>.
+    // however, it doesn't actually use this type itself.
+    // so, we use a phantom data marker which has zero type,
+    //  to ensure there is not an unused type parameter,
+    //  which is a compile error.
+    _phantom: PhantomData<A>,
+}
+
+impl<A: Arch> EntryPointAnalyzer<A> {
+    pub fn new() -> EntryPointAnalyzer<A> {
+        EntryPointAnalyzer {
+            _phantom: PhantomData {},
+        }
+    }
+}
+
+impl<A: Arch + 'static> Analyzer<A> for EntryPointAnalyzer<A> {
+    fn get_name(&self) -> String {
+        "PE entry point analyzer".to_string()
+    }
+
+    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
+        let pe = match Object::parse(&ws.buf) {
+            Ok(Object::PE(pe)) => pe,
+            _ => panic!("can't analyze unexpected format"),
+        };
+
+        let entry = match A::RVA::from_usize(pe.entry) {
+            Some(entry) => entry,
+            None => return Err(AnalysisError::NotSupported.into()),
+        };
+
+        ws.make_symbol(entry, "entry")?;
+        ws.make_function(entry)?;
+        ws.analyze()?;
 
         Ok(())
     }
