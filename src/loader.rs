@@ -82,7 +82,11 @@ pub trait Loader<A: Arch> {
     /// Returns True if this Loader knows how to load the given bytes.
     fn taste(&self, buf: &[u8]) -> bool;
 
-    /// Load the given bytes into a Module.
+    /// Load the given bytes into a Module and suggest the appropriate Analyzers.
+    ///
+    /// While the loader is parsing a file, it should determine what
+    ///  the most appropriate analyzers are, e.g. a PE loader may inspect the headers
+    ///  to determine if there is Control Flow Guard metadata that can be analyzed.
     fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error>;
 }
 
@@ -125,8 +129,7 @@ pub fn taste<A: Arch + 'static + std::fmt::Debug>(buf: &[u8]) -> impl Iterator<I
         .filter(move |loader| loader.taste(buf))
 }
 
-/// Load the given sample as a 32-bit module using the first matching
-///  loader from `default_loaders`.
+/// Load the given sample using the first matching loader from `default_loaders`.
 ///
 /// Example:
 ///

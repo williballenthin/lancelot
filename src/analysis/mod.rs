@@ -872,7 +872,7 @@ impl<A: Arch + 'static> Workspace<A> {
         }
 
         if self.analysis.functions.insert(rva) {
-            info!("adding function: {:#x}", rva);
+            debug!("adding function: {:#x}", rva);
         };
 
         Ok(vec![AnalysisCommand::MakeInsn(rva)])

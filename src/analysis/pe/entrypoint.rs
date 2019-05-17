@@ -12,7 +12,7 @@ use super::super::{Analyzer, AnalysisError};
 
 pub struct EntryPointAnalyzer<A: Arch> {
     // This Analyzer must have a type parameter for it
-    //  to implement Loader<A>.
+    //  to implement Analyzer<A>.
     // however, it doesn't actually use this type itself.
     // so, we use a phantom data marker which has zero type,
     //  to ensure there is not an unused type parameter,
