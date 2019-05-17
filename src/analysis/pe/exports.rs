@@ -80,14 +80,6 @@ impl<A: Arch + 'static> Analyzer<A> for ExportsAnalyzer<A> {
             ws.analyze()?;
         }
 
-        // for k32.dll, the above does not catch 0x1800012d4
-        // this is because its called by sub_180001630
-        // this has no CALL xref-to.
-        // it does have:
-        //   - RUNTIME_FUNCTION at 1800AB06C (TODO: analysis pass: runtime functions)
-        //   - __guard_fids_table entry at 18007ABAC (TODO: analysis pass: guard fids table)
-        //   - function pointer at 1800779E0 (TODO: analysis pass: ptr from data->text)
-
         Ok(())
     }
 }

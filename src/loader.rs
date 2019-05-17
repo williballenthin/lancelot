@@ -1,6 +1,7 @@
 use failure::{Error, Fail};
 use strum_macros::Display;
 use log::{info};
+use bitflags::{bitflags};
 
 use super::arch;
 use super::arch::Arch;
@@ -27,12 +28,23 @@ pub enum Platform {
     Windows,
 }
 
+bitflags! {
+    pub struct Permissions: u8 {
+        const R = 0b00000001;
+        const W = 0b00000010;
+        const X = 0b00000100;
+        const RW = Self::R.bits | Self::W.bits;
+        const RX =  Self::R.bits | Self::X.bits;
+        const WX =  Self::W.bits | Self::X.bits;
+        const RWX =  Self::R.bits | Self::W.bits | Self::X.bits;
+    }
+}
+
 #[derive(Debug)]
 pub struct Section<A: Arch> {
     pub addr: A::RVA,
     pub buf: Vec<u8>,
-    // TODO
-    pub perms: u8,
+    pub perms: Permissions,
     pub name: String,
 }
 

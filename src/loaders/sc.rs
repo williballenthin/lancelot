@@ -3,7 +3,7 @@ use num::Zero;
 use std::marker::PhantomData;
 
 use super::super::arch::Arch;
-use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section};
+use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, Permissions};
 use super::super::analysis::{Analyzer};
 
 pub struct ShellcodeLoader<A: Arch> {
@@ -62,7 +62,7 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
             sections: vec![Section::<A> {
                 addr: A::RVA::zero(),
                 buf: buf.to_vec(),
-                perms: 0x0, // TODO
+                perms: Permissions::RWX,
                 name: "raw".to_string(),
             }],
         },

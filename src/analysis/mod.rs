@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 
 use failure::{Error, Fail};
-use log::{debug, info, warn};
+use log::{debug, warn};
 use zydis::gen::*;
 
 use super::arch;

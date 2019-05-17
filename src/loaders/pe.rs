@@ -8,9 +8,20 @@ use goblin::pe::section_table::SectionTable;
 
 use super::super::util;
 use super::super::arch::Arch;
-use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError};
+use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
 use super::super::analysis::{Analyzer};
 use super::super::analysis::pe;
+
+
+/// The section can be executed as code.
+const IMAGE_SCN_MEM_EXECUTE: u32 = 0x20000000;
+
+/// The section can be read.
+const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
+
+/// The section can be written to.
+const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
+
 
 pub struct PELoader<A: Arch> {
     // PELoader must have a type parameter for it
@@ -64,8 +75,7 @@ impl<A: Arch> PELoader<A> {
         Ok(Section {
             addr: A::RVA::from_u8(0x0).unwrap(),
             buf: headerbuf,
-            // TODO
-            perms: 0x0,
+            perms: Permissions::R,
             name: String::from("header"),
         })
     }
@@ -93,11 +103,21 @@ impl<A: Arch> PELoader<A> {
             rawbuf.copy_from_slice(&buf[pstart..pend]);
         }
 
+        let mut perms = Permissions::empty();
+        if section.characteristics & IMAGE_SCN_MEM_READ > 0 {
+            perms.insert(Permissions::R);
+        }
+        if section.characteristics & IMAGE_SCN_MEM_WRITE > 0 {
+            perms.insert(Permissions::W);
+        }
+        if section.characteristics & IMAGE_SCN_MEM_EXECUTE > 0 {
+            perms.insert(Permissions::X);
+        }
+
         Ok(Section{
             addr: A::RVA::from_u32(section.virtual_address).unwrap(),
             buf: secbuf,
-            // TODO
-            perms: 0x0,
+            perms,
             name,
         })
     }

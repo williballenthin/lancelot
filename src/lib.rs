@@ -1,4 +1,5 @@
 extern crate log;
+extern crate bitflags;
 extern crate simplelog;
 
 pub mod analysis;
