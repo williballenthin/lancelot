@@ -108,7 +108,7 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
             Decoder::new(ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64).unwrap()
         };
 
-        Ok(Workspace::<A> {
+        let mut ws = Workspace::<A> {
             filename: self.filename,
             buf: self.buf,
 
@@ -118,7 +118,14 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
             decoder,
 
             analysis,
-        })
+        };
+
+        for analyzer in analyzers.iter() {
+            info!("analyzing with {}", analyzer.get_name());
+            analyzer.analyze(&mut ws);
+        }
+
+        Ok(ws)
     }
 }
 

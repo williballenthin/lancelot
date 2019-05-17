@@ -58,34 +58,9 @@ pub fn run(args: &Config) -> Result<(), Error> {
     } else if args.mode == 64 {
         let mut ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
 
-        if ws.loader.get_name() == "Windows/64/PE" {
-            if let Ok(Object::PE(pe)) = Object::parse(&ws.buf) {
-                let entry = pe.entry;
-                let exports: Vec<(usize, Option<String>)> = pe.exports.iter()
-                    // re-exports are simply strings that point to a `DLL.export_name` ASCII string.
-                    // therefore, they're not functions/code.
-                    .filter(|exp| exp.reexport.is_none())
-                    .map(|exp| {
-                        (exp.rva, exp.name.map(|n| n.to_string()))
-                    }).collect();
-
-                // TODO: need to add symbols for re-exports
-
-                debug!("PE entry: {:#x}", entry);
-                ws.make_symbol(entry as i64, "entry")?;
-                ws.make_function(entry as i64)?;
-                ws.analyze()?;
-                for (rva, name) in exports.iter() {
-                    debug!("export: {:#x}", rva);
-                    if let Some(name) = name {
-                        ws.make_symbol(*rva as i64, &name)?;
-                    }
-                    ws.make_function(*rva as i64)?;
-                    ws.analyze()?;
-                }
-
-                info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
-            }
+        info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
+        for rva in ws.get_functions() {
+            println!("{:#x}", ws.module.base_address + *rva as u64);
         }
     }
 
