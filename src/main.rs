@@ -2,15 +2,12 @@ extern crate lancelot;
 extern crate log;
 
 use failure::{Error, Fail};
-use log::{error, info, debug, trace};
+use log::{error, info, trace};
 use std::env;
 use std::process;
 
 use lancelot::arch::*;
 use lancelot::workspace::Workspace;
-
-// TODO: removeme
-use goblin::{Object};
 
 
 #[derive(Debug, Fail)]
@@ -54,9 +51,14 @@ pub fn run(args: &Config) -> Result<(), Error> {
     info!("filename: {:?}", args.filename);
 
     if args.mode == 32 {
-        let mut ws = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
+        let ws = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
+
+        info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
+        for rva in ws.get_functions() {
+            println!("{:#x}", ws.module.base_address + *rva as u32);
+        }
     } else if args.mode == 64 {
-        let mut ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
+        let ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
 
         info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
         for rva in ws.get_functions() {

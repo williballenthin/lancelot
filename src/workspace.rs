@@ -29,6 +29,8 @@ pub struct WorkspaceBuilder<A: Arch> {
     buf: Vec<u8>,
 
     loader: Option<Box<dyn Loader<A>>>,
+
+    should_analyze: bool,
 }
 
 impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
@@ -40,6 +42,14 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
         info!("using explicitly chosen loader: {}", loader.get_name());
         WorkspaceBuilder {
             loader: Some(loader),
+            ..self
+        }
+    }
+
+    pub fn disable_analysis(self: WorkspaceBuilder<A>) -> WorkspaceBuilder<A> {
+        info!("disabling analysis");
+        WorkspaceBuilder {
+            should_analyze: false,
             ..self
         }
     }
@@ -120,9 +130,11 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
             analysis,
         };
 
-        for analyzer in analyzers.iter() {
-            info!("analyzing with {}", analyzer.get_name());
-            analyzer.analyze(&mut ws);
+        if self.should_analyze {
+            for analyzer in analyzers.iter() {
+                info!("analyzing with {}", analyzer.get_name());
+                analyzer.analyze(&mut ws)?;
+            }
         }
 
         Ok(ws)
@@ -153,6 +165,7 @@ impl<A: Arch + 'static> Workspace<A> {
             filename: filename.to_string(),
             buf: buf.to_vec(),
             loader: None,
+            should_analyze: true,
         }
     }
 
@@ -161,6 +174,7 @@ impl<A: Arch + 'static> Workspace<A> {
             filename: filename.to_string(),
             buf: util::read_file(filename)?,
             loader: None,
+            should_analyze: true,
         })
     }
 
