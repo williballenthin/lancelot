@@ -1,8 +1,7 @@
-use failure::{Error, Fail};
+use failure::{Error};
 use num::Zero;
 use std::marker::PhantomData;
 
-use super::super::arch;
 use super::super::arch::Arch;
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section};
 
