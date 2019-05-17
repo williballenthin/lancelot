@@ -1,9 +1,6 @@
-use num::Zero;
-use std::marker::PhantomData;
-
 use failure::{Error, Fail};
 use strum_macros::Display;
-use log::{debug, info, warn};
+use log::{info};
 
 use super::arch;
 use super::arch::Arch;

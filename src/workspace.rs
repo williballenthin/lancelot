@@ -4,7 +4,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 use zydis::gen::*;
 use zydis::Decoder;
-use log::{debug, info, warn};
+use log::{info};
 
 use super::analysis::Analysis;
 use super::arch::Arch;

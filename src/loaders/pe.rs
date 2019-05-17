@@ -1,14 +1,12 @@
-use num::Zero;
 use std::marker::PhantomData;
-use num::{FromPrimitive, ToPrimitive};
+use num::{FromPrimitive};
 
 use log::{debug};
-use failure::{Error, Fail};
+use failure::{Error};
 use goblin::{Object};
 use goblin::pe::section_table::SectionTable;
 
 use super::super::util;
-use super::super::arch;
 use super::super::arch::Arch;
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError};
 
