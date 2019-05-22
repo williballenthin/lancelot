@@ -53,16 +53,22 @@ pub fn run(args: &Config) -> Result<(), Error> {
     if args.mode == 32 {
         let ws = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
 
-        info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
-        for rva in ws.get_functions() {
-            println!("{:#x}", ws.module.base_address + *rva as u32);
+        let mut functions = ws.get_functions().collect::<Vec<_>>();
+        functions.sort();
+
+        info!("found {} functions", functions.len());
+        for rva in functions.iter() {
+            println!("{:#x}", ws.module.base_address + **rva as u32);
         }
     } else if args.mode == 64 {
         let ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
 
-        info!("found {} functions", ws.get_functions().collect::<Vec<_>>().len());
-        for rva in ws.get_functions() {
-            println!("{:#x}", ws.module.base_address + *rva as u64);
+        let mut functions = ws.get_functions().collect::<Vec<_>>();
+        functions.sort();
+
+        info!("found {} functions", functions.len());
+        for rva in functions.iter() {
+            println!("{:#x}", ws.module.base_address + **rva as u64);
         }
     }
 
