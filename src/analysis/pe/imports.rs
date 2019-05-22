@@ -75,8 +75,8 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                          imp.dll, &imp.name,
                          imp.offset, imp.rva,
                 );
+                 */
                 let name = format!("{}!{}", imp.dll, &imp.name);
-                */
                 (imp.rva, name)
             })
             .collect();
