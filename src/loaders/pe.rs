@@ -217,6 +217,7 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
                      vec![Box::new(pe::EntryPointAnalyzer::new()),
                           Box::new(pe::ExportsAnalyzer::new()),
                           Box::new(pe::ImportsAnalyzer::new()),
+                          Box::new(pe::PtrAnalyzer::new()),
                      ])),
                 Err(e) => Err(e),
             }

@@ -7,6 +7,10 @@ pub use exports::ExportsAnalyzer;
 pub mod imports;
 pub use imports::ImportsAnalyzer;
 
+pub mod ptrs;
+pub use ptrs::PtrAnalyzer;
+
+
 // TODO: analyzer for imports to set symbols
 // TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
 // TODO: analyzer for RUNTIME_FUNCTION metadata
