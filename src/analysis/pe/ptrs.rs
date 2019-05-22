@@ -95,6 +95,7 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
         let start: usize = text_bounds.start.to_usize().unwrap();
         let end: usize = text_bounds.end.to_usize().unwrap();
 
+        // TODO: use relocations for this, instead.
         let o: HashSet<A::RVA> = (start..end)
             .filter_map(|rva| A::RVA::from_usize(rva))
             .map(|rva| ws.read_va(rva))
@@ -107,7 +108,7 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
             .collect();
 
         o.iter().for_each(|&rva| {
-            info!("found ptr from .text section to .text section at {:#x}", rva);
+            debug!("found ptr from .text section to .text section at {:#x}", rva);
             ws.make_insn(rva);
             // TODO: consume result
             ws.analyze().unwrap();
