@@ -402,8 +402,18 @@ impl<A: Arch + 'static> Workspace<A> {
 
                 // this is the happy path!
                 return Ok(Some(dst));
+        } else if op.mem.base != 0x0 {
+            // this is something like `CALL [eax+4]`
+            // can't resolve without emulation
+            // TODO: add test
+            return Ok(None)
+        } else if op.mem.scale != 0x0 {
+            // this is something like `CALL [0x1000+eax*4]`
+            // can't resolve without emulation
+            // TODO: add test
+            return Ok(None)
         } else {
-            println!("get mem op xref");
+            println!("{:#x}: get mem op xref", rva);
             print_op(op);
             panic!("not supported");
         }
