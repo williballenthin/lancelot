@@ -85,6 +85,9 @@ impl<A: Arch> PELoader<A> {
             .into_owned()
             .trim_end_matches("\u{0}")
             .trim_end()
+            .splitn(2, "\u{0}")
+            .next()
+            .unwrap()
             .to_string();
 
         // assumption: each section fits within one u32
