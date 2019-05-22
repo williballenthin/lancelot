@@ -7,6 +7,7 @@ use zydis::Decoder;
 use log::{info};
 
 use super::analysis::Analysis;
+use super::arch;
 use super::arch::Arch;
 use super::loader;
 use super::loader::{LoadedModule, Loader};
@@ -374,6 +375,10 @@ impl<A: Arch + 'static> Workspace<A> {
             Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
             Err(_) => Err(WorkspaceError::InvalidInstruction.into()),
         }
+    }
+
+    pub fn rva(&self, va: A::VA) -> Option<A::RVA> {
+        arch::va_compute_rva::<A>(self.module.base_address, va)
     }
 
     // API:
