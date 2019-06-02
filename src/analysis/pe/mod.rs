@@ -21,7 +21,11 @@ pub use ptrs::PtrAnalyzer;
 // TODO: analyzer for FLIRT-like signatures to set function names
 // TODO: analyzer for jump-tables
 // TODO: analyzer for import thunks
+// TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
+// TODO: analyzer for TLS callbacks
 
+// TODO: analyzer for non-contiguous functions
+//   e.g. __security_init_cookie in 07FB252D2E853A9B1B32F30EDE411F2EFBB9F01E4A7782DB5EACF3F55CF34902
 
 // for k32.dll, the entrypoint + exports does not catch 0x1800012d4
 // this is because its called by sub_180001630
@@ -30,4 +34,3 @@ pub use ptrs::PtrAnalyzer;
 //   - RUNTIME_FUNCTION at 1800AB06C (TODO: analysis pass: runtime functions)
 //   - __guard_fids_table entry at 18007ABAC (TODO: analysis pass: guard fids table)
 //   - function pointer at 1800779E0 (TODO: analysis pass: ptr from data->text)
-
