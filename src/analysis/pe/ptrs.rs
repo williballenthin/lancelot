@@ -104,8 +104,8 @@ pub struct Reloc<A: Arch> {
 }
 
 fn parse_reloc<A: Arch>(base: A::RVA, entry: u16) -> Result<Reloc<A>, Error> {
-    let reloc_type   = entry & 0b1111000000000000 >> 12;
-    let reloc_offset = entry & 0b0000111111111111;
+    let reloc_type   = (entry & 0b1111000000000000) >> 12;
+    let reloc_offset =  entry & 0b0000111111111111;
 
     // TODO: this should probably be on `RelocationType` as a `From` trait.
     let reloc_type = match reloc_type {
@@ -245,13 +245,13 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
         };
 
         let text_section = match ws.module.sections.iter()
+            // currently limited to the text section.
+            // TODO: accept any writable section.
             .filter(|&sec| sec.name == ".text")
             .next() {
                 None => return Ok(()),
                 Some(s) => s,
             };
-
-        info!("found text section");
 
         let text_bounds = Section::<A> {
             start: text_section.addr,
