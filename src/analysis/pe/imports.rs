@@ -2,7 +2,7 @@ use num::Zero;
 use num::{FromPrimitive};
 use std::marker::PhantomData;
 
-use log::{debug, info};
+use log::{debug};
 use goblin::{Object};
 use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
@@ -80,20 +80,6 @@ fn read_image_import_descriptor<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RV
 }
 
 
-fn read_ascii<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<String, Error> {
-    // TODO: there's a bug here if the string is found in the last 64 bytes of a section.
-    // the read will fail.
-    let buf = ws.read_bytes(rva, 64)?;
-
-    if buf.contains(&0x0) {
-        let sb = buf.split(|&b| b == 0x0).next().unwrap();
-        Ok(std::str::from_utf8(sb)?.to_string())
-    } else {
-        Ok(std::str::from_utf8(buf)?.to_string())
-    }
-}
-
-
 enum ImageThunkData<A: Arch> {
     Function(A::RVA),
     _Ordinal(u32),
@@ -104,6 +90,7 @@ enum ImageThunkData<A: Arch> {
 
 fn read_image_thunk_data<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<ImageThunkData<A>, Error> {
     // TODO: not sure how to differentiate Function/Ordinal/etc.
+    // see: https://reverseengineering.stackexchange.com/a/13387/17194
     Ok(ImageThunkData::Function(ws.read_rva(rva)?))
 }
 
@@ -127,7 +114,7 @@ impl std::fmt::Debug for ImageImportByName {
 fn read_image_import_by_name<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<ImageImportByName, Error> {
     Ok(ImageImportByName {
         hint: ws.read_u16(rva)?,
-        name: read_ascii(ws, rva + A::RVA::from_usize(2).unwrap())?,
+        name: ws.read_utf8(rva + A::RVA::from_usize(2).unwrap())?,
     })
 }
 
@@ -196,8 +183,8 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                 break;
             }
 
-            let dll_name = read_ascii(ws, import_descriptor.name)?;
-            println!("{:?} -> {}", import_descriptor, dll_name);
+            let dll_name = ws.read_utf8(import_descriptor.name)?;
+            debug!("{:?} -> {}", import_descriptor, dll_name);
 
             for j in 0..std::usize::MAX {
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
@@ -206,7 +193,6 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                 // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
                 // FT and OFT are parallel arrays.
                 let image_thunk_data_rva = import_descriptor.original_first_thunk + A::RVA::from_usize(j * psize).unwrap();
-                println!("{:#x}", image_thunk_data_rva);
                 match read_image_thunk_data(ws, image_thunk_data_rva)? {
                     // TODO: how do ordinals get handled?
                     ImageThunkData::Function(rva) => {
@@ -214,7 +200,7 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                             break;
                         } else {
                             let imp = read_image_import_by_name(ws, rva)?;
-                            println!("{:?}", imp);
+                            debug!("{:?}", imp);
 
                             symbols.push((first_thunk, format!("{}!{}", dll_name, imp.name)))
                         }

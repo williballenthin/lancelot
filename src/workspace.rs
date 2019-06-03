@@ -377,6 +377,49 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
+    /// Read a utf-8 encoded string at the given RVA.
+    ///
+    /// Errors:
+    ///
+    ///   - InvalidAddress - if the address is not mapped.
+    ///   - std::str::from_utf8 errors - if the data is not valid utf8
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use zydis::gen::*;
+    /// use lancelot::test;
+    ///
+    /// let ws = test::get_shellcode32_workspace(b"\x00\x41\x41\x00");
+    /// assert!(ws.read_utf8(0x1).is_ok());
+    /// assert_eq!(ws.read_utf8(0x1).unwrap(), "AA");
+    /// ```
+    pub fn read_utf8(&self, rva: A::RVA) -> Result<String, Error> {
+        // this is `read_bytes` except that it reads until the end of the section.
+        let buf = self
+            .module
+            .sections
+            .iter()
+            .filter(|section| section.contains(rva))
+            .nth(0)
+            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
+            .and_then(|section| -> Result<&[u8], Error> {
+                // rva is guaranteed to be within this section,
+                // so we can do an unchecked subtract here.
+                let offset = rva - section.addr;
+                A::RVA::to_usize(&offset)
+                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
+                    .and_then(|offset| {
+                        Ok(&section.buf[offset..])
+                    })
+            })?;
+
+        // when we split, we're guaranteed at have at least one entry,
+        // so .next().unwrap() is safe.
+        let sbuf = buf.split(|&b| b == 0x0).next().unwrap();
+        Ok(std::str::from_utf8(sbuf)?.to_string())
+    }
+
     pub fn rva(&self, va: A::VA) -> Option<A::RVA> {
         arch::va_compute_rva::<A>(self.module.base_address, va)
     }
