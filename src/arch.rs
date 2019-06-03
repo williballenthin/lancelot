@@ -53,6 +53,7 @@ pub trait Arch {
         + Debug;
 
     fn get_bits() -> u8;
+    fn get_ptr_size() -> u8;
 }
 
 /// 32-bit Intel architecture.
@@ -62,6 +63,9 @@ impl Arch for Arch32 {
     type RVA = i32;
     fn get_bits() -> u8 {
         32
+    }
+    fn get_ptr_size() -> u8 {
+        4
     }
 }
 
@@ -98,6 +102,9 @@ impl Arch for Arch64 {
     type RVA = i64;
     fn get_bits() -> u8 {
         64
+    }
+    fn get_ptr_size() -> u8 {
+        8
     }
 }
 
