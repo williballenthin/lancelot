@@ -382,7 +382,7 @@ impl<A: Arch + 'static> Workspace<A> {
     /// Errors:
     ///
     ///   - InvalidAddress - if the address is not mapped.
-    ///   - std::str::from_utf8 errors - if the data is not valid utf8
+    ///   - std::str::Utf8Error - if the data is not valid utf8.
     ///
     /// Example:
     ///

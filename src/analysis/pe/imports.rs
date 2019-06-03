@@ -1,5 +1,5 @@
 use num::Zero;
-use num::{FromPrimitive};
+use num::{FromPrimitive, ToPrimitive};
 use std::marker::PhantomData;
 
 use log::{debug};
@@ -82,16 +82,20 @@ fn read_image_import_descriptor<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RV
 
 enum ImageThunkData<A: Arch> {
     Function(A::RVA),
-    _Ordinal(u32),
-    _AddressOfData(A::RVA),
-    _ForwarderString(A::RVA),
+    Ordinal(u32),
 }
 
 
 fn read_image_thunk_data<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<ImageThunkData<A>, Error> {
-    // TODO: not sure how to differentiate Function/Ordinal/etc.
     // see: https://reverseengineering.stackexchange.com/a/13387/17194
-    Ok(ImageThunkData::Function(ws.read_rva(rva)?))
+    let thunk = ws.read_rva(rva)?;
+    let v = A::RVA::to_u64(&thunk).unwrap();
+    if v & (1 << (A::get_bits() - 1)) > 0x0 {
+        // MSB is set, this is an ordinal
+        Ok(ImageThunkData::Ordinal((v & 0xFFFF) as u32))
+    } else {
+        Ok(ImageThunkData::Function(thunk))
+    }
 }
 
 
