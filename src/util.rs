@@ -113,7 +113,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
 
         // 01234567:  00 01 02 03 04 05 06 07  ...............
         //            ^^^
-        for elem in &buf[line_index..line_index + line_elem_count] {
+        for elem in &buf[(line_index * 0x10)..(line_index * 0x10) + line_elem_count] {
             line.push_str(format!("{:02x} ", elem).as_str());
         }
         for _ in 0..padding_elem_count {
@@ -126,7 +126,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
 
         // 01234567:  00 01 02 03 04 05 06 07  ...............
         //                                     ^
-        for elem in &buf[line_index..line_index + line_elem_count] {
+        for elem in &buf[(line_index * 0x10)..(line_index * 0x10) + line_elem_count] {
             line.push(hexdump_ascii(*elem))
         }
         for _ in 0..padding_elem_count {
