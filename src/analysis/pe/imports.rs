@@ -197,10 +197,16 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
             }
 
             let dll_name = read_ascii(ws, import_descriptor.name)?;
-            debug!("{:?} -> {}", import_descriptor, dll_name);
+            println!("{:?} -> {}", import_descriptor, dll_name);
 
             for j in 0..std::usize::MAX {
-                let image_thunk_data_rva = import_descriptor.first_thunk + A::RVA::from_usize(j * psize).unwrap();
+                // the First Thunk (FT) is the pointer that will be overwritten upon load.
+                // entries here may not point to the IMAGE_IMPORT_BY_NAME.
+                let first_thunk = import_descriptor.first_thunk + A::RVA::from_usize(j * psize).unwrap();
+                // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
+                // FT and OFT are parallel arrays.
+                let image_thunk_data_rva = import_descriptor.original_first_thunk + A::RVA::from_usize(j * psize).unwrap();
+                println!("{:#x}", image_thunk_data_rva);
                 match read_image_thunk_data(ws, image_thunk_data_rva)? {
                     // TODO: how do ordinals get handled?
                     ImageThunkData::Function(rva) => {
@@ -208,9 +214,9 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                             break;
                         } else {
                             let imp = read_image_import_by_name(ws, rva)?;
-                            debug!("{:?}", imp);
+                            println!("{:?}", imp);
 
-                            symbols.push((image_thunk_data_rva, format!("{}!{}", dll_name, imp.name)))
+                            symbols.push((first_thunk, format!("{}!{}", dll_name, imp.name)))
                         }
                     },
                     _ => {}
@@ -219,7 +225,7 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
         }
 
         for (rva, name) in symbols.iter() {
-            info!("import: {:#x} -> {}", rva, name);
+            debug!("import: {:#x} -> {}", rva, name);
             ws.make_symbol(*rva, name)?;
             ws.analyze()?;
         }
