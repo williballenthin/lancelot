@@ -1,16 +1,14 @@
 use num::{FromPrimitive, ToPrimitive};
 use std::marker::PhantomData;
-use std::collections::HashSet;
 
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug, info};
+use log::{debug};
 use goblin::{Object};
 use failure::{Error, Fail};
 
 use super::super::super::arch::Arch;
-use super::super::super::loader::{Permissions};
 use super::super::super::workspace::Workspace;
-use super::super::{Analyzer, AnalysisError};
+use super::super::{Analyzer};
 
 
 #[derive(Debug, Fail)]
@@ -191,7 +189,7 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
         // cast from u32 to usize
         let chunk_entries_count = ((block_size) / 4) as usize;
 
-        for i in (2..chunk_entries_count) {
+        for i in 2..chunk_entries_count {
             if let Some(&entry) = entries.get(index + i) {
                 let (m, n) = split_u32(entry);
 
@@ -239,11 +237,6 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
     /// assert!(meta.is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace<A>)-> Result<(), Error> {
-        let pe = match Object::parse(&ws.buf) {
-            Ok(Object::PE(pe)) => pe,
-            _ => panic!("can't analyze unexpected format"),
-        };
-
         let text_section = match ws.module.sections.iter()
             // currently limited to the text section.
             // TODO: accept any writable section.
@@ -257,9 +250,6 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
             start: text_section.addr,
             end: text_section.addr + A::RVA::from_usize(text_section.buf.len()).unwrap(),
         };
-
-        let start: usize = text_bounds.start.to_usize().unwrap();
-        let end: usize = text_bounds.end.to_usize().unwrap();
 
         // scan the relocations
         // looking for pointers into the .text section

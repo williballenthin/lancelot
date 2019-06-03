@@ -2,15 +2,14 @@ use num::Zero;
 use num::{FromPrimitive};
 use std::marker::PhantomData;
 
-use log::{debug};
+use log::{debug, info};
 use goblin::{Object};
 use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
 
-use super::super::super::util;
 use super::super::super::arch::Arch;
 use super::super::super::workspace::Workspace;
-use super::super::{Analyzer, AnalysisError};
+use super::super::{Analyzer};
 
 
 pub struct ImportsAnalyzer<A: Arch> {
@@ -40,6 +39,7 @@ struct ImageImportDescriptor<A: Arch> {
     first_thunk: A::RVA,
 }
 
+
 impl<A: Arch> ImageImportDescriptor<A> {
     fn is_empty(&self) -> bool {
         self.original_first_thunk == A::RVA::zero() &&
@@ -47,11 +47,6 @@ impl<A: Arch> ImageImportDescriptor<A> {
             self.forwarder_chain == 0x0 &&
             self.name == A::RVA::zero() &&
             self.first_thunk == A::RVA::zero()
-    }
-
-    fn is_bound(&self) -> bool {
-        // via: https://reverseengineering.stackexchange.com/q/13385/17194
-        self.time_date_stamp != 0x0
     }
 }
 
@@ -101,9 +96,9 @@ fn read_ascii<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<Strin
 
 enum ImageThunkData<A: Arch> {
     Function(A::RVA),
-    Ordinal(u32),
-    AddressOfData(A::RVA),
-    ForwarderString(A::RVA),
+    _Ordinal(u32),
+    _AddressOfData(A::RVA),
+    _ForwarderString(A::RVA),
 }
 
 

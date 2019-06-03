@@ -421,8 +421,8 @@ impl<A: Arch + 'static> Workspace<A> {
 
     fn get_pointer_operand_xref(
         &self,
-        rva: A::RVA,
-        insn: &ZydisDecodedInstruction,
+        _rva: A::RVA,
+        _insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
     ) -> Result<Option<A::RVA>, Error> {
         // TODO
@@ -599,8 +599,8 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     pub fn get_ret_insn_flow(
         &self,
-        rva: A::RVA,
-        insn: &ZydisDecodedInstruction,
+        _rva: A::RVA,
+        _insn: &ZydisDecodedInstruction,
     ) -> Result<Vec<Xref<A>>, Error> {
         Ok(vec![])
     }
