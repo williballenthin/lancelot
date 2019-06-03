@@ -74,26 +74,26 @@ fn is_ptr<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> bool {
 
 
 pub enum RelocationType {
-    IMAGE_REL_BASED_ABSOLUTE,
-    IMAGE_REL_BASED_HIGH,
-    IMAGE_REL_BASED_LOW,
-    IMAGE_REL_BASED_HIGHLOW,
-    IMAGE_REL_BASED_HIGHADJ,
+    ImageRelBasedAbsolute,
+    ImageRelBasedHigh,
+    ImageRelBasedLow,
+    ImageRelBasedHighLow,
+    ImageRelBasedHighAdj,
 
-    // IMAGE_REL_BASED_MIPS_JMPADDR,
-    // IMAGE_REL_BASED_ARM_MOV32,
-    // IMAGE_REL_BASED_RISCV_HIGH20,
-    IMAGE_REL_ARCH1,
+    // ImageRelBasedMIPS_JmpAddr,
+    // ImageRelBasedARM_MOV32,
+    // ImageRelBasedRiscV_High20,
+    ImageRelArch1,
 
-    IMAGE_REL_RESERVED,
+    ImageRelReserved,
 
-    // IMAGE_REL_BASED_THUMB_MOV32,
-    // IMAGE_REL_BASED_RISCV_LOW12I,
-    IMAGE_REL_ARCH2,
+    // ImageRelBasedTHUMB_MOV32,
+    // ImageRelBasedRiscV_Low12I,
+    ImageRelArch2,
 
-    IMAGE_REL_BASED_RISCV_LOW12S,
-    IMAGE_REL_BASED_MIPS_JMPADDR16,
-    IMAGE_REL_BASED_DIR64,
+    ImageRelBasedRiscVLow12S,
+    ImageRelBasedMIPSJmpAddr16,
+    ImageRelBasedDir64,
 }
 
 pub struct Reloc<A: Arch> {
@@ -107,17 +107,17 @@ fn parse_reloc<A: Arch>(base: A::RVA, entry: u16) -> Result<Reloc<A>, Error> {
 
     // TODO: this should probably be on `RelocationType` as a `From` trait.
     let reloc_type = match reloc_type {
-        0 => RelocationType::IMAGE_REL_BASED_ABSOLUTE,
-        1 => RelocationType::IMAGE_REL_BASED_HIGH,
-        2 => RelocationType::IMAGE_REL_BASED_LOW,
-        3 => RelocationType::IMAGE_REL_BASED_HIGHLOW,
-        4 => RelocationType::IMAGE_REL_BASED_HIGHADJ,
-        5 => RelocationType::IMAGE_REL_ARCH1,
-        6 => RelocationType::IMAGE_REL_RESERVED,
-        7 => RelocationType::IMAGE_REL_ARCH2,
-        8 => RelocationType::IMAGE_REL_BASED_RISCV_LOW12S,
-        9 => RelocationType::IMAGE_REL_BASED_MIPS_JMPADDR16,
-        10 => RelocationType::IMAGE_REL_BASED_DIR64,
+        0 => RelocationType::ImageRelBasedAbsolute,
+        1 => RelocationType::ImageRelBasedHigh,
+        2 => RelocationType::ImageRelBasedLow,
+        3 => RelocationType::ImageRelBasedHighLow,
+        4 => RelocationType::ImageRelBasedHighAdj,
+        5 => RelocationType::ImageRelArch1,
+        6 => RelocationType::ImageRelReserved,
+        7 => RelocationType::ImageRelArch2,
+        8 => RelocationType::ImageRelBasedRiscVLow12S,
+        9 => RelocationType::ImageRelBasedMIPSJmpAddr16,
+        10 => RelocationType::ImageRelBasedDir64,
         _ => return Err(PtrAnalyzerError::InvalidRelocType.into()),
     };
 
