@@ -140,7 +140,6 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
     ///    .load().unwrap();
     /// let anal = ImportsAnalyzer::<Arch64>::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// // TODO: this currently fails.
     /// assert_eq!(ws.get_symbol(0x77448).unwrap(), "api-ms-win-core-appcompat-l1-1-1.dll!BaseReadAppCompatDataForProcess");
     /// ```
     fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
@@ -198,7 +197,6 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                 // FT and OFT are parallel arrays.
                 let image_thunk_data_rva = import_descriptor.original_first_thunk + A::RVA::from_usize(j * psize).unwrap();
                 match read_image_thunk_data(ws, image_thunk_data_rva)? {
-                    // TODO: how do ordinals get handled?
                     ImageThunkData::Function(rva) => {
                         if rva == A::RVA::zero() {
                             break;
@@ -209,7 +207,9 @@ impl<A: Arch + 'static> Analyzer<A> for ImportsAnalyzer<A> {
                             symbols.push((first_thunk, format!("{}!{}", dll_name, imp.name)))
                         }
                     },
-                    _ => {}
+                    ImageThunkData::Ordinal(ord) => {
+                        symbols.push((first_thunk, format!("{}!#{}", dll_name, ord)))
+                    },
                 };
             }
         }
