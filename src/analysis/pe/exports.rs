@@ -39,7 +39,6 @@ impl<A: Arch + 'static> Analyzer<A> for ExportsAnalyzer<A> {
             _ => panic!("can't analyze unexpected format"),
         };
 
-        // TODO include this one
         let entry = match A::RVA::from_usize(pe.entry) {
             Some(entry) => entry,
             None => return Err(AnalysisError::NotSupported.into()),
@@ -80,6 +79,10 @@ impl<A: Arch + 'static> Analyzer<A> for ExportsAnalyzer<A> {
             ws.make_function(rva)?;
             ws.analyze()?;
         }
+
+        ws.make_function(entry)?;
+        ws.make_symbol(entry, "entry")?;
+        ws.analyze()?;
 
         Ok(())
     }
