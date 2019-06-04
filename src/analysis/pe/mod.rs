@@ -11,18 +11,19 @@ pub mod ptrs;
 pub use ptrs::PtrAnalyzer;
 
 
-// TODO: analyzer for imports to set symbols
-// TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
+// TODO: analyzer for jump-tables, ptr tables, see vivisect/pointertables.py
 // TODO: analyzer for RUNTIME_FUNCTION metadata
 // TODO: analyzer for __guard_fids_table
-// TODO: analyzer for pointers from data section into text section
+// TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
+// TODO: analyzer for import thunks
+// TODO: analyzer for TLS callbacks
+// TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
 // TODO: analyzer to scan for prologues
 // TODO: analyzer for RTTI
+// TODO: analyzer for non-returning functions
+// TODO: analyzer for VEH
+// TODO: analyzer for SEH
 // TODO: analyzer for FLIRT-like signatures to set function names
-// TODO: analyzer for jump-tables
-// TODO: analyzer for import thunks
-// TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
-// TODO: analyzer for TLS callbacks
 
 // TODO: analyzer for non-contiguous functions
 //   e.g. __security_init_cookie in 07FB252D2E853A9B1B32F30EDE411F2EFBB9F01E4A7782DB5EACF3F55CF34902
