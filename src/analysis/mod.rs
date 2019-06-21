@@ -774,6 +774,14 @@ impl<A: Arch + 'static> Workspace<A> {
             }
         }
 
+        // 6. update flowmeta for instruction fallthrough to
+        if does_fallthrough {
+            let next_rva = rva + A::RVA::from_u8(length).unwrap();
+            let (section, offset) = self.get_coords(next_rva).unwrap();
+            let meta = &mut self.analysis.flow.meta[section][offset];
+            meta.set_other_fallthrough_to();
+        }
+
         Ok(ret)
     }
 

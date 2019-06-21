@@ -22,9 +22,9 @@ impl FlowMeta {
     //     |A|B|C|D|   E   |
     //     +-+-+-+-+-+-+-+-+
     //
-    //  A - unused
-    //  B - has xrefs to
-    //  C - has xrefs from
+    //  A - has xrefs to
+    //  B - has xrefs from
+    //  C - does other fallthrough to
     //  D - does fallthrough
     //  E - insn size
 
@@ -111,10 +111,30 @@ impl FlowMeta {
         self.0 |= 0b0001_0000;
     }
 
+    /// Does another instruction fallthrough to this instruction?
+    pub fn does_other_fallthrough_to(self) -> bool {
+        self.0 & 0b0010_0000 > 0
+    }
+
+    /// ```
+    /// use matches::matches;
+    /// use lancelot::flowmeta::*;
+    ///
+    /// let mut m = FlowMeta::zero();
+    /// assert_eq!(m.does_other_fallthrough_to(), false);
+    ///
+    /// m.set_other_fallthrough_to();
+    /// assert_eq!(m.does_other_fallthrough_to(), true);
+    /// ```
+    pub fn set_other_fallthrough_to(&mut self) {
+        self.0 |= 0b0010_0000;
+    }
+
+
     /// Does the instruction have flow xrefs from it?
     /// This does not include the fallthrough flow.
     pub fn has_xrefs_from(self) -> bool {
-        self.0 & 0b0010_0000 > 0
+        self.0 & 0b0100_0000 > 0
     }
 
     /// ```
@@ -128,12 +148,12 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_from(), true);
     /// ```
     pub fn set_xrefs_from(&mut self) {
-        self.0 |= 0b0010_0000;
+        self.0 |= 0b0100_0000;
     }
 
     /// Does the instruction have flow xrefs to it?
     pub fn has_xrefs_to(self) -> bool {
-        self.0 & 0b0100_0000 > 0
+        self.0 & 0b1000_0000 > 0
     }
 
     /// Set the bit indicating that there are flow xrefs to this instruction.
@@ -147,7 +167,7 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_to(), true);
     /// ```
     pub fn set_xrefs_to(&mut self) {
-        self.0 |= 0b0100_0000;
+        self.0 |= 0b1000_0000;
     }
 
     /// Unset the bit indicating that there are flow xrefs to this instruction.
@@ -164,7 +184,7 @@ impl FlowMeta {
     /// assert_eq!(m.has_xrefs_to(), false);
     /// ```
     pub fn unset_xrefs_to(&mut self) {
-        self.0 &= 0b1011_1111
+        self.0 &= 0b0111_1111
     }
 }
 
