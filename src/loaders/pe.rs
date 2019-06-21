@@ -9,7 +9,7 @@ use goblin::pe::section_table::SectionTable;
 use super::super::util;
 use super::super::arch::Arch;
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
-use super::super::analysis::{Analyzer};
+use super::super::analysis::{Analyzer, OrphanFunctionAnalyzer};
 use super::super::analysis::pe;
 
 
@@ -215,6 +215,10 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
             if pe.is_64 {
                 analyzers.push(Box::new(pe::RuntimeFunctionAnalyzer::new()));
             }
+
+            // this always needs to go last
+            analyzers.push(Box::new(OrphanFunctionAnalyzer::new()));
+
 
             // collect sections into either list of sections, or error.
             //

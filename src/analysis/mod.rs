@@ -15,6 +15,9 @@ use super::loader::{LoadedModule, Section};
 use super::workspace::Workspace;
 use super::xref::{Xref, XrefType};
 
+pub mod orphans;
+pub use orphans::OrphanFunctionAnalyzer;
+
 pub mod pe;
 
 #[derive(Debug, Fail)]
