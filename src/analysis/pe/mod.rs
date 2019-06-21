@@ -10,9 +10,12 @@ pub use imports::ImportsAnalyzer;
 pub mod ptrs;
 pub use ptrs::PtrAnalyzer;
 
+pub mod runtimefunctions;
+pub use runtimefunctions::RuntimeFunctionAnalyzer;
 
+
+// TODO: analyzer for orphan instructions (no predecessors) to functions
 // TODO: analyzer for jump-tables, ptr tables, see vivisect/pointertables.py
-// TODO: analyzer for RUNTIME_FUNCTION metadata
 // TODO: analyzer for __guard_fids_table
 // TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
 // TODO: analyzer for import thunks
@@ -32,6 +35,6 @@ pub use ptrs::PtrAnalyzer;
 // this is because its called by sub_180001630
 // this has no CALL xref-to.
 // it does have:
-//   - RUNTIME_FUNCTION at 1800AB06C (TODO: analysis pass: runtime functions)
+//   - RUNTIME_FUNCTION at 1800AB06C
 //   - __guard_fids_table entry at 18007ABAC (TODO: analysis pass: guard fids table)
 //   - function pointer at 1800779E0 (TODO: analysis pass: ptr from data->text)

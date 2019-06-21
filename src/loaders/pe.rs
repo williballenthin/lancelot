@@ -205,6 +205,17 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
                             .iter()
                             .map(|sec| self.load_section(buf, sec)));
 
+            let mut analyzers: Vec<Box<dyn Analyzer<A>>> = vec![
+                Box::new(pe::EntryPointAnalyzer::new()),
+                Box::new(pe::ExportsAnalyzer::new()),
+                Box::new(pe::ImportsAnalyzer::new()),
+                Box::new(pe::PtrAnalyzer::new()),
+            ];
+
+            if pe.is_64 {
+                analyzers.push(Box::new(pe::RuntimeFunctionAnalyzer::new()));
+            }
+
             // collect sections into either list of sections, or error.
             //
             // via: https://doc.rust-lang.org/rust-by-example/error/iter_result.html
@@ -214,11 +225,8 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
                         base_address,
                         sections,
                      },
-                     vec![Box::new(pe::EntryPointAnalyzer::new()),
-                          Box::new(pe::ExportsAnalyzer::new()),
-                          Box::new(pe::ImportsAnalyzer::new()),
-                          Box::new(pe::PtrAnalyzer::new()),
-                     ])),
+                     analyzers
+                     )),
                 Err(e) => Err(e),
             }
         } else {
