@@ -105,6 +105,18 @@ impl<A: Arch + 'static> Analyzer<A> for RuntimeFunctionAnalyzer<A> {
                 end_address: A::RVA::from_u32(LittleEndian::read_u32(&b[4..])).unwrap(),
                 unwind_data: A::RVA::from_u32(LittleEndian::read_u32(&b[8..])).unwrap(),
             })
+            .filter(|rt| {
+                if ! ws.probe(rt.begin_address, 1) {
+                    return false;
+                }
+                if ! ws.probe(rt.end_address, 1) {
+                    return false;
+                }
+                if ! ws.probe(rt.unwind_data, 1) {
+                    return false;
+                }
+                return true;
+            })
             .map(|rt: RuntimeFunction<A>| -> A::RVA {
                 rt.begin_address
             })
