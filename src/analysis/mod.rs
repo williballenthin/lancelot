@@ -43,8 +43,8 @@ impl<A: Arch> Display for AnalysisCommand<A> {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
-            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({:?}, {})", rva, name),
-            AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({:?})", rva),
+            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({:#x}, {})", rva, name),
+            AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({:#x})", rva),
         }
     }
 }
