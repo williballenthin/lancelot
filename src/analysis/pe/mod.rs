@@ -7,8 +7,8 @@ pub use exports::ExportsAnalyzer;
 pub mod imports;
 pub use imports::ImportsAnalyzer;
 
-pub mod ptrs;
-pub use ptrs::PtrAnalyzer;
+pub mod relocs;
+pub use relocs::RelocAnalyzer;
 
 pub mod runtimefunctions;
 pub use runtimefunctions::RuntimeFunctionAnalyzer;

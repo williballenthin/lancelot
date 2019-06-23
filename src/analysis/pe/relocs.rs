@@ -12,12 +12,12 @@ use super::super::{Analyzer};
 
 
 #[derive(Debug, Fail)]
-pub enum PtrAnalyzerError {
+pub enum RelocAnalyzerError {
     #[fail(display = "Invalid relocation type")]
     InvalidRelocType,
 }
 
-pub struct PtrAnalyzer<A: Arch> {
+pub struct RelocAnalyzer<A: Arch> {
     // This Analyzer must have a type parameter for it
     //  to implement Analyzer<A>.
     // however, it doesn't actually use this type itself.
@@ -27,9 +27,9 @@ pub struct PtrAnalyzer<A: Arch> {
     _phantom: PhantomData<A>,
 }
 
-impl<A: Arch> PtrAnalyzer<A> {
-    pub fn new() -> PtrAnalyzer<A> {
-        PtrAnalyzer {
+impl<A: Arch> RelocAnalyzer<A> {
+    pub fn new() -> RelocAnalyzer<A> {
+        RelocAnalyzer {
             _phantom: PhantomData {},
         }
     }
@@ -118,7 +118,7 @@ fn parse_reloc<A: Arch>(base: A::RVA, entry: u16) -> Result<Reloc<A>, Error> {
         8 => RelocationType::ImageRelBasedRiscVLow12S,
         9 => RelocationType::ImageRelBasedMIPSJmpAddr16,
         10 => RelocationType::ImageRelBasedDir64,
-        _ => return Err(PtrAnalyzerError::InvalidRelocType.into()),
+        _ => return Err(RelocAnalyzerError::InvalidRelocType.into()),
     };
 
     Ok(Reloc {
@@ -138,12 +138,12 @@ fn split_u32(e: u32) -> (u16, u16) {
 /// use lancelot::rsrc::*;
 /// use lancelot::arch::*;
 /// use lancelot::workspace::Workspace;
-/// use lancelot::analysis::pe::ptrs;
+/// use lancelot::analysis::pe::relocs;
 ///
 /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
 ///    .disable_analysis()
 ///    .load().unwrap();
-/// let relocs = ptrs::get_relocs(&ws).unwrap();
+/// let relocs = relocs::get_relocs(&ws).unwrap();
 /// assert_eq!(relocs[0].offset,   0x76008);
 /// assert_eq!(relocs[277].offset, 0xA8000);
 /// ```
@@ -216,9 +216,9 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
 }
 
 
-impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
+impl<A: Arch + 'static> Analyzer<A> for RelocAnalyzer<A> {
     fn get_name(&self) -> String {
-        "pointer analyzer".to_string()
+        "PE relocation analyzer".to_string()
     }
 
     /// ```
@@ -226,12 +226,12 @@ impl<A: Arch + 'static> Analyzer<A> for PtrAnalyzer<A> {
     /// use lancelot::arch::*;
     /// use lancelot::analysis::Analyzer;
     /// use lancelot::workspace::Workspace;
-    /// use lancelot::analysis::pe::PtrAnalyzer;
+    /// use lancelot::analysis::pe::RelocAnalyzer;
     ///
     /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
-    /// let anal = PtrAnalyzer::<Arch64>::new();
+    /// let anal = RelocAnalyzer::<Arch64>::new();
     /// anal.analyze(&mut ws).unwrap();
     /// let meta = ws.get_meta(0xC7F0).unwrap();
     /// assert!(meta.is_insn());

@@ -23,3 +23,6 @@ bitflags = "1.0.4"
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 test = []
+
+[profile.release]
+lto = true

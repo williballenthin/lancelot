@@ -209,8 +209,8 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
                 Box::new(pe::EntryPointAnalyzer::new()),
                 Box::new(pe::ExportsAnalyzer::new()),
                 Box::new(pe::ImportsAnalyzer::new()),
-                Box::new(pe::PtrAnalyzer::new()),
                 Box::new(pe::CFGuardTableAnalyzer::new()),
+                Box::new(pe::RelocAnalyzer::new()),
             ];
 
             if pe.is_64 {
