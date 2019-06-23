@@ -13,11 +13,10 @@ pub use ptrs::PtrAnalyzer;
 pub mod runtimefunctions;
 pub use runtimefunctions::RuntimeFunctionAnalyzer;
 
+pub mod cfguardtable;
+pub use cfguardtable::CFGuardTableAnalyzer;
 
-// TODO: analyzer for __guard_fids_table
-//  ref: https://lucasg.github.io/2017/02/05/Control-Flow-Guard/
-//  ref: https://lifeinhex.com/control-flow-guard-in-windows-8-1-and-vs2015/
-//  ref: https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
+
 // TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
 // TODO: analyzer for import thunks
 // TODO: analyzer for TLS callbacks
@@ -26,17 +25,6 @@ pub use runtimefunctions::RuntimeFunctionAnalyzer;
 // TODO: analyzer for code referenced from LoadConfig:
 //   - ULONGLONG  SEHandlerTable;                 // VA
 //   - ULONGLONG  SEHandlerCount;
-//   - ULONGLONG  GuardCFCheckFunctionPointer;    // VA
-//   - ULONGLONG  GuardCFDispatchFunctionPointer; // VA
-//   - ULONGLONG  GuardCFFunctionTable;           // VA
-//   - ULONGLONG  GuardCFFunctionCount;
-//   - ULONGLONG  GuardAddressTakenIatEntryTable; // VA
-//   - ULONGLONG  GuardAddressTakenIatEntryCount;
-//   - ULONGLONG  GuardLongJumpTargetTable;       // VA
-//   - ULONGLONG  GuardLongJumpTargetCount;
-//   - ULONGLONG  DynamicValueRelocTable;         // VA
-//   - ULONGLONG  HybridMetadataPointer;          // VA
-// ref: https://lucasg.github.io/2017/02/05/Control-Flow-Guard/
 
 // heuristic:
 // TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
