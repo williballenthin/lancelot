@@ -1,0 +1,1 @@
+These files are from [ghidra/processors/x86/data/patterns/](https://github.com/NationalSecurityAgency/ghidra/tree/79d8f164f8bb8b15cfb60c5d4faeb8e1c25d15ca/Ghidra/Processors/x86/data/patterns) and are Apache2 licensed.
