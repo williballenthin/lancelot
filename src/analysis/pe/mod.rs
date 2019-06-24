@@ -16,6 +16,9 @@ pub use runtimefunctions::RuntimeFunctionAnalyzer;
 pub mod cfguardtable;
 pub use cfguardtable::CFGuardTableAnalyzer;
 
+pub mod sigs;
+pub use sigs::ByteSigAnalyzer;
+
 
 // TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
 // TODO: analyzer for import thunks
@@ -29,11 +32,9 @@ pub use cfguardtable::CFGuardTableAnalyzer;
 // heuristic:
 // TODO: analyzer to inspect operands for pointers into the text section, e.g. argument to CreateThread
 // TODO: analyzer for jump-tables, ptr tables, see vivisect/pointertables.py
-// TODO: analyzer to scan for prologues
 // TODO: analyzer for RTTI
 // TODO: analyzer for VEH
 // TODO: analyzer for SEH
-// TODO: analyzer for FLIRT-like signatures to set function names
 
 // TODO: anomaly analyzer for non-contiguous functions
 //   e.g. __security_init_cookie in 07FB252D2E853A9B1B32F30EDE411F2EFBB9F01E4A7782DB5EACF3F55CF34902
