@@ -18,6 +18,7 @@ strum = "0.15"
 strum_macros = "0.15"
 failure = "0.1.5"
 bitflags = "1.0.4"
+rust-embed = { version="4.4.0", features=["debug-embed"] }
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)

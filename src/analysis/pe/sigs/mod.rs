@@ -9,11 +9,15 @@ use std::collections::HashSet;
 
 use log::{debug};
 use failure::{Error};
+use rust_embed::{RustEmbed};
 
 use super::super::super::arch::Arch;
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
+#[derive(RustEmbed)]
+#[folder = "src/analysis/pe/sigs/patterns"]
+struct Patterns;
 
 pub struct ByteSigAnalyzer<A: Arch> {
     // This Analyzer must have a type parameter for it
@@ -27,6 +31,8 @@ pub struct ByteSigAnalyzer<A: Arch> {
 
 impl<A: Arch> ByteSigAnalyzer<A> {
     pub fn new() -> ByteSigAnalyzer<A> {
+        let constraints = Patterns::get("patternconstraints.xml").unwrap();
+
         ByteSigAnalyzer {
             _phantom: PhantomData {},
         }
