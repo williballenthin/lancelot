@@ -169,13 +169,28 @@
         0x5d                             <!-- POP        EBP -->
         0x51                             <!-- PUSH       ECX -->
         0xc3                             <!-- RET -->
-  </data> <!-- __SEH_epilog4 -->
+     </data> <!-- __SEH_epilog4 -->
      <funcstart label="__SEH_epilog4"/>
   </pattern>
-  
+
   <pattern>
      <data> 0xcc  </data>  <!-- int 3 function break -->
      <funcstart label="__break" validcode="function" noreturn="true"/>  <!-- must be defined at an existing function -->
   </pattern>
-  
+
+  <pattern>
+      <data>
+          55                                  <!-- push    ebp                 -->
+          8B4C2408                            <!-- mov     ecx, [esp+4+arg_0]  -->
+          8B29                                <!-- mov     ebp, [ecx]          -->
+          FF711C                              <!-- push    dword ptr [ecx+1Ch] -->
+          FF7118                              <!-- push    dword ptr [ecx+18h] -->
+          FF7128                              <!-- push    dword ptr [ecx+28h] -->
+          E815FFFFFF                          <!-- call    __local_unwind4     -->
+          83C40C                              <!-- add     esp, 0Ch            -->
+          5D                                  <!-- pop     ebp                 -->
+          C20400                              <!-- retn    4                   -->
+      </data>
+      <funcstart label="__seh_longjmp_unwind4@4"/>
+  </pattern>
 </patternlist>
