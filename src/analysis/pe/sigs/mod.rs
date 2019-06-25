@@ -13,7 +13,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use md5;
+use log::{debug};
 use regex::bytes::Regex;
+use goblin::{Object};
 use failure::{Error};
 use rust_embed::{RustEmbed};
 use xml::reader::{EventReader, XmlEvent, ParserConfig};
@@ -170,10 +172,14 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
             Ok(format!("{}", out.join("")))
         }
     } else if term.chars().all(|c| ['0', '1', '.'].contains(&c)) {
+        // handle binary pattern
+
         let mut out = vec![];
         for byte in str_chunks(term, 8) {
+            // process one byte (8 bits) at a time
             out.push(render_byte(byte)?);
         }
+
         if term.len() > 8 {
             Ok(format!("({})", out.join("")))
         } else {
@@ -608,6 +614,16 @@ impl<A: Arch> ByteSigAnalyzer<A> {
     }
 }
 
+
+impl<A: Arch + 'static> ByteSigAnalyzer<A> {
+    fn is_64(&self, ws: &Workspace<A>) -> bool {
+        match Object::parse(&ws.buf) {
+            Ok(Object::PE(pe)) => pe.is_64,
+            _ => panic!("can't analyze unexpected format"),
+        }
+    }
+}
+
 impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     fn get_name(&self) -> String {
         "byte signature analyzer".to_string()
@@ -625,34 +641,51 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     ///    .load().unwrap();
     ///
     /// ByteSigAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
-    /// assert!(false);
+    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1010).is_some());
     /// ```
     fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
-        for pattern in Assets::get_patterns("x86:LE:64:default", "windows")?.into_iter() {
+
+        let language = match self.is_64(ws) {
+            true =>  "x86:LE:64:default",
+            false => "x86:LE:32:default",
+        };
+
+        for pattern in Assets::get_patterns(language, "windows")?.into_iter() {
             patterns.insert(pattern.id().to_string(), pattern);
         }
 
+        // join each of the component regular expressions into a master case expression, like:
+        //
+        //     (?-u)($one|$two|$three|...)
+        //
+        // the `(?-u)` disables unicode mode, which lets us match raw byte values.
         let mega_pattern = format!("(?-u)({})",
                 patterns.values()
                     .map(|pattern| pattern.to_regex())
                     .collect::<Result<Vec<String>, Error>>()?
                     .join("|"));
-
         let re = Regex::new(&mega_pattern).unwrap();
+
+        let mut functions = vec![];
 
         for section in ws.module.sections.iter().filter(|section| section.perms.intersects(Permissions::X)) {
             for capture in re.captures_iter(&section.buf) {
                 for pattern in patterns.values() {
                     if let Some(mat) = capture.name(pattern.get_mark()) {
                         let rva = arch::rva_add_usize::<A>(section.addr, mat.start()).unwrap();
-                        println!("match: {:?} at {:#x} ", pattern.id(), rva);
-
-                        // TODO: interpret the match and possibly create code
+                        functions.push(rva);
                     }
                 }
             }
         }
+
+        for rva in functions.iter() {
+            debug!("found function by signature: {:#x}", rva);
+            ws.make_function(*rva).unwrap();
+            ws.analyze().unwrap();
+        }
+
         Ok(())
     }
 }
