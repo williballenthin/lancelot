@@ -22,6 +22,7 @@ rust-embed = { version="4.4.0", features=["debug-embed"] }
 xml-rs = "0.8"
 better-panic = "0.1.1"
 md5 = "0.6.1"
+regex = "1.1.7"
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)

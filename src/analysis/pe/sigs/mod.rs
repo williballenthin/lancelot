@@ -2,6 +2,9 @@
 ///
 /// uses the Ghidra signature definitions from here:
 ///  - https://github.com/NationalSecurityAgency/ghidra/tree/79d8f164f8bb8b15cfb60c5d4faeb8e1c25d15ca/Ghidra/Processors/x86/data/patterns
+///
+/// implementation notes:
+///   - this seems to be quite slow in debug mode (3s to process k32.dll), but fast enough in release (0.05s)
 
 use std::cmp;
 use std::io::Write;
@@ -10,15 +13,26 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use md5;
+use regex::bytes::Regex;
 use failure::{Error};
 use rust_embed::{RustEmbed};
 use xml::reader::{EventReader, XmlEvent, ParserConfig};
 
-use super::super::super::arch::Arch;
-use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
+use super::super::super::arch;
+use super::super::super::arch::Arch;
+use super::super::super::loader::Permissions;
+use super::super::super::workspace::Workspace;
 
 
+/// split the given string into chunks of the given length.
+///
+/// ```
+/// use lancelot::analysis::pe::sigs::str_chunks;
+/// assert_eq!(str_chunks("abcd", 1), vec!["a", "b", "c", "d"]);
+/// assert_eq!(str_chunks("abcd", 2), vec!["ab", "cd"]);
+/// assert_eq!(str_chunks("abcde", 2), vec!["ab", "cd", "e"]);
+/// ```
 pub fn str_chunks(s: &str, len: usize) -> Vec<&str> {
     let mut v = vec![];
     let mut cur = s;
@@ -30,26 +44,105 @@ pub fn str_chunks(s: &str, len: usize) -> Vec<&str> {
     v
 }
 
+pub fn render_byte(term: &str) -> Result<String, Error> {
+    if term.len() != 8 {
+        panic!("unexpected binary pattern length: {} {}", term, term.len());
+    }
+
+    // example, given:
+    //
+    //   term  = 0011..0.
+    //
+    // then:
+    //
+    //   v     = 00110000
+    //   mask  = 00001101
+    //   !mask = 11110010
+    //
+    // and results are:
+    //
+    //   00110000 0x30
+    //   00110001 0x31
+    //   00110100 0x34
+    //   00110101 0x35
+    //   00111000 0x38
+    //   00111001 0x39
+    //   00111100 0x3C
+    //   00111101 0x3D
+
+    // the non-wildcard value
+    let mut v: u8 = 0;
+    // the wildcard mask
+    let mut mask: u8 = 0;
+
+    for (i, c) in term.chars().rev().enumerate() {
+        if c == '0' {
+            v |= 0 << i;
+        } else if c == '1' {
+            v |= 1 << i;
+        } else if c == '.' {
+            mask |= 1 << i;
+        } else {
+            panic!("unexpected pattern character: {}", term)
+        }
+    }
+
+    // because we're working with 8-bit values (bytes),
+    //  we can pretty quickly enumerate all of them.
+    // so, scan all the possible byte values and collect
+    //  the unique values that match the wildcard mask.
+    let candidates: HashSet<u8> = (0..255)
+        .filter(|&b| (b & mask) == b)
+        .map(|b| b & mask)
+        .collect();
+
+    if candidates.len() > 1 {
+        // now we can generate the possible values.
+        // this is `v | $candidate-mask-values`
+        let mut out: Vec<String> = candidates.iter()
+            .map(|c| c | (v & (!mask)))
+            .map(|c| format!("\\x{:02X}", c))
+            .collect();
+        out.sort();
+        Ok(format!("({})", out.join("|")))
+    } else {
+        Ok(format!("\\x{:02X}", v))
+    }
+}
+
+/// render the given pattern term (single word) from a ghidra spec
+///  into a binary regular expression.
+///
+/// terms should be:
+///   - if hex, prefixed with `0x`
+///   - if hex, even lengthed
+///   - if hex, only full byte wildcard (nothing like `0xA.`)
+///   - if binary, length is multiple of 8 (one byte)
+///
 /// ```
 /// use lancelot::analysis::pe::sigs::render_pattern_term;
 ///
-/// assert_eq!(render_pattern_term("0xAA").unwrap(), "\\xAA");
-/// assert_eq!(render_pattern_term("0xaa").unwrap(), "\\xAA");
-/// assert_eq!(render_pattern_term("0xAABB").unwrap(), "\\xAA\\xBB");
+/// assert_eq!(render_pattern_term("", "0xAA").unwrap(), "\\xAA");
+/// assert_eq!(render_pattern_term("", "0xaa").unwrap(), "\\xAA");
+/// assert_eq!(render_pattern_term("", "0xAABB").unwrap(), "(\\xAA\\xBB)");
 ///
-/// assert_eq!(render_pattern_term("0xAA..").unwrap(), "\\xAA.");
-/// assert_eq!(render_pattern_term("0xAA..BB").unwrap(), "\\xAA.\\xBB");
+/// assert_eq!(render_pattern_term("", "0xAA..").unwrap(), "(\\xAA.)");
+/// assert_eq!(render_pattern_term("", "0xAA..BB").unwrap(), "(\\xAA.\\xBB)");
 ///
-/// assert_eq!(render_pattern_term("00000000").unwrap(), "\\x00");
-/// assert_eq!(render_pattern_term("00000001").unwrap(), "\\x01");
-/// assert_eq!(render_pattern_term("10000000").unwrap(), "\\x80");
+/// assert_eq!(render_pattern_term("", "00000000").unwrap(), "\\x00");
+/// assert_eq!(render_pattern_term("", "00000001").unwrap(), "\\x01");
+/// assert_eq!(render_pattern_term("", "10000000").unwrap(), "\\x80");
 ///
-/// assert_eq!(render_pattern_term("0000000.").unwrap(), "(\\x00|\\x01)");
-/// assert_eq!(render_pattern_term("000000..").unwrap(), "(\\x00|\\x01|\\x02|\\x03)");
-/// assert_eq!(render_pattern_term("0011..0.").unwrap(), "(\\x30|\\x31|\\x34|\\x35|\\x38|\\x39|\\x3C|\\x3D)");
+/// assert_eq!(render_pattern_term("", "0000000.").unwrap(), "(\\x00|\\x01)");
+/// assert_eq!(render_pattern_term("", "000000..").unwrap(), "(\\x00|\\x01|\\x02|\\x03)");
+/// assert_eq!(render_pattern_term("", "0011..0.").unwrap(), "(\\x30|\\x31|\\x34|\\x35|\\x38|\\x39|\\x3C|\\x3D)");
+///
+/// assert_eq!(render_pattern_term("", "0000000.00000000").unwrap(), "((\\x00|\\x01)\\x00)");
 /// ```
-pub fn render_pattern_term(term: &str) -> Result<String, Error> {
-    if term.starts_with("0x") {
+pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
+    if term == "*" {
+        Ok(format!("(?P<{}_mark>(!!!!)*)", id))
+    } else if term.starts_with("0x") {
         // handle hex-encoded byte
 
         // skip leading `0x`
@@ -71,70 +164,20 @@ pub fn render_pattern_term(term: &str) -> Result<String, Error> {
             }
         }
 
-        Ok(format!("{}", out.join("")))
-    } else if term.chars().all(|c| ['0', '1', '.'].contains(&c)) {
-        if term.len() != 8 {
-            panic!("unexpected binary pattern length: {} {}", term, term.len());
-        }
-
-        // example, given:
-        //
-        //   term  = 0011..0.
-        //
-        // then:
-        //
-        //   v     = 00110000
-        //   mask  = 00001101
-        //   !mask = 11110010
-        //
-        // and results are:
-        //
-        //   00110000 0x30
-        //   00110001 0x31
-        //   00110100 0x34
-        //   00110101 0x35
-        //   00111000 0x38
-        //   00111001 0x39
-        //   00111100 0x3C
-        //   00111101 0x3D
-
-        // the non-wildcard value
-        let mut v: u8 = 0;
-        // the wildcard mask
-        let mut mask: u8 = 0;
-
-        for (i, c) in term.chars().rev().enumerate() {
-            if c == '0' {
-                v |= 0 << i;
-            } else if c == '1' {
-                v |= 1 << i;
-            } else if c == '.' {
-                mask |= 1 << i;
-            } else {
-                panic!("unexpected pattern character: {}", term)
-            }
-        }
-
-        // because we're working with 8-bit values (bytes),
-        //  we can pretty quickly enumerate all of them.
-        // so, scan all the possible byte values and collect
-        //  the unique values that match the wildcard mask.
-        let candidates: HashSet<u8> = (0..255)
-            .filter(|&b| (b & mask) == b)
-            .map(|b| b & mask)
-            .collect();
-
-        if candidates.len() > 1 {
-            // now we can generate the possible values.
-            // this is `v | $candidate-mask-values`
-            let mut out: Vec<String> = candidates.iter()
-                .map(|c| c | (v & (!mask)))
-                .map(|c| format!("\\x{:02X}", c))
-                .collect();
-            out.sort();
-            Ok(format!("({})", out.join("|")))
+        if term.len() > 2 {
+            Ok(format!("({})", out.join("")))
         } else {
-            Ok(format!("\\x{:02X}", v))
+            Ok(format!("{}", out.join("")))
+        }
+    } else if term.chars().all(|c| ['0', '1', '.'].contains(&c)) {
+        let mut out = vec![];
+        for byte in str_chunks(term, 8) {
+            out.push(render_byte(byte)?);
+        }
+        if term.len() > 8 {
+            Ok(format!("({})", out.join("")))
+        } else {
+            Ok(format!("{}", out.join("")))
         }
 
     } else {
@@ -142,11 +185,20 @@ pub fn render_pattern_term(term: &str) -> Result<String, Error> {
     }
 }
 
-pub fn render_pattern(pattern: &str) -> Result<String, Error> {
-    let parts: Result<Vec<String>, Error> = pattern.split_whitespace().map(render_pattern_term).collect();
-    Ok(format!("({})", parts?.join("|")))
+/// render the given pattern from a ghidra spec
+///  into a binary regular expression.
+/// the spec is a sequence of terms, whitespace separated.
+pub fn render_pattern(id: &str, pattern: &str) -> Result<String, Error> {
+    let parts: Result<Vec<String>, Error> = pattern
+        .split_whitespace()
+        .map(|term| render_pattern_term(id, term))
+        .collect();
+    let parts = parts?;
+    Ok(format!("{}", parts.join("")))
 }
 
+
+/// represents a pattern spec that can be rendered into a binary regular expression.
 pub trait Pattern {
     /// compute an identifier for this rule.
     /// unless there is an explicit name, derive the identifier from the contents of the patterns.
@@ -155,6 +207,7 @@ pub trait Pattern {
     /// render the pattern as a string containing a regular expression pattern.
     fn to_regex(&self) -> Result<String, Error>;
 }
+
 
 /// represents a single `pattern` from the ghidra descriptor xml.
 /// e.g. from:
@@ -173,7 +226,7 @@ impl Pattern for SinglePattern {
         let mut m = md5::Context::new();
         m.write(self.data.as_bytes()).unwrap();
         let id = format!("{:x}", m.compute());
-        format!("pattern-{}", &id[..8])
+        format!("pattern_{}", &id[..8])
     }
 
     /// ```
@@ -184,10 +237,10 @@ impl Pattern for SinglePattern {
     ///   data: "0xcc".to_string(),
     ///   funcstart: HashMap::new(),
     /// };
-    /// assert_eq!(p.to_regex().unwrap(), "(?<pattern-37e0788a>(\\xCC))");
+    /// assert_eq!(p.to_regex().unwrap(), "(?P<pattern_37e0788a>\\xCC)");
     /// ```
     fn to_regex(&self) -> Result<String, Error> {
-        Ok(format!("(?<{}>{})", self.id(), render_pattern(&self.data)?))
+        Ok(format!("(?P<{}>{})", self.id(), render_pattern(&self.id(), &self.data)?))
     }
 }
 
@@ -207,11 +260,37 @@ impl Pattern for PatternPairs {
             m.write(pattern.as_bytes()).unwrap();
         }
         let id = format!("{:x}", m.compute());
-        format!("pattern-{}", &id[..8])
+        format!("pattern_{}", &id[..8])
     }
 
+    /// ```
+    /// use std::collections::HashMap;
+    /// use lancelot::analysis::pe::sigs::Pattern;
+    /// use lancelot::analysis::pe::sigs::PatternPairs;
+    /// let p = PatternPairs {
+    ///   prepatterns: vec!["0xAA".to_string(), "0xBB".to_string()],
+    ///   postpatterns: vec!["0xCC".to_string(), "0xDD".to_string()],
+    ///   funcstart: HashMap::new(),
+    /// };
+    /// assert_eq!(p.to_regex().unwrap(),
+    ///            "(?P<pattern_b6a8a902>(?P<pattern_b6a8a902_prepatterns>((\\xAA)|(\\xBB)))(?P<pattern_b6a8a902_postpatterns>((\\xCC)|(\\xDD))))");
+    /// ```
     fn to_regex(&self) -> Result<String, Error> {
-        Ok("foo".to_string())
+        let mut prepatterns = vec![];
+        for pp in self.prepatterns.iter() {
+            prepatterns.push(format!("({})", render_pattern(&self.id(), pp)?));
+        }
+        let mut postpatterns = vec![];
+        for pp in self.postpatterns.iter() {
+            postpatterns.push(format!("({})", render_pattern(&self.id(), pp)?));
+        }
+
+        Ok(format!("(?P<{}>(?P<{}_prepatterns>({}))(?P<{}_postpatterns>({})))",
+                   self.id(),
+                   self.id(),
+                   prepatterns.join("|"),
+                   self.id(),
+                   postpatterns.join("|")))
     }
 }
 
@@ -288,9 +367,8 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
                 // this is the happy path
                 return Ok(path.pop().unwrap());
             }
-            Err(e) => {
-                println!("Error: {}", e);
-                break;
+            Err(_) => {
+                panic!("invalid document");
             }
             _ => {}
         }
@@ -336,11 +414,11 @@ impl Assets {
 
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
-    /// let patterns = Assets::get_patterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 9);
+    /// let patterns = Assets::get_singlepatterns("x86:LE:32:default", "windows").unwrap();
+    /// assert_eq!(patterns.len(), 8);
     /// assert_eq!(patterns[0].data, "0x558bec");
     /// ```
-    pub fn get_patterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
+    pub fn get_singlepatterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
         let mut ret = vec![];
 
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
@@ -388,15 +466,11 @@ impl Assets {
                     let prepattern_node = pattern_node.get_child("prepatterns").unwrap();
                     let postpattern_node = pattern_node.get_child("postpatterns").unwrap();
 
-                    println!("patternpair:");
-
                     for data_node in prepattern_node.get_children("data").iter() {
-                        println!("prepattern: {}", data_node.text);
                         prepatterns.push(data_node.text.clone());
                     }
 
                     for data_node in postpattern_node.get_children("data").iter() {
-                        println!("postpattern: {}", data_node.text);
                         postpatterns.push(data_node.text.clone());
                     }
 
@@ -415,6 +489,20 @@ impl Assets {
                     })
                 }
             }
+        }
+
+        Ok(ret)
+    }
+
+    pub fn get_patterns(language: &str, compiler: &str) -> Result<Vec<Box<dyn Pattern>>, Error> {
+        let mut ret: Vec<Box<dyn Pattern>> = vec![];
+
+        for pattern in Assets::get_singlepatterns(language, compiler)?.into_iter() {
+            ret.push(Box::new(pattern));
+        }
+
+        for pattern in Assets::get_patternpairs(language, compiler)?.into_iter() {
+            ret.push(Box::new(pattern));
         }
 
         Ok(ret)
@@ -456,10 +544,47 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     ///    .load().unwrap();
     ///
     /// ByteSigAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
+    /// assert!(false);
     /// ```
     fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
-        let patterns = Assets::get_patterns("x86:LE:32:default", "windows")?;
+        let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
+        for pattern in Assets::get_patterns("x86:LE:64:default", "windows")?.into_iter() {
+            patterns.insert(pattern.id(), pattern);
+        }
 
+        let mega_pattern = format!("(?-u)({})",
+                patterns.values()
+                    .map(|pattern| pattern.to_regex())
+                    .collect::<Result<Vec<String>, Error>>()?
+                    .join("|"));
+
+        let re = Regex::new(&mega_pattern).unwrap();
+
+        for section in ws.module.sections.iter().filter(|section| section.perms.intersects(Permissions::X)) {
+            for capture in re.captures_iter(&section.buf) {
+                for pattern in patterns.keys() {
+                    if let Some(mat) = capture.name(pattern) {
+                        // TODO: store which mark type is used in the pattern itself.
+                        // this will avoid allocation.
+
+                        let rva = if let Some(mat) = capture.name(&format!("{}_mark", pattern)) {
+                            // its a pattern with a `*` mark position
+                            arch::rva_add_usize::<A>(section.addr, mat.start())
+                        } else if let Some(mat) = capture.name(&format!("{}_postpatterns", pattern)) {
+                            // its a PatternPairs
+                            arch::rva_add_usize::<A>(section.addr, mat.start())
+                        } else {
+                            // its a plain old pattern, match at start
+                            arch::rva_add_usize::<A>(section.addr, mat.start())
+                        };
+
+                        //println!("match: {:?} at {:#x} pattern: {:?}", pattern, rva);
+
+                        // TODO: interpret the match and possibly create code
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
