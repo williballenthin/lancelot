@@ -206,6 +206,8 @@ pub trait Pattern {
 
     /// render the pattern as a string containing a regular expression pattern.
     fn to_regex(&self) -> Result<String, Error>;
+
+    // TODO: add `get_mark() -> string` to fetch capture group name.
 }
 
 
@@ -273,7 +275,7 @@ impl Pattern for PatternPairs {
     ///   funcstart: HashMap::new(),
     /// };
     /// assert_eq!(p.to_regex().unwrap(),
-    ///            "(?P<pattern_b6a8a902>(?P<pattern_b6a8a902_prepatterns>((\\xAA)|(\\xBB)))(?P<pattern_b6a8a902_postpatterns>((\\xCC)|(\\xDD))))");
+    ///            "(?P<pattern_b6a8a902>((\\xAA)|(\\xBB))(?P<pattern_b6a8a902_postpatterns>((\\xCC)|(\\xDD))))");
     /// ```
     fn to_regex(&self) -> Result<String, Error> {
         let mut prepatterns = vec![];
@@ -285,8 +287,9 @@ impl Pattern for PatternPairs {
             postpatterns.push(format!("({})", render_pattern(&self.id(), pp)?));
         }
 
-        Ok(format!("(?P<{}>(?P<{}_prepatterns>({}))(?P<{}_postpatterns>({})))",
-                   self.id(),
+        // don't tag the prepatterns with a named group,
+        // as its just yet another thing that gets tracked, but we dont' use.
+        Ok(format!("(?P<{}>({})(?P<{}_postpatterns>({})))",
                    self.id(),
                    prepatterns.join("|"),
                    self.id(),
@@ -415,7 +418,7 @@ impl Assets {
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_singlepatterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 8);
+    /// assert_eq!(patterns.len(), 9);
     /// assert_eq!(patterns[0].data, "0x558bec");
     /// ```
     pub fn get_singlepatterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
@@ -477,7 +480,9 @@ impl Assets {
                     let fstart = if let Some(fstart) = postpattern_node.get_child("funcstart") {
                         fstart.attrs.clone()
                     } else if let Some(fstart) = postpattern_node.get_child("possiblefuncstart") {
-                        fstart.attrs.clone()
+                        let mut attrs = fstart.attrs.clone();
+                        attrs.insert("possiblefuncstart".to_string(), "true".to_string());
+                        attrs
                     } else {
                         HashMap::new()
                     };
@@ -494,14 +499,50 @@ impl Assets {
         Ok(ret)
     }
 
+
+    /// ```
+    /// use lancelot::analysis::pe::sigs::Assets;
+    /// let patterns = Assets::get_patterns("x86:LE:32:default", "windows").unwrap();
+    /// assert_eq!(patterns.len(), 8);
+    /// ```
     pub fn get_patterns(language: &str, compiler: &str) -> Result<Vec<Box<dyn Pattern>>, Error> {
         let mut ret: Vec<Box<dyn Pattern>> = vec![];
 
         for pattern in Assets::get_singlepatterns(language, compiler)?.into_iter() {
+            // blacklist of non-supported funcstart attributes
+
+            if pattern.funcstart.contains_key("possiblefuncstart") {
+                continue;
+            }
+
+            if pattern.funcstart.contains_key("after") {
+                // must be something defined right before this, or no memory
+                continue
+            }
+
+            if pattern.funcstart.contains_key("validcode") {
+                continue
+            }
+
             ret.push(Box::new(pattern));
         }
 
         for pattern in Assets::get_patternpairs(language, compiler)?.into_iter() {
+            // blacklist of non-supported funcstart attributes
+
+            if pattern.funcstart.contains_key("possiblefuncstart") {
+                continue;
+            }
+
+            if pattern.funcstart.contains_key("after") {
+                // must be something defined right before this, or no memory
+                continue
+            }
+
+            if pattern.funcstart.contains_key("validcode") {
+                continue
+            }
+
             ret.push(Box::new(pattern));
         }
 
