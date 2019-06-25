@@ -180,16 +180,16 @@
 
   <pattern>
       <data>
-          55                                  <!-- push    ebp                 -->
-          8B4C2408                            <!-- mov     ecx, [esp+4+arg_0]  -->
-          8B29                                <!-- mov     ebp, [ecx]          -->
-          FF711C                              <!-- push    dword ptr [ecx+1Ch] -->
-          FF7118                              <!-- push    dword ptr [ecx+18h] -->
-          FF7128                              <!-- push    dword ptr [ecx+28h] -->
-          E815FFFFFF                          <!-- call    __local_unwind4     -->
-          83C40C                              <!-- add     esp, 0Ch            -->
-          5D                                  <!-- pop     ebp                 -->
-          C20400                              <!-- retn    4                   -->
+          0x55                                  <!-- push    ebp                 -->
+          0x8B4C2408                            <!-- mov     ecx, [esp+4+arg_0]  -->
+          0x8B29                                <!-- mov     ebp, [ecx]          -->
+          0xFF711C                              <!-- push    dword ptr [ecx+1Ch] -->
+          0xFF7118                              <!-- push    dword ptr [ecx+18h] -->
+          0xFF7128                              <!-- push    dword ptr [ecx+28h] -->
+          0xE815FFFFFF                          <!-- call    __local_unwind4     -->
+          0x83C40C                              <!-- add     esp, 0Ch            -->
+          0x5D                                  <!-- pop     ebp                 -->
+          0xC20400                              <!-- retn    4                   -->
       </data>
       <funcstart label="__seh_longjmp_unwind4@4"/>
   </pattern>
