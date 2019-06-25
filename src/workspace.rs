@@ -288,6 +288,18 @@ impl<A: Arch + 'static> Workspace<A> {
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
     }
 
+    /// Read a dword from the given RVA.
+    pub fn read_i32(&self, rva: A::RVA) -> Result<i32, Error> {
+        self.read_bytes(rva, 4)
+            .and_then(|buf| Ok(LittleEndian::read_i32(buf)))
+    }
+
+    /// Read a qword from the given RVA.
+    pub fn read_i64(&self, rva: A::RVA) -> Result<i64, Error> {
+        self.read_bytes(rva, 8)
+            .and_then(|buf| Ok(LittleEndian::read_i64(buf)))
+    }
+
     /// Read an RVA from the given RVA.
     /// Note that the size of the read is dependent on the architecture.
     ///
@@ -305,8 +317,8 @@ impl<A: Arch + 'static> Workspace<A> {
     pub fn read_rva(&self, rva: A::RVA) -> Result<A::RVA, Error> {
         match A::get_bits() {
             // these conversions will never fail
-            32 => Ok(A::RVA::from_u32(self.read_u32(rva)?).unwrap()),
-            64 => Ok(A::RVA::from_u64(self.read_u64(rva)?).unwrap()),
+            32 => Ok(A::RVA::from_i32(self.read_i32(rva)?).unwrap()),
+            64 => Ok(A::RVA::from_i64(self.read_i64(rva)?).unwrap()),
             _ => panic!("unexpected architecture"),
         }
     }
