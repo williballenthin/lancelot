@@ -89,7 +89,7 @@ enum ImageThunkData<A: Arch> {
 fn read_image_thunk_data<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> Result<ImageThunkData<A>, Error> {
     // see: https://reverseengineering.stackexchange.com/a/13387/17194
     let thunk = ws.read_rva(rva)?;
-    let v = A::RVA::to_u64(&thunk).unwrap();
+    let v = thunk.to_i64().unwrap();
     if v & (1 << (A::get_bits() - 1)) > 0x0 {
         // MSB is set, this is an ordinal
         Ok(ImageThunkData::Ordinal((v & 0xFFFF) as u32))
