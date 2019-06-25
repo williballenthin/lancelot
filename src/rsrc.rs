@@ -13,6 +13,8 @@ pub enum Rsrc {
     TINY,
     /// from: https://joenord.com/apps/nop/
     NOP,
+    /// from: https://github.com/gentilkiwi/mimikatz/releases/tag/2.2.0-20190512
+    MIMI,
 }
 
 /// Fetch the file system name of the given resource.
@@ -31,6 +33,9 @@ pub fn get_name(rsrc: Rsrc) -> String {
         }
         Rsrc::NOP => {
             String::from("nop.exe")
+        }
+        Rsrc::MIMI => {
+            String::from("mimikatz.exe_")
         }
     }
 }
@@ -68,6 +73,9 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
             // pass
         }
         Rsrc::NOP => {
+            // pass
+        }
+        Rsrc::MIMI => {
             // pass
         }
     }
