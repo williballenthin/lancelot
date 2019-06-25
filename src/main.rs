@@ -1,10 +1,12 @@
 extern crate lancelot;
 extern crate log;
 
-use failure::{Error, Fail};
-use log::{error, info, trace};
 use std::env;
 use std::process;
+
+use log::{error, info, trace};
+use better_panic;
+use failure::{Error, Fail};
 
 use lancelot::arch::*;
 use lancelot::workspace::Workspace;
@@ -76,6 +78,8 @@ pub fn run(args: &Config) -> Result<(), Error> {
 }
 
 fn main() {
+    better_panic::install();
+
     let args = Config::from_args(env::args()).unwrap_or_else(|err| {
         eprintln!("error parsing arguments: {}", err);
         process::exit(1);
