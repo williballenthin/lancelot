@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Display;
 
-use failure::{Error, Fail};
+use failure::{Error, Fail, bail};
 use log::{debug, warn};
 use zydis::gen::*;
 
@@ -410,10 +410,8 @@ impl<A: Arch + 'static> Workspace<A> {
             // can't resolve without emulation
             // TODO: add test
             return Ok(None)
-        } else if op.mem.scale != 0x0 {
-            // this is something like `CALL [0x1000+eax*4]`
-            // can't resolve without emulation
-            // TODO: add test
+        } else if op.mem.scale == 0x4 {
+            // this is something like `JMP [0x1000+eax*4]` (32-bit)
             return Ok(None)
         } else {
             println!("{:#x}: get mem op xref", rva);
@@ -562,6 +560,36 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
+    fn read_pointer_table(&self, rva: A::RVA) -> Result<Vec<A::RVA>, Error> {
+        let mut ret = vec![];
+
+        let mut rva = rva;
+        loop {
+            let ptr_va = match self.read_va(rva) {
+                Ok(va) => va,
+                Err(_) => break,
+            };
+
+            let ptr_rva = match self.rva(ptr_va) {
+                Some(va) => va,
+                None => break,
+            };
+
+            if ! self.probe(ptr_rva, 1) {
+                break
+            }
+
+            ret.push(ptr_rva);
+            rva = arch::rva_add_usize::<A>(rva, A::get_ptr_size() as usize).unwrap();
+        }
+
+        if ret.len() < 4 {
+            bail!("not a pointer table");
+        }
+
+        Ok(ret)
+    }
+
     /// ```
     /// use lancelot::test;
     ///
@@ -572,6 +600,43 @@ impl<A: Arch + 'static> Workspace<A> {
     /// let xrefs = ws.get_jmp_insn_flow(0x0, &insn).unwrap();
     /// assert_eq!(xrefs[0].dst, 0x5);
     /// ```
+    ///
+    /// ```
+    /// use lancelot::rsrc::*;
+    /// use lancelot::arch::*;
+    /// use lancelot::workspace::Workspace;
+    ///
+    /// let mut ws = Workspace::<Arch32>::from_bytes("mimi.exe", &get_buf(Rsrc::MIMI))
+    ///    .disable_analysis()
+    ///    .load().unwrap();
+    ///
+    /// // at 0x47153B is a function with some switch statements.
+    /// // at 0x4715AB is one such indirect jump:
+    /// //
+    /// //     .text:004715A8 FF 24 8D 9B 1B 47 00                    jmp     ds:jpt_4715A8[ecx*4] ; switch jump
+    /// //
+    /// // and the table:
+    /// //
+    /// //     .text:00471B9B AF 15 47 00 F7 15 47 00+jpt_4715A8      dd offset loc_4715AF    ; DATA XREF: sub_47153B+6D↑r
+    /// //     .text:00471B9B 3E 16 47 00 61 16 47 00+                dd offset loc_4715F7    ; jump table for switch statement
+    /// //     .text:00471B9B 93 16 47 00 CB 16 47 00+                dd offset loc_47163E
+    /// //     .text:00471B9B DB 16 47 00 36 17 47 00+                dd offset loc_471661
+    /// //     .text:00471B9B 21 17 47 00 A0 17 47 00+                dd offset loc_471693
+    /// //     .text:00471B9B 95 17 47 00 44 17 47 00                 dd offset loc_4716CB
+    /// //     .text:00471B9B                                         dd offset loc_4716DB
+    /// //     .text:00471B9B                                         dd offset loc_471736
+    /// //     .text:00471B9B                                         dd offset loc_471721
+    /// //     .text:00471B9B                                         dd offset loc_4717A0
+    /// //     .text:00471B9B                                         dd offset def_4715A8
+    /// //     .text:00471B9B                                         dd offset loc_471744
+    /// //ws.make_function(0x7153B).unwrap();
+    /// ws.make_insn(0x715A8).unwrap();
+    /// ws.analyze().unwrap();
+    ///
+    /// assert!(ws.get_meta(0x715AF).unwrap().is_insn());
+    /// assert!(ws.get_meta(0x715F7).unwrap().is_insn());
+    /// assert!(ws.get_meta(0x71744).unwrap().is_insn());
+    /// ```
     pub fn get_jmp_insn_flow(
         &self,
         rva: A::RVA,
@@ -581,13 +646,38 @@ impl<A: Arch + 'static> Workspace<A> {
         // all JMPs should have an operand.
         let op = get_first_operand(insn).unwrap();
 
-        match self.get_operand_xref(rva, insn, op)? {
-            Some(dst) => Ok(vec![Xref {
-                src: rva,
-                dst: dst,
-                typ: XrefType::UnconditionalJump,
-            }]),
-            None => Ok(vec![]),
+        if op.type_ == 2 && op.mem.scale == 0x4 && op.mem.base == 0 && op.mem.disp.hasDisplacement == 1 {
+            // this looks like a switch table, e.g. `JMP [0x1000+ecx*4]`
+            // so, probe for a pointer table.
+            // otherwise, this should probably be solved via emulation.
+
+            let disp = A::VA::from_i64(op.mem.disp.value).unwrap();
+            let table_rva = match self.rva(disp) {
+                Some(table) => table,
+                None => return Ok(vec![]),
+            };
+
+            let table = match self.read_pointer_table(table_rva) {
+                Ok(table) => table,
+                Err(_) => return Ok(vec![]),
+            };
+
+            Ok(table.iter()
+                   .map(|&dst| Xref {
+                       src: rva,
+                       dst: dst,
+                       typ: XrefType::UnconditionalJump,
+                   })
+                   .collect())
+        } else {
+            match self.get_operand_xref(rva, insn, op)? {
+                Some(dst) => Ok(vec![Xref {
+                    src: rva,
+                    dst: dst,
+                    typ: XrefType::UnconditionalJump,
+                }]),
+                None => Ok(vec![]),
+            }
         }
     }
 
