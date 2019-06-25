@@ -202,12 +202,13 @@ pub fn render_pattern(id: &str, pattern: &str) -> Result<String, Error> {
 pub trait Pattern {
     /// compute an identifier for this rule.
     /// unless there is an explicit name, derive the identifier from the contents of the patterns.
-    fn id(&self) -> String;
+    fn id(&self) -> &str;
 
     /// render the pattern as a string containing a regular expression pattern.
     fn to_regex(&self) -> Result<String, Error>;
 
-    // TODO: add `get_mark() -> string` to fetch capture group name.
+    /// fetch the capturing group name that identifies the function start offset within a match.
+    fn get_mark(&self) -> &str;
 }
 
 
@@ -219,61 +220,105 @@ pub trait Pattern {
 ///   <funcstart after="data" /> <!-- must be something defined right before this, or no memory -->
 /// </pattern>
 pub struct SinglePattern {
-    pub data: String,
-    pub funcstart: HashMap<String, String>,
+    data: String,
+    pub attrs: HashMap<String, String>,
+    id: String,
+    mark: String,
+}
+
+impl SinglePattern {
+    pub fn new(data: String, attrs: HashMap<String, String>) -> SinglePattern {
+        let mut m = md5::Context::new();
+        m.write(data.as_bytes()).unwrap();
+        let id = format!("{:x}", m.compute());
+        let id = format!("pattern_{}", &id[..8]);
+
+        let mark = if data.chars().find(|&c| c == '*').is_some() {
+            format!("{}_mark", id)
+        } else {
+            id.clone()
+        };
+
+        SinglePattern {
+            data,
+            attrs,
+            id,
+            mark,
+        }
+    }
 }
 
 impl Pattern for SinglePattern {
-    fn id(&self) -> String {
-        let mut m = md5::Context::new();
-        m.write(self.data.as_bytes()).unwrap();
-        let id = format!("{:x}", m.compute());
-        format!("pattern_{}", &id[..8])
+
+    fn id(&self) -> &str {
+        &self.id
     }
 
     /// ```
     /// use std::collections::HashMap;
     /// use lancelot::analysis::pe::sigs::Pattern;
     /// use lancelot::analysis::pe::sigs::SinglePattern;
-    /// let p = SinglePattern {
-    ///   data: "0xcc".to_string(),
-    ///   funcstart: HashMap::new(),
-    /// };
+    /// let p = SinglePattern::new("0xcc".to_string(), HashMap::new());
     /// assert_eq!(p.to_regex().unwrap(), "(?P<pattern_37e0788a>\\xCC)");
     /// ```
     fn to_regex(&self) -> Result<String, Error> {
         Ok(format!("(?P<{}>{})", self.id(), render_pattern(&self.id(), &self.data)?))
     }
+
+    fn get_mark(&self) -> &str {
+        &self.mark
+    }
 }
 
 pub struct PatternPairs {
-    pub prepatterns: Vec<String>,
-    pub postpatterns: Vec<String>,
-    pub funcstart: HashMap<String, String>,
+    prepatterns: Vec<String>,
+    postpatterns: Vec<String>,
+    pub attrs: HashMap<String, String>,
+    id: String,
+    mark: String,
 }
 
-impl Pattern for PatternPairs {
-    fn id(&self) -> String {
+impl PatternPairs {
+    pub fn new(prepatterns: Vec<String>,
+               postpatterns: Vec<String>,
+               attrs: HashMap<String, String>) -> PatternPairs {
+
         let mut m = md5::Context::new();
-        for pattern in self.prepatterns.iter() {
+        for pattern in prepatterns.iter() {
             m.write(pattern.as_bytes()).unwrap();
         }
-        for pattern in self.postpatterns.iter() {
+        for pattern in postpatterns.iter() {
             m.write(pattern.as_bytes()).unwrap();
         }
         let id = format!("{:x}", m.compute());
-        format!("pattern_{}", &id[..8])
+        let id = format!("pattern_{}", &id[..8]);
+
+        let mark = format!("{}_postpatterns", id);
+
+        PatternPairs {
+            prepatterns,
+            postpatterns,
+            attrs,
+            id,
+            mark,
+        }
+    }
+}
+
+impl Pattern for PatternPairs {
+    fn id(&self) -> &str {
+        &self.id
     }
 
     /// ```
     /// use std::collections::HashMap;
     /// use lancelot::analysis::pe::sigs::Pattern;
     /// use lancelot::analysis::pe::sigs::PatternPairs;
-    /// let p = PatternPairs {
-    ///   prepatterns: vec!["0xAA".to_string(), "0xBB".to_string()],
-    ///   postpatterns: vec!["0xCC".to_string(), "0xDD".to_string()],
-    ///   funcstart: HashMap::new(),
-    /// };
+    /// let p = PatternPairs::new(
+    ///   vec!["0xAA".to_string(), "0xBB".to_string()],
+    ///   vec!["0xCC".to_string(), "0xDD".to_string()],
+    ///   HashMap::new(),
+    /// );
     /// assert_eq!(p.to_regex().unwrap(),
     ///            "(?P<pattern_b6a8a902>((\\xAA)|(\\xBB))(?P<pattern_b6a8a902_postpatterns>((\\xCC)|(\\xDD))))");
     /// ```
@@ -294,6 +339,10 @@ impl Pattern for PatternPairs {
                    prepatterns.join("|"),
                    self.id(),
                    postpatterns.join("|")))
+    }
+
+    fn get_mark(&self) -> &str {
+        &self.mark
     }
 }
 
@@ -419,7 +468,6 @@ impl Assets {
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_singlepatterns("x86:LE:32:default", "windows").unwrap();
     /// assert_eq!(patterns.len(), 9);
-    /// assert_eq!(patterns[0].data, "0x558bec");
     /// ```
     pub fn get_singlepatterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
         let mut ret = vec![];
@@ -435,10 +483,7 @@ impl Assets {
                     let data = pattern_node.get_child("data").unwrap().text.clone();
                     let fstart = pattern_node.get_child("funcstart").unwrap().attrs.clone();
 
-                    ret.push(SinglePattern {
-                        data: data,
-                        funcstart: fstart,
-                    })
+                    ret.push(SinglePattern::new(data, fstart));
                 }
             }
         }
@@ -450,7 +495,6 @@ impl Assets {
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_patternpairs("x86:LE:32:default", "windows").unwrap();
     /// assert_eq!(patterns.len(), 4);
-    /// assert_eq!(patterns[0].prepatterns[0], "0xcc");
     /// ```
     pub fn get_patternpairs(language: &str, compiler: &str) -> Result<Vec<PatternPairs>, Error> {
         let mut ret = vec![];
@@ -487,11 +531,7 @@ impl Assets {
                         HashMap::new()
                     };
 
-                    ret.push(PatternPairs {
-                        prepatterns,
-                        postpatterns,
-                        funcstart: fstart,
-                    })
+                    ret.push(PatternPairs::new(prepatterns, postpatterns, fstart));
                 }
             }
         }
@@ -511,16 +551,16 @@ impl Assets {
         for pattern in Assets::get_singlepatterns(language, compiler)?.into_iter() {
             // blacklist of non-supported funcstart attributes
 
-            if pattern.funcstart.contains_key("possiblefuncstart") {
+            if pattern.attrs.contains_key("possiblefuncstart") {
                 continue;
             }
 
-            if pattern.funcstart.contains_key("after") {
+            if pattern.attrs.contains_key("after") {
                 // must be something defined right before this, or no memory
                 continue
             }
 
-            if pattern.funcstart.contains_key("validcode") {
+            if pattern.attrs.contains_key("validcode") {
                 continue
             }
 
@@ -530,16 +570,16 @@ impl Assets {
         for pattern in Assets::get_patternpairs(language, compiler)?.into_iter() {
             // blacklist of non-supported funcstart attributes
 
-            if pattern.funcstart.contains_key("possiblefuncstart") {
+            if pattern.attrs.contains_key("possiblefuncstart") {
                 continue;
             }
 
-            if pattern.funcstart.contains_key("after") {
+            if pattern.attrs.contains_key("after") {
                 // must be something defined right before this, or no memory
                 continue
             }
 
-            if pattern.funcstart.contains_key("validcode") {
+            if pattern.attrs.contains_key("validcode") {
                 continue
             }
 
@@ -590,7 +630,7 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
         for pattern in Assets::get_patterns("x86:LE:64:default", "windows")?.into_iter() {
-            patterns.insert(pattern.id(), pattern);
+            patterns.insert(pattern.id().to_string(), pattern);
         }
 
         let mega_pattern = format!("(?-u)({})",
@@ -603,23 +643,10 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
 
         for section in ws.module.sections.iter().filter(|section| section.perms.intersects(Permissions::X)) {
             for capture in re.captures_iter(&section.buf) {
-                for pattern in patterns.keys() {
-                    if let Some(mat) = capture.name(pattern) {
-                        // TODO: store which mark type is used in the pattern itself.
-                        // this will avoid allocation.
-
-                        let rva = if let Some(mat) = capture.name(&format!("{}_mark", pattern)) {
-                            // its a pattern with a `*` mark position
-                            arch::rva_add_usize::<A>(section.addr, mat.start())
-                        } else if let Some(mat) = capture.name(&format!("{}_postpatterns", pattern)) {
-                            // its a PatternPairs
-                            arch::rva_add_usize::<A>(section.addr, mat.start())
-                        } else {
-                            // its a plain old pattern, match at start
-                            arch::rva_add_usize::<A>(section.addr, mat.start())
-                        };
-
-                        //println!("match: {:?} at {:#x} pattern: {:?}", pattern, rva);
+                for pattern in patterns.values() {
+                    if let Some(mat) = capture.name(pattern.get_mark()) {
+                        let rva = arch::rva_add_usize::<A>(section.addr, mat.start()).unwrap();
+                        println!("match: {:?} at {:#x} ", pattern.id(), rva);
 
                         // TODO: interpret the match and possibly create code
                     }
