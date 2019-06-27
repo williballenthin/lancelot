@@ -1,5 +1,2 @@
 # Lancelot
-Binary analysis
-
-# Code reviews
-Use [git-appraise](https://github.com/google/git-appraise) for code reviews.
+intel x86(-64) code analysis library that reconstructs control flow
