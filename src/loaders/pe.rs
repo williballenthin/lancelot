@@ -137,8 +137,8 @@ impl Loader for PELoader {
     ///
     /// let loader32 = lancelot::loaders::pe::PELoader::new(Arch::X32);
     /// let loader64 = lancelot::loaders::pe::PELoader::new(Arch::X64);
-    /// assert( ! loader32.taste(&get_buf(Rsrc::K32)));
-    /// assert(   loader64.taste(&get_buf(Rsrc::K32)));
+    /// assert!( ! loader32.taste(&get_buf(Rsrc::K32)));
+    /// assert!(   loader64.taste(&get_buf(Rsrc::K32)));
     /// ```
     fn taste(&self, buf: &[u8]) -> bool {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
@@ -158,7 +158,7 @@ impl Loader for PELoader {
     ///
     /// let loader64 = lancelot::loaders::pe::PELoader::new(Arch::X64);
     /// let (module, analyzers) = loader64.load(&get_buf(Rsrc::K32)).unwrap();
-    /// assert_eq!(module.base_address, 0x180000000);
+    /// assert_eq!(module.base_address, VA(0x180000000));
     ///
     /// // mismatched bitness
     /// let loader32 = lancelot::loaders::pe::PELoader::new(Arch::X32);
