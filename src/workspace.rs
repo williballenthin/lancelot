@@ -309,7 +309,7 @@ impl Workspace {
     /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\x00\x11\x22\x33");
-    /// assert_eq!(ws.read_rva(RVA(0x0)).unwrap(), 0x33221100);
+    /// assert_eq!(ws.read_rva(RVA(0x0)).unwrap(), RVA(0x33221100));
     /// assert_eq!(ws.read_rva(RVA(0x1)).is_err(), true);
     /// ```
     pub fn read_rva(&self, rva: RVA) -> Result<RVA, Error> {
@@ -341,11 +341,12 @@ impl Workspace {
     /// ```
     /// use zydis::gen::*;
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_insn(0x0).is_ok(), true);
-    /// assert_eq!(ws.read_insn(0x0).unwrap().length, 2);
-    /// assert_eq!(ws.read_insn(0x0).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).is_ok(), true);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().length, 2);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
     /// ```
     pub fn read_insn(&self, rva: RVA) -> Result<ZydisDecodedInstruction, Error> {
         // this is `read_bytes` except that it reads at most 0x10 bytes.
