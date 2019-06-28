@@ -45,17 +45,17 @@ impl Analyzer for OrphanFunctionAnalyzer {
     /// // this function is the impl of the export `GetApplicationRestartSettingsWorker`.
     /// // the exported symbol simply JMP to this function.
     /// // there is a RUNTIME_FUNCTION for this func, but not for the export.
-    /// assert!(ws.get_meta(0x645A4).unwrap().is_insn());
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x645A4).is_some());
+    /// assert!(ws.get_meta(RVA(0x645A4)).unwrap().is_insn());
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x645A4)).is_some());
     ///
     /// //  .text:0000000180001010     mov     r11, rsp
     /// //  .text:0000000180001013     sub     rsp, 48h
     /// //  .text:0000000180001017     mov     rax, [rsp+48h+ContextPointers]
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1010).is_some());
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1013).is_none());
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x1010)).is_some());
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x1013)).is_none());
     ///
     /// // this is a function referenced only as a function argument.
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1aa0).is_some());
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x1aa0)).is_some());
     /// ```
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let existing_functions: HashSet<&RVA> = ws.get_functions().collect();
