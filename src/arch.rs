@@ -184,9 +184,12 @@ impl std::convert::From<usize> for RVA {
 }
 
 impl std::convert::Into<usize> for RVA {
-    /// may panic on overflow
+    /// may panic on over/underflow
     fn into(self) -> usize {
-        if self.0 > std::usize::MAX as i64 {
+        if self.0 < 0 {
+            panic!("usize underflow")
+        }
+        if self.0 as u64 > std::usize::MAX as u64 {
             panic!("usize overflow");
         }
         self.0 as usize
