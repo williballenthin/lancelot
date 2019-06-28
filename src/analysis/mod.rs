@@ -172,16 +172,17 @@ impl Analysis {
 impl Workspace {
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // NOP
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\x90\xEB\xFE");
-    /// ws.make_insn(0x0);
+    /// ws.make_insn(RVA(0x0));
     /// ws.analyze();
     ///
-    /// assert!( ws.get_meta(0x0).unwrap().is_insn());
-    /// assert!( ws.get_meta(0x1).unwrap().is_insn());
-    /// assert!(!ws.get_meta(0x2).unwrap().is_insn());
+    /// assert!( ws.get_meta(RVA(0x0)).unwrap().is_insn());
+    /// assert!( ws.get_meta(RVA(0x1)).unwrap().is_insn());
+    /// assert!(!ws.get_meta(RVA(0x2)).unwrap().is_insn());
     /// ```
     pub fn make_insn(&mut self, rva: RVA) -> Result<(), Error> {
         self.analysis
@@ -192,13 +193,14 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert!(ws.get_symbol(0x0).is_none());
-    /// ws.make_symbol(0x0, "entry");
+    /// assert!(ws.get_symbol(RVA(0x0)).is_none());
+    /// ws.make_symbol(RVA(0x0), "entry");
     /// ws.analyze();
-    /// assert_eq!(ws.get_symbol(0x0).unwrap(), "entry");
+    /// assert_eq!(ws.get_symbol(RVA(0x0)).unwrap(), "entry");
     /// ```
     pub fn make_symbol(&mut self, rva: RVA, name: &str) -> Result<(), Error> {
         self.analysis
@@ -213,14 +215,15 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert!(ws.get_functions().collect::<Vec<_>>().is_empty());
-    /// ws.make_function(0x0);
+    /// ws.make_function(RVA(0x0));
     /// ws.analyze();
     ///
-    /// assert!(ws.get_meta(0x0).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x0)).unwrap().is_insn());
     /// assert_eq!(ws.get_functions().collect::<Vec<_>>().len(), 1);
     /// ```
     pub fn make_function(&mut self, rva: RVA) -> Result<(), Error> {
@@ -265,11 +268,11 @@ impl Workspace {
     /// use lancelot::workspace::*;
     ///
     /// // JMP $+0;
-    /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(0x0).unwrap();
+    /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(RVA(0x0)).unwrap();
     /// assert_eq!(Workspace::does_insn_fallthrough(&insn), false);
     ///
     /// // PUSH 0x11
-    /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(0x0).unwrap();
+    /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(RVA(0x0)).unwrap();
     /// assert_eq!(Workspace::does_insn_fallthrough(&insn), true);
     /// ```
     pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
@@ -291,16 +294,17 @@ impl Workspace {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // 0:  ff 25 06 00 00 00   +->  jmp    DWORD PTR ds:0x6
     /// // 6:  00 00 00 00         +--  dw     0x0
     /// let mut ws = test::get_shellcode32_workspace(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_memory_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     /// ```
     ///
     /// ## test RIP-relative
@@ -308,16 +312,17 @@ impl Workspace {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // FF 15 00 00 00 00         CALL $+5
     /// // 00 00 00 00 00 00 00 00   dq 0x0
     /// let mut ws = test::get_shellcode64_workspace(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_memory_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     /// ```
     pub fn get_memory_operand_xref(
         &self,
@@ -430,24 +435,25 @@ impl Workspace {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // this is a jump from addr 0x0 to itself:
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_immediate_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_immediate_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     ///
     ///
     /// // this is a jump from addr 0x0 to -1, which is unmapped
     /// // JMP $-1;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFD");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_immediate_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_immediate_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), false);
     /// ```
@@ -520,13 +526,14 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // E8 00 00 00 00  CALL $+5
     /// // 90              NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\xE8\x00\x00\x00\x00\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_call_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_call_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x5));
     /// ```
     pub fn get_call_insn_flow(
         &self,
@@ -579,13 +586,14 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // E9 00 00 00 00  JMP $+5
     /// // 90              NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\xE9\x00\x00\x00\x00\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_jmp_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_jmp_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x5));
     /// ```
     ///
     /// ```
@@ -617,12 +625,12 @@ impl Workspace {
     /// //     .text:00471B9B                                         dd offset def_4715A8
     /// //     .text:00471B9B                                         dd offset loc_471744
     /// //ws.make_function(0x7153B).unwrap();
-    /// ws.make_insn(0x715A8).unwrap();
+    /// ws.make_insn(RVA(0x715A8)).unwrap();
     /// ws.analyze().unwrap();
     ///
-    /// assert!(ws.get_meta(0x715AF).unwrap().is_insn());
-    /// assert!(ws.get_meta(0x715F7).unwrap().is_insn());
-    /// assert!(ws.get_meta(0x71744).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x715AF)).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x715F7)).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x71744)).unwrap().is_insn());
     /// ```
     pub fn get_jmp_insn_flow(
         &self,
@@ -672,11 +680,12 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // C3  RETN
     /// let mut ws = test::get_shellcode32_workspace(b"\xC3");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_ret_insn_flow(0x0, &insn).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_ret_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs.len(), 0);
     /// ```
     pub fn get_ret_insn_flow(
@@ -689,14 +698,15 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // 75 01 JNZ $+1
     /// // CC    BREAK
     /// // 90    NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\x75\x01\xCC\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_cjmp_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_cjmp_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
     pub fn get_cjmp_insn_flow(
         &self,
@@ -719,13 +729,14 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // 0F 44 C3  CMOVZ EAX, EBX
     /// // 90        NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\x0F\x44\xC3\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_cmov_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_cmov_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
     pub fn get_cmov_insn_flow(
         &self,
@@ -866,17 +877,18 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.has_xrefs_from(), false);
     /// assert_eq!(meta.has_xrefs_to(),   false);
     ///
-    /// ws.make_insn(0x0).unwrap();
+    /// ws.make_insn(RVA(0x0)).unwrap();
     /// ws.analyze();
     ///
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.has_xrefs_from(), true);
     /// assert_eq!(meta.has_xrefs_to(),   true);
     /// ```
@@ -977,12 +989,13 @@ impl Workspace {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// ws.make_insn(0x0).unwrap();
+    /// ws.make_insn(RVA(0x0)).unwrap();
     /// ws.analyze();
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.get_insn_length().unwrap(), 2);
     /// assert_eq!(meta.does_fallthrough(), false);
     /// ```
