@@ -3,9 +3,10 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Display;
 
+use serde_json;
 use failure::{Error, Fail, bail};
 use log::{debug, warn};
-use zydis::gen::*;
+use zydis;
 
 use super::arch::{RVA, VA};
 use super::flowmeta::FlowMeta;
@@ -50,57 +51,43 @@ impl Display for AnalysisCommand {
     }
 }
 
-pub fn get_first_operand(insn: &ZydisDecodedInstruction) -> Option<&ZydisDecodedOperand> {
-    insn.operands
-        .iter()
-        .find(|op| op.visibility == ZYDIS_OPERAND_VISIBILITY_EXPLICIT as u8)
+/// Static cast the given 64-bit unsigned integer to a 64-bit signed integer.
+/// This is probably only useful when some other code provides you a u64
+///  that is meant to be an i64 (aka. uncommon).
+///
+/// In C: `*(int64_t *)&i`
+///
+/// # Examples
+///
+/// ```
+/// use lancelot::analysis::*;
+/// assert_eq!(0, u64_i64(0));
+/// assert_eq!(1, u64_i64(0x1));
+/// assert_eq!(-1, u64_i64(0xFFFF_FFFF_FFFF_FFFF));
+/// ```
+pub fn u64_i64(i: u64) -> i64 {
+    if i & 1 << 63 > 0 {
+        // TODO: there's probably some elegant rust-way to do this.
+        // in the meantime, manually compute twos-complement.
+        let bits = i & 0x7FFF_FFFF_FFFF_FFFF;
+        let bits = !bits;
+        let bits = bits + 1;
+        let bits = bits & 0x7FFF_FFFF_FFFF_FFFF;
+        -(bits as i64)
+    } else {
+        i as i64
+    }
 }
 
-fn print_op(op: &ZydisDecodedOperand) {
-    println!("op:");
-    println!("  id: {}", op.id);
-    println!("  type: {}", op.type_);
-    println!("  visibility: {}", op.visibility);
-    println!("  action: {}", op.action);
-    println!("  encoding: {}", op.encoding);
-    println!("  size: {}", op.size);
-    match i32::from(op.type_) {
-        ZYDIS_OPERAND_TYPE_MEMORY => {
-            println!("  mem.addr gen only: {}", op.mem.isAddressGenOnly);
-            println!("  mem.segment: {}", op.mem.segment);
-            println!("  mem.base: {}", op.mem.base);
-            println!("  mem.index: {}", op.mem.index);
-            println!("  mem.scale: {}", op.mem.scale);
-            println!(
-                "  mem.disp.hasDisplacement: {}",
-                op.mem.disp.hasDisplacement
-            );
-            if op.mem.disp.hasDisplacement != 0 {
-                println!("  mem.disp.value: 0x{:x}", op.mem.disp.value);
-            }
-        }
-        ZYDIS_OPERAND_TYPE_POINTER => {
-            println!("  ptr.segment: 0x{:x}", op.ptr.segment);
-            println!("  ptr.offset: 0x{:x}", op.ptr.offset);
-        }
-        ZYDIS_OPERAND_TYPE_IMMEDIATE => {
-            println!("  imm.signed: {}", op.imm.isSigned);
-            println!("  imm.relative: {}", op.imm.isRelative);
-            if op.imm.isSigned != 0 {
-                println!("  imm.value: (signed) {:#x}", *unsafe {
-                    op.imm.value.s.as_ref()
-                });
-            } else {
-                println!("  imm.value: (unsigned) {:#x}", *unsafe {
-                    op.imm.value.u.as_ref()
-                });
-            }
-        }
-        ZYDIS_OPERAND_TYPE_REGISTER => {
-            println!("  reg: {}", op.reg.value);
-        }
-        _ => {}
-    }
+pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::DecodedOperand> {
+    insn.operands
+        .iter()
+        .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
+}
+
+fn print_op(op: &zydis::DecodedOperand) {
+    let s = serde_json::to_string(op).unwrap();
+    println!("op: {}", s);
 }
 
 pub struct XrefAnalysis {
@@ -275,16 +262,16 @@ impl Workspace {
     /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(RVA(0x0)).unwrap();
     /// assert_eq!(Workspace::does_insn_fallthrough(&insn), true);
     /// ```
-    pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
-        match i32::from(insn.mnemonic) {
-            ZYDIS_MNEMONIC_JMP => false,
-            ZYDIS_MNEMONIC_RET => false,
-            ZYDIS_MNEMONIC_IRET => false,
-            ZYDIS_MNEMONIC_IRETD => false,
-            ZYDIS_MNEMONIC_IRETQ => false,
+    pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
+        match insn.mnemonic {
+            zydis::Mnemonic::JMP => false,
+            zydis::Mnemonic::RET => false,
+            zydis::Mnemonic::IRET => false,
+            zydis::Mnemonic::IRETD => false,
+            zydis::Mnemonic::IRETQ => false,
             // TODO: call may not fallthrough if function is noret.
             // will need another pass to clean this up.
-            ZYDIS_MNEMONIC_CALL => true,
+            zydis::Mnemonic::CALL => true,
             _ => true,
         }
     }
@@ -327,13 +314,13 @@ impl Workspace {
     pub fn get_memory_operand_xref(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
-        op: &ZydisDecodedOperand,
+        insn: &zydis::DecodedInstruction,
+        op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
-        if op.mem.base == 0
-            && op.mem.index == 0
+        if op.mem.base == zydis::Register::NONE
+            && op.mem.index == zydis::Register::NONE
             && op.mem.scale == 0
-            && op.mem.disp.hasDisplacement == 1
+            && op.mem.disp.has_displacement
         {
             // the operand is a deref of a memory address.
             // for example: JMP [0x0]
@@ -345,10 +332,10 @@ impl Workspace {
             //
             // see doctest: [test simple memory ptr operand]()
 
-            if op.mem.disp.value < 0 {
+            if op.mem.disp.displacement < 0 {
                 return Ok(None)
             }
-            let ptr = VA::from(op.mem.disp.value as u64);
+            let ptr = VA::from(op.mem.disp.displacement as u64);
 
             let ptr = match self.rva(ptr) {
                 Some(ptr) => ptr,
@@ -371,17 +358,17 @@ impl Workspace {
 
             // this is the happy path!
             return Ok(Some(dst));
-        } else if op.mem.base == ZYDIS_REGISTER_RIP as u8
+        } else if op.mem.base == zydis::Register::RIP
             // only valid on x64
-            && op.mem.index == 0
+            && op.mem.index == zydis::Register::NONE
             && op.mem.scale == 0
-            && op.mem.disp.hasDisplacement == 1 {
+            && op.mem.disp.has_displacement {
 
                 // this is RIP-relative addressing.
                 // it works like a relative immediate,
                 // that is: dst = *(rva + displacement + instruction len)
 
-                let disp = RVA::from(op.mem.disp.value);
+                let disp = RVA::from(op.mem.disp.displacement);
                 let len = insn.length;
 
                 let ptr = rva + disp + len;
@@ -402,7 +389,7 @@ impl Workspace {
 
                 // this is the happy path!
                 return Ok(Some(dst));
-        } else if op.mem.base != 0x0 {
+        } else if op.mem.base != zydis::Register::NONE {
             // this is something like `CALL [eax+4]`
             // can't resolve without emulation
             // TODO: add test
@@ -420,8 +407,8 @@ impl Workspace {
     fn get_pointer_operand_xref(
         &self,
         _rva: RVA,
-        _insn: &ZydisDecodedInstruction,
-        op: &ZydisDecodedOperand,
+        _insn: &zydis::DecodedInstruction,
+        op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
         // TODO
         println!("get ptr op xref");
@@ -460,25 +447,22 @@ impl Workspace {
     pub fn get_immediate_operand_xref(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
-        op: &ZydisDecodedOperand,
+        insn: &zydis::DecodedInstruction,
+        op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
         // TODO
-        if op.imm.isRelative != 0 {
+        if op.imm.is_relative {
             // the operand is an immediate constant relative to $PC.
             // destination = $pc + immediate + insn.len
             //
             // see doctest: [test relative immediate operand]()
 
-            // the use of `unsafe` here is an artifact of the zydis API.
-            let imm = if op.imm.isSigned != 0 {
-                RVA::from(*unsafe { op.imm.value.s.as_ref() })
+            let imm = if op.imm.is_signed {
+                RVA::from(u64_i64(op.imm.value))
             } else {
-                let v: u64 = *unsafe { op.imm.value.u.as_ref() };
-                if v > std::i64::MAX as u64 {
-                    return Ok(None);
-                }
-                RVA::from(v as i64)
+                // TODO: note, we lose the top bit here.
+                // however, its going into an RVA, which is i64, and can't have it anyways.
+                RVA::from(op.imm.value as i64)
             };
 
             let dst = rva + imm + insn.length;
@@ -501,26 +485,25 @@ impl Workspace {
     fn get_operand_xref(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
-        op: &ZydisDecodedOperand,
+        insn: &zydis::DecodedInstruction,
+        op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
-        match i32::from(op.type_) {
+        match op.ty {
             // TODO: need a way to add xrefs for the pointer for something like `CALL [0x0]`
             // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
             //           0x0000000000001041:                       call    [0x0000000000079980]
-            ZYDIS_OPERAND_TYPE_MEMORY => self.get_memory_operand_xref(rva, insn, op),
+            zydis::OperandType::MEMORY => self.get_memory_operand_xref(rva, insn, op),
             // like: EA 33 D2 B9 60 80 40  jmp  far ptr 4080h:60B9D233h
             // "ptr": {
             //    "segment": 16512,
             //    "offset": 1622790707
             // },
-            ZYDIS_OPERAND_TYPE_POINTER => self.get_pointer_operand_xref(rva, insn, op),
-            ZYDIS_OPERAND_TYPE_IMMEDIATE => self.get_immediate_operand_xref(rva, insn, op),
+            zydis::OperandType::POINTER => self.get_pointer_operand_xref(rva, insn, op),
+            zydis::OperandType::IMMEDIATE => self.get_immediate_operand_xref(rva, insn, op),
             // like: CALL rax
             // which cannot be resolved without emulation.
-            ZYDIS_OPERAND_TYPE_REGISTER => Ok(None),
-            ZYDIS_OPERAND_TYPE_UNUSED => Ok(None),
-            _ => Ok(None),
+            zydis::OperandType::REGISTER => Ok(None),
+            zydis::OperandType::UNUSED => Ok(None),
         }
     }
 
@@ -538,7 +521,7 @@ impl Workspace {
     pub fn get_call_insn_flow(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
+        insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a CALL, then its a programming error. panic!
         // all CALLs should have an operand.
@@ -635,20 +618,23 @@ impl Workspace {
     pub fn get_jmp_insn_flow(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
+        insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
         let op = get_first_operand(insn).unwrap();
 
-        if op.type_ == 2 && op.mem.scale == 0x4 && op.mem.base == 0 && op.mem.disp.hasDisplacement == 1 {
+        if op.ty == zydis::OperandType::MEMORY
+            && op.mem.scale == 0x4
+            && op.mem.base == zydis::Register::NONE
+            && op.mem.disp.has_displacement {
             // this looks like a switch table, e.g. `JMP [0x1000+ecx*4]`
             // so, probe for a pointer table.
             // otherwise, this should probably be solved via emulation.
 
             // disp is a i64 here, but actually a u64 in practice
             // it is the VA of the table (and probably fixed up by a reloc).
-            let disp = VA::from(op.mem.disp.value as u64);
+            let disp = VA::from(op.mem.disp.displacement as u64);
             let table_rva = match self.rva(disp) {
                 Some(table) => table,
                 None => return Ok(vec![]),
@@ -691,7 +677,7 @@ impl Workspace {
     pub fn get_ret_insn_flow(
         &self,
         _rva: RVA,
-        _insn: &ZydisDecodedInstruction,
+        _insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
         Ok(vec![])
     }
@@ -711,7 +697,7 @@ impl Workspace {
     pub fn get_cjmp_insn_flow(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
+        insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a CJMP, then its a programming error. panic!
         // all conditional jumps should have an operand.
@@ -741,7 +727,7 @@ impl Workspace {
     pub fn get_cmov_insn_flow(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
+        insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
         let dst = rva + insn.length;
 
@@ -755,41 +741,41 @@ impl Workspace {
     fn get_insn_flow(
         &self,
         rva: RVA,
-        insn: &ZydisDecodedInstruction,
+        insn: &zydis::DecodedInstruction,
     ) -> Result<Vec<Xref>, Error> {
-        match i32::from(insn.mnemonic) {
-            ZYDIS_MNEMONIC_CALL => self.get_call_insn_flow(rva, insn),
+        match insn.mnemonic {
+            zydis::Mnemonic::CALL => self.get_call_insn_flow(rva, insn),
 
-            ZYDIS_MNEMONIC_JMP => self.get_jmp_insn_flow(rva, insn),
+            zydis::Mnemonic::JMP => self.get_jmp_insn_flow(rva, insn),
 
-            ZYDIS_MNEMONIC_RET | ZYDIS_MNEMONIC_IRET | ZYDIS_MNEMONIC_IRETD
-            | ZYDIS_MNEMONIC_IRETQ => self.get_ret_insn_flow(rva, insn),
+            zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD
+            | zydis::Mnemonic::IRETQ => self.get_ret_insn_flow(rva, insn),
 
-            ZYDIS_MNEMONIC_JB | ZYDIS_MNEMONIC_JBE | ZYDIS_MNEMONIC_JCXZ | ZYDIS_MNEMONIC_JECXZ
-            | ZYDIS_MNEMONIC_JKNZD | ZYDIS_MNEMONIC_JKZD | ZYDIS_MNEMONIC_JL
-            | ZYDIS_MNEMONIC_JLE | ZYDIS_MNEMONIC_JNB | ZYDIS_MNEMONIC_JNBE
-            | ZYDIS_MNEMONIC_JNL | ZYDIS_MNEMONIC_JNLE | ZYDIS_MNEMONIC_JNO
-            | ZYDIS_MNEMONIC_JNP | ZYDIS_MNEMONIC_JNS | ZYDIS_MNEMONIC_JNZ | ZYDIS_MNEMONIC_JO
-            | ZYDIS_MNEMONIC_JP | ZYDIS_MNEMONIC_JRCXZ | ZYDIS_MNEMONIC_JS | ZYDIS_MNEMONIC_JZ => {
+            zydis::Mnemonic::JB | zydis::Mnemonic::JBE | zydis::Mnemonic::JCXZ | zydis::Mnemonic::JECXZ
+            | zydis::Mnemonic::JKNZD | zydis::Mnemonic::JKZD | zydis::Mnemonic::JL
+            | zydis::Mnemonic::JLE | zydis::Mnemonic::JNB | zydis::Mnemonic::JNBE
+            | zydis::Mnemonic::JNL | zydis::Mnemonic::JNLE | zydis::Mnemonic::JNO
+            | zydis::Mnemonic::JNP | zydis::Mnemonic::JNS | zydis::Mnemonic::JNZ | zydis::Mnemonic::JO
+            | zydis::Mnemonic::JP | zydis::Mnemonic::JRCXZ | zydis::Mnemonic::JS | zydis::Mnemonic::JZ => {
                 self.get_cjmp_insn_flow(rva, insn)
             }
 
-            ZYDIS_MNEMONIC_CMOVB
-            | ZYDIS_MNEMONIC_CMOVBE
-            | ZYDIS_MNEMONIC_CMOVL
-            | ZYDIS_MNEMONIC_CMOVLE
-            | ZYDIS_MNEMONIC_CMOVNB
-            | ZYDIS_MNEMONIC_CMOVNBE
-            | ZYDIS_MNEMONIC_CMOVNL
-            | ZYDIS_MNEMONIC_CMOVNLE
-            | ZYDIS_MNEMONIC_CMOVNO
-            | ZYDIS_MNEMONIC_CMOVNP
-            | ZYDIS_MNEMONIC_CMOVNS
-            | ZYDIS_MNEMONIC_CMOVNZ
-            | ZYDIS_MNEMONIC_CMOVO
-            | ZYDIS_MNEMONIC_CMOVP
-            | ZYDIS_MNEMONIC_CMOVS
-            | ZYDIS_MNEMONIC_CMOVZ => self.get_cmov_insn_flow(rva, insn),
+            zydis::Mnemonic::CMOVB
+            | zydis::Mnemonic::CMOVBE
+            | zydis::Mnemonic::CMOVL
+            | zydis::Mnemonic::CMOVLE
+            | zydis::Mnemonic::CMOVNB
+            | zydis::Mnemonic::CMOVNBE
+            | zydis::Mnemonic::CMOVNL
+            | zydis::Mnemonic::CMOVNLE
+            | zydis::Mnemonic::CMOVNO
+            | zydis::Mnemonic::CMOVNP
+            | zydis::Mnemonic::CMOVNS
+            | zydis::Mnemonic::CMOVNZ
+            | zydis::Mnemonic::CMOVO
+            | zydis::Mnemonic::CMOVP
+            | zydis::Mnemonic::CMOVS
+            | zydis::Mnemonic::CMOVZ => self.get_cmov_insn_flow(rva, insn),
 
             // TODO: syscall, sysexit, sysret, vmcall, vmmcall
             _ => Ok(vec![]),

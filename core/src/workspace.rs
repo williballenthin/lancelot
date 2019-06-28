@@ -1,6 +1,6 @@
 use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
-use zydis::gen::*;
+use zydis;
 use zydis::Decoder;
 use log::{info};
 
@@ -111,8 +111,8 @@ impl WorkspaceBuilder {
         let analysis = Analysis::new(&module);
 
         let decoder = match ldr.get_arch() {
-            Arch::X32 => Decoder::new(ZYDIS_MACHINE_MODE_LEGACY_32, ZYDIS_ADDRESS_WIDTH_32).unwrap(),
-            Arch::X64 => Decoder::new(ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64).unwrap(),
+            Arch::X32 => Decoder::new(zydis::MachineMode::LEGACY_32, zydis::AddressWidth::_32).unwrap(),
+            Arch::X64 => Decoder::new(zydis::MachineMode::LONG_64, zydis::AddressWidth::_64).unwrap(),
         };
 
         let mut ws = Workspace {
@@ -339,16 +339,16 @@ impl Workspace {
     /// Example:
     ///
     /// ```
-    /// use zydis::gen::*;
+    /// use zydis;
     /// use lancelot::test;
     /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert_eq!(ws.read_insn(RVA(0x0)).is_ok(), true);
     /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().length, 2);
-    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic, zydis::Mnemonic::JMP);
     /// ```
-    pub fn read_insn(&self, rva: RVA) -> Result<ZydisDecodedInstruction, Error> {
+    pub fn read_insn(&self, rva: RVA) -> Result<zydis::DecodedInstruction, Error> {
         // this is `read_bytes` except that it reads at most 0x10 bytes.
         // if less are available, then less are returned.
         let buf = self
@@ -370,9 +370,7 @@ impl Workspace {
                 }
             })?;
 
-        let pc = rva.into();
-
-        match self.decoder.decode(&buf, pc) {
+        match self.decoder.decode(&buf) {
             Ok(Some(insn)) => Ok(insn),
             Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
             Err(_) => Err(WorkspaceError::InvalidInstruction.into()),
@@ -389,7 +387,6 @@ impl Workspace {
     /// Example:
     ///
     /// ```
-    /// use zydis::gen::*;
     /// use lancelot::test;
     /// use lancelot::arch::RVA;
     ///
