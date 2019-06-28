@@ -1,34 +1,26 @@
 use failure::{Error};
-use num::Zero;
-use std::marker::PhantomData;
 
-use super::super::arch::Arch;
+use super::super::arch::{Arch, VA, RVA};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, Permissions};
 use super::super::analysis::{Analyzer};
 
-pub struct ShellcodeLoader<A: Arch> {
+pub struct ShellcodeLoader {
     plat: Platform,
-    // ShellcodeLoader must have a type parameter for it
-    //  to implement Loader<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
+    arch: Arch,
 }
 
-impl<A: Arch> ShellcodeLoader<A> {
-    pub fn new(plat: Platform) -> ShellcodeLoader<A> {
+impl ShellcodeLoader {
+    pub fn new(plat: Platform, arch: Arch) -> ShellcodeLoader {
         ShellcodeLoader {
             plat,
-            _phantom: PhantomData {},
+            arch,
         }
     }
 }
 
-impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
-    fn get_arch(&self) -> u8 {
-        A::get_bits()
+impl Loader for ShellcodeLoader {
+    fn get_arch(&self) -> Arch {
+        self.arch
     }
 
     fn get_plat(&self) -> Platform {
@@ -48,7 +40,7 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
     /// use lancelot::arch::*;
     /// use lancelot::loader::*;
     ///
-    /// let loader = lancelot::loaders::sc::ShellcodeLoader::<Arch32>::new(Platform::Windows);
+    /// let loader = lancelot::loaders::sc::ShellcodeLoader::new(Platform::Windows, Arch::X32);
     /// loader.load(b"MZ\x90\x00")
     ///   .map(|(module, analyzers)| {
     ///     assert_eq!(module.base_address,     0x0);
@@ -56,11 +48,11 @@ impl<A: Arch> Loader<A> for ShellcodeLoader<A> {
     ///   })
     ///   .map_err(|e| panic!(e));
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error> {
-        Ok((LoadedModule::<A> {
-            base_address: A::VA::zero(),
-            sections: vec![Section::<A> {
-                addr: A::RVA::zero(),
+    fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
+        Ok((LoadedModule {
+            base_address: VA(0x0),
+            sections: vec![Section {
+                addr: RVA(0x0),
                 buf: buf.to_vec(),
                 perms: Permissions::RWX,
                 name: "raw".to_string(),

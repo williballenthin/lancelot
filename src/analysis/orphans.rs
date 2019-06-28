@@ -4,38 +4,25 @@
 /// catch that case here.
 ///
 /// this should be the final analyzer pass.
-
-use num::{FromPrimitive};
-use std::marker::PhantomData;
 use std::collections::HashSet;
 
 use log::{debug};
 use failure::{Error};
 
-use super::super::arch::Arch;
+use super::super::arch::{RVA};
 use super::super::workspace::Workspace;
 use super::{Analyzer};
 
 
-pub struct OrphanFunctionAnalyzer<A: Arch> {
-    // This Analyzer must have a type parameter for it
-    //  to implement Analyzer<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
-}
+pub struct OrphanFunctionAnalyzer {}
 
-impl<A: Arch> OrphanFunctionAnalyzer<A> {
-    pub fn new() -> OrphanFunctionAnalyzer<A> {
-        OrphanFunctionAnalyzer {
-            _phantom: PhantomData {},
-        }
+impl OrphanFunctionAnalyzer {
+    pub fn new() -> OrphanFunctionAnalyzer {
+        OrphanFunctionAnalyzer {}
     }
 }
 
-impl<A: Arch + 'static> Analyzer<A> for OrphanFunctionAnalyzer<A> {
+impl Analyzer for OrphanFunctionAnalyzer {
     fn get_name(&self) -> String {
         "orphan function analyzer".to_string()
     }
@@ -48,12 +35,12 @@ impl<A: Arch + 'static> Analyzer<A> for OrphanFunctionAnalyzer<A> {
     /// use lancelot::analysis::pe::RuntimeFunctionAnalyzer;
     /// use lancelot::analysis::OrphanFunctionAnalyzer;
     ///
-    /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+    /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
     ///
-    /// RuntimeFunctionAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
-    /// OrphanFunctionAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
+    /// RuntimeFunctionAnalyzer::new().analyze(&mut ws).unwrap();
+    /// OrphanFunctionAnalyzer::new().analyze(&mut ws).unwrap();
     ///
     /// // this function is the impl of the export `GetApplicationRestartSettingsWorker`.
     /// // the exported symbol simply JMP to this function.
@@ -70,9 +57,9 @@ impl<A: Arch + 'static> Analyzer<A> for OrphanFunctionAnalyzer<A> {
     /// // this is a function referenced only as a function argument.
     /// assert!(ws.get_functions().find(|&&rva| rva == 0x1aa0).is_some());
     /// ```
-    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
-        let existing_functions: HashSet<&A::RVA> = ws.get_functions().collect();
-        let mut orphans: Vec<A::RVA> = vec![];
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
+        let existing_functions: HashSet<&RVA> = ws.get_functions().collect();
+        let mut orphans: Vec<RVA> = vec![];
 
         for (i, section) in ws.module.sections.iter().enumerate() {
             orphans.extend(ws.analysis.flow.meta[i].iter()
@@ -80,7 +67,7 @@ impl<A: Arch + 'static> Analyzer<A> for OrphanFunctionAnalyzer<A> {
                 .filter(|(_, meta)| meta.is_insn())
                 .filter(|(_, meta)| !meta.has_xrefs_to())
                 .filter(|(_, meta)| !meta.does_other_fallthrough_to())
-                .map(|(j, _)| section.addr + A::RVA::from_usize(j).unwrap())
+                .map(|(j, _)| section.addr + RVA::from(j))
                 .filter(|rva| !existing_functions.contains(rva)))
         }
 

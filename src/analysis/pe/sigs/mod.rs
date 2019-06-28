@@ -8,7 +8,6 @@
 
 use std::cmp;
 use std::io::Write;
-use std::marker::PhantomData;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -21,8 +20,6 @@ use rust_embed::{RustEmbed};
 use xml::reader::{EventReader, XmlEvent, ParserConfig};
 
 use super::super::{Analyzer};
-use super::super::super::arch;
-use super::super::super::arch::Arch;
 use super::super::super::loader::Permissions;
 use super::super::super::workspace::Workspace;
 
@@ -596,27 +593,17 @@ impl Assets {
     }
 }
 
-pub struct ByteSigAnalyzer<A: Arch> {
-    // This Analyzer must have a type parameter for it
-    //  to implement Analyzer<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
-}
+pub struct ByteSigAnalyzer {}
 
-impl<A: Arch> ByteSigAnalyzer<A> {
-    pub fn new() -> ByteSigAnalyzer<A> {
-        ByteSigAnalyzer {
-            _phantom: PhantomData {},
-        }
+impl ByteSigAnalyzer {
+    pub fn new() -> ByteSigAnalyzer {
+        ByteSigAnalyzer {}
     }
 }
 
 
-impl<A: Arch + 'static> ByteSigAnalyzer<A> {
-    fn is_64(&self, ws: &Workspace<A>) -> bool {
+impl ByteSigAnalyzer {
+    fn is_64(&self, ws: &Workspace) -> bool {
         match Object::parse(&ws.buf) {
             Ok(Object::PE(pe)) => pe.is_64,
             _ => panic!("can't analyze unexpected format"),
@@ -624,7 +611,7 @@ impl<A: Arch + 'static> ByteSigAnalyzer<A> {
     }
 }
 
-impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
+impl Analyzer for ByteSigAnalyzer {
     fn get_name(&self) -> String {
         "byte signature analyzer".to_string()
     }
@@ -636,14 +623,14 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     /// use lancelot::workspace::Workspace;
     /// use lancelot::analysis::pe::ByteSigAnalyzer;
     ///
-    /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+    /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
     ///
-    /// ByteSigAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
+    /// ByteSigAnalyzer::new().analyze(&mut ws).unwrap();
     /// assert!(ws.get_functions().find(|&&rva| rva == 0x1010).is_some());
     /// ```
-    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
 
         let language = match self.is_64(ws) {
@@ -673,7 +660,7 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
             for capture in re.captures_iter(&section.buf) {
                 for pattern in patterns.values() {
                     if let Some(mat) = capture.name(pattern.get_mark()) {
-                        let rva = arch::rva_add_usize::<A>(section.addr, mat.start()).unwrap();
+                        let rva = section.addr + mat.start();
                         functions.push(rva);
                     }
                 }

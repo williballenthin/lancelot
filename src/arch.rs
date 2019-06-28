@@ -1,201 +1,290 @@
-use num::Zero;
 use std::fmt;
-use std::fmt::Debug;
 use std::hash;
-use std::hash::Hash;
-use std::ops::{Add, Sub};
 
-extern crate num;
-use num::{CheckedAdd, CheckedSub, FromPrimitive, ToPrimitive};
+use num::{FromPrimitive};
 
-/// Type infrastructure that describes an architecture,
-///  with details such as pointer size.
-///
-/// Useful for specifying the appropriate member types for pointers, etc.
-/// That is, when a struct contains an RVA, its 32-bits or 64-bits depending on Arch.
-///
-/// Example:
-///
+
+
+/// please don't access VA.0 directly.
+/// its provided so you can construct VA like:
 /// ```
-/// use lancelot::arch::{Arch, Arch32};
-///
-/// struct Section<A: Arch> {
-///   addr: A::RVA,
-///   buf:  Vec<u8>,
-///   name: String,
-/// }
-///
-/// let s: Section<Arch32> = Section {
-///   addr: 0x0,
-///   buf: vec![],
-///   name: "foo".to_string(),
-/// };
+/// use lancelot::arch::VA;
+/// let _ = VA(0x0);
 /// ```
-///
-/// see: https://stackoverflow.com/q/55785858/87207
-pub trait Arch {
-    /// The type used for Virtual Addresses (which are unsigned).
-    type VA: Ord + Add<Output = Self::VA> + Zero + FromPrimitive + ToPrimitive + Copy + Debug;
+#[derive(Copy, Clone)]
+pub struct VA(pub u64);
 
-    /// The type used for Relative Virtual Addresses (signed).
-    type RVA: Ord
-        + Zero
-        + Hash
-        + fmt::LowerHex
-        + Add<Output = Self::RVA>
-        + Sub<Output = Self::RVA>
-        + Add<Self::RVA, Output = Self::RVA>
-        + CheckedAdd<Output = Self::RVA>
-        + CheckedSub<Output = Self::RVA>
-        + FromPrimitive
-        + ToPrimitive
-        + Copy
-        + Debug;
+impl VA {
+    /// Compute the VA given a delta RVA, like `self:va + other:rva`.
+    /// Returns None on over/underflow.
+    pub fn va(&self, other: RVA) -> Option<VA> {
+        if other.0 < 0 {
+            Some(VA(match self.0.checked_sub((-other.0) as u64) {
+                None => return None,
+                Some(v) => v,
+            }))
+        } else {
+            Some(VA(match self.0.checked_add(other.0 as u64) {
+                None => return None,
+                Some(v) => v,
+            }))
+        }
+    }
 
-    fn get_bits() -> u8;
-    fn get_ptr_size() -> u8;
+    /// Compute the delta RVA from `self:va - other:va`.
+    /// Returns None on over/underflow.
+    pub fn rva(&self, other: VA) -> Option<RVA> {
+        if other.0 > self.0 {
+            let v = match other.0.checked_sub(self.0) {
+                None => return None,
+                Some(v) => v,
+            };
+            if v > std::i64::MAX as u64{
+                return None;
+            }
+            Some(RVA(-(v as i64)))
+        } else {
+            let v = match self.0.checked_sub(other.0) {
+                None => return None,
+                Some(v) => v
+            };
+            if v > std::i64::MAX as u64 {
+                return None;
+            }
+            Some(RVA(v as i64))
+        }
+    }
 }
 
-/// 32-bit Intel architecture.
-pub struct Arch32;
-impl Arch for Arch32 {
-    type VA = u32;
-    type RVA = i32;
-    fn get_bits() -> u8 {
-        32
-    }
-    fn get_ptr_size() -> u8 {
-        4
-    }
-}
-
-impl fmt::Display for Arch32 {
+impl fmt::Display for VA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "x32")
+        write!(f, "{:#x}", self)
     }
 }
 
-impl fmt::Debug for Arch32 {
+impl fmt::Debug for VA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "x32")
+        write!(f, "{:#x}", self)
     }
 }
 
-impl hash::Hash for Arch32 {
+impl fmt::LowerHex for VA {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
+
+impl fmt::UpperHex for VA {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:X}", self.0)
+    }
+}
+
+impl hash::Hash for VA {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "x32".hash(state);
+        self.0.hash(state);
     }
 }
 
-impl PartialEq for Arch32 {
-    fn eq(&self, _other: &Arch32) -> bool {
-        true
+impl PartialEq for VA {
+    fn eq(&self, other: &VA) -> bool {
+        self.0 == other.0
     }
 }
 
-impl Eq for Arch32 {}
+impl Eq for VA {}
 
-/// 64-bit Intel architecture.
-pub struct Arch64;
-impl Arch for Arch64 {
-    type VA = u64;
-    type RVA = i64;
-    fn get_bits() -> u8 {
-        64
-    }
-    fn get_ptr_size() -> u8 {
-        8
+impl std::convert::From<usize> for VA {
+    fn from(v: usize) -> VA {
+        // this should only fail when we get to 128-bit architectures
+        VA(v as u64)
     }
 }
 
-impl fmt::Display for Arch64 {
+impl std::convert::From<u32> for VA {
+    fn from(v: u32) -> VA {
+        VA(v as u64)
+    }
+}
+
+impl std::convert::From<u64> for VA {
+    fn from(v: u64) -> VA {
+        VA(v)
+    }
+}
+
+
+
+
+
+/// please don't access RVA.0 directly.
+/// /// its provided so you can construct RVA like:
+/// ```
+/// use lancelot::arch::RVA;
+/// let _ = RVA(0x0);
+/// ```
+#[derive(Copy, Clone)]
+pub struct RVA(pub i64);
+
+impl fmt::Display for RVA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "x64")
+        write!(f, "{:#x}", self)
     }
 }
 
-impl fmt::Debug for Arch64 {
+impl fmt::Debug for RVA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "x64")
+        write!(f, "{:#x}", self)
     }
 }
 
-impl hash::Hash for Arch64 {
+impl fmt::LowerHex for RVA {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
+}
+
+impl fmt::UpperHex for RVA {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:X}", self.0)
+    }
+}
+
+impl hash::Hash for RVA {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        "x64".hash(state);
+        self.0.hash(state);
     }
 }
 
-impl PartialEq for Arch64 {
-    fn eq(&self, _: &Arch64) -> bool {
-        true
+impl PartialEq for RVA {
+    fn eq(&self, other: &RVA) -> bool {
+        self.0 == other.0
     }
 }
 
-impl Eq for Arch64 {}
-
-/// Checked arithmetic across RVA and usize.
-///
-/// We'd like RVA to be trait `Add<usize, Output=RVA>`.
-/// However, this cannot be the case when `<RVA=u32>`
-///  as we then have `i32 + u32` which can overflow `i32`.
-/// So, we have to do checked arithmetic.
-///
-/// Example:
-///
-/// ```
-/// use lancelot::arch::*;
-///
-/// // returns Some if the operation does not wrap:
-/// assert_eq!(true, rva_add_usize::<Arch32>(0x0, 0x1).is_some());
-/// assert_eq!(0x1,  rva_add_usize::<Arch32>(0x0, 0x1).unwrap());
-///
-/// // returns None if the operation wraps.
-/// assert_eq!(true, rva_add_usize::<Arch32>(0x0, 0xFFFFFFFF).is_none());
-/// ```
-pub fn rva_add_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
-    if let Some(v) = A::RVA::from_usize(offset) {
-        base.checked_add(&v)
-    } else {
-        None
+impl PartialOrd for RVA {
+    fn partial_cmp(&self, other: &RVA) -> Option<std::cmp::Ordering> {
+        Some(self.0.cmp(&other.0))
     }
 }
 
-/// Checked arithmetic across RVA and usize.
-///
-/// We'd like RVA to be trait `Sub<usize, Output=RVA>`.
-/// However, this cannot be the case when `<RVA=u32>`
-///  as we then have `i32 - u32` which can underflow `i32`.
-/// So, we have to do checked arithmetic.
-///
-/// Example:
-///
-/// ```
-/// use std::i32;
-/// use lancelot::arch::*;
-///
-/// // returns Some if the operation does not wrap:
-/// assert_eq!(true, rva_sub_usize::<Arch32>(0x1, 0x0).is_some());
-/// assert_eq!(0x1,  rva_sub_usize::<Arch32>(0x1, 0x0).unwrap());
-///
-/// // returns None if the operation wraps.
-/// assert_eq!(true, rva_sub_usize::<Arch32>(std::i32::MAX, 0xFFFFFFFF).is_none());
-/// ```
-pub fn rva_sub_usize<A: Arch>(base: A::RVA, offset: usize) -> Option<A::RVA> {
-    if let Some(v) = A::RVA::from_usize(offset) {
-        base.checked_sub(&v)
-    } else {
-        None
+impl Ord for RVA {
+    fn cmp(&self, other: &RVA) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
-pub fn va_compute_rva<A: Arch>(base: A::VA, va: A::VA) -> Option<A::RVA> {
-    if va < base {
-        None
-    } else {
-        let base = A::VA::to_u64(&base).unwrap();
-        let va = A::VA::to_u64(&va).unwrap();
-        let rva = va - base;
-        A::RVA::from_u64(rva)
+impl Eq for RVA {}
+
+impl std::convert::From<usize> for RVA {
+    /// may panic on overflow
+    fn from(v: usize) -> RVA {
+        RVA(i64::from_usize(v).expect("usize too large for RVA"))
     }
 }
+
+impl std::convert::Into<usize> for RVA {
+    /// may panic on overflow
+    fn into(self) -> usize {
+        if self.0 > std::usize::MAX as i64 {
+            panic!("usize overflow");
+        }
+        self.0 as usize
+    }
+}
+
+impl std::convert::Into<u64> for RVA {
+    fn into(self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl std::convert::Into<i64> for RVA {
+    fn into(self) -> i64 {
+        self.0
+    }
+}
+
+impl std::convert::From<i32> for RVA {
+    fn from(v: i32) -> RVA {
+        RVA(v as i64)
+    }
+}
+
+impl std::convert::From<i64> for RVA {
+    fn from(v: i64) -> RVA {
+        RVA(v)
+    }
+}
+
+impl std::ops::Add<RVA> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: RVA) -> RVA {
+        RVA(self.0.checked_add(rhs.0).expect("rva overflow"))
+    }
+}
+
+impl std::ops::Add<usize> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: usize) -> RVA {
+        self + RVA::from(rhs)
+    }
+}
+
+impl std::ops::Add<u8> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: u8) -> RVA {
+        self + RVA::from(rhs as i64)
+    }
+}
+
+impl std::ops::Add<i32> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: i32) -> RVA {
+        self + RVA::from(rhs as i64)
+    }
+}
+
+
+
+#[derive(Copy, Clone)]
+pub enum Arch {
+    X32,
+    X64
+}
+
+impl Arch {
+    pub fn get_pointer_size(&self) -> u8 {
+        match self {
+            Arch::X32 => 4,
+            Arch::X64 => 8,
+        }
+    }
+}
+
+impl fmt::Display for Arch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Arch::X32 => write!(f, "x32"),
+            Arch::X64 => write!(f, "x64"),
+        }
+    }
+}
+
+impl fmt::Debug for Arch {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self{
+            Arch::X32 => write!(f, "x32"),
+            Arch::X64 => write!(f, "x64"),
+        }
+    }
+}
+

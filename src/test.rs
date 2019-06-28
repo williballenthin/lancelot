@@ -1,8 +1,8 @@
 //< Helpers that are useful for tests and doctests.
 
 use super::rsrc::*;
-use super::arch::*;
 use super::loader;
+use super::arch::Arch;
 use super::loaders::sc::ShellcodeLoader;
 use super::workspace::Workspace;
 
@@ -13,30 +13,33 @@ use super::workspace::Workspace;
 ///
 /// ```
 /// use lancelot::test;
+/// use lancelot::arch::*;
 ///
 /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-/// assert_eq!(ws.read_u8(0x0).unwrap(), 0xEB);
+/// assert_eq!(ws.read_u8(RVA(0x0)).unwrap(), 0xEB);
 /// ```
-pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace<Arch32> {
-    Workspace::<Arch32>::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::<Arch32>::new(
+pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace {
+    Workspace::from_bytes("foo.bin", buf)
+        .with_loader(Box::new(ShellcodeLoader::new(
             loader::Platform::Windows,
+            Arch::X32
         )))
         .load()
         .unwrap()
 }
 
-pub fn get_shellcode64_workspace(buf: &[u8]) -> Workspace<Arch64> {
-    Workspace::<Arch64>::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::<Arch64>::new(
+pub fn get_shellcode64_workspace(buf: &[u8]) -> Workspace {
+    Workspace::from_bytes("foo.bin", buf)
+        .with_loader(Box::new(ShellcodeLoader::new(
             loader::Platform::Windows,
+            Arch::X64
         )))
         .load()
         .unwrap()
 }
 
-pub fn get_rsrc_workspace32(rsrc: Rsrc) -> Workspace<Arch32> {
-    Workspace::<Arch32>::from_bytes("foo.bin", &get_buf(rsrc))
+pub fn get_rsrc_workspace(rsrc: Rsrc) -> Workspace {
+    Workspace::from_bytes("foo.bin", &get_buf(rsrc))
         .load()
         .unwrap()
 }
