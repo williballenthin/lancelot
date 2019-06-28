@@ -470,7 +470,7 @@ impl Assets {
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_singlepatterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 9);
+    /// assert_eq!(patterns.len(), 10);
     /// ```
     pub fn get_singlepatterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
         let mut ret = vec![];
@@ -546,7 +546,7 @@ impl Assets {
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_patterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 8);
+    /// assert_eq!(patterns.len(), 9);
     /// ```
     pub fn get_patterns(language: &str, compiler: &str) -> Result<Vec<Box<dyn Pattern>>, Error> {
         let mut ret: Vec<Box<dyn Pattern>> = vec![];
@@ -628,7 +628,7 @@ impl Analyzer for ByteSigAnalyzer {
     ///    .load().unwrap();
     ///
     /// ByteSigAnalyzer::new().analyze(&mut ws).unwrap();
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1010).is_some());
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x1010)).is_some());
     /// ```
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
