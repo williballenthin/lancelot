@@ -43,7 +43,7 @@ impl Loader for ShellcodeLoader {
     /// let loader = lancelot::loaders::sc::ShellcodeLoader::new(Platform::Windows, Arch::X32);
     /// loader.load(b"MZ\x90\x00")
     ///   .map(|(module, analyzers)| {
-    ///     assert_eq!(module.base_address,     0x0);
+    ///     assert_eq!(module.base_address,     VA(0x0));
     ///     assert_eq!(module.sections[0].name, "raw");
     ///   })
     ///   .map_err(|e| panic!(e));
