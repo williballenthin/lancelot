@@ -363,10 +363,10 @@ struct Node {
 
 impl Node {
     fn get_children(&self, tag: &str) -> Vec<&Box<Node>> {
-        self.children.iter().filter(|n| n.tag == tag).collect()
+        self.children.iter().filter(|n| &n.tag == tag).collect()
     }
     fn get_child(&self, tag: &str) -> Option<&Box<Node>> {
-        self.children.iter().filter(|n| n.tag == tag).next()
+        self.children.iter().filter(|n| &n.tag == tag).next()
     }
 }
 
@@ -452,13 +452,13 @@ impl Assets {
         // also, sorry for the extra allocations.
 
         for constraints_node in Assets::get_patternconstraints()?.children.iter().filter(
-            |n| n.tag == "patternconstraints") {
+            |n| &n.tag == "patternconstraints") {
             for language_node in constraints_node.children.iter().filter(
-                |n| n.tag == "language" && n.attrs.get("id") == Some(&language.to_string())) {
+                |n| &n.tag == "language" && n.attrs.get("id") == Some(&language.to_string())) {
                 for compiler_node in language_node.children.iter().filter(
-                    |n| n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string())) {
+                    |n| &n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string())) {
                     for patternfile_node in compiler_node.children.iter().filter(
-                        |n| n.tag == "patternfile") {
+                        |n| &n.tag == "patternfile") {
                         patternfiles.push(patternfile_node.text.clone());
                     }
                 }
@@ -478,10 +478,10 @@ impl Assets {
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
             for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| n.tag == "patternlist") {
+                |n| &n.tag == "patternlist") {
 
                 for pattern_node in patternlist_node.children.iter().filter(
-                    |n| n.tag == "pattern") {
+                    |n| &n.tag == "pattern") {
 
                     let data = pattern_node.get_child("data").unwrap().text.clone();
                     let fstart = pattern_node.get_child("funcstart").unwrap().attrs.clone();
@@ -505,10 +505,10 @@ impl Assets {
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
             for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| n.tag == "patternlist") {
+                |n| &n.tag == "patternlist") {
 
                 for pattern_node in patternlist_node.children.iter().filter(
-                    |n| n.tag == "patternpairs") {
+                    |n| &n.tag == "patternpairs") {
 
                     let mut prepatterns = vec![];
                     let mut postpatterns = vec![];
