@@ -66,8 +66,8 @@ impl WorkspaceBuilder {
     /// Workspace::from_bytes("foo.bin", b"\xEB\xFE")
     ///   .load()
     ///   .map(|ws| {
-    ///     assert_eq!(ws.loader.get_name(),       "Windows/32/Raw");
-    ///     assert_eq!(ws.module.base_address,     0x0);
+    ///     assert_eq!(ws.loader.get_name(),       "Windows/x32/Raw");
+    ///     assert_eq!(ws.module.base_address,     VA(0x0));
     ///     assert_eq!(ws.module.sections[0].name, "raw");
     ///   })
     ///   .map_err(|e| panic!(e));
@@ -82,11 +82,11 @@ impl WorkspaceBuilder {
     /// use lancelot::loaders::sc::ShellcodeLoader;
     ///
     /// Workspace::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(ShellcodeLoader::new(Platform::Windows)))
+    ///   .with_loader(Box::new(ShellcodeLoader::new(Platform::Windows, Arch::X32)))
     ///   .load()
     ///   .map(|ws| {
-    ///     assert_eq!(ws.loader.get_name(),       "Windows/32/Raw");
-    ///     assert_eq!(ws.module.base_address,     0x0);
+    ///     assert_eq!(ws.loader.get_name(),       "Windows/x32/Raw");
+    ///     assert_eq!(ws.module.base_address,     VA(0x0));
     ///     assert_eq!(ws.module.sections[0].name, "raw");
     ///   })
     ///   .map_err(|e| panic!(e));
