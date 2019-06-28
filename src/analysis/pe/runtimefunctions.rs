@@ -53,14 +53,14 @@ impl Analyzer for RuntimeFunctionAnalyzer {
     /// let anal = RuntimeFunctionAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
     ///
-    /// assert!(ws.get_meta(0x72A70).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x72A70)).unwrap().is_insn());
     ///
     /// // this function is referenced in RUNTIME_FUNCTIONs,
     /// // and in code, tail jump at 0x1800112C2
     /// //
     /// //     .text:00000001800112C2     jmp     sub_1800019C8
     /// //
-    /// assert!(ws.get_meta(0x19C8).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x19C8)).unwrap().is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let (exception_directory, directory_size) = {
