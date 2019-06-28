@@ -4,6 +4,9 @@ members = [
     "core"
 ]
 
+[badges]
+travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch="master"}
+
 
 [profile.release]
 lto = true
