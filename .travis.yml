@@ -8,3 +8,11 @@ matrix:
   fast_finish: true
 script:
   - cargo test --verbose --all
+addons:
+  apt:
+    sources:
+      - llvm-toolchain-trusty-3.9
+    packages:
+      - clang-3.9
+      - libc++-dev
+      - libc++abi-dev
