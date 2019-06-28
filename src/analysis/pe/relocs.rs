@@ -131,8 +131,8 @@ fn split_u32(e: u32) -> (u16, u16) {
 ///    .disable_analysis()
 ///    .load().unwrap();
 /// let relocs = relocs::get_relocs(&ws).unwrap();
-/// assert_eq!(relocs[0].offset,   0x76008);
-/// assert_eq!(relocs[277].offset, 0xA8000);
+/// assert_eq!(relocs[0].offset,   RVA(0x76008));
+/// assert_eq!(relocs[277].offset, RVA(0xA8000));
 /// ```
 pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
     let pe = match Object::parse(&ws.buf) {
@@ -220,7 +220,7 @@ impl Analyzer for RelocAnalyzer {
     ///    .load().unwrap();
     /// let anal = RelocAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// let meta = ws.get_meta(0xC7F0).unwrap();
+    /// let meta = ws.get_meta(RVA(0xC7F0)).unwrap();
     /// assert!(meta.is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
