@@ -149,7 +149,7 @@ pub fn taste(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader>> {
 /// load(b"\xEB\xFE")
 ///   .map(|(loader, module, analyzers)| {
 ///     assert_eq!(loader.get_name(),       "Windows/x32/Raw");
-///     assert_eq!(module.base_address,     0x0);
+///     assert_eq!(module.base_address,     VA(0x0));
 ///     assert_eq!(module.sections[0].name, "raw");
 ///   })
 ///   .map_err(|e| panic!(e));
