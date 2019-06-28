@@ -288,10 +288,10 @@ impl PatternPairs {
 
         let mut m = md5::Context::new();
         for pattern in prepatterns.iter() {
-            m.write(pattern.as_bytes()).unwrap();
+            m.write_all(pattern.as_bytes()).unwrap();
         }
         for pattern in postpatterns.iter() {
-            m.write(pattern.as_bytes()).unwrap();
+            m.write_all(pattern.as_bytes()).unwrap();
         }
         let id = format!("{:x}", m.compute());
         let id = format!("pattern_{}", &id[..8]);

@@ -265,7 +265,7 @@ pub enum Arch {
 }
 
 impl Arch {
-    pub fn get_pointer_size(&self) -> u8 {
+    pub fn get_pointer_size(self) -> u8 {
         match self {
             Arch::X32 => 4,
             Arch::X64 => 8,
