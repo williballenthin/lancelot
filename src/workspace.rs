@@ -420,7 +420,7 @@ impl Workspace {
     }
 
     pub fn rva(&self, va: VA) -> Option<RVA> {
-        self.module.base_address.rva(va)
+        va.rva(self.module.base_address)
     }
 
     pub fn va(&self, rva: RVA) -> Option<VA> {
