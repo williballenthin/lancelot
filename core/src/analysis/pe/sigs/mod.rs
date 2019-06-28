@@ -351,7 +351,7 @@ impl Pattern for PatternPairs {
 
 
 #[derive(RustEmbed)]
-#[folder = "src/analysis/pe/sigs/patterns"]
+#[folder = "$CARGO_MANIFEST_DIR/src/analysis/pe/sigs/patterns"]
 pub struct Assets;
 
 struct Node {
