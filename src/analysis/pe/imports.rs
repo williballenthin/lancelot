@@ -126,7 +126,7 @@ impl Analyzer for ImportsAnalyzer {
     ///    .load().unwrap();
     /// let anal = ImportsAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// assert_eq!(ws.get_symbol(0x77448).unwrap(), "api-ms-win-core-appcompat-l1-1-1.dll!BaseReadAppCompatDataForProcess");
+    /// assert_eq!(ws.get_symbol(RVA(0x77448)).unwrap(), "api-ms-win-core-appcompat-l1-1-1.dll!BaseReadAppCompatDataForProcess");
     /// ```
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let import_directory = {
