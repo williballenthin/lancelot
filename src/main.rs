@@ -8,7 +8,6 @@ use log::{error, info, trace};
 use better_panic;
 use failure::{Error, Fail};
 
-use lancelot::arch::*;
 use lancelot::workspace::Workspace;
 
 
@@ -19,7 +18,6 @@ pub enum MainError {
 }
 
 pub struct Config {
-    pub mode: u8,
     pub filename: String,
 }
 
@@ -27,20 +25,14 @@ impl Config {
     pub fn from_args(args: env::Args) -> Result<Config, &'static str> {
         let args: Vec<String> = args.collect();
 
-        if args.len() < 3 {
-            return Err("not enough arguments: provide `lancelot.exe 32|64 /path/to/input`");
+        if args.len() < 2 {
+            return Err("not enough arguments: provide `lancelot.exe /path/to/input`");
         }
 
-        let mode = match args[1].as_ref() {
-            "32" => 32,
-            "64" => 64,
-            _ => return Err("invalid mode, pick one of `32` or `64`"),
-        };
-
-        let filename = args[2].clone();
+        let filename = args[1].clone();
         trace!("config: parsed filename: {:?}", filename);
 
-        Ok(Config { mode, filename })
+        Ok(Config { filename })
     }
 }
 
@@ -52,26 +44,14 @@ pub fn setup_logging(_args: &Config) {
 pub fn run(args: &Config) -> Result<(), Error> {
     info!("filename: {:?}", args.filename);
 
-    if args.mode == 32 {
-        let ws = Workspace::<Arch32>::from_file(&args.filename)?.load()?;
+    let ws = Workspace::from_file(&args.filename)?.load()?;
 
-        let mut functions = ws.get_functions().collect::<Vec<_>>();
-        functions.sort();
+    let mut functions = ws.get_functions().collect::<Vec<_>>();
+    functions.sort();
 
-        info!("found {} functions", functions.len());
-        for rva in functions.iter() {
-            println!("{:#x}", ws.module.base_address + **rva as u32);
-        }
-    } else if args.mode == 64 {
-        let ws = Workspace::<Arch64>::from_file(&args.filename)?.load()?;
-
-        let mut functions = ws.get_functions().collect::<Vec<_>>();
-        functions.sort();
-
-        info!("found {} functions", functions.len());
-        for rva in functions.iter() {
-            println!("{:#x}", ws.module.base_address + **rva as u64);
-        }
+    info!("found {} functions", functions.len());
+    for rva in functions.iter() {
+        println!("{:#x}", ws.va(**rva).unwrap());
     }
 
     Ok(())

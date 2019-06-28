@@ -1,5 +1,3 @@
-use num::{FromPrimitive, ToPrimitive};
-
 use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 use zydis::gen::*;
@@ -7,8 +5,7 @@ use zydis::Decoder;
 use log::{info};
 
 use super::analysis::Analysis;
-use super::arch;
-use super::arch::Arch;
+use super::arch::{Arch, VA, RVA};
 use super::loader;
 use super::loader::{LoadedModule, Loader};
 use super::util;
@@ -25,21 +22,21 @@ pub enum WorkspaceError {
     InvalidInstruction,
 }
 
-pub struct WorkspaceBuilder<A: Arch> {
+pub struct WorkspaceBuilder {
     filename: String,
     buf: Vec<u8>,
 
-    loader: Option<Box<dyn Loader<A>>>,
+    loader: Option<Box<dyn Loader>>,
 
     should_analyze: bool,
 }
 
-impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
+impl WorkspaceBuilder {
     /// Override the default loader picker with the given loader.
     pub fn with_loader(
-        self: WorkspaceBuilder<A>,
-        loader: Box<dyn Loader<A>>,
-    ) -> WorkspaceBuilder<A> {
+        self: WorkspaceBuilder,
+        loader: Box<dyn Loader>,
+    ) -> WorkspaceBuilder {
         info!("using explicitly chosen loader: {}", loader.get_name());
         WorkspaceBuilder {
             loader: Some(loader),
@@ -47,7 +44,7 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
         }
     }
 
-    pub fn disable_analysis(self: WorkspaceBuilder<A>) -> WorkspaceBuilder<A> {
+    pub fn disable_analysis(self: WorkspaceBuilder) -> WorkspaceBuilder {
         info!("disabling analysis");
         WorkspaceBuilder {
             should_analyze: false,
@@ -66,11 +63,11 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
     /// use lancelot::arch::*;
     /// use lancelot::workspace::Workspace;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
+    /// Workspace::from_bytes("foo.bin", b"\xEB\xFE")
     ///   .load()
     ///   .map(|ws| {
-    ///     assert_eq!(ws.loader.get_name(),       "Windows/32/Raw");
-    ///     assert_eq!(ws.module.base_address,     0x0);
+    ///     assert_eq!(ws.loader.get_name(),       "Windows/x32/Raw");
+    ///     assert_eq!(ws.module.base_address,     VA(0x0));
     ///     assert_eq!(ws.module.sections[0].name, "raw");
     ///   })
     ///   .map_err(|e| panic!(e));
@@ -84,17 +81,17 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
     /// use lancelot::workspace::Workspace;
     /// use lancelot::loaders::sc::ShellcodeLoader;
     ///
-    /// Workspace::<Arch32>::from_bytes("foo.bin", b"\xEB\xFE")
-    ///   .with_loader(Box::new(ShellcodeLoader::<Arch32>::new(Platform::Windows)))
+    /// Workspace::from_bytes("foo.bin", b"\xEB\xFE")
+    ///   .with_loader(Box::new(ShellcodeLoader::new(Platform::Windows, Arch::X32)))
     ///   .load()
     ///   .map(|ws| {
-    ///     assert_eq!(ws.loader.get_name(),       "Windows/32/Raw");
-    ///     assert_eq!(ws.module.base_address,     0x0);
+    ///     assert_eq!(ws.loader.get_name(),       "Windows/x32/Raw");
+    ///     assert_eq!(ws.module.base_address,     VA(0x0));
     ///     assert_eq!(ws.module.sections[0].name, "raw");
     ///   })
     ///   .map_err(|e| panic!(e));
     /// ```
-    pub fn load(self: WorkspaceBuilder<A>) -> Result<Workspace<A>, Error> {
+    pub fn load(self: WorkspaceBuilder) -> Result<Workspace, Error> {
         // if the user provided a loader, use that.
         // otherwise, use the default detected loader.
         let (ldr, module, analyzers) = match self.loader {
@@ -103,7 +100,7 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
                 let (module, analyzers) = ldr.load(&self.buf)?;
                 (ldr, module, analyzers)
             }
-            None => loader::load::<A>(&self.buf)?,
+            None => loader::load(&self.buf)?,
         };
 
         info!("loaded {} sections:", module.sections.len());
@@ -113,13 +110,12 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
 
         let analysis = Analysis::new(&module);
 
-        let decoder = if A::get_bits() == 32 {
-            Decoder::new(ZYDIS_MACHINE_MODE_LEGACY_32, ZYDIS_ADDRESS_WIDTH_32).unwrap()
-        } else {
-            Decoder::new(ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64).unwrap()
+        let decoder = match ldr.get_arch() {
+            Arch::X32 => Decoder::new(ZYDIS_MACHINE_MODE_LEGACY_32, ZYDIS_ADDRESS_WIDTH_32).unwrap(),
+            Arch::X64 => Decoder::new(ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64).unwrap(),
         };
 
-        let mut ws = Workspace::<A> {
+        let mut ws = Workspace {
             filename: self.filename,
             buf: self.buf,
 
@@ -142,26 +138,26 @@ impl<A: Arch + 'static + std::fmt::Debug> WorkspaceBuilder<A> {
     }
 }
 
-pub struct Workspace<A: Arch> {
+pub struct Workspace {
     // name or source of the file
     pub filename: String,
     // raw bytes of the file
     pub buf: Vec<u8>,
 
-    pub loader: Box<dyn Loader<A>>,
-    pub module: LoadedModule<A>,
+    pub loader: Box<dyn Loader>,
+    pub module: LoadedModule,
 
     pub decoder: Decoder,
 
     // pub only so that we can split the impl
-    pub analysis: Analysis<A>,
+    pub analysis: Analysis,
 }
 
-impl<A: Arch + 'static> Workspace<A> {
+impl Workspace {
     /// Create a workspace and load the given bytes.
     ///
     /// See example on `WorkspaceBuilder::load()`
-    pub fn from_bytes(filename: &str, buf: &[u8]) -> WorkspaceBuilder<A> {
+    pub fn from_bytes(filename: &str, buf: &[u8]) -> WorkspaceBuilder {
         WorkspaceBuilder {
             filename: filename.to_string(),
             buf: buf.to_vec(),
@@ -170,7 +166,7 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
-    pub fn from_file(filename: &str) -> Result<WorkspaceBuilder<A>, Error> {
+    pub fn from_file(filename: &str) -> Result<WorkspaceBuilder, Error> {
         Ok(WorkspaceBuilder {
             filename: filename.to_string(),
             buf: util::read_file(filename)?,
@@ -190,15 +186,16 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_bytes(0x0, 0x1).unwrap().to_vec(), b"\xEB");
-    /// assert_eq!(ws.read_bytes(0x1, 0x1).unwrap().to_vec(), b"\xFE");
-    /// assert_eq!(ws.read_bytes(0x0, 0x2).unwrap().to_vec(), b"\xEB\xFE");
-    /// assert_eq!(ws.read_bytes(0x0, 0x3).is_err(), true);
-    /// assert_eq!(ws.read_bytes(0x2, 0x1).is_err(), true);
+    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x1).unwrap().to_vec(), b"\xEB");
+    /// assert_eq!(ws.read_bytes(RVA(0x1), 0x1).unwrap().to_vec(), b"\xFE");
+    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x2).unwrap().to_vec(), b"\xEB\xFE");
+    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x3).is_err(), true);
+    /// assert_eq!(ws.read_bytes(RVA(0x2), 0x1).is_err(), true);
     /// ```
-    pub fn read_bytes(&self, rva: A::RVA, length: usize) -> Result<&[u8], Error> {
+    pub fn read_bytes(&self, rva: RVA, length: usize) -> Result<&[u8], Error> {
         self.module
             .sections
             .iter()
@@ -208,16 +205,13 @@ impl<A: Arch + 'static> Workspace<A> {
             .and_then(|section| -> Result<&[u8], Error> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
-                let offset = rva - section.addr;
-                A::RVA::to_usize(&offset)
-                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-                    .and_then(|offset| {
-                        if offset + length > section.buf.len() {
-                            Err(WorkspaceError::BufferOverrun.into())
-                        } else {
-                            Ok(&section.buf[offset..offset + length])
-                        }
-                    })
+                let offset = RVA(rva.0 - section.addr.0);
+                if offset + length > section.buf.len().into() {
+                    Err(WorkspaceError::BufferOverrun.into())
+                } else {
+                    let end: usize = ((offset.0 as u64) + (length as u64)) as usize;
+                    Ok(&section.buf[offset.into()..end])
+                }
             })
     }
 
@@ -227,15 +221,16 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert!( ws.probe(0x0, 1));
-    /// assert!( ws.probe(0x0, 2));
-    /// assert!(!ws.probe(0x0, 3));
-    /// assert!( ws.probe(0x1, 1));
-    /// assert!(!ws.probe(0x2, 1));
+    /// assert!( ws.probe(RVA(0x0), 1));
+    /// assert!( ws.probe(RVA(0x0), 2));
+    /// assert!(!ws.probe(RVA(0x0), 3));
+    /// assert!( ws.probe(RVA(0x1), 1));
+    /// assert!(!ws.probe(RVA(0x2), 1));
     /// ```
-    pub fn probe(&self, rva: A::RVA, length: usize) -> bool {
+    pub fn probe(&self, rva: RVA, length: usize) -> bool {
         self.read_bytes(rva, length).is_ok()
     }
 
@@ -247,13 +242,14 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_u8(0x0).unwrap(), 0xEB);
-    /// assert_eq!(ws.read_u8(0x1).unwrap(), 0xFE);
-    /// assert_eq!(ws.read_u8(0x2).is_err(), true);
+    /// assert_eq!(ws.read_u8(RVA(0x0)).unwrap(), 0xEB);
+    /// assert_eq!(ws.read_u8(RVA(0x1)).unwrap(), 0xFE);
+    /// assert_eq!(ws.read_u8(RVA(0x2)).is_err(), true);
     /// ```
-    pub fn read_u8(&self, rva: A::RVA) -> Result<u8, Error> {
+    pub fn read_u8(&self, rva: RVA) -> Result<u8, Error> {
         self.read_bytes(rva, 1).and_then(|buf| Ok(buf[0]))
     }
 
@@ -265,37 +261,38 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_u16(0x0).unwrap(), 0xFEEB);
-    /// assert_eq!(ws.read_u16(0x1).is_err(), true);
-    /// assert_eq!(ws.read_u16(0x2).is_err(), true);
+    /// assert_eq!(ws.read_u16(RVA(0x0)).unwrap(), 0xFEEB);
+    /// assert_eq!(ws.read_u16(RVA(0x1)).is_err(), true);
+    /// assert_eq!(ws.read_u16(RVA(0x2)).is_err(), true);
     /// ```
-    pub fn read_u16(&self, rva: A::RVA) -> Result<u16, Error> {
+    pub fn read_u16(&self, rva: RVA) -> Result<u16, Error> {
         self.read_bytes(rva, 2)
             .and_then(|buf| Ok(LittleEndian::read_u16(buf)))
     }
 
     /// Read a dword from the given RVA.
-    pub fn read_u32(&self, rva: A::RVA) -> Result<u32, Error> {
+    pub fn read_u32(&self, rva: RVA) -> Result<u32, Error> {
         self.read_bytes(rva, 4)
             .and_then(|buf| Ok(LittleEndian::read_u32(buf)))
     }
 
     /// Read a qword from the given RVA.
-    pub fn read_u64(&self, rva: A::RVA) -> Result<u64, Error> {
+    pub fn read_u64(&self, rva: RVA) -> Result<u64, Error> {
         self.read_bytes(rva, 8)
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
     }
 
     /// Read a dword from the given RVA.
-    pub fn read_i32(&self, rva: A::RVA) -> Result<i32, Error> {
+    pub fn read_i32(&self, rva: RVA) -> Result<i32, Error> {
         self.read_bytes(rva, 4)
             .and_then(|buf| Ok(LittleEndian::read_i32(buf)))
     }
 
     /// Read a qword from the given RVA.
-    pub fn read_i64(&self, rva: A::RVA) -> Result<i64, Error> {
+    pub fn read_i64(&self, rva: RVA) -> Result<i64, Error> {
         self.read_bytes(rva, 8)
             .and_then(|buf| Ok(LittleEndian::read_i64(buf)))
     }
@@ -309,28 +306,25 @@ impl<A: Arch + 'static> Workspace<A> {
     ///
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\x00\x11\x22\x33");
-    /// assert_eq!(ws.read_rva(0x0).unwrap(), 0x33221100);
-    /// assert_eq!(ws.read_rva(0x1).is_err(), true);
+    /// assert_eq!(ws.read_rva(RVA(0x0)).unwrap(), RVA(0x33221100));
+    /// assert_eq!(ws.read_rva(RVA(0x1)).is_err(), true);
     /// ```
-    pub fn read_rva(&self, rva: A::RVA) -> Result<A::RVA, Error> {
-        match A::get_bits() {
-            // these conversions will never fail
-            32 => Ok(A::RVA::from_i32(self.read_i32(rva)?).unwrap()),
-            64 => Ok(A::RVA::from_i64(self.read_i64(rva)?).unwrap()),
-            _ => panic!("unexpected architecture"),
+    pub fn read_rva(&self, rva: RVA) -> Result<RVA, Error> {
+        match self.loader.get_arch() {
+            Arch::X32 => Ok(RVA::from(self.read_i32(rva)?)),
+            Arch::X64 => Ok(RVA::from(self.read_i64(rva)?)),
         }
     }
 
     /// Read a VA from the given RVA.
     /// Note that the size of the read is dependent on the architecture.
-    pub fn read_va(&self, rva: A::RVA) -> Result<A::VA, Error> {
-        match A::get_bits() {
-            // these conversions will never fail
-            32 => Ok(A::VA::from_u32(self.read_u32(rva)?).unwrap()),
-            64 => Ok(A::VA::from_u64(self.read_u64(rva)?).unwrap()),
-            _ => panic!("unexpected architecture"),
+    pub fn read_va(&self, rva: RVA) -> Result<VA, Error> {
+        match self.loader.get_arch() {
+            Arch::X32 => Ok(VA::from(self.read_u32(rva)?)),
+            Arch::X64 => Ok(VA::from(self.read_u64(rva)?)),
         }
     }
 
@@ -347,13 +341,14 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use zydis::gen::*;
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_insn(0x0).is_ok(), true);
-    /// assert_eq!(ws.read_insn(0x0).unwrap().length, 2);
-    /// assert_eq!(ws.read_insn(0x0).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).is_ok(), true);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().length, 2);
+    /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic as i32, ZYDIS_MNEMONIC_JMP);
     /// ```
-    pub fn read_insn(&self, rva: A::RVA) -> Result<ZydisDecodedInstruction, Error> {
+    pub fn read_insn(&self, rva: RVA) -> Result<ZydisDecodedInstruction, Error> {
         // this is `read_bytes` except that it reads at most 0x10 bytes.
         // if less are available, then less are returned.
         let buf = self
@@ -366,21 +361,16 @@ impl<A: Arch + 'static> Workspace<A> {
             .and_then(|section| -> Result<&[u8], Error> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
-                let offset = rva - section.addr;
-                A::RVA::to_usize(&offset)
-                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-                    .and_then(|offset| {
-                        if offset + 0x10 > section.buf.len() {
-                            Ok(&section.buf[offset..])
-                        } else {
-                            Ok(&section.buf[offset..offset + 0x10])
-                        }
-                    })
+                let offset = RVA(rva.0 - section.addr.0);
+                if offset + 0x10 > section.buf.len().into() {
+                    Ok(&section.buf[offset.into()..])
+                } else {
+                    let end: usize = ((offset.0 as u64) + 0x10) as usize;
+                    Ok(&section.buf[offset.into()..end])
+                }
             })?;
 
-        // RVA will always be either u32 or u64 (never bigger),
-        // so we can always fit this into a u64.
-        let pc = A::RVA::to_u64(&rva).unwrap();
+        let pc = rva.into();
 
         match self.decoder.decode(&buf, pc) {
             Ok(Some(insn)) => Ok(insn),
@@ -401,12 +391,13 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use zydis::gen::*;
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\x00\x41\x41\x00");
-    /// assert!(ws.read_utf8(0x1).is_ok());
-    /// assert_eq!(ws.read_utf8(0x1).unwrap(), "AA");
+    /// assert!(ws.read_utf8(RVA(0x1)).is_ok());
+    /// assert_eq!(ws.read_utf8(RVA(0x1)).unwrap(), "AA");
     /// ```
-    pub fn read_utf8(&self, rva: A::RVA) -> Result<String, Error> {
+    pub fn read_utf8(&self, rva: RVA) -> Result<String, Error> {
         // this is `read_bytes` except that it reads until the end of the section.
         let buf = self
             .module
@@ -418,12 +409,8 @@ impl<A: Arch + 'static> Workspace<A> {
             .and_then(|section| -> Result<&[u8], Error> {
                 // rva is guaranteed to be within this section,
                 // so we can do an unchecked subtract here.
-                let offset = rva - section.addr;
-                A::RVA::to_usize(&offset)
-                    .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-                    .and_then(|offset| {
-                        Ok(&section.buf[offset..])
-                    })
+                let offset = RVA(rva.0 - section.addr.0);
+                Ok(&section.buf[offset.into()..])
             })?;
 
         // when we split, we're guaranteed at have at least one entry,
@@ -432,9 +419,14 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(std::str::from_utf8(sbuf)?.to_string())
     }
 
-    pub fn rva(&self, va: A::VA) -> Option<A::RVA> {
-        arch::va_compute_rva::<A>(self.module.base_address, va)
+    pub fn rva(&self, va: VA) -> Option<RVA> {
+        va.rva(self.module.base_address)
     }
+
+    pub fn va(&self, rva: RVA) -> Option<VA> {
+        self.module.base_address.va(rva)
+    }
+
 
     // API:
     //   get_insn

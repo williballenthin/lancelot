@@ -1,4 +1,3 @@
-use num::{FromPrimitive, ToPrimitive};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -8,8 +7,7 @@ use failure::{Error, Fail, bail};
 use log::{debug, warn};
 use zydis::gen::*;
 
-use super::arch;
-use super::arch::Arch;
+use super::arch::{RVA, VA};
 use super::flowmeta::FlowMeta;
 use super::loader::{LoadedModule, Section};
 use super::workspace::Workspace;
@@ -31,17 +29,17 @@ pub enum AnalysisError {
 }
 
 #[derive(Debug, Clone)]
-pub enum AnalysisCommand<A: Arch> {
-    MakeInsn(A::RVA),
-    MakeXref(Xref<A>),
+pub enum AnalysisCommand {
+    MakeInsn(RVA),
+    MakeXref(Xref),
     MakeSymbol {
-        rva: A::RVA,
+        rva: RVA,
         name: String
     },
-    MakeFunction(A::RVA),
+    MakeFunction(RVA),
 }
 
-impl<A: Arch> Display for AnalysisCommand<A> {
+impl Display for AnalysisCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
@@ -105,43 +103,43 @@ fn print_op(op: &ZydisDecodedOperand) {
     }
 }
 
-pub struct XrefAnalysis<A: Arch> {
+pub struct XrefAnalysis {
     // TODO: use FNV because the keys are small.
     // TODO: use SmallVec(1) for `.from` values,
     // TODO: use SmallVec(X) for `.to` values,
 
     // dst rva -> src rva
-    to: HashMap<A::RVA, HashSet<Xref<A>>>,
+    to: HashMap<RVA, HashSet<Xref>>,
     // src rva -> dst rva
-    from: HashMap<A::RVA, HashSet<Xref<A>>>,
+    from: HashMap<RVA, HashSet<Xref>>,
 }
 
-pub struct FlowAnalysis<A: Arch> {
+pub struct FlowAnalysis {
     // one entry for each section in the module.
     // if executable, then one FlowMeta for each address in the section.
     // that is, Vec<FlowMeta>.len() == Section.buf.len()
     // TODO: order these entries so that the most common sections are first (`.code`?)
     meta: Vec<Vec<FlowMeta>>,
-    xrefs: XrefAnalysis<A>,
+    xrefs: XrefAnalysis,
 }
 
-pub struct Analysis<A: Arch> {
-    queue: VecDeque<AnalysisCommand<A>>,
+pub struct Analysis {
+    queue: VecDeque<AnalysisCommand>,
 
     // TODO: FNV
-    functions: HashSet<A::RVA>,
+    functions: HashSet<RVA>,
 
     // TODO: FNV
-    symbols: HashMap<A::RVA, String>,
+    symbols: HashMap<RVA, String>,
 
-    flow: FlowAnalysis<A>,
+    flow: FlowAnalysis,
     // datameta
     // symbols
     // functions
 }
 
-impl<A: Arch> Analysis<A> {
-    pub fn new(module: &LoadedModule<A>) -> Analysis<A> {
+impl Analysis {
+    pub fn new(module: &LoadedModule) -> Analysis {
         let flow_meta: Vec<Vec<FlowMeta>> = module
             .sections
             .iter()
@@ -171,21 +169,22 @@ impl<A: Arch> Analysis<A> {
 
 // here we've logically split off the analysis portion of workspace.
 // this should keep file sizes smaller, and hopefully easier to understand.
-impl<A: Arch + 'static> Workspace<A> {
+impl Workspace {
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // NOP
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\x90\xEB\xFE");
-    /// ws.make_insn(0x0);
+    /// ws.make_insn(RVA(0x0));
     /// ws.analyze();
     ///
-    /// assert!( ws.get_meta(0x0).unwrap().is_insn());
-    /// assert!( ws.get_meta(0x1).unwrap().is_insn());
-    /// assert!(!ws.get_meta(0x2).unwrap().is_insn());
+    /// assert!( ws.get_meta(RVA(0x0)).unwrap().is_insn());
+    /// assert!( ws.get_meta(RVA(0x1)).unwrap().is_insn());
+    /// assert!(!ws.get_meta(RVA(0x2)).unwrap().is_insn());
     /// ```
-    pub fn make_insn(&mut self, rva: A::RVA) -> Result<(), Error> {
+    pub fn make_insn(&mut self, rva: RVA) -> Result<(), Error> {
         self.analysis
             .queue
             .push_back(AnalysisCommand::MakeInsn(rva));
@@ -194,50 +193,52 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert!(ws.get_symbol(0x0).is_none());
-    /// ws.make_symbol(0x0, "entry");
+    /// assert!(ws.get_symbol(RVA(0x0)).is_none());
+    /// ws.make_symbol(RVA(0x0), "entry");
     /// ws.analyze();
-    /// assert_eq!(ws.get_symbol(0x0).unwrap(), "entry");
+    /// assert_eq!(ws.get_symbol(RVA(0x0)).unwrap(), "entry");
     /// ```
-    pub fn make_symbol(&mut self, rva: A::RVA, name: &str) -> Result<(), Error> {
+    pub fn make_symbol(&mut self, rva: RVA, name: &str) -> Result<(), Error> {
         self.analysis
             .queue
             .push_back(AnalysisCommand::MakeSymbol{rva: rva, name: name.to_string()});
         Ok(())
     }
 
-    pub fn get_functions(&self ) -> impl Iterator<Item=&A::RVA> {
+    pub fn get_functions(&self ) -> impl Iterator<Item=&RVA> {
         self.analysis.functions.iter()
     }
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert!(ws.get_functions().collect::<Vec<_>>().is_empty());
-    /// ws.make_function(0x0);
+    /// ws.make_function(RVA(0x0));
     /// ws.analyze();
     ///
-    /// assert!(ws.get_meta(0x0).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x0)).unwrap().is_insn());
     /// assert_eq!(ws.get_functions().collect::<Vec<_>>().len(), 1);
     /// ```
-    pub fn make_function(&mut self, rva: A::RVA) -> Result<(), Error> {
+    pub fn make_function(&mut self, rva: RVA) -> Result<(), Error> {
         self.analysis
             .queue
             .push_back(AnalysisCommand::MakeFunction(rva));
         Ok(())
     }
 
-    pub fn get_symbol(&self,  rva: A::RVA) -> Option<&String> {
+    pub fn get_symbol(&self,  rva: RVA) -> Option<&String> {
         self.analysis.symbols.get(&rva)
     }
 
     /// fetch the (section, offset) indices for the given RVA.
-    fn get_coords(&self, rva: A::RVA) -> Option<(usize, usize)> {
+    fn get_coords(&self, rva: RVA) -> Option<(usize, usize)> {
         self.module
             .sections
             .iter()
@@ -245,16 +246,16 @@ impl<A: Arch + 'static> Workspace<A> {
             .filter(|(_, section)| section.contains(rva))
             .nth(0)
             .and_then(
-                |(i, section): (usize, &Section<A>)| -> Option<(usize, usize)> {
+                |(i, section): (usize, &Section)| -> Option<(usize, usize)> {
                     // rva is guaranteed to be within this section,
                     // so we can do an unchecked subtract here.
-                    let offset = rva - section.addr;
-                    A::RVA::to_usize(&offset).and_then(|offset| Some((i, offset)))
+                    let offset = RVA(rva.0 - section.addr.0);
+                    Some((i, offset.into()))
                 },
             )
     }
 
-    pub fn get_meta(&self, rva: A::RVA) -> Option<FlowMeta> {
+    pub fn get_meta(&self, rva: RVA) -> Option<FlowMeta> {
         self.get_coords(rva)
             .and_then(|(section, offset)| Some(self.analysis.flow.meta[section][offset]))
     }
@@ -267,12 +268,12 @@ impl<A: Arch + 'static> Workspace<A> {
     /// use lancelot::workspace::*;
     ///
     /// // JMP $+0;
-    /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(0x0).unwrap();
-    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), false);
+    /// let insn = test::get_shellcode32_workspace(b"\xEB\xFE").read_insn(RVA(0x0)).unwrap();
+    /// assert_eq!(Workspace::does_insn_fallthrough(&insn), false);
     ///
     /// // PUSH 0x11
-    /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(0x0).unwrap();
-    /// assert_eq!(Workspace::<Arch32>::does_insn_fallthrough(&insn), true);
+    /// let insn = test::get_shellcode32_workspace(b"\x6A\x11").read_insn(RVA(0x0)).unwrap();
+    /// assert_eq!(Workspace::does_insn_fallthrough(&insn), true);
     /// ```
     pub fn does_insn_fallthrough(insn: &ZydisDecodedInstruction) -> bool {
         match i32::from(insn.mnemonic) {
@@ -293,16 +294,17 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // 0:  ff 25 06 00 00 00   +->  jmp    DWORD PTR ds:0x6
     /// // 6:  00 00 00 00         +--  dw     0x0
     /// let mut ws = test::get_shellcode32_workspace(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_memory_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     /// ```
     ///
     /// ## test RIP-relative
@@ -310,23 +312,24 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // FF 15 00 00 00 00         CALL $+5
     /// // 00 00 00 00 00 00 00 00   dq 0x0
     /// let mut ws = test::get_shellcode64_workspace(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_memory_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_memory_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     /// ```
     pub fn get_memory_operand_xref(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
-    ) -> Result<Option<A::RVA>, Error> {
+    ) -> Result<Option<RVA>, Error> {
         if op.mem.base == 0
             && op.mem.index == 0
             && op.mem.scale == 0
@@ -342,12 +345,12 @@ impl<A: Arch + 'static> Workspace<A> {
             //
             // see doctest: [test simple memory ptr operand]()
 
-            let ptr = match A::VA::from_i64(op.mem.disp.value) {
-                Some(ptr) => ptr,
-                None => return Ok(None),
-            };
+            if op.mem.disp.value < 0 {
+                return Ok(None)
+            }
+            let ptr = VA::from(op.mem.disp.value as u64);
 
-            let ptr = match arch::va_compute_rva::<A>(self.module.base_address, ptr) {
+            let ptr = match self.rva(ptr) {
                 Some(ptr) => ptr,
                 None => return Ok(None),
             };
@@ -357,7 +360,7 @@ impl<A: Arch + 'static> Workspace<A> {
                 Err(_) => return Ok(None),
             };
 
-            let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
+            let dst = match self.rva(dst) {
                 Some(dst) => dst,
                 None => return Ok(None),
             };
@@ -378,15 +381,9 @@ impl<A: Arch + 'static> Workspace<A> {
                 // it works like a relative immediate,
                 // that is: dst = *(rva + displacement + instruction len)
 
-                let disp = A::RVA::from_i64(op.mem.disp.value);
-                let len = A::RVA::from_u8(insn.length);
+                let disp = RVA::from(op.mem.disp.value);
+                let len = insn.length;
 
-                let (disp, len) = match (disp, len) {
-                    (Some(disp), Some(len)) => (disp, len),
-                    _ => return Ok(None),
-                };
-
-                // TODO: this should be checked add
                 let ptr = rva + disp + len;
 
                 let dst = match self.read_va(ptr) {
@@ -394,7 +391,7 @@ impl<A: Arch + 'static> Workspace<A> {
                     Err(_) => return Ok(None),
                 };
 
-                let dst = match arch::va_compute_rva::<A>(self.module.base_address, dst) {
+                let dst = match self.rva(dst) {
                     Some(dst) => dst,
                     None => return Ok(None),
                 };
@@ -422,10 +419,10 @@ impl<A: Arch + 'static> Workspace<A> {
 
     fn get_pointer_operand_xref(
         &self,
-        _rva: A::RVA,
+        _rva: RVA,
         _insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
-    ) -> Result<Option<A::RVA>, Error> {
+    ) -> Result<Option<RVA>, Error> {
         // TODO
         println!("get ptr op xref");
         print_op(op);
@@ -438,33 +435,34 @@ impl<A: Arch + 'static> Workspace<A> {
     /// ```
     /// use lancelot::test;
     /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
     ///
     /// // this is a jump from addr 0x0 to itself:
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_immediate_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_immediate_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), true);
-    /// assert_eq!(xref.unwrap(), 0x0);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
     ///
     ///
     /// // this is a jump from addr 0x0 to -1, which is unmapped
     /// // JMP $-1;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFD");
-    /// let insn = ws.read_insn(0x0).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
     /// let op = analysis::get_first_operand(&insn).unwrap();
-    /// let xref = ws.get_immediate_operand_xref(0x0, &insn, &op).unwrap();
+    /// let xref = ws.get_immediate_operand_xref(RVA(0x0), &insn, &op).unwrap();
     ///
     /// assert_eq!(xref.is_some(), false);
     /// ```
     pub fn get_immediate_operand_xref(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
-    ) -> Result<Option<A::RVA>, Error> {
+    ) -> Result<Option<RVA>, Error> {
         // TODO
         if op.imm.isRelative != 0 {
             // the operand is an immediate constant relative to $PC.
@@ -474,26 +472,21 @@ impl<A: Arch + 'static> Workspace<A> {
 
             // the use of `unsafe` here is an artifact of the zydis API.
             let imm = if op.imm.isSigned != 0 {
-                A::RVA::from_i64(*unsafe { op.imm.value.s.as_ref() })
+                RVA::from(*unsafe { op.imm.value.s.as_ref() })
             } else {
-                A::RVA::from_u64(*unsafe { op.imm.value.u.as_ref() })
+                let v: u64 = *unsafe { op.imm.value.u.as_ref() };
+                if v > std::i64::MAX as u64 {
+                    return Ok(None);
+                }
+                RVA::from(v as i64)
             };
 
-            let len = A::RVA::from_u8(insn.length);
+            let dst = rva + imm + insn.length;
 
-            if let (Some(imm), Some(len)) = (imm, len) {
-                // TODO: this should be checked add
-                let dst = rva + imm + len;
-
-                if self.probe(dst, 1) {
-                    Ok(Some(dst))
-                } else {
-                    // invalid address
-                    Ok(None)
-                }
+            if self.probe(dst, 1) {
+                Ok(Some(dst))
             } else {
-                // `imm` (u64) could not fit within an RVA,
-                // so it doesn't make sense for this to be an address.
+                // invalid address
                 Ok(None)
             }
         } else {
@@ -507,10 +500,10 @@ impl<A: Arch + 'static> Workspace<A> {
 
     fn get_operand_xref(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
         op: &ZydisDecodedOperand,
-    ) -> Result<Option<A::RVA>, Error> {
+    ) -> Result<Option<RVA>, Error> {
         match i32::from(op.type_) {
             // TODO: need a way to add xrefs for the pointer for something like `CALL [0x0]`
             // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
@@ -533,19 +526,20 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // E8 00 00 00 00  CALL $+5
     /// // 90              NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\xE8\x00\x00\x00\x00\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_call_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_call_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x5));
     /// ```
     pub fn get_call_insn_flow(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
+    ) -> Result<Vec<Xref>, Error> {
         // if this is not a CALL, then its a programming error. panic!
         // all CALLs should have an operand.
         let op = get_first_operand(insn).unwrap();
@@ -560,7 +554,7 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
-    fn read_pointer_table(&self, rva: A::RVA) -> Result<Vec<A::RVA>, Error> {
+    fn read_pointer_table(&self, rva: RVA) -> Result<Vec<RVA>, Error> {
         let mut ret = vec![];
 
         let mut rva = rva;
@@ -580,7 +574,7 @@ impl<A: Arch + 'static> Workspace<A> {
             }
 
             ret.push(ptr_rva);
-            rva = arch::rva_add_usize::<A>(rva, A::get_ptr_size() as usize).unwrap();
+            rva = rva + self.loader.get_arch().get_pointer_size();
         }
 
         if ret.len() < 4 {
@@ -592,13 +586,14 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // E9 00 00 00 00  JMP $+5
     /// // 90              NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\xE9\x00\x00\x00\x00\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_jmp_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x5);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_jmp_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x5));
     /// ```
     ///
     /// ```
@@ -606,7 +601,7 @@ impl<A: Arch + 'static> Workspace<A> {
     /// use lancelot::arch::*;
     /// use lancelot::workspace::Workspace;
     ///
-    /// let mut ws = Workspace::<Arch32>::from_bytes("mimi.exe", &get_buf(Rsrc::MIMI))
+    /// let mut ws = Workspace::from_bytes("mimi.exe", &get_buf(Rsrc::MIMI))
     ///    .disable_analysis()
     ///    .load().unwrap();
     ///
@@ -630,18 +625,18 @@ impl<A: Arch + 'static> Workspace<A> {
     /// //     .text:00471B9B                                         dd offset def_4715A8
     /// //     .text:00471B9B                                         dd offset loc_471744
     /// //ws.make_function(0x7153B).unwrap();
-    /// ws.make_insn(0x715A8).unwrap();
+    /// ws.make_insn(RVA(0x715A8)).unwrap();
     /// ws.analyze().unwrap();
     ///
-    /// assert!(ws.get_meta(0x715AF).unwrap().is_insn());
-    /// assert!(ws.get_meta(0x715F7).unwrap().is_insn());
-    /// assert!(ws.get_meta(0x71744).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x715AF)).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x715F7)).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x71744)).unwrap().is_insn());
     /// ```
     pub fn get_jmp_insn_flow(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
+    ) -> Result<Vec<Xref>, Error> {
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
         let op = get_first_operand(insn).unwrap();
@@ -651,7 +646,9 @@ impl<A: Arch + 'static> Workspace<A> {
             // so, probe for a pointer table.
             // otherwise, this should probably be solved via emulation.
 
-            let disp = A::VA::from_i64(op.mem.disp.value).unwrap();
+            // disp is a i64 here, but actually a u64 in practice
+            // it is the VA of the table (and probably fixed up by a reloc).
+            let disp = VA::from(op.mem.disp.value as u64);
             let table_rva = match self.rva(disp) {
                 Some(table) => table,
                 None => return Ok(vec![]),
@@ -683,37 +680,39 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // C3  RETN
     /// let mut ws = test::get_shellcode32_workspace(b"\xC3");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_ret_insn_flow(0x0, &insn).unwrap();
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_ret_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs.len(), 0);
     /// ```
     pub fn get_ret_insn_flow(
         &self,
-        _rva: A::RVA,
+        _rva: RVA,
         _insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
+    ) -> Result<Vec<Xref>, Error> {
         Ok(vec![])
     }
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // 75 01 JNZ $+1
     /// // CC    BREAK
     /// // 90    NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\x75\x01\xCC\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_cjmp_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_cjmp_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
     pub fn get_cjmp_insn_flow(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
+    ) -> Result<Vec<Xref>, Error> {
         // if this is not a CJMP, then its a programming error. panic!
         // all conditional jumps should have an operand.
         let op = get_first_operand(insn).unwrap();
@@ -730,21 +729,21 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // 0F 44 C3  CMOVZ EAX, EBX
     /// // 90        NOP
     /// let mut ws = test::get_shellcode32_workspace(b"\x0F\x44\xC3\x90");
-    /// let insn = ws.read_insn(0x0).unwrap();
-    /// let xrefs = ws.get_cmov_insn_flow(0x0, &insn).unwrap();
-    /// assert_eq!(xrefs[0].dst, 0x3);
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let xrefs = ws.get_cmov_insn_flow(RVA(0x0), &insn).unwrap();
+    /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
     pub fn get_cmov_insn_flow(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
-        let len = A::RVA::from_u8(insn.length).unwrap();
-        let dst = rva + len;
+    ) -> Result<Vec<Xref>, Error> {
+        let dst = rva + insn.length;
 
         Ok(vec![Xref {
             src: rva,
@@ -755,9 +754,9 @@ impl<A: Arch + 'static> Workspace<A> {
 
     fn get_insn_flow(
         &self,
-        rva: A::RVA,
+        rva: RVA,
         insn: &ZydisDecodedInstruction,
-    ) -> Result<Vec<Xref<A>>, Error> {
+    ) -> Result<Vec<Xref>, Error> {
         match i32::from(insn.mnemonic) {
             ZYDIS_MNEMONIC_CALL => self.get_call_insn_flow(rva, insn),
 
@@ -797,7 +796,7 @@ impl<A: Arch + 'static> Workspace<A> {
         }
     }
 
-    fn handle_make_insn(&mut self, rva: A::RVA) -> Result<Vec<AnalysisCommand<A>>, Error> {
+    fn handle_make_insn(&mut self, rva: RVA) -> Result<Vec<AnalysisCommand>, Error> {
         let mut ret = vec![];
 
         // TODO: 0. probe address
@@ -838,7 +837,7 @@ impl<A: Arch + 'static> Workspace<A> {
         let length = insn.length;
 
         // 3. compute fallthrough
-        let does_fallthrough = Workspace::<A>::does_insn_fallthrough(&insn);
+        let does_fallthrough = Workspace::does_insn_fallthrough(&insn);
 
         // 4. compute flow ref
         // TODO: maybe don't fail, but just return empty list?
@@ -850,9 +849,7 @@ impl<A: Arch + 'static> Workspace<A> {
         }));
 
         if does_fallthrough {
-            // u8 can always go into an RVA (u32 or greater).
-            let len = A::RVA::from_u8(insn.length).unwrap();
-            ret.push(AnalysisCommand::MakeInsn(rva + len));
+            ret.push(AnalysisCommand::MakeInsn(rva + insn.length));
         }
 
         // 5. update flowmeta
@@ -869,7 +866,7 @@ impl<A: Arch + 'static> Workspace<A> {
 
         // 6. update flowmeta for instruction fallthrough to
         if does_fallthrough {
-            let next_rva = rva + A::RVA::from_u8(length).unwrap();
+            let next_rva = rva + length;
             let (section, offset) = self.get_coords(next_rva).unwrap();
             let meta = &mut self.analysis.flow.meta[section][offset];
             meta.set_other_fallthrough_to();
@@ -880,21 +877,22 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.has_xrefs_from(), false);
     /// assert_eq!(meta.has_xrefs_to(),   false);
     ///
-    /// ws.make_insn(0x0).unwrap();
+    /// ws.make_insn(RVA(0x0)).unwrap();
     /// ws.analyze();
     ///
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.has_xrefs_from(), true);
     /// assert_eq!(meta.has_xrefs_to(),   true);
     /// ```
-    fn handle_make_xref(&mut self, xref: Xref<A>) -> Result<Vec<AnalysisCommand<A>>, Error> {
+    fn handle_make_xref(&mut self, xref: Xref) -> Result<Vec<AnalysisCommand>, Error> {
         // outline:
         //  1. validate arguments
         //  2. insert xref-from src, if not exists
@@ -961,7 +959,7 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(vec![])
     }
 
-    fn handle_make_symbol(&mut self, rva: A::RVA, name: &str) -> Result<Vec<AnalysisCommand<A>>, Error> {
+    fn handle_make_symbol(&mut self, rva: RVA, name: &str) -> Result<Vec<AnalysisCommand>, Error> {
         if !self.probe(rva, 1) {
             warn!("invalid symbol address: {:#x}", rva);
             return Ok(vec![]);
@@ -975,7 +973,7 @@ impl<A: Arch + 'static> Workspace<A> {
         Ok(vec![])
     }
 
-    fn handle_make_function(&mut self, rva: A::RVA) -> Result<Vec<AnalysisCommand<A>>, Error> {
+    fn handle_make_function(&mut self, rva: RVA) -> Result<Vec<AnalysisCommand>, Error> {
         // TODO: probably ensure this is code, not just readable.
         if !self.probe(rva, 1) {
             warn!("invalid function address: {:#x}", rva);
@@ -991,12 +989,13 @@ impl<A: Arch + 'static> Workspace<A> {
 
     /// ```
     /// use lancelot::test;
+    /// use lancelot::arch::RVA;
     ///
     /// // JMP $+0;
     /// let mut ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// ws.make_insn(0x0).unwrap();
+    /// ws.make_insn(RVA(0x0)).unwrap();
     /// ws.analyze();
-    /// let meta = ws.get_meta(0x0).unwrap();
+    /// let meta = ws.get_meta(RVA(0x0)).unwrap();
     /// assert_eq!(meta.get_insn_length().unwrap(), 2);
     /// assert_eq!(meta.does_fallthrough(), false);
     /// ```
@@ -1017,9 +1016,9 @@ impl<A: Arch + 'static> Workspace<A> {
 }
 
 
-pub trait Analyzer<A: Arch + 'static> {
+pub trait Analyzer {
     fn get_name(&self) -> String;
-    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error>;
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error>;
 }
 
 

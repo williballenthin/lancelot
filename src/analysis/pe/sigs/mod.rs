@@ -8,7 +8,6 @@
 
 use std::cmp;
 use std::io::Write;
-use std::marker::PhantomData;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -21,8 +20,6 @@ use rust_embed::{RustEmbed};
 use xml::reader::{EventReader, XmlEvent, ParserConfig};
 
 use super::super::{Analyzer};
-use super::super::super::arch;
-use super::super::super::arch::Arch;
 use super::super::super::loader::Permissions;
 use super::super::super::workspace::Workspace;
 
@@ -366,10 +363,10 @@ struct Node {
 
 impl Node {
     fn get_children(&self, tag: &str) -> Vec<&Box<Node>> {
-        self.children.iter().filter(|n| n.tag == tag).collect()
+        self.children.iter().filter(|n| &n.tag == tag).collect()
     }
     fn get_child(&self, tag: &str) -> Option<&Box<Node>> {
-        self.children.iter().filter(|n| n.tag == tag).next()
+        self.children.iter().filter(|n| &n.tag == tag).next()
     }
 }
 
@@ -455,13 +452,13 @@ impl Assets {
         // also, sorry for the extra allocations.
 
         for constraints_node in Assets::get_patternconstraints()?.children.iter().filter(
-            |n| n.tag == "patternconstraints") {
+            |n| &n.tag == "patternconstraints") {
             for language_node in constraints_node.children.iter().filter(
-                |n| n.tag == "language" && n.attrs.get("id") == Some(&language.to_string())) {
+                |n| &n.tag == "language" && n.attrs.get("id") == Some(&language.to_string())) {
                 for compiler_node in language_node.children.iter().filter(
-                    |n| n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string())) {
+                    |n| &n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string())) {
                     for patternfile_node in compiler_node.children.iter().filter(
-                        |n| n.tag == "patternfile") {
+                        |n| &n.tag == "patternfile") {
                         patternfiles.push(patternfile_node.text.clone());
                     }
                 }
@@ -473,7 +470,7 @@ impl Assets {
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_singlepatterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 9);
+    /// assert_eq!(patterns.len(), 10);
     /// ```
     pub fn get_singlepatterns(language: &str, compiler: &str) -> Result<Vec<SinglePattern>, Error> {
         let mut ret = vec![];
@@ -481,10 +478,10 @@ impl Assets {
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
             for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| n.tag == "patternlist") {
+                |n| &n.tag == "patternlist") {
 
                 for pattern_node in patternlist_node.children.iter().filter(
-                    |n| n.tag == "pattern") {
+                    |n| &n.tag == "pattern") {
 
                     let data = pattern_node.get_child("data").unwrap().text.clone();
                     let fstart = pattern_node.get_child("funcstart").unwrap().attrs.clone();
@@ -508,10 +505,10 @@ impl Assets {
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
             for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| n.tag == "patternlist") {
+                |n| &n.tag == "patternlist") {
 
                 for pattern_node in patternlist_node.children.iter().filter(
-                    |n| n.tag == "patternpairs") {
+                    |n| &n.tag == "patternpairs") {
 
                     let mut prepatterns = vec![];
                     let mut postpatterns = vec![];
@@ -549,7 +546,7 @@ impl Assets {
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_patterns("x86:LE:32:default", "windows").unwrap();
-    /// assert_eq!(patterns.len(), 8);
+    /// assert_eq!(patterns.len(), 9);
     /// ```
     pub fn get_patterns(language: &str, compiler: &str) -> Result<Vec<Box<dyn Pattern>>, Error> {
         let mut ret: Vec<Box<dyn Pattern>> = vec![];
@@ -596,27 +593,17 @@ impl Assets {
     }
 }
 
-pub struct ByteSigAnalyzer<A: Arch> {
-    // This Analyzer must have a type parameter for it
-    //  to implement Analyzer<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
-}
+pub struct ByteSigAnalyzer {}
 
-impl<A: Arch> ByteSigAnalyzer<A> {
-    pub fn new() -> ByteSigAnalyzer<A> {
-        ByteSigAnalyzer {
-            _phantom: PhantomData {},
-        }
+impl ByteSigAnalyzer {
+    pub fn new() -> ByteSigAnalyzer {
+        ByteSigAnalyzer {}
     }
 }
 
 
-impl<A: Arch + 'static> ByteSigAnalyzer<A> {
-    fn is_64(&self, ws: &Workspace<A>) -> bool {
+impl ByteSigAnalyzer {
+    fn is_64(&self, ws: &Workspace) -> bool {
         match Object::parse(&ws.buf) {
             Ok(Object::PE(pe)) => pe.is_64,
             _ => panic!("can't analyze unexpected format"),
@@ -624,7 +611,7 @@ impl<A: Arch + 'static> ByteSigAnalyzer<A> {
     }
 }
 
-impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
+impl Analyzer for ByteSigAnalyzer {
     fn get_name(&self) -> String {
         "byte signature analyzer".to_string()
     }
@@ -636,14 +623,14 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
     /// use lancelot::workspace::Workspace;
     /// use lancelot::analysis::pe::ByteSigAnalyzer;
     ///
-    /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+    /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
     ///
-    /// ByteSigAnalyzer::<Arch64>::new().analyze(&mut ws).unwrap();
-    /// assert!(ws.get_functions().find(|&&rva| rva == 0x1010).is_some());
+    /// ByteSigAnalyzer::new().analyze(&mut ws).unwrap();
+    /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x1010)).is_some());
     /// ```
-    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
 
         let language = match self.is_64(ws) {
@@ -673,7 +660,7 @@ impl<A: Arch + 'static> Analyzer<A> for ByteSigAnalyzer<A> {
             for capture in re.captures_iter(&section.buf) {
                 for pattern in patterns.values() {
                     if let Some(mat) = capture.name(pattern.get_mark()) {
-                        let rva = arch::rva_add_usize::<A>(section.addr, mat.start()).unwrap();
+                        let rva = section.addr + mat.start();
                         functions.push(rva);
                     }
                 }

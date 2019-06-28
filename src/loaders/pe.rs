@@ -1,13 +1,10 @@
-use std::marker::PhantomData;
-use num::{FromPrimitive};
-
 use log::{debug};
 use failure::{Error};
 use goblin::{Object};
 use goblin::pe::section_table::SectionTable;
 
 use super::super::util;
-use super::super::arch::Arch;
+use super::super::arch::{Arch, VA, RVA};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
 use super::super::analysis::{Analyzer, OrphanFunctionAnalyzer};
 use super::super::analysis::pe;
@@ -23,24 +20,18 @@ const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
 const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
 
 
-pub struct PELoader<A: Arch> {
-    // PELoader must have a type parameter for it
-    //  to implement Loader<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
+pub struct PELoader {
+    arch: Arch,
 }
 
-impl<A: Arch> PELoader<A> {
-    pub fn new() -> PELoader<A> {
+impl PELoader {
+    pub fn new(arch: Arch) -> PELoader {
         PELoader {
-            _phantom: PhantomData {},
+            arch
         }
     }
 
-    fn load_header(&self, buf: &[u8], pe: &goblin::pe::PE) -> Result<Section<A>, Error> {
+    fn load_header(&self, buf: &[u8], pe: &goblin::pe::PE) -> Result<Section, Error> {
         let hdr_raw_size = match pe.header.optional_header {
             Some(opt) => opt.windows_fields.size_of_headers,
             // assumption: header is at most 0x200 bytes.
@@ -73,14 +64,14 @@ impl<A: Arch> PELoader<A> {
         }
 
         Ok(Section {
-            addr: A::RVA::from_u8(0x0).unwrap(),
+            addr: RVA(0x0),
             buf: headerbuf,
             perms: Permissions::R,
             name: String::from("header"),
         })
     }
 
-    fn load_section(&self, buf: &[u8], section: &SectionTable) -> Result<Section<A>, Error> {
+    fn load_section(&self, buf: &[u8], section: &SectionTable) -> Result<Section, Error> {
         let name = String::from_utf8_lossy(&section.name[..])
             .into_owned()
             .trim_end_matches("\u{0}")
@@ -118,7 +109,7 @@ impl<A: Arch> PELoader<A> {
         }
 
         Ok(Section{
-            addr: A::RVA::from_u32(section.virtual_address).unwrap(),
+            addr: RVA::from(section.virtual_address as i64), // ok: u32 -> i64
             buf: secbuf,
             perms,
             name,
@@ -126,9 +117,9 @@ impl<A: Arch> PELoader<A> {
     }
 }
 
-impl<A: Arch + 'static> Loader<A> for PELoader<A> {
-    fn get_arch(&self) -> u8 {
-        A::get_bits()
+impl Loader for PELoader {
+    fn get_arch(&self) -> Arch {
+        self.arch
     }
 
     fn get_plat(&self) -> Platform {
@@ -144,20 +135,17 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
     /// use lancelot::arch::*;
     /// use lancelot::loader::*;
     ///
-    /// let loader = lancelot::loaders::pe::PELoader::<Arch64>::new();
-    /// assert_eq!(loader.taste(&get_buf(Rsrc::K32)), true);
+    /// let loader32 = lancelot::loaders::pe::PELoader::new(Arch::X32);
+    /// let loader64 = lancelot::loaders::pe::PELoader::new(Arch::X64);
+    /// assert!( ! loader32.taste(&get_buf(Rsrc::K32)));
+    /// assert!(   loader64.taste(&get_buf(Rsrc::K32)));
     /// ```
     fn taste(&self, buf: &[u8]) -> bool {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
-            if pe.is_64 && self.get_arch() == 32 {
-                return false;
+            match self.arch {
+                Arch::X32 => !pe.is_64,
+                Arch::X64 =>  pe.is_64,
             }
-
-            if !pe.is_64 && self.get_arch() == 64 {
-                return false;
-            }
-
-            return true;
         } else {
             false
         }
@@ -168,22 +156,19 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
     /// use lancelot::arch::*;
     /// use lancelot::loader::*;
     ///
-    /// let loader = lancelot::loaders::pe::PELoader::<Arch64>::new();
-    /// let (module, analyzers) = loader.load(&get_buf(Rsrc::K32)).unwrap();
-    /// assert_eq!(module.base_address, 0x180000000);
+    /// let loader64 = lancelot::loaders::pe::PELoader::new(Arch::X64);
+    /// let (module, analyzers) = loader64.load(&get_buf(Rsrc::K32)).unwrap();
+    /// assert_eq!(module.base_address, VA(0x180000000));
     ///
     /// // mismatched bitness
-    /// let loader = lancelot::loaders::pe::PELoader::<Arch32>::new();
-    /// assert!(loader.load(&get_buf(Rsrc::K32)).is_err());
+    /// let loader32 = lancelot::loaders::pe::PELoader::new(Arch::X32);
+    /// assert!(loader32.load(&get_buf(Rsrc::K32)).is_err());
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<(LoadedModule<A>, Vec<Box<dyn Analyzer<A>>>), Error> {
+    fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
-            if pe.is_64 && self.get_arch() == 32 {
-                return Err(LoaderError::MismatchedBitness.into());
-            }
-
-            if !pe.is_64 && self.get_arch() == 64 {
-                return Err(LoaderError::MismatchedBitness.into());
+            match self.arch {
+                Arch::X32 => if  pe.is_64 { return Err(LoaderError::MismatchedBitness.into());},
+                Arch::X64 => if !pe.is_64 { return Err(LoaderError::MismatchedBitness.into());},
             }
 
             let base_address = match pe.header.optional_header {
@@ -194,18 +179,14 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
                 }
             };
 
-            let base_address = match A::VA::from_u64(base_address) {
-                Some(base_address) => base_address,
-                // this would only fail if there's a 64-bit base address in a 32-bit PE
-                None => return Err(LoaderError::NotSupported.into()),
-            };
+            let base_address = VA::from(base_address);
 
             let mut sections = vec![self.load_header(buf, &pe)];
             sections.extend(pe.sections
                             .iter()
                             .map(|sec| self.load_section(buf, sec)));
 
-            let mut analyzers: Vec<Box<dyn Analyzer<A>>> = vec![
+            let mut analyzers: Vec<Box<dyn Analyzer>> = vec![
                 Box::new(pe::EntryPointAnalyzer::new()),
                 Box::new(pe::ExportsAnalyzer::new()),
                 Box::new(pe::ImportsAnalyzer::new()),
@@ -225,7 +206,7 @@ impl<A: Arch + 'static> Loader<A> for PELoader<A> {
             // collect sections into either list of sections, or error.
             //
             // via: https://doc.rust-lang.org/rust-by-example/error/iter_result.html
-            match sections.into_iter().collect::<Result<Vec<Section<A>>, Error>>() {
+            match sections.into_iter().collect::<Result<Vec<Section>, Error>>() {
                 Ok(sections) => Ok(
                     (LoadedModule {
                         base_address,

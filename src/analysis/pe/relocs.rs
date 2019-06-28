@@ -1,12 +1,9 @@
-use num::{FromPrimitive, ToPrimitive};
-use std::marker::PhantomData;
-
 use byteorder::{ByteOrder, LittleEndian};
 use log::{debug};
 use goblin::{Object};
 use failure::{Error, Fail};
 
-use super::super::super::arch::Arch;
+use super::super::super::arch::{RVA};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
@@ -17,44 +14,34 @@ pub enum RelocAnalyzerError {
     InvalidRelocType,
 }
 
-pub struct RelocAnalyzer<A: Arch> {
-    // This Analyzer must have a type parameter for it
-    //  to implement Analyzer<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
-}
+pub struct RelocAnalyzer {}
 
-impl<A: Arch> RelocAnalyzer<A> {
-    pub fn new() -> RelocAnalyzer<A> {
-        RelocAnalyzer {
-            _phantom: PhantomData {},
-        }
+impl RelocAnalyzer {
+    pub fn new() -> RelocAnalyzer {
+        RelocAnalyzer {}
     }
 }
 
-struct Section<A: Arch> {
-    start: A::RVA,
-    end: A::RVA,
+struct Section {
+    start: RVA,
+    end: RVA,
 }
 
-fn is_in_insn<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> bool {
-    let start: usize = rva.to_usize().unwrap();
-    // TODO: remove harded max insn length
+fn is_in_insn(ws: &Workspace, rva: RVA) -> bool {
+    let start: usize = rva.into();
     // TODO: underflow
-    let end: usize = rva.to_usize().unwrap() - 0x10;
+    // TODO: remove harded max insn length
+    let end: usize = start - 0x10;
 
     for i in (start..end).rev() {
-        let i = A::RVA::from_usize(i).unwrap();
+        let i = RVA::from(i);
         if let Some(meta) = ws.get_meta(i) {
             if !meta.is_insn() {
                 continue;
             }
 
             if let Ok(len) = meta.get_insn_length() {
-                if i + A::RVA::from_u8(len).unwrap() > rva {
+                if i + len > rva {
                     return true;
                 }
             }
@@ -63,7 +50,7 @@ fn is_in_insn<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> bool {
     return false;
 }
 
-fn is_ptr<A: Arch + 'static>(ws: &Workspace<A>, rva: A::RVA) -> bool {
+fn is_ptr(ws: &Workspace, rva: RVA) -> bool {
     if let Ok(ptr) = ws.read_va(rva) {
         if let Some(ptr) = ws.rva(ptr) {
             return ws.probe(ptr, 1);
@@ -96,12 +83,12 @@ pub enum RelocationType {
     ImageRelBasedDir64,
 }
 
-pub struct Reloc<A: Arch> {
+pub struct Reloc {
     pub typ: RelocationType,
-    pub offset: A::RVA,
+    pub offset: RVA,
 }
 
-fn parse_reloc<A: Arch>(base: A::RVA, entry: u16) -> Result<Reloc<A>, Error> {
+fn parse_reloc(base: RVA, entry: u16) -> Result<Reloc, Error> {
     let reloc_type   = (entry & 0b1111000000000000) >> 12;
     let reloc_offset =  entry & 0b0000111111111111;
 
@@ -123,7 +110,7 @@ fn parse_reloc<A: Arch>(base: A::RVA, entry: u16) -> Result<Reloc<A>, Error> {
 
     Ok(Reloc {
         typ: reloc_type,
-        offset: base + A::RVA::from_u16(reloc_offset).unwrap(),
+        offset: base + RVA::from(reloc_offset as i64),
     })
 }
 
@@ -140,14 +127,14 @@ fn split_u32(e: u32) -> (u16, u16) {
 /// use lancelot::workspace::Workspace;
 /// use lancelot::analysis::pe::relocs;
 ///
-/// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+/// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
 ///    .disable_analysis()
 ///    .load().unwrap();
 /// let relocs = relocs::get_relocs(&ws).unwrap();
-/// assert_eq!(relocs[0].offset,   0x76008);
-/// assert_eq!(relocs[277].offset, 0xA8000);
+/// assert_eq!(relocs[0].offset,   RVA(0x76008));
+/// assert_eq!(relocs[277].offset, RVA(0xA8000));
 /// ```
-pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>, Error> {
+pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
     let pe = match Object::parse(&ws.buf) {
         Ok(Object::PE(pe)) => pe,
         _ => return Ok(vec![]),
@@ -163,7 +150,7 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
         _ => return Ok(vec![]),
     };
 
-    let dir_start = A::RVA::from_u32(reloc_directory.virtual_address).unwrap();
+    let dir_start = RVA::from(reloc_directory.virtual_address as i64);
     let buf = ws.read_bytes(dir_start, reloc_directory.size as usize)?;
 
     let entries: Vec<u32> = buf
@@ -182,7 +169,7 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
         let (page_rva, block_size) = match (page_rva, block_size) {
             (Some(0),        _               ) => break,
             (_,              Some(0)         ) => break,
-            (Some(page_rva), Some(block_size)) => (A::RVA::from_u32(*page_rva).unwrap(), *block_size),
+            (Some(page_rva), Some(block_size)) => (RVA::from(*page_rva as i64), *block_size),
             _ => break,
         };
 
@@ -193,13 +180,13 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
             if let Some(&entry) = entries.get(index + i) {
                 let (m, n) = split_u32(entry);
 
-                let reloc1 = parse_reloc::<A>(page_rva, m)?;
+                let reloc1 = parse_reloc(page_rva, m)?;
                 if !ws.probe(reloc1.offset, 4) {
                     break
                 }
                 ret.push(reloc1);
 
-                let reloc2 = parse_reloc::<A>(page_rva, n)?;
+                let reloc2 = parse_reloc(page_rva, n)?;
                 if !ws.probe(reloc2.offset, 4) {
                     break
                 }
@@ -216,7 +203,7 @@ pub fn get_relocs<A: Arch + 'static>(ws: &Workspace<A>) -> Result<Vec<Reloc<A>>,
 }
 
 
-impl<A: Arch + 'static> Analyzer<A> for RelocAnalyzer<A> {
+impl Analyzer for RelocAnalyzer {
     fn get_name(&self) -> String {
         "PE relocation analyzer".to_string()
     }
@@ -228,15 +215,15 @@ impl<A: Arch + 'static> Analyzer<A> for RelocAnalyzer<A> {
     /// use lancelot::workspace::Workspace;
     /// use lancelot::analysis::pe::RelocAnalyzer;
     ///
-    /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+    /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
-    /// let anal = RelocAnalyzer::<Arch64>::new();
+    /// let anal = RelocAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// let meta = ws.get_meta(0xC7F0).unwrap();
+    /// let meta = ws.get_meta(RVA(0xC7F0)).unwrap();
     /// assert!(meta.is_insn());
     /// ```
-    fn analyze(&self, ws: &mut Workspace<A>)-> Result<(), Error> {
+    fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
         let text_section = match ws.module.sections.iter()
             // currently limited to the text section.
             // TODO: accept any writable section.
@@ -246,9 +233,9 @@ impl<A: Arch + 'static> Analyzer<A> for RelocAnalyzer<A> {
                 Some(s) => s,
             };
 
-        let text_bounds = Section::<A> {
+        let text_bounds = Section {
             start: text_section.addr,
-            end: text_section.addr + A::RVA::from_usize(text_section.buf.len()).unwrap(),
+            end: text_section.addr + RVA::from(text_section.buf.len()),
         };
 
         // scan the relocations
@@ -257,7 +244,7 @@ impl<A: Arch + 'static> Analyzer<A> for RelocAnalyzer<A> {
         //   1. are not already in an instruction
         //   2. don't appear to be a pointer
         // and assume this is code.
-        let o: Vec<A::RVA> = get_relocs(ws)?
+        let o: Vec<RVA> = get_relocs(ws)?
             .iter()
             .map(|reloc| reloc.offset)
             .map(|rva| ws.read_va(rva))

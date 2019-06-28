@@ -1,43 +1,30 @@
-use num::{FromPrimitive};
-use std::marker::PhantomData;
-
 use log::{debug};
 use goblin::{Object};
 use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
 
-use super::super::super::arch::Arch;
+use super::super::super::arch::{RVA};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
 
-pub struct RuntimeFunctionAnalyzer<A: Arch> {
-    // This Analyzer must have a type parameter for it
-    //  to implement Analyzer<A>.
-    // however, it doesn't actually use this type itself.
-    // so, we use a phantom data marker which has zero type,
-    //  to ensure there is not an unused type parameter,
-    //  which is a compile error.
-    _phantom: PhantomData<A>,
-}
+pub struct RuntimeFunctionAnalyzer {}
 
-impl<A: Arch> RuntimeFunctionAnalyzer<A> {
-    pub fn new() -> RuntimeFunctionAnalyzer<A> {
-        RuntimeFunctionAnalyzer {
-            _phantom: PhantomData {},
-        }
+impl RuntimeFunctionAnalyzer {
+    pub fn new() -> RuntimeFunctionAnalyzer {
+        RuntimeFunctionAnalyzer {}
     }
 }
 
 
-struct RuntimeFunction<A: Arch> {
-    begin_address: A::RVA,
-    end_address: A::RVA,
-    unwind_data: A::RVA,
+struct RuntimeFunction {
+    begin_address: RVA,
+    end_address: RVA,
+    unwind_data: RVA,
 }
 
 
-impl<A: Arch> std::fmt::Debug for RuntimeFunction<A>{
+impl std::fmt::Debug for RuntimeFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "RUNTIME_FUNCTION(begin: {:#x} end: {:#x} data: {:#x})",
                self.begin_address,
@@ -48,7 +35,7 @@ impl<A: Arch> std::fmt::Debug for RuntimeFunction<A>{
 }
 
 
-impl<A: Arch + 'static> Analyzer<A> for RuntimeFunctionAnalyzer<A> {
+impl Analyzer for RuntimeFunctionAnalyzer {
     fn get_name(&self) -> String {
         "RUNTIME_FUNCTION analyzer".to_string()
     }
@@ -60,22 +47,22 @@ impl<A: Arch + 'static> Analyzer<A> for RuntimeFunctionAnalyzer<A> {
     /// use lancelot::workspace::Workspace;
     /// use lancelot::analysis::pe::RuntimeFunctionAnalyzer;
     ///
-    /// let mut ws = Workspace::<Arch64>::from_bytes("k32.dll", &get_buf(Rsrc::K32))
+    /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
-    /// let anal = RuntimeFunctionAnalyzer::<Arch64>::new();
+    /// let anal = RuntimeFunctionAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
     ///
-    /// assert!(ws.get_meta(0x72A70).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x72A70)).unwrap().is_insn());
     ///
     /// // this function is referenced in RUNTIME_FUNCTIONs,
     /// // and in code, tail jump at 0x1800112C2
     /// //
     /// //     .text:00000001800112C2     jmp     sub_1800019C8
     /// //
-    /// assert!(ws.get_meta(0x19C8).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x19C8)).unwrap().is_insn());
     /// ```
-    fn analyze(&self, ws: &mut Workspace<A>) -> Result<(), Error> {
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let (exception_directory, directory_size) = {
             let pe = match Object::parse(&ws.buf) {
                 Ok(Object::PE(pe)) => pe,
@@ -92,18 +79,18 @@ impl<A: Arch + 'static> Analyzer<A> for RuntimeFunctionAnalyzer<A> {
                 _ => return Ok(()),
             };
 
-            (A::RVA::from_u32(exception_directory.virtual_address).unwrap(), exception_directory.size)
+            (RVA::from(exception_directory.virtual_address as i64), exception_directory.size)
         };
 
         debug!("exception directory: {:#x}", exception_directory);
 
         let buf = ws.read_bytes(exception_directory, directory_size as usize)?;
-        let functions: Vec<A::RVA> = buf
+        let functions: Vec<RVA> = buf
             .chunks_exact(3 * 4)
             .map(|b| RuntimeFunction{
-                begin_address: A::RVA::from_u32(LittleEndian::read_u32(b)).unwrap(),
-                end_address: A::RVA::from_u32(LittleEndian::read_u32(&b[4..])).unwrap(),
-                unwind_data: A::RVA::from_u32(LittleEndian::read_u32(&b[8..])).unwrap(),
+                begin_address: RVA::from(LittleEndian::read_i32(b)),
+                end_address: RVA::from(LittleEndian::read_i32(&b[4..])),
+                unwind_data: RVA::from(LittleEndian::read_i32(&b[8..])),
             })
             .filter(|rt| {
                 if ! ws.probe(rt.begin_address, 1) {
@@ -117,7 +104,7 @@ impl<A: Arch + 'static> Analyzer<A> for RuntimeFunctionAnalyzer<A> {
                 }
                 return true;
             })
-            .map(|rt: RuntimeFunction<A>| -> A::RVA {
+            .map(|rt: RuntimeFunction| -> RVA {
                 rt.begin_address
             })
             .collect();
