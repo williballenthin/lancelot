@@ -1,7 +1,8 @@
 [workspace]
 
 members = [
-    "core"
+    "core",
+    "pylancelot",
 ]
 
 [profile.release]
