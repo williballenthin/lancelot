@@ -41,6 +41,14 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub name: String,
     }
 
+    m.add("PERM_NONE", lancelot::loader::Permissions::empty().bits())?;
+    m.add("PERM_R", lancelot::loader::Permissions::R.bits())?;
+    m.add("PERM_W", lancelot::loader::Permissions::W.bits())?;
+    m.add("PERM_X", lancelot::loader::Permissions::X.bits())?;
+    m.add("PERM_RW", lancelot::loader::Permissions::RW.bits())?;
+    m.add("PERM_RX", lancelot::loader::Permissions::RX.bits())?;
+    m.add("PERM_RWX", lancelot::loader::Permissions::RWX.bits())?;
+
     #[pymethods]
     impl PyWorkspace {
         #[getter]

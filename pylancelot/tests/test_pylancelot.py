@@ -22,14 +22,17 @@ def test_base_address():
     assert ws.base_address == 0x0
 
 
+def test_perms():
+    assert pylancelot.PERM_R == 0x1
+
+
 def test_sections():
     ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
     sec = ws.sections[0]
 
     assert sec.addr == 0x0
     assert sec.length == 0x2
-    # TODO: flags
-    assert sec.perms == 0x7
+    assert sec.perms == pylancelot.PERM_RWX
     assert sec.name == 'raw'
     assert str(sec) == 'PySection(addr: 0x0 length: 0x2 perms: 0x7 name: raw)'
     assert repr(sec) == 'PySection(addr: 0x0 length: 0x2 perms: 0x7 name: raw)'
