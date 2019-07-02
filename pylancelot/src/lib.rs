@@ -3,6 +3,7 @@ use pyo3::types::{PyBytes};
 use pyo3::prelude::*;
 
 use lancelot::workspace;
+use lancelot::arch::{RVA, VA};
 
 
 #[pymodule]
@@ -89,6 +90,17 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                     name: section.name.clone(),
                 })
                 .collect())
+        }
+
+        /// probe(self, rva, length=1, /)
+        /// --
+        ///
+        /// Is the given address mapped?
+        pub fn probe(&self, rva: i64, length: Option<usize>) -> PyResult<bool> {
+            match length {
+                Some(length) => Ok(self.ws.probe(RVA::from(rva), length)),
+                None =>  Ok(self.ws.probe(RVA::from(rva), 1)),
+            }
         }
     }
 

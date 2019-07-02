@@ -36,3 +36,13 @@ def test_sections():
     assert sec.name == 'raw'
     assert str(sec) == 'PySection(addr: 0x0 length: 0x2 perms: 0x7 name: raw)'
     assert repr(sec) == 'PySection(addr: 0x0 length: 0x2 perms: 0x7 name: raw)'
+
+
+def test_probe():
+    ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
+    assert     ws.probe(0x0)
+    assert     ws.probe(0x0, 1)
+    assert     ws.probe(0x0, 2)
+    assert not ws.probe(0x0, 3)
+    assert     ws.probe(0x1)
+    assert not ws.probe(0x2)
