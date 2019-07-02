@@ -113,6 +113,11 @@ impl std::convert::From<u64> for VA {
     }
 }
 
+impl std::convert::Into<u64> for VA {
+    fn into(self) -> u64 {
+        self.0
+    }
+}
 
 
 
