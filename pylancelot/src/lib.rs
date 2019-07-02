@@ -106,6 +106,34 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 None =>  Ok(self.ws.probe(RVA::from(rva), 1)),
             }
         }
+
+        /// read_bytes(self, rva, length, /)
+        /// --
+        ///
+        /// Read bytes from the given memory address.
+        pub fn read_bytes<'p>(&self, py: Python<'p>, rva: i64, length: usize) -> PyResult<&'p pyo3::types::PyBytes> {
+            match self.ws.read_bytes(RVA::from(rva), length) {
+                Ok(buf) => {
+                    Ok(pyo3::types::PyBytes::new(py, buf))
+                },
+                Err(e) => {
+                    match e.downcast::<lancelot::workspace::WorkspaceError>() {
+                        Ok(lancelot::workspace::WorkspaceError::InvalidAddress) => {
+                            Err(pyo3::exceptions::LookupError::py_err("invalid address"))
+                        },
+                        Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
+                            Err(pyo3::exceptions::LookupError::py_err("buffer overrun"))
+                        }
+                        Ok(_) => {
+                            Err(pyo3::exceptions::RuntimeError::py_err("unexpected error"))
+                        },
+                        Err(_) => {
+                            Err(pyo3::exceptions::RuntimeError::py_err("unexpected error"))
+                        },
+                    }
+                }
+            }
+        }
     }
 
     #[pyproto]
