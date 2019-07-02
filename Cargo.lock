@@ -471,6 +471,7 @@ dependencies = [
 name = "pylancelot"
 version = "0.1.0"
 dependencies = [
+ "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "lancelot 0.1.0",
  "pyo3 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

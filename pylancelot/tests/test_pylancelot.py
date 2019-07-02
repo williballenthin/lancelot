@@ -57,6 +57,21 @@ def test_read_bytes():
     assert ws.read_bytes(0x0, 2) == b'\xEB\xFE'
 
     with pytest.raises(LookupError):
-        assert ws.read_bytes(0x2, 2) == b'\xEB\xFE'
+        assert ws.read_bytes(0x2, 2)
 
 
+def test_read_element():
+    ws = pylancelot.from_bytes('foo.bin', b'\x00\x11\x22\x33\x44\x55\x66\x77')
+
+    with pytest.raises(LookupError):
+        assert ws.read_u8(0x10)
+
+    assert ws.read_u8(0x0) == 0x00
+    assert ws.read_u8(0x1) == 0x11
+
+    assert ws.read_u16(0x0) == 0x1100
+    assert ws.read_u32(0x0) == 0x33221100
+    assert ws.read_u64(0x0) == 0x7766554433221100
+
+    assert ws.read_rva(0x0) == 0x33221100
+    assert ws.read_va(0x0) == 0x33221100

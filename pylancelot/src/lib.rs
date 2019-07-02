@@ -1,9 +1,12 @@
 use pyo3;
 use pyo3::types::{PyBytes};
 use pyo3::prelude::*;
+use failure::{Error};
 
 use lancelot::workspace;
 use lancelot::arch::{RVA};
+
+
 
 
 #[pymodule]
@@ -113,25 +116,76 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// Read bytes from the given memory address.
         pub fn read_bytes<'p>(&self, py: Python<'p>, rva: i64, length: usize) -> PyResult<&'p pyo3::types::PyBytes> {
             match self.ws.read_bytes(RVA::from(rva), length) {
-                Ok(buf) => {
-                    Ok(pyo3::types::PyBytes::new(py, buf))
+                Ok(buf) => Ok(pyo3::types::PyBytes::new(py, buf)),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_u8(&self, rva: i64) -> PyResult<u8> {
+            match self.ws.read_u8(RVA::from(rva)) {
+                Ok(b) => Ok(b),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_u16(&self, rva: i64) -> PyResult<u16> {
+            match self.ws.read_u16(RVA::from(rva)) {
+                Ok(b) => Ok(b),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_u32(&self, rva: i64) -> PyResult<u32> {
+            match self.ws.read_u32(RVA::from(rva)) {
+                Ok(b) => Ok(b),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_u64(&self, rva: i64) -> PyResult<u64> {
+            match self.ws.read_u64(RVA::from(rva)) {
+                Ok(b) => Ok(b),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_rva(&self, rva: i64) -> PyResult<i64> {
+            match self.ws.read_rva(RVA::from(rva)) {
+                Ok(b) => Ok(b.into()),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+
+        pub fn read_va(&self, rva: i64) -> PyResult<u64> {
+            match self.ws.read_va(RVA::from(rva)) {
+                Ok(b) => Ok(b.into()),
+                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
+            }
+        }
+    }
+
+    impl PyWorkspace {
+        /// translate from a failure::Error returned by a Workspace
+        /// while reading an element from memory into a pyo3/Python error
+        /// corresponding to out-of-bounds-access.
+        fn translate_buffer_error(e: Error) -> PyErr {
+            match e.downcast::<lancelot::workspace::WorkspaceError>() {
+                // we have to use the documentation for the associated routine,
+                // such as `read_u8`, to determine what to inspect here.
+                Ok(lancelot::workspace::WorkspaceError::InvalidAddress) => {
+                    pyo3::exceptions::LookupError::py_err("invalid address")
                 },
-                Err(e) => {
-                    match e.downcast::<lancelot::workspace::WorkspaceError>() {
-                        Ok(lancelot::workspace::WorkspaceError::InvalidAddress) => {
-                            Err(pyo3::exceptions::LookupError::py_err("invalid address"))
-                        },
-                        Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
-                            Err(pyo3::exceptions::LookupError::py_err("buffer overrun"))
-                        }
-                        Ok(_) => {
-                            Err(pyo3::exceptions::RuntimeError::py_err("unexpected error"))
-                        },
-                        Err(_) => {
-                            Err(pyo3::exceptions::RuntimeError::py_err("unexpected error"))
-                        },
-                    }
+                Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
+                    pyo3::exceptions::LookupError::py_err("buffer overrun")
                 }
+                Ok(_) => {
+                    // this should never be hit
+                    pyo3::exceptions::RuntimeError::py_err("unexpected error")
+                },
+                Err(_) => {
+                    // this should never be hit
+                    pyo3::exceptions::RuntimeError::py_err("unexpected error")
+                },
             }
         }
     }
