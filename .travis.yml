@@ -1,3 +1,4 @@
+dist: xenial  # xenial is py3.5
 language: rust
 rust:
   #- stable
