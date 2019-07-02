@@ -17,3 +17,5 @@ addons:
       - clang-3.9
       - libc++-dev
       - libc++abi-dev
+      - python3
+      - python3-dev
