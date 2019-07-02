@@ -3,7 +3,7 @@ use pyo3::types::{PyBytes};
 use pyo3::prelude::*;
 
 use lancelot::workspace;
-use lancelot::arch::{RVA, VA};
+use lancelot::arch::{RVA};
 
 
 #[pymodule]
@@ -36,9 +36,13 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
 
     #[pyclass]
     pub struct PySection {
+        #[pyo3(get)]
         pub addr: i64,
+        #[pyo3(get)]
         pub length: u64,
+        #[pyo3(get)]
         pub perms: u8,
+        #[pyo3(get)]
         pub name: String,
     }
 
@@ -118,28 +122,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
-    #[pymethods]
-    impl PySection {
-        #[getter]
-        pub fn addr(&self) -> PyResult<i64> {
-            Ok(self.addr)
-        }
-
-        #[getter]
-        pub fn length(&self) -> PyResult<u64> {
-            Ok(self.length)
-        }
-
-        #[getter]
-        pub fn perms(&self) -> PyResult<u8> {
-            Ok(self.perms)
-        }
-
-        #[getter]
-        pub fn name(&self) -> PyResult<String> {
-            Ok(self.name.clone())
-        }
-    }
 
     #[pyproto]
     impl pyo3::class::basic::PyObjectProtocol for PySection {

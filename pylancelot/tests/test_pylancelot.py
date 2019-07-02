@@ -1,3 +1,5 @@
+import pytest
+
 import pylancelot
 
 
@@ -46,3 +48,15 @@ def test_probe():
     assert not ws.probe(0x0, 3)
     assert     ws.probe(0x1)
     assert not ws.probe(0x2)
+
+
+def test_read_bytes():
+    ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
+    assert ws.read_bytes(0x0, 0) == b''
+    assert ws.read_bytes(0x0, 1) == b'\xEB'
+    assert ws.read_bytes(0x0, 2) == b'\xEB\xFE'
+
+    with pytest.raises(LookupError):
+        assert ws.read_bytes(0x2, 2) == b'\xEB\xFE'
+
+
