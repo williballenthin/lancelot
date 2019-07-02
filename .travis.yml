@@ -8,7 +8,7 @@ cache: cargo
 matrix:
   fast_finish: true
 script:
-  - cargo test --verbose --all
+  - cargo test -p lancelot --verbose --all
 addons:
   apt:
     sources:
