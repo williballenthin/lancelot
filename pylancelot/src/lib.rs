@@ -114,6 +114,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// --
         ///
         /// Read bytes from the given memory address.
+        ///
+        /// raises:
+        ///   - LookupError: if the address is not mapped, or the length overruns.
         pub fn read_bytes<'p>(&self, py: Python<'p>, rva: i64, length: usize) -> PyResult<&'p pyo3::types::PyBytes> {
             match self.ws.read_bytes(RVA::from(rva), length) {
                 Ok(buf) => Ok(pyo3::types::PyBytes::new(py, buf)),
@@ -121,6 +124,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_u8(self, rva, /)
+        /// --
+        ///
         pub fn read_u8(&self, rva: i64) -> PyResult<u8> {
             match self.ws.read_u8(RVA::from(rva)) {
                 Ok(b) => Ok(b),
@@ -128,6 +134,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_u16(self, rva, /)
+        /// --
+        ///
         pub fn read_u16(&self, rva: i64) -> PyResult<u16> {
             match self.ws.read_u16(RVA::from(rva)) {
                 Ok(b) => Ok(b),
@@ -135,6 +144,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_u32(self, rva, /)
+        /// --
+        ///
         pub fn read_u32(&self, rva: i64) -> PyResult<u32> {
             match self.ws.read_u32(RVA::from(rva)) {
                 Ok(b) => Ok(b),
@@ -142,6 +154,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_u64(self, rva, /)
+        /// --
+        ///
         pub fn read_u64(&self, rva: i64) -> PyResult<u64> {
             match self.ws.read_u64(RVA::from(rva)) {
                 Ok(b) => Ok(b),
@@ -149,6 +164,11 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_rva(self, rva, /)
+        /// --
+        ///
+        /// Read the integer relative virtual address at the given address.
+        /// The size of the RVA is dependent upon the bitness of the current workspace.
         pub fn read_rva(&self, rva: i64) -> PyResult<i64> {
             match self.ws.read_rva(RVA::from(rva)) {
                 Ok(b) => Ok(b.into()),
@@ -156,6 +176,11 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
+        /// read_va(self, rva, /)
+        /// --
+        ///
+        /// Read the integer virtual address at the given address.
+        /// The size of the VA is dependent upon the bitness of the current workspace.
         pub fn read_va(&self, rva: i64) -> PyResult<u64> {
             match self.ws.read_va(RVA::from(rva)) {
                 Ok(b) => Ok(b.into()),
