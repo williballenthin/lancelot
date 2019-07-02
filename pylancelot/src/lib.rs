@@ -33,6 +33,14 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         ws: workspace::Workspace
     }
 
+    #[pyclass]
+    pub struct PySection {
+        pub addr: i64,
+        pub length: u64,
+        pub perms: u8,
+        pub name: String,
+    }
+
     #[pymethods]
     impl PyWorkspace {
         #[getter]
@@ -40,14 +48,92 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// --
         ///
         /// Fetch the filename.
-        ///
-        /// ```python
-        /// import pylancelot
-        /// ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
-        /// assert ws.filename == 'foo.bin'
         /// ```
         pub fn filename(&self) -> PyResult<String> {
             Ok(self.ws.filename.clone())
+        }
+
+        #[getter]
+        /// loader(self, /)
+        /// --
+        ///
+        /// Fetch the name of the loader used to create the workspace.
+        pub fn loader(&self) -> PyResult<String> {
+            Ok(self.ws.loader.get_name())
+        }
+
+        #[getter]
+        /// base_address(self, /)
+        /// --
+        ///
+        /// Fetch the base address to which the module was loaded.
+        pub fn base_address(&self) -> PyResult<u64> {
+            Ok(self.ws.module.base_address.into())
+        }
+
+        #[getter]
+        pub fn sections(&self) -> PyResult<Vec<PySection>> {
+            Ok(self.ws.module.sections.iter()
+                .map(|section| PySection{
+                    addr: section.addr.into(),
+                    length: section.buf.len() as u64,
+                    perms: section.perms.bits(),
+                    name: section.name.clone(),
+                })
+                .collect())
+        }
+    }
+
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PyWorkspace {
+        fn __str__(&self) -> PyResult<String> {
+            PyWorkspace::__repr__(self)
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PyWorkspace(filename: {} loader: {})",
+                self.ws.filename.clone(),
+                self.ws.loader.get_name(),
+            ))
+        }
+    }
+
+    #[pymethods]
+    impl PySection {
+        #[getter]
+        pub fn addr(&self) -> PyResult<i64> {
+            Ok(self.addr)
+        }
+
+        #[getter]
+        pub fn length(&self) -> PyResult<u64> {
+            Ok(self.length)
+        }
+
+        #[getter]
+        pub fn perms(&self) -> PyResult<u8> {
+            Ok(self.perms)
+        }
+
+        #[getter]
+        pub fn name(&self) -> PyResult<String> {
+            Ok(self.name.clone())
+        }
+    }
+
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PySection {
+        fn __str__(&self) -> PyResult<String> {
+            PySection::__repr__(self)
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PySection(addr: {:#x} length: {:#x} perms: {:#x} name: {})",
+                self.addr,
+                self.length,
+                self.perms,
+                self.name,
+            ))
         }
     }
 
