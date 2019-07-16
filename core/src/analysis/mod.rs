@@ -96,9 +96,9 @@ pub struct XrefAnalysis {
     // TODO: use SmallVec(X) for `.to` values,
 
     // dst rva -> src rva
-    to: HashMap<RVA, HashSet<Xref>>,
+    pub to: HashMap<RVA, HashSet<Xref>>,
     // src rva -> dst rva
-    from: HashMap<RVA, HashSet<Xref>>,
+    pub from: HashMap<RVA, HashSet<Xref>>,
 }
 
 pub struct FlowAnalysis {
@@ -107,19 +107,19 @@ pub struct FlowAnalysis {
     // that is, Vec<FlowMeta>.len() == Section.buf.len()
     // TODO: order these entries so that the most common sections are first (`.code`?)
     meta: Vec<Vec<FlowMeta>>,
-    xrefs: XrefAnalysis,
+    pub xrefs: XrefAnalysis,
 }
 
 pub struct Analysis {
     queue: VecDeque<AnalysisCommand>,
 
     // TODO: FNV
-    functions: HashSet<RVA>,
+    pub functions: HashSet<RVA>,
 
     // TODO: FNV
-    symbols: HashMap<RVA, String>,
+    pub symbols: HashMap<RVA, String>,
 
-    flow: FlowAnalysis,
+    pub flow: FlowAnalysis,
     // datameta
     // symbols
     // functions

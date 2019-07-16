@@ -2,6 +2,9 @@ import pytest
 
 import pylancelot
 
+import fixtures
+from fixtures import *
+
 
 def test_workspace():
     ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
@@ -75,3 +78,8 @@ def test_read_element():
 
     assert ws.read_rva(0x0) == 0x33221100
     assert ws.read_va(0x0) == 0x33221100
+
+
+def test_xrefs(k32):
+    from pprint import pprint
+    pprint(k32.sections)

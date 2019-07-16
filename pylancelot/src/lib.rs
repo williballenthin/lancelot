@@ -8,7 +8,6 @@ use lancelot::arch::{RVA};
 
 
 
-
 #[pymodule]
 fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m, "from_bytes")]
@@ -49,6 +48,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub name: String,
     }
 
+
     m.add("PERM_NONE", lancelot::loader::Permissions::empty().bits())?;
     m.add("PERM_R", lancelot::loader::Permissions::R.bits())?;
     m.add("PERM_W", lancelot::loader::Permissions::W.bits())?;
@@ -56,6 +56,21 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("PERM_RW", lancelot::loader::Permissions::RW.bits())?;
     m.add("PERM_RX", lancelot::loader::Permissions::RX.bits())?;
     m.add("PERM_RWX", lancelot::loader::Permissions::RWX.bits())?;
+
+    #[pyclass]
+    pub struct PyXref {
+        pub src: i64,
+        pub dst: i64,
+        /// one of XREF_* constants
+        pub typ: u8,
+    }
+
+    // keep in sync with pylancelot::PyWorkspace::translate_xref
+    m.add("XREF_FALLTHROUGH", 1)?;
+    m.add("XREF_CALL", 2)?;
+    m.add("XREF_UNCONDITIONAL_JUMP", 3)?;
+    m.add("XREF_CONDITIONAL_JUMP", 4)?;
+    m.add("XREF_CONDITIONAL_MOVE", 5)?;
 
     #[pymethods]
     impl PyWorkspace {
@@ -97,6 +112,29 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                     name: section.name.clone(),
                 })
                 .collect())
+        }
+
+        #[getter]
+        pub fn functions(&self) -> PyResult<Vec<i64>> {
+            Ok(self.ws.get_functions().map(|&rva| rva.into()).collect())
+        }
+
+        pub fn get_xrefs_from(&self, rva: i64) -> PyResult<Vec<PyXref>> {
+            Ok(match self.ws.analysis.flow.xrefs.from.get(&RVA::from(rva)) {
+                Some(xrefs) => {
+                    xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
+                },
+                None => vec![],
+            })
+        }
+
+        pub fn get_xrefs_to(&self, rva: i64) -> PyResult<Vec<PyXref>> {
+            Ok(match self.ws.analysis.flow.xrefs.to.get(&RVA::from(rva)) {
+                Some(xrefs) => {
+                    xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
+                },
+                None => vec![],
+            })
         }
 
         /// probe(self, rva, length=1, /)
@@ -211,6 +249,20 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                     // this should never be hit
                     pyo3::exceptions::RuntimeError::py_err("unexpected error")
                 },
+            }
+        }
+
+        fn translate_xref(x: &lancelot::xref::Xref) -> PyXref {
+            PyXref {
+                src: x.src.into(),
+                dst: x.dst.into(),
+                typ: match x.typ {
+                    lancelot::xref::XrefType::Fallthrough => 1,
+                    lancelot::xref::XrefType::Call => 2,
+                    lancelot::xref::XrefType::UnconditionalJump => 3,
+                    lancelot::xref::XrefType::ConditionalJump => 4,
+                    lancelot::xref::XrefType::ConditionalMove => 5,
+                }
             }
         }
     }
