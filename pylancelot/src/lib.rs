@@ -65,6 +65,29 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub typ: u8,
     }
 
+
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PyXref {
+        fn __str__(&self) -> PyResult<String> {
+            PyXref::__repr__(self)
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PyXref(src: {:#x} dst: {:#x} type: {})",
+                self.src,
+                self.dst,
+                match self.typ {
+                    1 => "XREF_FALLTHROUGH",
+                    2 => "XREF_CALL",
+                    3 => "XREF_UNCONDITIONAL_JUMP",
+                    4 => "XREF_CONDITIONAL_JUMP",
+                    5 => "XREF_CONDITIONAL_MOVE",
+                    _ => unreachable!(),
+                },
+            ))
+        }
+    }
+
     // keep in sync with pylancelot::PyWorkspace::translate_xref
     m.add("XREF_FALLTHROUGH", 1)?;
     m.add("XREF_CALL", 2)?;
