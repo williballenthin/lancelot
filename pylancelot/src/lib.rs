@@ -171,41 +171,13 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         ///
         /// Fetch the xrefs flowing from the given address.
         pub fn get_xrefs_from(&self, rva: i64) -> PyResult<Vec<PyXref>> {
-            let mut xrefs = match self.ws.analysis.flow.xrefs.from.get(&RVA::from(rva)) {
-                Some(xrefs) => {
-                    xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
-                },
-                None => vec![],
-            };
-
-            // if there is a fallthrough, compute the xref.
-            // this looks a little complex because we have to handle the case
-            // where the instruction length is not cached.
-            if let Some(meta) = self.ws.get_meta(RVA::from(rva)) {
-                if meta.is_insn() && meta.does_fallthrough() {
-                    // we have to do some extra legwork here to correctly handle long insns
-                    let length = match meta.get_insn_length() {
-                        Ok(length) => length,
-                        Err(lancelot::flowmeta::Error::LongInstruction) => {
-                            match self.ws.read_insn(RVA::from(rva)) {
-                                Ok(insn) => insn.length,
-                                Err(_) => 0,
-                            }
-                        },
-                        Err(lancelot::flowmeta::Error::NotAnInstruction) => 0,
-                    };
-
-                    if length > 0 {
-                        xrefs.push(PyXref {
-                            src: rva,
-                            dst: rva + length as i64,
-                            typ: 1,  // XREF_TYPE_FALLTHROUGH
-                        });
-                    }
-                }
-            }
-
-            Ok(xrefs)
+            Ok(match self.ws.get_xrefs_from(RVA::from(rva)) {
+                   Ok(xrefs) => xrefs,
+                   Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to fetch xrefs")),
+               }
+               .iter()
+               .map(|x| PyWorkspace::translate_xref(x))
+               .collect())
         }
 
         /// get_xrefs_to(self, rva, /)
@@ -213,45 +185,13 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         ///
         /// Fetch the xrefs flowing to the given address.
         pub fn get_xrefs_to(&self, rva: i64) -> PyResult<Vec<PyXref>> {
-            let mut xrefs = match self.ws.analysis.flow.xrefs.to.get(&RVA::from(rva)) {
-                Some(xrefs) => {
-                    xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
-                },
-                None => vec![],
-            };
-
-            if let Some(meta) = self.ws.get_meta(RVA::from(rva)) {
-                if meta.is_insn() && meta.does_other_fallthrough_to() {
-                    // have to scan backwards for instructions that fallthrough to here.
-
-                    for i in rva-0x10..rva-1 {
-                        if let Some(imeta) = self.ws.get_meta(RVA::from(i)) {
-                            if !imeta.is_insn() {
-                                continue
-                            }
-
-                            if !imeta.does_fallthrough() {
-                                continue
-                            }
-
-                            let length = match imeta.get_insn_length() {
-                                Err(_) => continue,
-                                Ok(length) => length as i64,
-                            };
-
-                            if i + length == rva {
-                                xrefs.push(PyXref {
-                                    src: i,
-                                    dst: rva,
-                                    typ: 1,  // XREF_TYPE_FALLTHROUGH
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-
-            Ok(xrefs)
+            Ok(match self.ws.get_xrefs_to(RVA::from(rva)) {
+                   Ok(xrefs) => xrefs,
+                   Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to fetch xrefs")),
+               }
+               .iter()
+               .map(|x| PyWorkspace::translate_xref(x))
+               .collect())
         }
 
         /// probe(self, rva, length=1, /)
@@ -346,7 +286,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// read_insn(self, rva, /)
         /// --
         ///
-        /// Read an instruction at the givne address.
+        /// Read an instruction at the given address.
         /// The result is a dictionary that describes the instruction;
         /// its schema is defined by the zydis library.
         ///

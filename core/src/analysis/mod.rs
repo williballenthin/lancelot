@@ -9,6 +9,7 @@ use log::{debug, warn};
 use zydis;
 
 use super::arch::{RVA, VA};
+use super::flowmeta;
 use super::flowmeta::FlowMeta;
 use super::loader::{LoadedModule, Section};
 use super::workspace::Workspace;
@@ -274,6 +275,83 @@ impl Workspace {
             zydis::Mnemonic::CALL => true,
             _ => true,
         }
+    }
+
+    pub fn get_xrefs_from(&self, rva: RVA) -> Result<Vec<Xref>, Error> {
+        let mut xrefs = match self.analysis.flow.xrefs.from.get(&rva) {
+            Some(xrefs) => xrefs.iter().cloned().collect(),
+            None => vec![],
+        };
+
+        // if there is a fallthrough, compute the xref.
+        // this looks a little complex because we have to handle the case
+        // where the instruction length is not cached.
+        if let Some(meta) = self.get_meta(rva) {
+            if meta.is_insn() && meta.does_fallthrough() {
+                // we have to do some extra legwork here to correctly handle long insns
+                let length = match meta.get_insn_length() {
+                    Ok(length) => length,
+                    Err(flowmeta::Error::LongInstruction) => {
+                        match self.read_insn(rva) {
+                            Ok(insn) => insn.length,
+                            Err(_) => 0,
+                        }
+                    },
+                    Err(flowmeta::Error::NotAnInstruction) => 0,
+                };
+
+                if length > 0 {
+                    xrefs.push(Xref {
+                        src: rva,
+                        dst: RVA::from(rva + length),
+                        typ: XrefType::Fallthrough,
+                    });
+                }
+            }
+        }
+
+        Ok(xrefs)
+    }
+
+    pub fn get_xrefs_to(&self, rva: RVA) -> Result<Vec<Xref>, Error> {
+        let mut xrefs = match self.analysis.flow.xrefs.to.get(&rva) {
+            Some(xrefs) => xrefs.iter().cloned().collect(),
+            None => vec![],
+        };
+
+        if let Some(meta) = self.get_meta(rva) {
+            if meta.is_insn() && meta.does_other_fallthrough_to() {
+                // have to scan backwards for instructions that fallthrough to here.
+
+                let r: usize = rva.into();
+                for i in r-0x10..r-1 {
+                    if let Some(imeta) = self.get_meta(RVA::from(i)) {
+                        if !imeta.is_insn() {
+                            continue
+                        }
+
+                        if !imeta.does_fallthrough() {
+                            continue
+                        }
+
+                        let length = match imeta.get_insn_length() {
+                            Err(_) => continue,
+                            Ok(length) => length as usize,
+                        };
+
+                        if RVA::from(i + length) == rva {
+                            xrefs.push(Xref {
+                                src: RVA::from(i),
+                                dst: rva,
+                                typ: XrefType::Fallthrough,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(xrefs)
     }
 
     /// ## test simple memory ptr operand
