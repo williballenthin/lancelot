@@ -1,11 +1,48 @@
+use serde_json;
+
 use pyo3;
 use pyo3::types::{PyBytes};
+use pyo3::types::IntoPyDict;
 use pyo3::prelude::*;
 use failure::{Error};
+use zydis;
 
 use lancelot::workspace;
 use lancelot::arch::{RVA};
 
+
+const EMPTY_OPERAND: zydis::DecodedOperand = zydis::DecodedOperand {
+    id: 255,
+    ty: zydis::enums::OperandType::UNUSED,
+    visibility: zydis::enums::OperandVisibility::HIDDEN,
+    action: zydis::enums::OperandAction::READWRITE,
+    encoding: zydis::enums::OperandEncoding::NONE,
+    size: 0,
+    element_type: zydis::enums::ElementType::INVALID,
+    element_size: 0,
+    element_count: 0,
+    reg: zydis::enums::Register::NONE,
+    mem: zydis::ffi::MemoryInfo {
+        ty: zydis::enums::OperandType::UNUSED,
+        segment: zydis::enums::Register::NONE,
+        base: zydis::enums::Register::NONE,
+        index: zydis::enums::Register::NONE,
+        scale: 0,
+        disp: zydis::ffi::DisplacementInfo {
+            has_displacement: false,
+            displacement: 0
+        }
+    },
+    ptr: zydis::ffi::PointerInfo {
+        segment: 0,
+        offset: 0
+    },
+    imm: zydis::ffi::ImmediateInfo {
+        is_signed: false,
+        is_relative: false,
+        value: 0
+    }
+};
 
 
 #[pymodule]
@@ -305,6 +342,73 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
             }
         }
+
+        /// read_insn(self, rva, /)
+        /// --
+        ///
+        /// Read an instruction at the givne address.
+        /// The result is a dictionary that describes the instruction;
+        /// its schema is defined by the zydis library.
+        ///
+        /// raises:
+        ///   - LookupError: if the address is not mapped, or the length overruns.
+        ///   - ValueError: if the instruction cannot be decoded or serialized.
+        pub fn read_insn<'p>(&self, py: Python<'p>, rva: i64) -> PyResult<&'p pyo3::types::PyAny> {
+            let mut insn = match self.ws.read_insn(RVA::from(rva)) {
+                Ok(insn) => insn,
+                Err(e) => return Err(PyWorkspace::translate_buffer_error(e)),
+            };
+
+            // seems some of the operands are not initialized,
+            // which causes serialization to crash (maybe due to unexpected enum values?).
+            //
+            // quickfix: overwrite the unused operands with empty values.
+            //
+            // ref: https://github.com/zyantific/zydis-rs/issues/21
+            for i in insn.operand_count..10 {
+                insn.operands[i as usize] = EMPTY_OPERAND;
+            }
+
+            // rather than manually construct a PyDict that contains the instruction representation
+            // (which would be tedious to do)
+            // we serialize the instruction to json in rust-land,
+            // use json.loads in python land,
+            // and pass the resulting PyAny back into the interpreter.
+            //
+            // the performance here is suspect; however, the developer experience is much better.
+            //
+            // TODO: signed values, such as operand.imm.value, should be correctly provided.
+            // as is, there's a flag that indicates that the unsigned value must be re-interpreted.
+            // TODO: might want to add helpers on the insn class, such as to render it.
+
+            let json = match serde_json::to_string(&insn) {
+                Ok(s) => s,
+                Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to serialize instruction")),
+            };
+
+            // this is the serialized EMPTY_OPERAND,
+            // which is found in the operand list.
+            // so we cut it out of the json document because:
+            //   1. these operands won't ever be used, and
+            //   2. they have to be parsed and allocated, which is bad for performance.
+            let json = json.replace("{\"id\":255,\"ty\":\"UNUSED\",\"visibility\":\"HIDDEN\",\"action\":\"READWRITE\",\"encoding\":\"NONE\",\"size\":0,\"element_type\":\"INVALID\",\"element_size\":0,\"element_count\":0,\"reg\":\"NONE\",\"mem\":{\"ty\":\"UNUSED\",\"segment\":\"NONE\",\"base\":\"NONE\",\"index\":\"NONE\",\"scale\":0,\"disp\":{\"has_displacement\":false,\"displacement\":0}},\"ptr\":{\"segment\":0,\"offset\":0},\"imm\":{\"is_signed\":false,\"is_relative\":false,\"value\":0}},", "");
+
+            // similar chop for empty elements in the .raw.prefixes array.
+            let json = json.replace("{\"ty\":\"IGNORED\",\"value\":0},", "");
+
+            // would be nice not to re-import this with each call;
+            // however, I'm not sure if its feasible to keep this reference around.
+            // also, import should be optimized for when the module is already loaded.
+            let globals = [
+                ("json", py.import("json")?),
+            ].into_py_dict(py);
+
+            let locals = [
+                ("doc", json)
+            ].into_py_dict(py);
+
+            py.eval("json.loads(doc)", Some(&globals), Some(&locals))
+        }
     }
 
     impl PyWorkspace {
@@ -320,6 +424,9 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 },
                 Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
                     pyo3::exceptions::LookupError::py_err("buffer overrun")
+                }
+                Ok(lancelot::workspace::WorkspaceError::InvalidInstruction) => {
+                    pyo3::exceptions::LookupError::py_err("invalid instruction")
                 }
                 Ok(_) => {
                     // this should never be hit

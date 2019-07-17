@@ -92,3 +92,12 @@ def test_xrefs_to(k32):
     assert 0x130D8 in map(lambda x: x.src, k32.get_xrefs_to(0x130DD))
     # cjmp
     assert 0x130D6 in map(lambda x: x.src, k32.get_xrefs_to(0x130DD))
+
+
+def test_read_insn():
+    ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
+    insn = ws.read_insn(0x0)
+    assert insn['mnemonic'] == 'JMP'
+    assert insn['operands'][0]['ty'] == 'IMMEDIATE'
+    # TODO: make this value signed (-2)
+    assert insn['operands'][0]['imm']['value'] == 0xfffffffffffffffe
