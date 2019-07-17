@@ -48,7 +48,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub name: String,
     }
 
-
     m.add("PERM_NONE", lancelot::loader::Permissions::empty().bits())?;
     m.add("PERM_R", lancelot::loader::Permissions::R.bits())?;
     m.add("PERM_W", lancelot::loader::Permissions::W.bits())?;
@@ -66,28 +65,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// one of XREF_* constants
         #[pyo3(get)]
         pub typ: u8,
-    }
-
-    #[pyproto]
-    impl pyo3::class::basic::PyObjectProtocol for PyXref {
-        fn __str__(&self) -> PyResult<String> {
-            PyXref::__repr__(self)
-        }
-
-        fn __repr__(&self) -> PyResult<String> {
-            Ok(format!("PyXref(src: {:#x} dst: {:#x} type: {})",
-                self.src,
-                self.dst,
-                match self.typ {
-                    1 => "XREF_FALLTHROUGH",
-                    2 => "XREF_CALL",
-                    3 => "XREF_UNCONDITIONAL_JUMP",
-                    4 => "XREF_CONDITIONAL_JUMP",
-                    5 => "XREF_CONDITIONAL_MOVE",
-                    _ => unreachable!(),
-                },
-            ))
-        }
     }
 
     // keep in sync with pylancelot::PyWorkspace::translate_xref
@@ -334,7 +311,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
-
     #[pyproto]
     impl pyo3::class::basic::PyObjectProtocol for PySection {
         fn __str__(&self) -> PyResult<String> {
@@ -347,6 +323,28 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 self.length,
                 self.perms,
                 self.name,
+            ))
+        }
+    }
+
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PyXref {
+        fn __str__(&self) -> PyResult<String> {
+            PyXref::__repr__(self)
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PyXref(src: {:#x} dst: {:#x} type: {})",
+                self.src,
+                self.dst,
+                match self.typ {
+                    1 => "XREF_FALLTHROUGH",
+                    2 => "XREF_CALL",
+                    3 => "XREF_UNCONDITIONAL_JUMP",
+                    4 => "XREF_CONDITIONAL_JUMP",
+                    5 => "XREF_CONDITIONAL_MOVE",
+                    _ => unreachable!(),
+                },
             ))
         }
     }

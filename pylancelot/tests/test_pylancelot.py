@@ -80,6 +80,8 @@ def test_read_element():
     assert ws.read_va(0x0) == 0x33221100
 
 
-def test_xrefs(k32):
-    assert 0x130DD in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
+def test_xrefs_from(k32):
+    # fallthrough
     assert 0x130D8 in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
+    # cjmp
+    assert 0x130DD in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
