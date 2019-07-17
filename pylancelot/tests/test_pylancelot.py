@@ -85,3 +85,10 @@ def test_xrefs_from(k32):
     assert 0x130D8 in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
     # cjmp
     assert 0x130DD in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
+
+
+def test_xrefs_to(k32):
+    # fallthrough
+    assert 0x130D8 in map(lambda x: x.src, k32.get_xrefs_to(0x130DD))
+    # cjmp
+    assert 0x130D6 in map(lambda x: x.src, k32.get_xrefs_to(0x130DD))

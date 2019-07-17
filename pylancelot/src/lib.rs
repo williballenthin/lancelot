@@ -141,8 +141,11 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 None => vec![],
             };
 
+            // if there is a fallthrough, compute the xref.
+            // this looks a little complex because we have to handle the case
+            // where the instruction length is not cached.
             if let Some(meta) = self.ws.get_meta(RVA::from(rva)) {
-                if meta.does_fallthrough() {
+                if meta.is_insn() && meta.does_fallthrough() {
                     // we have to do some extra legwork here to correctly handle long insns
                     let length = match meta.get_insn_length() {
                         Ok(length) => length,
@@ -168,13 +171,50 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             Ok(xrefs)
         }
 
+        /// get_xrefs_to(self, rva, /)
+        /// --
+        ///
+        /// Fetch the xrefs flowing to the given address.
         pub fn get_xrefs_to(&self, rva: i64) -> PyResult<Vec<PyXref>> {
-            Ok(match self.ws.analysis.flow.xrefs.to.get(&RVA::from(rva)) {
+            let mut xrefs = match self.ws.analysis.flow.xrefs.to.get(&RVA::from(rva)) {
                 Some(xrefs) => {
                     xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
                 },
                 None => vec![],
-            })
+            };
+
+            if let Some(meta) = self.ws.get_meta(RVA::from(rva)) {
+                if meta.is_insn() && meta.does_other_fallthrough_to() {
+                    // have to scan backwards for instructions that fallthrough to here.
+
+                    for i in rva-0x10..rva-1 {
+                        if let Some(imeta) = self.ws.get_meta(RVA::from(i)) {
+                            if !imeta.is_insn() {
+                                continue
+                            }
+
+                            if !imeta.does_fallthrough() {
+                                continue
+                            }
+
+                            let length = match imeta.get_insn_length() {
+                                Err(_) => continue,
+                                Ok(length) => length as i64,
+                            };
+
+                            if i + length == rva {
+                                xrefs.push(PyXref {
+                                    src: i,
+                                    dst: rva,
+                                    typ: 1,  // XREF_TYPE_FALLTHROUGH
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(xrefs)
         }
 
         /// probe(self, rva, length=1, /)
