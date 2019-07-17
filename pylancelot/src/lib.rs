@@ -105,6 +105,10 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         #[getter]
+        /// sections(self, /)
+        /// --
+        ///
+        /// Fetch the sections loaded from the module.
         pub fn sections(&self) -> PyResult<Vec<PySection>> {
             Ok(self.ws.module.sections.iter()
                 .map(|section| PySection{
@@ -117,13 +121,19 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         #[getter]
+        /// functions(self, /)
+        /// --
+        ///
+        /// Fetch the addresses of functions discovered during analysis.
         pub fn functions(&self) -> PyResult<Vec<i64>> {
             Ok(self.ws.get_functions().map(|&rva| rva.into()).collect())
         }
 
+        /// get_xrefs_from(self, rva, /)
+        /// --
+        ///
+        /// Fetch the xrefs flowing from the given address.
         pub fn get_xrefs_from(&self, rva: i64) -> PyResult<Vec<PyXref>> {
-            // doesn't currently contain the fallthrough xref,
-            // because in get_xrefs_to, its more difficult to compute.
             let mut xrefs = match self.ws.analysis.flow.xrefs.from.get(&RVA::from(rva)) {
                 Some(xrefs) => {
                     xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
@@ -149,7 +159,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                         xrefs.push(PyXref {
                             src: rva,
                             dst: rva + length as i64,
-                            typ: 1,
+                            typ: 1,  // XREF_TYPE_FALLTHROUGH
                         });
                     }
                 }
