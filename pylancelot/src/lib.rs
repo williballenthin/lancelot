@@ -59,12 +59,14 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
 
     #[pyclass]
     pub struct PyXref {
+        #[pyo3(get)]
         pub src: i64,
+        #[pyo3(get)]
         pub dst: i64,
         /// one of XREF_* constants
+        #[pyo3(get)]
         pub typ: u8,
     }
-
 
     #[pyproto]
     impl pyo3::class::basic::PyObjectProtocol for PyXref {
@@ -143,12 +145,40 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         pub fn get_xrefs_from(&self, rva: i64) -> PyResult<Vec<PyXref>> {
-            Ok(match self.ws.analysis.flow.xrefs.from.get(&RVA::from(rva)) {
+            // doesn't currently contain the fallthrough xref,
+            // because in get_xrefs_to, its more difficult to compute.
+            let mut xrefs = match self.ws.analysis.flow.xrefs.from.get(&RVA::from(rva)) {
                 Some(xrefs) => {
                     xrefs.iter().map(|x| PyWorkspace::translate_xref(x)).collect()
                 },
                 None => vec![],
-            })
+            };
+
+            if let Some(meta) = self.ws.get_meta(RVA::from(rva)) {
+                if meta.does_fallthrough() {
+                    // we have to do some extra legwork here to correctly handle long insns
+                    let length = match meta.get_insn_length() {
+                        Ok(length) => length,
+                        Err(lancelot::flowmeta::Error::LongInstruction) => {
+                            match self.ws.read_insn(RVA::from(rva)) {
+                                Ok(insn) => insn.length,
+                                Err(_) => 0,
+                            }
+                        },
+                        Err(lancelot::flowmeta::Error::NotAnInstruction) => 0,
+                    };
+
+                    if length > 0 {
+                        xrefs.push(PyXref {
+                            src: rva,
+                            dst: rva + length as i64,
+                            typ: 1,
+                        });
+                    }
+                }
+            }
+
+            Ok(xrefs)
         }
 
         pub fn get_xrefs_to(&self, rva: i64) -> PyResult<Vec<PyXref>> {

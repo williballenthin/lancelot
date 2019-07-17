@@ -81,5 +81,5 @@ def test_read_element():
 
 
 def test_xrefs(k32):
-    from pprint import pprint
-    pprint(k32.get_xrefs_from(0x130D6))
+    assert 0x130DD in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
+    assert 0x130D8 in map(lambda x: x.dst, k32.get_xrefs_from(0x130D6))
