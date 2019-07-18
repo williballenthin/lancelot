@@ -277,6 +277,27 @@ impl Workspace {
         }
     }
 
+    pub fn get_insn_length(&self, rva: RVA) -> Result<u8, Error> {
+        match self.get_meta(rva) {
+            None => Err(flowmeta::Error::NotAnInstruction.into()),
+            Some(meta) => {
+                match meta.is_insn() {
+                    false => Err(flowmeta::Error::NotAnInstruction.into()),
+                    true => match meta.get_insn_length() {
+                        Ok(length) => Ok(length),
+                        Err(flowmeta::Error::LongInstruction) => {
+                            match self.read_insn(rva) {
+                                Ok(insn) => Ok(insn.length),
+                                Err(e) => Err(e),
+                            }
+                        },
+                        Err(e) => Err(e.into()),
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_xrefs_from(&self, rva: RVA) -> Result<Vec<Xref>, Error> {
         let mut xrefs = match self.analysis.flow.xrefs.from.get(&rva) {
             Some(xrefs) => xrefs.iter().cloned().collect(),
