@@ -479,5 +479,27 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PyBasicBlock {
+        fn __str__(&self) -> PyResult<String> {
+            PyBasicBlock::__repr__(self)
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PyBasicBlock(addr: {:#x} length: {:#x} insns: {})",
+                self.addr,
+                self.length,
+                self.insns.len(),
+            ))
+        }
+    }
+
+    #[pyproto]
+    impl pyo3::class::PyMappingProtocol for PyBasicBlock {
+        fn __len__(&self) -> PyResult<usize> {
+            Ok(self.length as usize)
+        }
+    }
+
     Ok(())
 }
