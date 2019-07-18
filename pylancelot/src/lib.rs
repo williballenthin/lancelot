@@ -351,7 +351,8 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             // however, I'm not sure if its feasible to keep this reference around.
             // also, import should be optimized for when the module is already loaded.
             let globals = [
-                ("json", py.import("json")?),
+                // TODO: use ujson when available
+                ("json", py.import("ujson")?),
             ].into_py_dict(py);
 
             let locals = [
