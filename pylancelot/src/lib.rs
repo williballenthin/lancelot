@@ -310,12 +310,17 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub fn read_insn<'p>(&self, py: Python<'p>, rva: i64) -> PyResult<&'p pyo3::types::PyAny> {
             let mut insn = pyo3_try!(self.ws.read_insn(RVA::from(rva)));
 
-            // seems some of the operands are not initialized,
-            // which causes serialization to crash (maybe due to unexpected enum values?).
+            // seems some of the operands can contain invalid .action values.
+            // which causes serialization to crash.
             //
-            // quickfix: overwrite the unused operands with empty values.
+            // quickfix: set this field to a constant value.
             //
             // ref: https://github.com/zyantific/zydis-rs/issues/21
+            for i in 0..10 {
+                insn.operands[i as usize].action = zydis::enums::OperandAction::CONDREAD_CONDWRITE;
+            }
+
+            // unused operands we zero out, so that they can be removed in the next step.
             for i in insn.operand_count..10 {
                 insn.operands[i as usize] = EMPTY_OPERAND;
             }

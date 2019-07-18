@@ -94,6 +94,11 @@ def test_xrefs_to(k32):
     assert 0x130D6 in map(lambda x: x.src, k32.get_xrefs_to(0x130DD))
 
 
+def test_zydis_issue_21(k32):
+    # there should not be a crash here
+    _ = k32.read_insn(0x10D7)
+
+
 def test_read_insn():
     ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
     insn = ws.read_insn(0x0)
