@@ -391,7 +391,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
-        fn translate_xref(x: &lancelot::xref::Xref) -> PyXref {
+        fn translate_xref(x: &lancelot::Xref) -> PyXref {
             PyXref {
                 src: x.src.into(),
                 dst: x.dst.into(),
@@ -460,5 +460,3 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
 
     Ok(())
 }
-
-
