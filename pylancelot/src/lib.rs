@@ -1,15 +1,14 @@
-use serde_json;
-
 use pyo3;
 use pyo3::types::{PyBytes};
 use pyo3::types::IntoPyDict;
 use pyo3::prelude::*;
 use failure::{Error};
+use serde_json;
 use zydis;
 
+use lancelot;
 use lancelot::workspace;
 use lancelot::arch::{RVA};
-use lancelot::xref::{XrefType};
 
 
 /// if the given expression is an Err, return it as a ValueError.
@@ -360,6 +359,49 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             ].into_py_dict(py);
 
             py.eval("json.loads(doc)", Some(&globals), Some(&locals))
+        }
+
+        pub fn get_basic_blocks(&self, rva: i64) -> PyResult<Vec<PyBasicBlock>> {
+            Ok(try_or_value_error!(self.ws.get_basic_blocks(RVA::from(rva)))
+                .iter()
+                .map(|bb| bb.into())
+                .collect())
+        }
+    }
+
+    #[pyclass]
+    #[derive(Debug, Clone)]
+    pub struct PyBasicBlock {
+        /// start RVA of the basic block.
+        #[pyo3(get)]
+        pub addr: i64,
+
+        /// length of the basic block in bytes.
+        #[pyo3(get)]
+        pub length: u64,
+
+        /// RVAs of start addresses of basic blocks that flow here.
+        #[pyo3(get)]
+        pub predecessors: Vec<i64>,
+
+        /// RVAs of start addresses of basic blocks that flow from here.
+        #[pyo3(get)]
+        pub successors: Vec<i64>,
+
+        /// RVAs of instructions found in this basic block.
+        #[pyo3(get)]
+        pub insns: Vec<i64>,
+    }
+
+    impl std::convert::From<&lancelot::BasicBlock> for PyBasicBlock {
+        fn from(bb: &lancelot::BasicBlock) -> PyBasicBlock {
+            PyBasicBlock {
+                addr: bb.addr.into(),
+                length: bb.length,
+                predecessors: bb.predecessors.iter().map(|&p| p.into()).collect(),
+                successors: bb.successors.iter().map(|&p| p.into()).collect(),
+                insns: bb.insns.iter().map(|&p| p.into()).collect(),
+            }
         }
     }
 
