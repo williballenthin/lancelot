@@ -51,7 +51,8 @@ pub fn run(args: &Config) -> Result<(), Error> {
 
     info!("found {} functions", functions.len());
     for rva in functions.iter() {
-        println!("{:#x}", ws.va(**rva).unwrap());
+        let basic_blocks = ws.get_basic_blocks(**rva)?;
+        println!("{:#x} found {} basic blocks", **rva, basic_blocks.len());
     }
 
     Ok(())
