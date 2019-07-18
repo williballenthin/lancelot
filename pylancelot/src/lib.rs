@@ -2,7 +2,6 @@ use pyo3;
 use pyo3::types::{PyBytes};
 use pyo3::types::IntoPyDict;
 use pyo3::prelude::*;
-use failure::{Error};
 use serde_json;
 use zydis;
 
@@ -11,13 +10,38 @@ use lancelot::workspace;
 use lancelot::arch::{RVA};
 
 
-/// if the given expression is an Err, return it as a ValueError.
+/// if the given expression is an Err, return it as an appropriate type, or ValueError.
+/// this is necessary due to the Orphan Rule, due to which we cannot implement From
+/// to convert from a Failure::Error to a pyo3::exception.
 ///
 /// the Err type should be failure::Fail.
 /// note this returns from the enclosing scope.
-macro_rules! try_or_value_error {
+macro_rules! pyo3_try {
     ($l:expr) => {match $l {
-      Err(e) => return Err(pyo3::exceptions::ValueError::py_err(e.name().unwrap_or("<unknown>").to_string())),
+      Err(e) => {
+        let name = e.name().unwrap_or("<unknown>").to_string();
+        return Err(match e.downcast::<lancelot::workspace::WorkspaceError>() {
+            // we have to use the documentation for the associated routine,
+            // such as `read_u8`, to determine what to inspect here.
+            Ok(lancelot::workspace::WorkspaceError::InvalidAddress) => {
+                pyo3::exceptions::LookupError::py_err("invalid address")
+            },
+            Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
+                pyo3::exceptions::LookupError::py_err("buffer overrun")
+            }
+            Ok(lancelot::workspace::WorkspaceError::InvalidInstruction) => {
+                pyo3::exceptions::LookupError::py_err("invalid instruction")
+            }
+            Ok(_) => {
+                // default case: value error
+                pyo3::exceptions::ValueError::py_err(name)
+            },
+            Err(_) => {
+                // default case: value error
+                pyo3::exceptions::ValueError::py_err(name)
+            },
+        })
+      },
       Ok(v) => v,
     }}
 }
@@ -223,50 +247,36 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// raises:
         ///   - LookupError: if the address is not mapped, or the length overruns.
         pub fn read_bytes<'p>(&self, py: Python<'p>, rva: i64, length: usize) -> PyResult<&'p pyo3::types::PyBytes> {
-            match self.ws.read_bytes(RVA::from(rva), length) {
-                Ok(buf) => Ok(pyo3::types::PyBytes::new(py, buf)),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            let buf = pyo3_try!(self.ws.read_bytes(RVA::from(rva), length));
+            Ok(pyo3::types::PyBytes::new(py, buf))
         }
 
         /// read_u8(self, rva, /)
         /// --
         ///
         pub fn read_u8(&self, rva: i64) -> PyResult<u8> {
-            match self.ws.read_u8(RVA::from(rva)) {
-                Ok(b) => Ok(b),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_u8(RVA::from(rva))))
         }
 
         /// read_u16(self, rva, /)
         /// --
         ///
         pub fn read_u16(&self, rva: i64) -> PyResult<u16> {
-            match self.ws.read_u16(RVA::from(rva)) {
-                Ok(b) => Ok(b),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_u16(RVA::from(rva))))
         }
 
         /// read_u32(self, rva, /)
         /// --
         ///
         pub fn read_u32(&self, rva: i64) -> PyResult<u32> {
-            match self.ws.read_u32(RVA::from(rva)) {
-                Ok(b) => Ok(b),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_u32(RVA::from(rva))))
         }
 
         /// read_u64(self, rva, /)
         /// --
         ///
         pub fn read_u64(&self, rva: i64) -> PyResult<u64> {
-            match self.ws.read_u64(RVA::from(rva)) {
-                Ok(b) => Ok(b),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_u64(RVA::from(rva))))
         }
 
         /// read_rva(self, rva, /)
@@ -275,10 +285,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// Read the integer relative virtual address at the given address.
         /// The size of the RVA is dependent upon the bitness of the current workspace.
         pub fn read_rva(&self, rva: i64) -> PyResult<i64> {
-            match self.ws.read_rva(RVA::from(rva)) {
-                Ok(b) => Ok(b.into()),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_rva(RVA::from(rva))).into())
         }
 
         /// read_va(self, rva, /)
@@ -287,10 +294,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// Read the integer virtual address at the given address.
         /// The size of the VA is dependent upon the bitness of the current workspace.
         pub fn read_va(&self, rva: i64) -> PyResult<u64> {
-            match self.ws.read_va(RVA::from(rva)) {
-                Ok(b) => Ok(b.into()),
-                Err(e) => Err(PyWorkspace::translate_buffer_error(e)),
-            }
+            Ok(pyo3_try!(self.ws.read_va(RVA::from(rva))).into())
         }
 
         /// read_insn(self, rva, /)
@@ -304,10 +308,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         ///   - LookupError: if the address is not mapped, or the length overruns.
         ///   - ValueError: if the instruction cannot be decoded or serialized.
         pub fn read_insn<'p>(&self, py: Python<'p>, rva: i64) -> PyResult<&'p pyo3::types::PyAny> {
-            let mut insn = match self.ws.read_insn(RVA::from(rva)) {
-                Ok(insn) => insn,
-                Err(e) => return Err(PyWorkspace::translate_buffer_error(e)),
-            };
+            let mut insn = pyo3_try!(self.ws.read_insn(RVA::from(rva)));
 
             // seems some of the operands are not initialized,
             // which causes serialization to crash (maybe due to unexpected enum values?).
@@ -361,7 +362,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         pub fn get_basic_blocks(&self, rva: i64) -> PyResult<Vec<PyBasicBlock>> {
-            Ok(try_or_value_error!(self.ws.get_basic_blocks(RVA::from(rva)))
+            Ok(pyo3_try!(self.ws.get_basic_blocks(RVA::from(rva)))
                 .iter()
                 .map(|bb| bb.into())
                 .collect())
@@ -400,35 +401,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 predecessors: bb.predecessors.iter().map(|&p| p.into()).collect(),
                 successors: bb.successors.iter().map(|&p| p.into()).collect(),
                 insns: bb.insns.iter().map(|&p| p.into()).collect(),
-            }
-        }
-    }
-
-    impl PyWorkspace {
-        /// translate from a failure::Error returned by a Workspace
-        /// while reading an element from memory into a pyo3/Python error
-        /// corresponding to out-of-bounds-access.
-        fn translate_buffer_error(e: Error) -> PyErr {
-            match e.downcast::<lancelot::workspace::WorkspaceError>() {
-                // we have to use the documentation for the associated routine,
-                // such as `read_u8`, to determine what to inspect here.
-                Ok(lancelot::workspace::WorkspaceError::InvalidAddress) => {
-                    pyo3::exceptions::LookupError::py_err("invalid address")
-                },
-                Ok(lancelot::workspace::WorkspaceError::BufferOverrun) => {
-                    pyo3::exceptions::LookupError::py_err("buffer overrun")
-                }
-                Ok(lancelot::workspace::WorkspaceError::InvalidInstruction) => {
-                    pyo3::exceptions::LookupError::py_err("invalid instruction")
-                }
-                Ok(_) => {
-                    // this should never be hit
-                    pyo3::exceptions::RuntimeError::py_err("unexpected error")
-                },
-                Err(_) => {
-                    // this should never be hit
-                    pyo3::exceptions::RuntimeError::py_err("unexpected error")
-                },
             }
         }
     }
