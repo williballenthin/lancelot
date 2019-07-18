@@ -9,7 +9,19 @@ use zydis;
 
 use lancelot::workspace;
 use lancelot::arch::{RVA};
+use lancelot::xref::{XrefType};
 
+
+/// if the given expression is an Err, return it as a ValueError.
+///
+/// the Err type should be failure::Fail.
+/// note this returns from the enclosing scope.
+macro_rules! try_or_value_error {
+    ($l:expr) => {match $l {
+      Err(e) => return Err(pyo3::exceptions::ValueError::py_err(e.name().unwrap_or("<unknown>").to_string())),
+      Ok(v) => v,
+    }}
+}
 
 const EMPTY_OPERAND: zydis::DecodedOperand = zydis::DecodedOperand {
     id: 255,
