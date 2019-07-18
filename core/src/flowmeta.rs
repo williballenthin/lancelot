@@ -1,9 +1,13 @@
 use std::fmt;
 
-// TODO: figure out how to use failure for error (or some other pattern)
-#[derive(Debug)]
+use failure::{Fail};
+
+
+#[derive(Debug, Fail)]
 pub enum Error {
+    #[fail(display = "Not an instruction")]
     NotAnInstruction,
+    #[fail(display = "Instruction too long")]
     LongInstruction,
 }
 
