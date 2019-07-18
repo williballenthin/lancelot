@@ -1,3 +1,5 @@
+use std::collections::{HashMap, VecDeque};
+
 use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 use zydis;
@@ -6,8 +8,10 @@ use log::{info};
 
 use super::analysis::Analysis;
 use super::arch::{Arch, VA, RVA};
+use super::basicblock::BasicBlock;
 use super::loader;
 use super::loader::{LoadedModule, Loader};
+use super::xref::XrefType;
 use super::util;
 
 #[derive(Debug, Fail)]
@@ -152,6 +156,7 @@ pub struct Workspace {
     // pub only so that we can split the impl
     pub analysis: Analysis,
 }
+
 
 impl Workspace {
     /// Create a workspace and load the given bytes.
@@ -436,4 +441,181 @@ impl Workspace {
     //   control flow graph
 
     // see: `analysis::impl Workspace`
+
+    pub fn get_basic_blocks(&self, rva: RVA) -> Result<Vec<BasicBlock>, Error> {
+        let mut bbs: HashMap<RVA, BasicBlock> = HashMap::new();
+
+        let mut queue: VecDeque<RVA> = VecDeque::new();
+        queue.push_back(rva);
+
+        while let Some(first_insn) = queue.pop_front() {
+            if bbs.contains_key(&first_insn) {
+                continue
+            }
+
+            let mut current_bb = BasicBlock {
+                addr: first_insn,
+                length: 0x0,
+                predecessors: vec![],
+                successors: vec![],
+                insns: vec![],
+            };
+
+            let mut current_insn = first_insn;
+
+            'insns: loop {
+                let current_insn_length = self.get_insn_length(current_insn)?;
+
+                current_bb.length += current_insn_length as u64;
+                current_bb.insns.push(current_insn);
+
+                // does the instruction fallthrough?
+                let mut has_fallthrough = false;
+                // does the instruction flow elsewhere (jnz, jmp, cmov)?
+                let mut has_flow_from = false;
+                for xref in self.get_xrefs_from(current_insn)?.iter() {
+                    match xref.typ {
+                        XrefType::Fallthrough => {has_fallthrough = true},
+                        XrefType::UnconditionalJump
+                        | XrefType::ConditionalJump
+                        | XrefType::ConditionalMove => {
+                            has_flow_from = true;
+                            current_bb.successors.push(xref.dst);
+                        },
+                        XrefType::Call => {},
+                    }
+                }
+
+                let next_insn = current_insn + current_insn_length;
+                if !has_fallthrough {
+                    // end of basic block
+                    //
+                    // case:
+                    //
+                    //     +----------------+
+                    //     | ...            |
+                    //     | RETN           |
+                    //     +----------------+
+                    //
+                    // case:
+                    //
+                    //     +----------------+
+                    //     | ...            |
+                    //     | JMP 0x401000   |--+
+                    //     +----------------+  |
+                    //                         v
+
+                    // flow successors were already added above,
+                    // when enumerating the xrefs-from.
+                    break 'insns;
+                } else if has_flow_from {
+                    // end of basic block
+                    //
+                    // case:
+                    //
+                    //     +----------------+
+                    //     | ...            |
+                    //     | JMP 0x401000   |--+
+                    //     +----------------+  |
+                    //                         v
+                    // case:
+                    //
+                    //     +----------------+
+                    //     | ...            |
+                    //     | JNZ 0x401000   |--+
+                    //     +----------------+  |
+                    //           |             |
+                    //           v             v
+
+                    current_bb.successors.push(next_insn);
+
+                    // flow successors were already added above,
+                    // when enumerating the xrefs-from.
+
+                    break 'insns;
+                } else if has_fallthrough {
+                    // does the next instruction have non-fallthrough flow to it?
+                    let mut has_flow_to = false;
+                    for xref in self.get_xrefs_to(next_insn)?.iter() {
+                        match xref.typ {
+                            XrefType::UnconditionalJump => { has_flow_to = true },
+                            XrefType::ConditionalJump => { has_flow_to = true },
+                            XrefType::ConditionalMove => { has_flow_to = true },
+                            XrefType::Fallthrough => {},
+                            XrefType::Call => {},
+                        }
+                    }
+
+                    if has_flow_to {
+                        // end of the basic block.
+                        // the next instruction has non-fallthrough flow to it.
+                        //
+                        // case:
+                        //
+                        //     +----------------+
+                        //     | ...            |
+                        //     | MOV eax, ebx   |
+                        //     +----------------+
+                        //           |           +--+
+                        //           |          /   |
+                        //           v         v    |
+                        //     +----------------+   |
+                        //     | ...            |   |
+                        //     +----------------+   |
+                        //
+
+                        current_bb.successors.push(next_insn);
+
+                        break 'insns;
+                    } else {
+                        // common path: not the end of a basic block.
+                        // we'll continue by inspecting the next instruction.
+                        //
+                        // case:
+                        //
+                        //     +----------------+
+                        //     | ...            |
+                        //     | MOV eax, ebx   |
+                        //     | ...            |
+                        //     +----------------+
+                        //
+
+                        current_insn = next_insn;
+                        continue 'insns;
+                    }
+                } else {
+                    unreachable!();
+                }
+            }
+            // handle end of basic block
+
+            // enqueue the successors
+            for successor in current_bb.successors.iter() {
+                queue.push_back(*successor);
+            }
+
+            // commit the current basic block
+            bbs.insert(current_bb.addr, current_bb);
+        }
+
+        let mut predecessors: HashMap<RVA, Vec<RVA>> = HashMap::new();
+        for bb in bbs.values() {
+            for successor in bb.successors.iter() {
+                predecessors
+                    .entry(*successor)
+                    .or_insert_with(Vec::new)
+                    .push(bb.addr);
+            }
+        }
+
+        for (successor, preds) in predecessors.iter() {
+            if let Some(bb) = bbs.get_mut(successor) {
+                for pred in preds.iter() {
+                    bb.predecessors.push(*pred);
+                }
+            }
+        }
+
+        Ok(bbs.values().cloned().collect())
+    }
 }
