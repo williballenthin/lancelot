@@ -106,3 +106,33 @@ def test_read_insn():
     assert insn['operands'][0]['ty'] == 'IMMEDIATE'
     # TODO: make this value signed (-2)
     assert insn['operands'][0]['imm']['value'] == 0xfffffffffffffffe
+
+
+def test_get_basic_blocks(k32):
+    RtlVirtualUnwind = k32.get_basic_blocks(0x1010)
+    assert len(RtlVirtualUnwind) == 0x1
+    assert RtlVirtualUnwind[0].addr == 0x1010
+    assert len(RtlVirtualUnwind[0]) == 0x3C
+    assert len(RtlVirtualUnwind[0].insns) == 13
+    assert RtlVirtualUnwind[0].successors == []
+    assert RtlVirtualUnwind[0].predecessors == []
+
+    # IDA will show 5 basic blocks here,
+    # but there are two CMOVs, so 7 is correct for lancelot.
+    sub_18000167C = {bb.addr: bb for bb in k32.get_basic_blocks(0x167C)}
+    assert len(sub_18000167C) == 7
+    assert sorted(sub_18000167C[0x167C].successors) == [0x16A8, 0x16D2]
+    assert sorted(sub_18000167C[0x16A8].predecessors) == [0x167C, 0x16C7]
+
+
+def disabled_test_code_coverage(k32):
+    for function in sorted(k32.functions):
+        insn_count = 0
+        print(f'function {function:x}')
+        for bb in sorted(k32.get_basic_blocks(function), key=lambda bb: bb.addr):
+            #print(f'basic block {bb.addr:x}')
+            for i in sorted(bb.insns):
+                #print(f'instruction {i:x}')
+                insn = k32.read_insn(i)
+                insn_count += 1
+        print(f"  {insn_count} instructions")
