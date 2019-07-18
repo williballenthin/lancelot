@@ -115,7 +115,6 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         pub typ: u8,
     }
 
-    // keep in sync with pylancelot::PyWorkspace::translate_xref
     m.add("XREF_FALLTHROUGH", 1)?;
     m.add("XREF_CALL", 2)?;
     m.add("XREF_UNCONDITIONAL_JUMP", 3)?;
@@ -187,7 +186,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                    Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to fetch xrefs")),
                }
                .iter()
-               .map(|x| PyWorkspace::translate_xref(x))
+               .map(|x| x.into())
                .collect())
         }
 
@@ -201,7 +200,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                    Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to fetch xrefs")),
                }
                .iter()
-               .map(|x| PyWorkspace::translate_xref(x))
+               .map(|x| x.into())
                .collect())
         }
 
@@ -432,8 +431,10 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 },
             }
         }
+    }
 
-        fn translate_xref(x: &lancelot::Xref) -> PyXref {
+    impl std::convert::From<&lancelot::Xref> for PyXref {
+        fn from(x: &lancelot::Xref) -> PyXref {
             PyXref {
                 src: x.src.into(),
                 dst: x.dst.into(),
