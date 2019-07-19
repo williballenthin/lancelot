@@ -1,8 +1,6 @@
 use pyo3;
 use pyo3::types::{PyBytes};
-use pyo3::types::IntoPyDict;
 use pyo3::prelude::*;
-use serde_json;
 use zydis;
 
 use lancelot;
@@ -45,40 +43,6 @@ macro_rules! pyo3_try {
       Ok(v) => v,
     }}
 }
-
-const EMPTY_OPERAND: zydis::DecodedOperand = zydis::DecodedOperand {
-    id: 255,
-    ty: zydis::enums::OperandType::UNUSED,
-    visibility: zydis::enums::OperandVisibility::HIDDEN,
-    action: zydis::enums::OperandAction::READWRITE,
-    encoding: zydis::enums::OperandEncoding::NONE,
-    size: 0,
-    element_type: zydis::enums::ElementType::INVALID,
-    element_size: 0,
-    element_count: 0,
-    reg: zydis::enums::Register::NONE,
-    mem: zydis::ffi::MemoryInfo {
-        ty: zydis::enums::OperandType::UNUSED,
-        segment: zydis::enums::Register::NONE,
-        base: zydis::enums::Register::NONE,
-        index: zydis::enums::Register::NONE,
-        scale: 0,
-        disp: zydis::ffi::DisplacementInfo {
-            has_displacement: false,
-            displacement: 0
-        }
-    },
-    ptr: zydis::ffi::PointerInfo {
-        segment: 0,
-        offset: 0
-    },
-    imm: zydis::ffi::ImmediateInfo {
-        is_signed: false,
-        is_relative: false,
-        value: 0
-    }
-};
-
 
 #[pymodule]
 fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -144,6 +108,71 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("XREF_UNCONDITIONAL_JUMP", 3)?;
     m.add("XREF_CONDITIONAL_JUMP", 4)?;
     m.add("XREF_CONDITIONAL_MOVE", 5)?;
+
+    #[pyclass]
+    #[derive(Clone)]
+    pub struct PyImm {
+        #[pyo3(get)]
+        pub is_relative: bool,
+        #[pyo3(get)]
+        pub value: i128, // needs to fit both i64 and u64
+    }
+
+    #[pyclass]
+    #[derive(Clone)]
+    pub struct PyMem {
+        #[pyo3(get)]
+        pub typ: String,      // enum
+        #[pyo3(get)]
+        pub base: Option<String>,     // register, TODO: reuse global constant for this, e.g. `REG_EAX`?
+        #[pyo3(get)]
+        pub index: Option<String>,    // register
+        #[pyo3(get)]
+        pub segment: Option<String>,  // register
+        #[pyo3(get)]
+        pub scale: u8,
+        #[pyo3(get)]
+        pub disp: Option<i64>,
+    }
+
+    #[pyclass]
+    #[derive(Clone)]
+    pub struct PyPtr {
+        #[pyo3(get)]
+        pub offset: u32,
+        #[pyo3(get)]
+        pub segment: u16,
+    }
+
+    #[pyclass]
+    #[derive(Clone)]
+    pub struct PyOperand {
+        #[pyo3(get)]
+        pub typ: String,
+        #[pyo3(get)]
+        pub imm: Option<PyImm>,
+        #[pyo3(get)]
+        pub mem: Option<PyMem>,
+        #[pyo3(get)]
+        pub ptr: Option<PyPtr>,
+        #[pyo3(get)]
+        pub reg: Option<String>,
+    }
+
+    #[pyclass]
+    #[derive(Clone)]
+    pub struct PyInsn {
+        #[pyo3(get)]
+        pub mnemonic: String,
+        #[pyo3(get)]
+        pub length: u8,
+        #[pyo3(get)]
+        pub machine_mode: String,
+        #[pyo3(get)]
+        pub operands: Vec<PyOperand>,
+
+        raw: zydis::DecodedInstruction,
+    }
 
     #[pymethods]
     impl PyWorkspace {
@@ -307,64 +336,11 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         /// raises:
         ///   - LookupError: if the address is not mapped, or the length overruns.
         ///   - ValueError: if the instruction cannot be decoded or serialized.
-        pub fn read_insn<'p>(&self, py: Python<'p>, rva: i64) -> PyResult<&'p pyo3::types::PyAny> {
-            let mut insn = pyo3_try!(self.ws.read_insn(RVA::from(rva)));
-
-            // seems some of the operands can contain invalid .action values.
-            // which causes serialization to crash.
-            //
-            // quickfix: set this field to a constant value.
-            //
-            // ref: https://github.com/zyantific/zydis-rs/issues/21
-            for i in 0..10 {
-                insn.operands[i as usize].action = zydis::enums::OperandAction::CONDREAD_CONDWRITE;
+        pub fn read_insn(&self, rva: i64) -> PyResult<PyInsn> {
+            match &self.ws.read_insn(RVA::from(rva)) {
+                Err(_) => Err(pyo3::exceptions::ValueError::py_err("failed to read insn")),
+                Ok(insn) => Ok(insn.into()),
             }
-
-            // unused operands we zero out, so that they can be removed in the next step.
-            for i in insn.operand_count..10 {
-                insn.operands[i as usize] = EMPTY_OPERAND;
-            }
-
-            // rather than manually construct a PyDict that contains the instruction representation
-            // (which would be tedious to do)
-            // we serialize the instruction to json in rust-land,
-            // use json.loads in python land,
-            // and pass the resulting PyAny back into the interpreter.
-            //
-            // the performance here is suspect; however, the developer experience is much better.
-            //
-            // TODO: signed values, such as operand.imm.value, should be correctly provided.
-            // as is, there's a flag that indicates that the unsigned value must be re-interpreted.
-            // TODO: might want to add helpers on the insn class, such as to render it.
-
-            let json = match serde_json::to_string(&insn) {
-                Ok(s) => s,
-                Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to serialize instruction")),
-            };
-
-            // this is the serialized EMPTY_OPERAND,
-            // which is found in the operand list.
-            // so we cut it out of the json document because:
-            //   1. these operands won't ever be used, and
-            //   2. they have to be parsed and allocated, which is bad for performance.
-            let json = json.replace("{\"id\":255,\"ty\":\"UNUSED\",\"visibility\":\"HIDDEN\",\"action\":\"READWRITE\",\"encoding\":\"NONE\",\"size\":0,\"element_type\":\"INVALID\",\"element_size\":0,\"element_count\":0,\"reg\":\"NONE\",\"mem\":{\"ty\":\"UNUSED\",\"segment\":\"NONE\",\"base\":\"NONE\",\"index\":\"NONE\",\"scale\":0,\"disp\":{\"has_displacement\":false,\"displacement\":0}},\"ptr\":{\"segment\":0,\"offset\":0},\"imm\":{\"is_signed\":false,\"is_relative\":false,\"value\":0}},", "");
-
-            // similar chop for empty elements in the .raw.prefixes array.
-            let json = json.replace("{\"ty\":\"IGNORED\",\"value\":0},", "");
-
-            // would be nice not to re-import this with each call;
-            // however, I'm not sure if its feasible to keep this reference around.
-            // also, import should be optimized for when the module is already loaded.
-            let globals = [
-                // TODO: use ujson when available
-                ("json", py.import("ujson")?),
-            ].into_py_dict(py);
-
-            let locals = [
-                ("doc", json)
-            ].into_py_dict(py);
-
-            py.eval("json.loads(doc)", Some(&globals), Some(&locals))
         }
 
         pub fn get_basic_blocks(&self, rva: i64) -> PyResult<Vec<PyBasicBlock>> {
@@ -424,6 +400,108 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                     lancelot::xref::XrefType::ConditionalMove => 5,
                 }
             }
+        }
+    }
+
+    impl std::convert::From<&zydis::ffi::DecodedOperand> for PyOperand {
+        fn from(operand: &zydis::DecodedOperand) -> PyOperand {
+            let mut ret = PyOperand {
+                typ: match operand.ty {
+                    zydis::enums::OperandType::IMMEDIATE => "imm",
+                    zydis::enums::OperandType::MEMORY => "mem",
+                    zydis::enums::OperandType::POINTER => "ptr",
+                    zydis::enums::OperandType::REGISTER => "reg",
+                    zydis::enums::OperandType::UNUSED => "unused",
+                }.to_string(),
+                imm: None,
+                mem: None,
+                ptr: None,
+                reg: None,
+            };
+
+            match operand.ty {
+                zydis::enums::OperandType::IMMEDIATE => {
+                    ret.imm = Some(PyImm {
+                        is_relative: operand.imm.is_relative,
+                        value: match operand.imm.is_signed {
+                            true => lancelot::util::u64_i64(operand.imm.value) as i128,
+                            false => operand.imm.value as i128,
+                        }
+                    })
+                },
+                zydis::enums::OperandType::MEMORY => {
+                    ret.mem = Some(PyMem {
+                        typ: format!("{:?}", operand.mem.ty).to_lowercase(),
+                        base: match operand.mem.base {
+                            zydis::enums::Register::NONE => None,
+                            _ => Some(format!("{:?}", operand.mem.base).to_lowercase())
+                        },
+                        index: match operand.mem.index {
+                            zydis::enums::Register::NONE => None,
+                            _ => Some(format!("{:?}", operand.mem.index).to_lowercase())
+                        },
+                        segment: match operand.mem.segment {
+                            zydis::enums::Register::NONE => None,
+                            _ => Some(format!("{:?}", operand.mem.segment).to_lowercase())
+                        },
+                        scale: operand.mem.scale,
+                        disp: match operand.mem.disp.has_displacement {
+                            true => Some(operand.mem.disp.displacement),
+                            false => None,
+                        }
+                    })
+                },
+                zydis::enums::OperandType::POINTER => {
+                    ret.ptr = Some(PyPtr {
+                        segment: operand.ptr.segment,
+                        offset: operand.ptr.offset,
+                    })
+                },
+                zydis::enums::OperandType::REGISTER => {
+                    ret.reg = Some(format!("{:?}", operand.reg).to_lowercase())
+                },
+                _ => {}
+            }
+
+            ret
+        }
+    }
+
+    impl std::convert::From<&zydis::ffi::DecodedInstruction> for PyInsn {
+        fn from(insn: &zydis::DecodedInstruction) -> PyInsn {
+            PyInsn {
+                mnemonic: format!("{:?}", insn.mnemonic).to_lowercase(),
+                length: insn.length,
+                machine_mode: format!("{:?}", insn.machine_mode).to_lowercase(),
+                operands: insn.operands
+                    .iter()
+                    .take(insn.operand_count as usize)
+                    .filter(|o| o.visibility == zydis::enums::OperandVisibility::EXPLICIT)
+                    .filter(|o| o.ty != zydis::enums::OperandType::UNUSED)
+                    .map(|o| o.into())
+                    .collect(),
+                raw: insn.clone(),
+            }
+        }
+    }
+
+    #[pyproto]
+    impl pyo3::class::basic::PyObjectProtocol for PyInsn {
+        fn __str__(&self) -> PyResult<String> {
+            let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
+            let mut buffer = [0u8; 200];
+            let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+            match formatter.format_instruction(&self.raw, &mut buffer, None, None) {
+                Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to render insn")),
+                _ => {},
+            }
+
+            Ok(format!("{}", buffer))
+        }
+
+        fn __repr__(&self) -> PyResult<String> {
+            Ok(format!("PyInsn({})", PyInsn::__str__(self)?))
         }
     }
 

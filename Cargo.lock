@@ -474,8 +474,6 @@ dependencies = [
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "lancelot 0.1.0",
  "pyo3 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.94 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json 1.0.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "zydis 0.0.4 (git+https://github.com/zyantific/zydis-rs?rev=c4474211863004ce87464a2ea397341b7e1a6b6f)",
 ]
 

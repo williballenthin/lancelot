@@ -96,16 +96,17 @@ def test_xrefs_to(k32):
 
 def test_zydis_issue_21(k32):
     # there should not be a crash here
-    _ = k32.read_insn(0x10D7)
+    insn = k32.read_insn(0x10D7)
+    assert str(insn) == 'lea rdx, [rbp-0x18]'
 
 
 def test_read_insn():
     ws = pylancelot.from_bytes('foo.bin', b'\xEB\xFE')
     insn = ws.read_insn(0x0)
-    assert insn['mnemonic'] == 'JMP'
-    assert insn['operands'][0]['ty'] == 'IMMEDIATE'
-    # TODO: make this value signed (-2)
-    assert insn['operands'][0]['imm']['value'] == 0xfffffffffffffffe
+    assert str(insn) == 'jmp +0x00'
+    assert insn.mnemonic == 'jmp'
+    assert insn.operands[0].typ == 'imm'
+    assert insn.operands[0].imm.value == -2
 
 
 def test_get_basic_blocks(k32):
