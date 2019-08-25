@@ -1,5 +1,14 @@
+// TODO:
+//   - data directories
+//   - name sections
+//   - list functions
+//   - colors
+//   - summarize as empty/hex/strings
+//   - section entropy
+//   - resource parsing
 extern crate log;
 extern crate lancelot;
+#[macro_use] extern crate lazy_static;
 
 use std::collections::HashMap;
 use std::env;
@@ -92,6 +101,62 @@ fn cmp_ranges(a: &Range<u64>, b: &Range<u64>) -> std::cmp::Ordering {
     }
 }
 
+fn find_ascii_strings(buf: &[u8]) -> Vec<(usize, String)> {
+    lazy_static! {
+        static ref re: Regex = Regex::new("[ -~]{4,}").unwrap();
+    }
+
+    re.captures_iter(buf)
+        .map(|cap| {
+            // guaranteed to have at least one hit
+            let mat = cap.get(0).unwrap();
+
+            // this had better be ASCII, and therefore able to be decoded.
+            let s = String::from_utf8(mat.as_bytes().to_vec()).unwrap();
+
+            (mat.start(), s)
+        })
+        .collect()
+}
+
+fn find_unicode_strings(buf: &[u8]) -> Vec<(usize, String)> {
+    lazy_static! {
+        static ref re: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
+    }
+
+    re.captures_iter(buf)
+        .map(|cap| {
+            // guaranteed to have at least one hit
+            let mat = cap.get(0).unwrap();
+
+            // this had better be ASCII, and therefore able to be decoded.
+            let bytes = mat.as_bytes();
+            let words: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|w| u16::from(w[1]) << 8 | u16::from(w[0]))
+                .collect();
+
+            // danger: the unwrap here might feasibly fail
+            let s = String::from_utf16(&words).unwrap();
+
+            (mat.start(), s)
+        })
+        .collect()
+}
+
+fn find_strings(buf: &[u8]) -> Vec<(usize, String)> {
+    let mut strings: Vec<(usize, String)> = vec![];
+    let mut ascii = find_ascii_strings(buf);
+    let mut unicode = find_unicode_strings(buf);
+
+    strings.append(&mut ascii);
+    strings.append(&mut unicode);
+
+    strings.sort_by(|a, b| a.0.cmp(&b.0));
+
+    strings
+}
+
 struct MapNode {
     range: Range<u64>,
     structure: Structure,
@@ -148,60 +213,6 @@ impl MapNode {
         }
     }
 
-    fn find_ascii_strings(buf: &[u8]) -> Vec<(u64, String)> {
-        // TODO: don't do this in a loop
-        let re: Regex = Regex::new("[ -~]{4,}").unwrap();
-
-        re.captures_iter(buf)
-            .map(|cap| {
-                // guaranteed to have at least one hit
-                let mat = cap.get(0).unwrap();
-
-                // this had better be ASCII, and therefore able to be decoded.
-                let s = String::from_utf8(mat.as_bytes().to_vec()).unwrap();
-
-                (mat.start() as u64, s)
-            })
-            .collect()
-    }
-
-    fn find_unicode_strings(buf: &[u8]) -> Vec<(u64, String)> {
-        // TODO: don't do this in a loop
-        let re: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
-
-        re.captures_iter(buf)
-            .map(|cap| {
-                // guaranteed to have at least one hit
-                let mat = cap.get(0).unwrap();
-
-                // this had better be ASCII, and therefore able to be decoded.
-                let bytes = mat.as_bytes();
-                let words: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|w| u16::from(w[1]) << 8 | u16::from(w[0]))
-                    .collect();
-
-                // danger: the unwrap here might feasibly fail
-                let s = String::from_utf16(&words).unwrap();
-
-                (mat.start() as u64, s)
-            })
-            .collect()
-    }
-
-    // TODO: move this to a util
-    fn find_strings(buf: &[u8]) -> Vec<(u64, String)> {
-        let mut strings: Vec<(u64, String)> = vec![];
-        let mut ascii = MapNode::find_ascii_strings(buf);
-        let mut unicode = MapNode::find_unicode_strings(buf);
-
-        strings.append(&mut ascii);
-        strings.append(&mut unicode);
-
-        strings.sort_by(|a, b| a.0.cmp(&b.0));
-
-        strings
-    }
 
     fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
         let mut ret: Vec<String> = vec![];
@@ -228,9 +239,10 @@ impl MapNode {
             Structure::Slack
             | Structure::Section(_)
             => {
+                // render strings
                 let region = &buf[self.range.start as usize..self.range.end as usize];
-                for (offset, string) in MapNode::find_strings(region).iter() {
-                    ret.push(format!("│   {:#08x} string: {}", self.range.start + offset, string));
+                for (offset, string) in find_strings(region).iter() {
+                    ret.push(format!("│   {:#08x} string: {}", self.range.start + *offset as u64, string));
                 }
             },
             _ => {
