@@ -69,7 +69,6 @@ pub fn setup_logging(_args: &Config) {
           IMAGE_OPTIONAL_HEADER,
       IMAGE_SECTION_HEADER,
       Section(u32),
-      Slack
 */
 
 #[derive(Debug, Clone)]
@@ -99,7 +98,6 @@ enum Structure {
     ImportAddressTable,
     DelayImportDescriptor,
     ClrRuntimeHeader,
-    Slack,
     String(String),
 }
 
@@ -115,7 +113,6 @@ impl std::fmt::Display for Structure {
             Structure::IMAGE_OPTIONAL_HEADER => write!(f, "IMAGE_OPTIONAL_HEADER"),
             Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {}", name),
             Structure::Section(_, name) => write!(f, "section {}", name),
-            Structure::Slack => write!(f, "slack"),
             Structure::ImportTable => write!(f, "import table"),
             Structure::ExportTable=> write!(f, "export table"),
             Structure::ResourceTable => write!(f, "resource table"),
@@ -244,28 +241,6 @@ impl MapNode {
         }
     }
 
-    fn find_slack(&mut self) {
-        let mut offset = self.range.start;
-        let mut slacks: Vec<Range<u64>> = vec![];
-        for child in self.children.iter() {
-            if child.range.start > offset {
-                slacks.push(Range {
-                    start: offset,
-                    end: child.range.start,
-                });
-                offset = child.range.end;
-            } else {
-                offset = child.range.end;
-            }
-        }
-        for slack in slacks.iter() {
-            self.insert(MapNode::new(slack.clone(), Structure::Slack));
-        }
-        for child in self.children.iter_mut() {
-            child.find_slack();
-        }
-    }
-
     fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
         let mut ret: Vec<String> = vec![];
 
@@ -327,8 +302,6 @@ fn build_tree(map: &Map) -> Result<MapNode, Error> {
     while !locations.is_empty() {
         root_node.insert(get_node(map, locations.pop().unwrap()));
     }
-
-    //root_node.find_slack();
 
     Ok(root_node)
 }
