@@ -23,6 +23,7 @@ use regex::bytes::Regex;
 
 use lancelot::util;
 use lancelot::workspace::Workspace;
+use lancelot::analysis::pe::imports;
 
 #[derive(Debug, Fail)]
 pub enum MainError {
@@ -96,6 +97,7 @@ enum Structure {
     LoadConfigTable,
     BoundImportTable,
     ImportAddressTable,
+    ImportData,
     DelayImportDescriptor,
     ClrRuntimeHeader,
     String(String),
@@ -124,6 +126,7 @@ impl std::fmt::Display for Structure {
             Structure::LoadConfigTable => write!(f, "load config table"),
             Structure::BoundImportTable => write!(f, "bound import table"),
             Structure::ImportAddressTable => write!(f, "import address table"),
+            Structure::ImportData => write!(f, "import data"),
             Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
             Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
             Structure::String(s) => write!(f, "string: {}", s),
@@ -460,10 +463,114 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         }, Structure::String(string.clone()));
     }
 
+    if let Some(r) = find_import_data_range(&ws)? {
+        locations.insert(r, Structure::ImportData);
+    }
+
     Ok(Map {
         locations
     })
 }
+
+fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>, Error> {
+    let pe = match Object::parse(&ws.buf) {
+        Ok(Object::PE(pe)) => pe,
+        _ => panic!("can't analyze unexpected format"),
+    };
+
+     let import_directory = {
+        let opt_header = match pe.header.optional_header {
+            Some(opt_header) => opt_header,
+            _ => return Ok(None),
+        };
+
+        let import_directory = match opt_header.data_directories.get_import_table() {
+            Some(import_directory) => import_directory,
+            _ => return Ok(None),
+        };
+
+        lancelot::arch::RVA::from(import_directory.virtual_address as i64)
+    };
+
+    let mut addrs: Vec<lancelot::arch::RVA> = vec![];
+
+    let psize: usize = ws.loader.get_arch().get_pointer_size() as usize;
+    for i in 0..std::usize::MAX {
+        // for each DLL entry in the import table...
+        let import_descriptor_rva = import_directory + lancelot::arch::RVA::from(i * 0x14);
+        let import_descriptor = imports::read_image_import_descriptor(ws, import_descriptor_rva)?;
+        // until the empty entry (last one)
+        if import_descriptor.is_empty() {
+            break;
+        }
+
+        // collect where the dll name is found
+        let dll_name_addr = import_descriptor.name;
+        addrs.push(dll_name_addr);
+
+        for j in 0..std::usize::MAX {
+            // for each function name entry...
+            let image_thunk_data_rva = import_descriptor.original_first_thunk + lancelot::arch::RVA::from(j * psize);
+            match imports::read_image_thunk_data(ws, image_thunk_data_rva)? {
+                imports::ImageThunkData::Function(rva) => {
+                    // until the empty entry (last one)
+                    if rva == lancelot::arch::RVA(0x0) {
+                        break;
+                    } else {
+                        // collect where the function name is found.
+                        let import_name_addr: lancelot::arch::RVA = rva + lancelot::arch::RVA::from(2);
+                        addrs.push(import_name_addr);
+                    }
+                },
+                imports::ImageThunkData::Ordinal(ord) => { /* pass */ },
+            };
+        }
+    }
+
+    if addrs.len() == 0 {
+        return Ok(None);
+    }
+
+    addrs.sort();
+    let last_str_addr = addrs[addrs.len() - 1];
+    let last_str = ws.read_utf8(last_str_addr)?;
+
+    let start_rva = addrs[0];
+    let end_rva = (last_str_addr + last_str.len());
+
+    Ok(Some(Range {
+        start: rva2pfile(&pe, start_rva.into())? as u64,
+        end: rva2pfile(&pe,  end_rva.into())? as u64,
+    }))
+}
+
+pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
+    // track the minimum section.pointer_to_raw_data.
+    // assume all data before this is part of the headers,
+    //  and can be indexed directly via the RVA.
+    let mut min_section_addr = std::u32::MAX;
+    let rva = rva as u32;
+
+    for section in pe.sections.iter() {
+        if section.virtual_address <= rva && rva < section.virtual_address + section.virtual_size {
+            let offset = rva - section.virtual_address;
+            return Ok((section.pointer_to_raw_data + offset) as usize)
+        }
+
+        if section.pointer_to_raw_data < min_section_addr {
+            min_section_addr = section.pointer_to_raw_data;
+        }
+    }
+
+    if rva < min_section_addr {
+        // this must be found in the headers of the file.
+        // and therefore the rva == pfile.
+        return Ok(rva as usize);
+    }
+
+    return Err(MainError::UnmappedVA.into())
+}
+
 
 fn va2pfile(pe: &goblin::pe::PE, va: u32) -> Result<u32, Error> {
     for section in pe.sections.iter() {
