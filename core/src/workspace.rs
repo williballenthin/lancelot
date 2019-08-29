@@ -429,7 +429,6 @@ impl Workspace {
         self.module.base_address.va(rva)
     }
 
-
     // API:
     //   get_insn
     //   get_xrefs_to

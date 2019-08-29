@@ -17,17 +17,17 @@ impl ImportsAnalyzer {
 }
 
 
-struct ImageImportDescriptor {
-    original_first_thunk: RVA,
-    time_date_stamp: u32,
-    forwarder_chain: u32,
-    name: RVA,
-    first_thunk: RVA,
+pub struct ImageImportDescriptor {
+    pub original_first_thunk: RVA,
+    pub time_date_stamp: u32,
+    pub forwarder_chain: u32,
+    pub name: RVA,
+    pub first_thunk: RVA,
 }
 
 
 impl ImageImportDescriptor {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.original_first_thunk == RVA(0x0) &&
             self.time_date_stamp == 0x0 &&
             self.forwarder_chain == 0x0 &&
@@ -47,7 +47,7 @@ impl std::fmt::Debug for ImageImportDescriptor {
 }
 
 
-fn read_image_import_descriptor(ws: &Workspace, rva: RVA) -> Result<ImageImportDescriptor, Error> {
+pub fn read_image_import_descriptor(ws: &Workspace, rva: RVA) -> Result<ImageImportDescriptor, Error> {
     let buf = ws.read_bytes(rva, 5 * 4)?;
 
     // these fields are all u32, even on 64-bit
@@ -66,13 +66,13 @@ fn read_image_import_descriptor(ws: &Workspace, rva: RVA) -> Result<ImageImportD
 }
 
 
-enum ImageThunkData {
+pub enum ImageThunkData {
     Function(RVA),
     Ordinal(u32),
 }
 
 
-fn read_image_thunk_data(ws: &Workspace, rva: RVA) -> Result<ImageThunkData, Error> {
+pub fn read_image_thunk_data(ws: &Workspace, rva: RVA) -> Result<ImageThunkData, Error> {
     // see: https://reverseengineering.stackexchange.com/a/13387/17194
     let thunk = ws.read_rva(rva)?;
     let v: i64 = thunk.into();
@@ -85,9 +85,9 @@ fn read_image_thunk_data(ws: &Workspace, rva: RVA) -> Result<ImageThunkData, Err
 }
 
 
-struct ImageImportByName {
-    hint: u16,
-    name: String,
+pub struct ImageImportByName {
+    pub hint: u16,
+    pub name: String,
 }
 
 
@@ -101,7 +101,7 @@ impl std::fmt::Debug for ImageImportByName {
 }
 
 
-fn read_image_import_by_name(ws: &Workspace, rva: RVA) -> Result<ImageImportByName, Error> {
+pub fn read_image_import_by_name(ws: &Workspace, rva: RVA) -> Result<ImageImportByName, Error> {
     Ok(ImageImportByName {
         hint: ws.read_u16(rva)?,
         name: ws.read_utf8(rva + RVA::from(2))?,
