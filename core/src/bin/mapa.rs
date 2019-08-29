@@ -30,6 +30,8 @@ pub enum MainError {
     Foo,
     #[fail(display = "Invalid PE file")]
     InvalidFile,
+    #[fail(display = "Unmapped address")]
+    UnmappedVA,
 }
 
 pub struct Config {
@@ -70,7 +72,7 @@ pub fn setup_logging(_args: &Config) {
       Slack
 */
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 enum Structure {
     /// the complete file
     File,
@@ -81,13 +83,58 @@ enum Structure {
     Signature,
     IMAGE_FILE_HEADER,
     IMAGE_OPTIONAL_HEADER,
-    IMAGE_SECTION_HEADER(u16),
+    IMAGE_SECTION_HEADER(u16, String),
     /// a section's content
-    Section(u16),
+    Section(u16, String),
+    ImportTable,
+    ExportTable,
+    ResourceTable,
+    ExceptionTable,
+    CertificateTable,
+    BaseRelocationTable,
+    DebugData,
+    TlsTable,
+    LoadConfigTable,
+    BoundImportTable,
+    ImportAddressTable,
+    DelayImportDescriptor,
+    ClrRuntimeHeader,
     Slack,
+    String(String),
 }
 
-fn cmp_ranges(a: &Range<u64>, b: &Range<u64>) -> std::cmp::Ordering {
+impl std::fmt::Display for Structure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Structure::File => write!(f, "file"),
+            Structure::Header => write!(f, "headers"),
+            Structure::IMAGE_DOS_HEADER => write!(f, "IMAGE_DOS_HEADER"),
+            Structure::IMAGE_NT_HEADERS => write!(f, "IMAGE_NT_HEADERS"),
+            Structure::Signature => write!(f, "signature"),
+            Structure::IMAGE_FILE_HEADER => write!(f, "IMAGE_FILE_HEADER"),
+            Structure::IMAGE_OPTIONAL_HEADER => write!(f, "IMAGE_OPTIONAL_HEADER"),
+            Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {}", name),
+            Structure::Section(_, name) => write!(f, "section {}", name),
+            Structure::Slack => write!(f, "slack"),
+            Structure::ImportTable => write!(f, "import table"),
+            Structure::ExportTable=> write!(f, "export table"),
+            Structure::ResourceTable => write!(f, "resource table"),
+            Structure::ExceptionTable => write!(f, "exception table"),
+            Structure::CertificateTable => write!(f, "certificate table"),
+            Structure::BaseRelocationTable => write!(f, "base relocation table"),
+            Structure::DebugData => write!(f, "debug data"),
+            Structure::TlsTable => write!(f, "TLS table"),
+            Structure::LoadConfigTable => write!(f, "load config table"),
+            Structure::BoundImportTable => write!(f, "bound import table"),
+            Structure::ImportAddressTable => write!(f, "import address table"),
+            Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
+            Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
+            Structure::String(s) => write!(f, "string: {}", s),
+        }
+    }
+}
+
+fn cmp_ranges<T: PartialOrd>(a: &Range<T>, b: &Range<T>) -> std::cmp::Ordering {
     if a.start < b.start {
         std::cmp::Ordering::Less
     } else if a.start > b.start {
@@ -101,7 +148,7 @@ fn cmp_ranges(a: &Range<u64>, b: &Range<u64>) -> std::cmp::Ordering {
     }
 }
 
-fn find_ascii_strings(buf: &[u8]) -> Vec<(usize, String)> {
+fn find_ascii_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
     lazy_static! {
         static ref re: Regex = Regex::new("[ -~]{4,}").unwrap();
     }
@@ -114,12 +161,15 @@ fn find_ascii_strings(buf: &[u8]) -> Vec<(usize, String)> {
             // this had better be ASCII, and therefore able to be decoded.
             let s = String::from_utf8(mat.as_bytes().to_vec()).unwrap();
 
-            (mat.start(), s)
+            (Range {
+                start: mat.start(),
+                end: mat.end(),
+            }, s)
         })
         .collect()
 }
 
-fn find_unicode_strings(buf: &[u8]) -> Vec<(usize, String)> {
+fn find_unicode_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
     lazy_static! {
         static ref re: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
     }
@@ -139,20 +189,23 @@ fn find_unicode_strings(buf: &[u8]) -> Vec<(usize, String)> {
             // danger: the unwrap here might feasibly fail
             let s = String::from_utf16(&words).unwrap();
 
-            (mat.start(), s)
+            (Range {
+                start: mat.start(),
+                end: mat.end(),
+            }, s)
         })
         .collect()
 }
 
-fn find_strings(buf: &[u8]) -> Vec<(usize, String)> {
-    let mut strings: Vec<(usize, String)> = vec![];
+fn find_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
+    let mut strings: Vec<(Range<usize>, String)> = vec![];
     let mut ascii = find_ascii_strings(buf);
     let mut unicode = find_unicode_strings(buf);
 
     strings.append(&mut ascii);
     strings.append(&mut unicode);
 
-    strings.sort_by(|a, b| a.0.cmp(&b.0));
+    strings.sort_by(|a, b| cmp_ranges(&a.0, &b.0));
 
     strings
 }
@@ -213,59 +266,56 @@ impl MapNode {
         }
     }
 
-
     fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
         let mut ret: Vec<String> = vec![];
 
-        // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
-        ret.push(format!("┌── {:#08x} {:?}", self.range.start, self.structure));
+        if let Structure::String(s) = &self.structure {
+            ret.push(format!("    {:#08x} string \"{}\"", self.range.start, s));
+        } else {
+            // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
+            ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
 
-        match self.structure {
-            Structure::IMAGE_SECTION_HEADER(_)
-            | Structure::IMAGE_DOS_HEADER
-            | Structure::Signature
-            | Structure::IMAGE_FILE_HEADER
-            | Structure::IMAGE_OPTIONAL_HEADER
-            => {
-                // render hexdump
-                let region = &buf[self.range.start as usize..self.range.end as usize];
-                for line in lancelot::util::hexdump(region,
-                                                    self.range.start as usize).split("\n") {
-                    if line != "" {
-                        ret.push(format!("│   {}", line))
+            match &self.structure {
+                Structure::IMAGE_SECTION_HEADER(_, _)
+                | Structure::IMAGE_DOS_HEADER
+                | Structure::Signature
+                | Structure::IMAGE_FILE_HEADER
+                | Structure::IMAGE_OPTIONAL_HEADER
+                => {
+                    // render hexdump
+                    let region = &buf[self.range.start as usize..self.range.end as usize];
+                    for line in lancelot::util::hexdump(region,
+                                                        self.range.start as usize).split("\n") {
+                        if line != "" {
+                            ret.push(format!("│   {}", line))
+                        }
                     }
-                }
-            },
-            Structure::Slack
-            | Structure::Section(_)
-            => {
-                // render strings
-                let region = &buf[self.range.start as usize..self.range.end as usize];
-                for (offset, string) in find_strings(region).iter() {
-                    ret.push(format!("│   {:#08x} string: {}", self.range.start + *offset as u64, string));
-                }
-            },
-            _ => {
-                // render children
-                for (i, child) in self.children.iter().enumerate() {
-                    for line in child.render(buf)?.iter() {
-                        ret.push(format!("│  {}", line))
-                    }
-                    if i < self.children.len() - 1 {
-                        ret.push(format!("│"));
+                },
+                _ => {
+                    // render children
+                    for (i, child) in self.children.iter().enumerate() {
+                        for line in child.render(buf)?.iter() {
+                            ret.push(format!("│  {}", line))
+                        }
+                        if i < self.children.len() - 1 {
+                            match (&self.children[i].structure,  &self.children[i + 1].structure) {
+                                (Structure::String(_), Structure::String(_)) => {},
+                                _ => {ret.push(format!("│")) }
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        ret.push(format!("└── {:#08x} ────────", self.range.end));
+            ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
+        }
 
         Ok(ret)
     }
 }
 
 fn get_node(map: &Map, range: Range<u64>) -> MapNode {
-    MapNode::new(range.clone(), map.locations[&range])
+    MapNode::new(range.clone(), map.locations[&range].clone())
 }
 
 fn build_tree(map: &Map) -> Result<MapNode, Error> {
@@ -278,7 +328,7 @@ fn build_tree(map: &Map) -> Result<MapNode, Error> {
         root_node.insert(get_node(map, locations.pop().unwrap()));
     }
 
-    root_node.find_slack();
+    //root_node.find_slack();
 
     Ok(root_node)
 }
@@ -378,33 +428,79 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     let mut offset_IMAGE_SECTION_HEADER = end_of_headers;
     let sizeof_IMAGE_SECTION_HEADER = 0x28;
     for i in 0..pe.header.coff_header.number_of_sections {
-        locations.insert(
-            Range {
-                start: offset_IMAGE_SECTION_HEADER,
-                end: offset_IMAGE_SECTION_HEADER + sizeof_IMAGE_SECTION_HEADER,
-            },
-            Structure::IMAGE_SECTION_HEADER(i)
-        );
-
         let section = &pe.sections[i as usize];
         locations.insert(
             Range {
                 start: section.pointer_to_raw_data as u64,
                 end: (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
             },
-            Structure::Section(i),
+            Structure::Section(i, section.name().unwrap_or("").to_string()),
+        );
+
+        locations.insert(
+            Range {
+                start: offset_IMAGE_SECTION_HEADER,
+                end: offset_IMAGE_SECTION_HEADER + sizeof_IMAGE_SECTION_HEADER,
+            },
+            Structure::IMAGE_SECTION_HEADER(i, section.name().unwrap_or("").to_string()),
         );
 
         offset_IMAGE_SECTION_HEADER += sizeof_IMAGE_SECTION_HEADER;
     }
 
+    if let Some(opt) = pe.header.optional_header {
+        let mut directories: Vec<(Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>, Structure)> = vec![];
+        directories.push((Box::new(|| *opt.data_directories.get_export_table()), Structure::ExportTable));
+        directories.push((Box::new(|| *opt.data_directories.get_import_table()), Structure::ImportTable));
+        directories.push((Box::new(|| *opt.data_directories.get_resource_table()), Structure::ResourceTable));
+        directories.push((Box::new(|| *opt.data_directories.get_exception_table()), Structure::ExceptionTable));
+        directories.push((Box::new(|| *opt.data_directories.get_certificate_table()), Structure::CertificateTable));
+        directories.push((Box::new(|| *opt.data_directories.get_base_relocation_table()), Structure::BaseRelocationTable));
+        directories.push((Box::new(|| *opt.data_directories.get_debug_table()), Structure::DebugData));
+        directories.push((Box::new(|| *opt.data_directories.get_tls_table()), Structure::TlsTable));
+        directories.push((Box::new(|| *opt.data_directories.get_load_config_table()), Structure::LoadConfigTable));
+        directories.push((Box::new(|| *opt.data_directories.get_bound_import_table()), Structure::BoundImportTable));
+        directories.push((Box::new(|| *opt.data_directories.get_import_address_table()), Structure::ImportAddressTable));
+        directories.push((Box::new(|| *opt.data_directories.get_delay_import_descriptor()), Structure::DelayImportDescriptor));
+        directories.push((Box::new(|| *opt.data_directories.get_clr_runtime_header()), Structure::ClrRuntimeHeader));
+
+        for (f, structure) in directories.iter() {
+            if let Some(dir) = f() {
+                if let Ok(pfile) = va2pfile(&pe, dir.virtual_address) {
+                    println!("{:#x} {:#x} {}", pfile, pfile + dir.size, structure);
+                    locations.insert(
+                        Range {
+                            start: pfile as u64,
+                            end: (pfile + dir.size) as u64,
+                        },
+                        structure.clone(),
+                    );
+                }
+            }
+        }
+    }
+
+    for (loc, string) in find_strings(&ws.buf).iter() {
+        locations.insert(Range {
+            start: loc.start as u64,
+            end: loc.end as u64,
+        }, Structure::String(string.clone()));
+    }
 
     Ok(Map {
         locations
     })
-
 }
 
+fn va2pfile(pe: &goblin::pe::PE, va: u32) -> Result<u32, Error> {
+    for section in pe.sections.iter() {
+        if va >= section.virtual_address && va < section.virtual_address + section.virtual_size {
+            let offset = va - section.virtual_address;
+            return Ok(section.pointer_to_raw_data + offset);
+        }
+    }
+    return Err(MainError::UnmappedVA.into())
+}
 
 fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
     let tree = build_tree(&map)?;
