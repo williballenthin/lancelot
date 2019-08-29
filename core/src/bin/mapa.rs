@@ -15,7 +15,7 @@ use std::process;
 use better_panic;
 use failure::{Error, Fail};
 use goblin::Object;
-use log::{error, info, trace};
+use log::{error, warn, info, trace};
 use regex::bytes::Regex;
 
 use lancelot::util;
@@ -467,6 +467,13 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     })
 }
 
+// in typical binaries compiled by MSVC,
+// the import table and import address table immediately precede the ASCII strings
+// of the DLLs and exported names required by the program.
+//
+// here we search for that region of data by collecting the addresses
+//  of these elements (IAT, IT, DLL names, function names).
+// if they are all found close to one another, report the elements as a single range.
 fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>, Error> {
     let mut addrs: Vec<RVA> = vec![];
 
@@ -496,7 +503,6 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
         RVA::from(import_directory.virtual_address as i64)
     };
-
 
     let psize: usize = ws.loader.get_arch().get_pointer_size() as usize;
     for i in 0..std::usize::MAX {
@@ -551,6 +557,7 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
     addrs.sort();
     let last_str_addr = addrs[addrs.len() - 1];
+    // if, for some reason, the IAT is the last element, this won't work well.
     let last_str = ws.read_utf8(last_str_addr)?;
 
     let start_rva = addrs[0];
