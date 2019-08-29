@@ -1,9 +1,6 @@
 // TODO:
-//   - data directories
-//   - name sections
 //   - list functions
 //   - colors
-//   - summarize as empty/hex/strings
 //   - section entropy
 //   - resource parsing
 extern crate log;
@@ -22,6 +19,7 @@ use log::{error, info, trace};
 use regex::bytes::Regex;
 
 use lancelot::util;
+use lancelot::arch::{RVA};
 use lancelot::workspace::Workspace;
 use lancelot::analysis::pe::imports;
 
@@ -96,8 +94,6 @@ enum Structure {
     TlsTable,
     LoadConfigTable,
     BoundImportTable,
-    ImportAddressTable,
-    ImportData,
     DelayImportDescriptor,
     ClrRuntimeHeader,
     String(String),
@@ -125,8 +121,6 @@ impl std::fmt::Display for Structure {
             Structure::TlsTable => write!(f, "TLS table"),
             Structure::LoadConfigTable => write!(f, "load config table"),
             Structure::BoundImportTable => write!(f, "bound import table"),
-            Structure::ImportAddressTable => write!(f, "import address table"),
-            Structure::ImportData => write!(f, "import data"),
             Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
             Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
             Structure::String(s) => write!(f, "string: {}", s),
@@ -427,7 +421,8 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     if let Some(opt) = pe.header.optional_header {
         let mut directories: Vec<(Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>, Structure)> = vec![];
         directories.push((Box::new(|| *opt.data_directories.get_export_table()), Structure::ExportTable));
-        directories.push((Box::new(|| *opt.data_directories.get_import_table()), Structure::ImportTable));
+        // the import table is handled by find_import_data_range
+        // directories.push((Box::new(|| *opt.data_directories.get_import_table()), Structure::ImportTable));
         directories.push((Box::new(|| *opt.data_directories.get_resource_table()), Structure::ResourceTable));
         directories.push((Box::new(|| *opt.data_directories.get_exception_table()), Structure::ExceptionTable));
         directories.push((Box::new(|| *opt.data_directories.get_certificate_table()), Structure::CertificateTable));
@@ -436,18 +431,19 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         directories.push((Box::new(|| *opt.data_directories.get_tls_table()), Structure::TlsTable));
         directories.push((Box::new(|| *opt.data_directories.get_load_config_table()), Structure::LoadConfigTable));
         directories.push((Box::new(|| *opt.data_directories.get_bound_import_table()), Structure::BoundImportTable));
-        directories.push((Box::new(|| *opt.data_directories.get_import_address_table()), Structure::ImportAddressTable));
+        // the import table is handled by find_import_data_range
+        // directories.push((Box::new(|| *opt.data_directories.get_import_address_table()), Structure::ImportAddressTable));
         directories.push((Box::new(|| *opt.data_directories.get_delay_import_descriptor()), Structure::DelayImportDescriptor));
         directories.push((Box::new(|| *opt.data_directories.get_clr_runtime_header()), Structure::ClrRuntimeHeader));
 
         for (f, structure) in directories.iter() {
             if let Some(dir) = f() {
-                if let Ok(pfile) = va2pfile(&pe, dir.virtual_address) {
-                    println!("{:#x} {:#x} {}", pfile, pfile + dir.size, structure);
+                if let Ok(pfile) = rva2pfile(&pe, dir.virtual_address as u64) {
+                    println!("{:#x} {:#x} {}", pfile, pfile + dir.size as usize, structure);
                     locations.insert(
                         Range {
                             start: pfile as u64,
-                            end: (pfile + dir.size) as u64,
+                            end: (pfile + dir.size as usize) as u64,
                         },
                         structure.clone(),
                     );
@@ -464,7 +460,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     }
 
     if let Some(r) = find_import_data_range(&ws)? {
-        locations.insert(r, Structure::ImportData);
+        locations.insert(r, Structure::ImportTable);
     }
 
     Ok(Map {
@@ -472,13 +468,16 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     })
 }
 
+// TODO: TMPProvider spreads imports across a section. need to sanity check.
 fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>, Error> {
+    let mut addrs: Vec<RVA> = vec![];
+
     let pe = match Object::parse(&ws.buf) {
         Ok(Object::PE(pe)) => pe,
         _ => panic!("can't analyze unexpected format"),
     };
 
-     let import_directory = {
+    let import_directory = {
         let opt_header = match pe.header.optional_header {
             Some(opt_header) => opt_header,
             _ => return Ok(None),
@@ -489,15 +488,22 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
             _ => return Ok(None),
         };
 
-        lancelot::arch::RVA::from(import_directory.virtual_address as i64)
+        if let Some(iat) = opt_header.data_directories.get_import_address_table() {
+            addrs.push(RVA::from(iat.virtual_address as i64));
+        }
+
+        if let Some(iat) = opt_header.data_directories.get_import_table() {
+            addrs.push(RVA::from(iat.virtual_address as i64));
+        }
+
+        RVA::from(import_directory.virtual_address as i64)
     };
 
-    let mut addrs: Vec<lancelot::arch::RVA> = vec![];
 
     let psize: usize = ws.loader.get_arch().get_pointer_size() as usize;
     for i in 0..std::usize::MAX {
         // for each DLL entry in the import table...
-        let import_descriptor_rva = import_directory + lancelot::arch::RVA::from(i * 0x14);
+        let import_descriptor_rva = import_directory + RVA::from(i * 0x14);
         let import_descriptor = imports::read_image_import_descriptor(ws, import_descriptor_rva)?;
         // until the empty entry (last one)
         if import_descriptor.is_empty() {
@@ -510,15 +516,15 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
         for j in 0..std::usize::MAX {
             // for each function name entry...
-            let image_thunk_data_rva = import_descriptor.original_first_thunk + lancelot::arch::RVA::from(j * psize);
+            let image_thunk_data_rva = import_descriptor.original_first_thunk + RVA::from(j * psize);
             match imports::read_image_thunk_data(ws, image_thunk_data_rva)? {
                 imports::ImageThunkData::Function(rva) => {
                     // until the empty entry (last one)
-                    if rva == lancelot::arch::RVA(0x0) {
+                    if rva == RVA(0x0) {
                         break;
                     } else {
                         // collect where the function name is found.
-                        let import_name_addr: lancelot::arch::RVA = rva + lancelot::arch::RVA::from(2);
+                        let import_name_addr: RVA = rva + RVA::from(2);
                         addrs.push(import_name_addr);
                     }
                 },
@@ -568,17 +574,6 @@ pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
         return Ok(rva as usize);
     }
 
-    return Err(MainError::UnmappedVA.into())
-}
-
-
-fn va2pfile(pe: &goblin::pe::PE, va: u32) -> Result<u32, Error> {
-    for section in pe.sections.iter() {
-        if va >= section.virtual_address && va < section.virtual_address + section.virtual_size {
-            let offset = va - section.virtual_address;
-            return Ok(section.pointer_to_raw_data + offset);
-        }
-    }
     return Err(MainError::UnmappedVA.into())
 }
 
