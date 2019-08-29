@@ -439,7 +439,6 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         for (f, structure) in directories.iter() {
             if let Some(dir) = f() {
                 if let Ok(pfile) = rva2pfile(&pe, dir.virtual_address as u64) {
-                    println!("{:#x} {:#x} {}", pfile, pfile + dir.size as usize, structure);
                     locations.insert(
                         Range {
                             start: pfile as u64,
@@ -468,7 +467,6 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     })
 }
 
-// TODO: TMPProvider spreads imports across a section. need to sanity check.
 fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>, Error> {
     let mut addrs: Vec<RVA> = vec![];
 
@@ -525,6 +523,20 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
                     } else {
                         // collect where the function name is found.
                         let import_name_addr: RVA = rva + RVA::from(2);
+
+                        // sanity check: these strings should be close together.
+                        // assume each is within 100 bytes of the prior string.
+                        // this won't work if we have really long import names.
+                        //
+                        // TMPProvider038.dll spreads the import names across an entire section,
+                        // which we want to detect and avoid.
+                        if import_name_addr > addrs[addrs.len() - 1] + 100 {
+                            warn!("detected disjoint import table data");
+
+                            // TODO: maybe this is an error.
+                            return Ok(None);
+                        }
+
                         addrs.push(import_name_addr);
                     }
                 },
