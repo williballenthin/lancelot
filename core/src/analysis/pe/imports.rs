@@ -84,7 +84,6 @@ pub fn read_image_thunk_data(ws: &Workspace, rva: RVA) -> Result<ImageThunkData,
     }
 }
 
-
 pub struct ImageImportByName {
     pub hint: u16,
     pub name: String,
@@ -100,14 +99,12 @@ impl std::fmt::Debug for ImageImportByName {
     }
 }
 
-
 pub fn read_image_import_by_name(ws: &Workspace, rva: RVA) -> Result<ImageImportByName, Error> {
     Ok(ImageImportByName {
         hint: ws.read_u16(rva)?,
         name: ws.read_utf8(rva + RVA::from(2))?,
     })
 }
-
 
 impl Analyzer for ImportsAnalyzer {
     fn get_name(&self) -> String {
@@ -176,13 +173,15 @@ impl Analyzer for ImportsAnalyzer {
             debug!("found {:?} -> {}", import_descriptor, dll_name);
 
             for j in 0..std::usize::MAX {
+                // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
+                // FT and OFT are parallel arrays.
+                let _original_first_thunk = import_descriptor.original_first_thunk + RVA::from(j * psize);
+
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
                 // entries here may not point to the IMAGE_IMPORT_BY_NAME.
                 let first_thunk = import_descriptor.first_thunk + RVA::from(j * psize);
-                // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
-                // FT and OFT are parallel arrays.
-                let image_thunk_data_rva = import_descriptor.original_first_thunk + RVA::from(j * psize);
-                match read_image_thunk_data(ws, image_thunk_data_rva)? {
+
+                match read_image_thunk_data(ws, first_thunk)? {
                     ImageThunkData::Function(rva) => {
                         if rva == RVA(0x0) {
                             break;
