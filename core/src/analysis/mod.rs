@@ -509,12 +509,12 @@ impl Workspace {
 
     fn get_pointer_operand_xref(
         &self,
-        _rva: RVA,
+        rva: RVA,
         _insn: &zydis::DecodedInstruction,
         op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
         // TODO
-        println!("get ptr op xref");
+        println!("get ptr op xref {}", rva);
         print_op(op);
         panic!("not supported");
         //Ok(None)
