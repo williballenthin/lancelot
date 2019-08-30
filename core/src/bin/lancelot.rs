@@ -18,7 +18,7 @@ fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     info!("found {} functions", functions.len());
     for rva in functions.iter() {
         let basic_blocks = ws.get_basic_blocks(**rva)?;
-        println!("{:#x} found {} basic blocks", **rva, basic_blocks.len());
+        println!("{} with {} basic blocks", ws.va(**rva).unwrap(), basic_blocks.len());
     }
 
     Ok(())

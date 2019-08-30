@@ -3,6 +3,14 @@
 //   - colors
 //   - section entropy
 //   - resource parsing
+
+// we use identifier names from the C headers for PE structures,
+// which don't match the Rust style guide.
+// example: `IMAGE_DOS_HEADER`
+// don't show compiler warnings when encountering these names.
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+
 extern crate log;
 extern crate lancelot;
 #[macro_use] extern crate lazy_static;
@@ -18,10 +26,10 @@ use goblin::Object;
 use log::{error, warn, info, trace};
 use regex::bytes::Regex;
 
-use lancelot::util;
 use lancelot::arch::{RVA};
 use lancelot::workspace::Workspace;
 use lancelot::analysis::pe::imports;
+
 
 #[derive(Debug, Fail)]
 pub enum MainError {
@@ -158,10 +166,10 @@ fn cmp_ranges<T: PartialOrd>(a: &Range<T>, b: &Range<T>) -> std::cmp::Ordering {
 
 fn find_ascii_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
     lazy_static! {
-        static ref re: Regex = Regex::new("[ -~]{4,}").unwrap();
+        static ref ASCII_RE: Regex = Regex::new("[ -~]{4,}").unwrap();
     }
 
-    re.captures_iter(buf)
+    ASCII_RE.captures_iter(buf)
         .map(|cap| {
             // guaranteed to have at least one hit
             let mat = cap.get(0).unwrap();
@@ -179,10 +187,10 @@ fn find_ascii_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
 
 fn find_unicode_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
     lazy_static! {
-        static ref re: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
+        static ref UNICODE_RE: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
     }
 
-    re.captures_iter(buf)
+    UNICODE_RE.captures_iter(buf)
         .map(|cap| {
             // guaranteed to have at least one hit
             let mat = cap.get(0).unwrap();
@@ -560,7 +568,7 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
                         addrs.push(import_name_addr);
                     }
                 },
-                imports::ImageThunkData::Ordinal(ord) => { /* pass */ },
+                imports::ImageThunkData::Ordinal(_) => { /* pass */ },
             };
         }
     }
@@ -575,7 +583,7 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
     let last_str = ws.read_utf8(last_str_addr)?;
 
     let start_rva = addrs[0];
-    let end_rva = (last_str_addr + last_str.len());
+    let end_rva = last_str_addr + last_str.len();
 
     Ok(Some(Range {
         start: rva2pfile(&pe, start_rva.into())? as u64,
