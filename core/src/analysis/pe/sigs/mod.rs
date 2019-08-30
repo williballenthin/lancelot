@@ -154,7 +154,7 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
                 // collapse two `.` for the two nibbles in a hex char
                 // down to a single byte-wise wildcard.
                 out.push(".".to_string())
-            } else if byte.contains(".") {
+            } else if byte.contains('.') {
                 // don't support things like `0xA.`
                 panic!("unsupported pattern: half-wild byte")
             } else {
@@ -166,7 +166,7 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
         if term.len() > 2 {
             Ok(format!("({})", out.join("")))
         } else {
-            Ok(format!("{}", out.join("")))
+            Ok(out.join("").to_string())
         }
     } else if term.chars().all(|c| ['0', '1', '.'].contains(&c)) {
         // handle binary pattern
@@ -180,7 +180,7 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
         if term.len() > 8 {
             Ok(format!("({})", out.join("")))
         } else {
-            Ok(format!("{}", out.join("")))
+            Ok(out.join("").to_string())
         }
 
     } else {
@@ -232,11 +232,11 @@ pub struct SinglePattern {
 impl SinglePattern {
     pub fn new(data: String, attrs: HashMap<String, String>) -> SinglePattern {
         let mut m = md5::Context::new();
-        m.write(data.as_bytes()).unwrap();
+        m.write_all(data.as_bytes()).unwrap();
         let id = format!("{:x}", m.compute());
         let id = format!("pattern_{}", &id[..8]);
 
-        let mark = if data.chars().find(|&c| c == '*').is_some() {
+        let mark = if data.chars().any(|c| c == '*') {
             format!("{}_mark", id)
         } else {
             id.clone()
@@ -358,15 +358,15 @@ struct Node {
     tag: String,
     attrs: HashMap<String, String>,
     text: String,
-    children: Vec<Box<Node>>,
+    children: Vec<Node>,
 }
 
 impl Node {
-    fn get_children(&self, tag: &str) -> Vec<&Box<Node>> {
-        self.children.iter().filter(|n| &n.tag == tag).collect()
+    fn get_children(&self, tag: &str) -> Vec<&Node> {
+        self.children.iter().filter(|n| n.tag == tag).collect()
     }
-    fn get_child(&self, tag: &str) -> Option<&Box<Node>> {
-        self.children.iter().filter(|n| &n.tag == tag).next()
+    fn get_child(&self, tag: &str) -> Option<&Node> {
+        self.children.iter().find(|n| n.tag == tag)
     }
 }
 
@@ -412,7 +412,7 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
                 let node = path.pop().unwrap();
                 let l = path.len();
                 let parent = &mut path[l-1];
-                parent.children.push(Box::new(node));
+                parent.children.push(node);
             }
             Ok(XmlEvent::EndDocument { .. }) => {
                 if path.len() != 1 {
