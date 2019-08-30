@@ -245,7 +245,11 @@ impl Workspace {
 
     pub fn get_meta(&self, rva: RVA) -> Option<FlowMeta> {
         self.get_coords(rva)
-            .and_then(|(section, offset)| Some(self.analysis.flow.meta[section][offset]))
+            .and_then(|(section, offset)| {
+                // non-executable sections, such as the header, may not have flow meta
+                self.analysis.flow.meta[section].get(offset)
+                    .and_then(|meta| Some(*meta))
+            })
     }
 
     /// Does the given instruction have a fallthrough flow?
