@@ -38,7 +38,7 @@ impl ImageImportDescriptor {
 
 impl std::fmt::Debug for ImageImportDescriptor {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "IMAGE_IMPORT_DESCRIPTOR(FT: {:#x} OFT: {:#x} name: {:#x})",
+        write!(f, "IMAGE_IMPORT_DESCRIPTOR(FT: {} OFT: {} name: {})",
                self.first_thunk,
                self.original_first_thunk,
                self.name
@@ -93,7 +93,7 @@ pub struct ImageImportByName {
 
 impl std::fmt::Debug for ImageImportByName {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "IMAGE_IMPORT_BY_NAME(hint: {:#x} name: {})",
+        write!(f, "IMAGE_IMPORT_BY_NAME(hint: {} name: {})",
                self.hint,
                self.name
         )
@@ -148,7 +148,7 @@ impl Analyzer for ImportsAnalyzer {
             RVA::from(import_directory.virtual_address as i64)
         };
 
-        debug!("import directory: {:#x}", import_directory);
+        debug!("found import directory: {}", import_directory);
 
         let mut symbols: Vec<(RVA, String)> = vec![];
 
@@ -173,7 +173,7 @@ impl Analyzer for ImportsAnalyzer {
             }
 
             let dll_name = ws.read_utf8(import_descriptor.name)?;
-            debug!("{:?} -> {}", import_descriptor, dll_name);
+            debug!("found {:?} -> {}", import_descriptor, dll_name);
 
             for j in 0..std::usize::MAX {
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
@@ -188,7 +188,7 @@ impl Analyzer for ImportsAnalyzer {
                             break;
                         } else {
                             let imp = read_image_import_by_name(ws, rva)?;
-                            debug!("{:?}", imp);
+                            debug!("found {:?}", imp);
 
                             symbols.push((first_thunk, format!("{}!{}", dll_name, imp.name)))
                         }
@@ -201,7 +201,7 @@ impl Analyzer for ImportsAnalyzer {
         }
 
         for (rva, name) in symbols.iter() {
-            debug!("import: {:#x} -> {}", rva, name);
+            debug!("found import: {} -> {}", rva, name);
             ws.make_symbol(*rva, name)?;
             ws.analyze()?;
         }

@@ -9,7 +9,6 @@ travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch
 
 [dependencies]
 log = "0.4"
-simplelog = "^0.5.0"
 goblin = "0.0.24"
 # zydis==0.0.3 requires rust-bindgen, which requires clang 3.9
 # zydis = "0.0.3"
@@ -28,6 +27,9 @@ bitflags = "1.0.4"
 # see: https://github.com/pyros2097/rust-embed/pull/67
 rust-embed = { git="https://github.com/pyros2097/rust-embed", rev="7ea8ef21b14951ca3c7f60f9b6d7cc223923c5ba", features=["debug-embed", "interpolate-folder-path"] }
 lazy_static = "1.3.0"
+clap = "2.33"
+fern = "0.5"
+chrono = "0.4"
 
 xml-rs = "0.8"
 better-panic = "0.1.1"

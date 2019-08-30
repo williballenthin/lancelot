@@ -668,7 +668,7 @@ impl Analyzer for ByteSigAnalyzer {
         }
 
         for rva in functions.iter() {
-            debug!("found function by signature: {:#x}", rva);
+            debug!("found function by signature: {}", rva);
             ws.make_function(*rva).unwrap();
             ws.analyze().unwrap();
         }

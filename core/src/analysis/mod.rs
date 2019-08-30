@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use serde_json;
 use failure::{Error, Fail, bail};
-use log::{debug, warn};
+use log::{trace, debug, warn};
 use zydis;
 
 use super::arch::{RVA, VA};
@@ -906,7 +906,7 @@ impl Workspace {
         };
 
         if meta.is_insn() {
-            debug!("duplicate instruction: {:x}", rva);
+            trace!("duplicate instruction: {}", rva);
             return Ok(vec![]);
         }
 
@@ -1051,7 +1051,7 @@ impl Workspace {
         }
 
         self.analysis.symbols.entry(rva).or_insert_with(|| {
-            debug!("adding symbol: {:#x} -> {}", rva, name);
+            debug!("adding symbol: {} -> \"{}\"", rva, name);
             name.to_string()
         });
 
@@ -1066,7 +1066,7 @@ impl Workspace {
         }
 
         if self.analysis.functions.insert(rva) {
-            debug!("adding function: {:#x}", rva);
+            debug!("adding function: {}", rva);
         };
 
         Ok(vec![AnalysisCommand::MakeInsn(rva)])
@@ -1086,7 +1086,7 @@ impl Workspace {
     /// ```
     pub fn analyze(&mut self) -> Result<(), Error> {
         while let Some(cmd) = self.analysis.queue.pop_front() {
-            debug!("dispatching command: {:}", cmd);
+            trace!("dispatching command: {:}", cmd);
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,

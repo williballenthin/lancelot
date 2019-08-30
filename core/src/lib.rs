@@ -1,6 +1,5 @@
 extern crate log;
 extern crate bitflags;
-extern crate simplelog;
 extern crate rust_embed;
 
 pub mod analysis;

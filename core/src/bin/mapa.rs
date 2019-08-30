@@ -53,8 +53,22 @@ impl Config {
 }
 
 pub fn setup_logging(_args: &Config) {
-    simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default())
-        .expect("failed to setup logging");
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{} [{:5}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .chain(std::io::stderr())
+        .filter(|metadata| {
+            !metadata.target().starts_with("goblin::pe")
+        })
+        .apply()
+        .expect("failed to configure logging");
 }
 
 

@@ -58,13 +58,13 @@ impl VA {
 
 impl fmt::Display for VA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#x}", self)
+        write!(f, "{:#x}", self.0)
     }
 }
 
 impl fmt::Debug for VA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#x}", self)
+        write!(f, "{:#x}", self.0)
     }
 }
 
@@ -133,13 +133,13 @@ pub struct RVA(pub i64);
 
 impl fmt::Display for RVA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#x}", self)
+        write!(f, "{:#x}", self.0)
     }
 }
 
 impl fmt::Debug for RVA {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:#x}", self)
+        write!(f, "{:#x}", self.0)
     }
 }
 
@@ -260,7 +260,6 @@ impl std::ops::Add<i32> for RVA {
         self + RVA::from(rhs as i64)
     }
 }
-
 
 
 #[derive(Copy, Clone)]

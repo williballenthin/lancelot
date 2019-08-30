@@ -1,51 +1,17 @@
 extern crate lancelot;
 extern crate log;
+extern crate chrono;
+#[macro_use] extern crate clap;
 
-use std::env;
-use std::process;
-
-use log::{error, info, trace};
+use fern;
+use log::{error, info, debug};
+use failure::{Error};
 use better_panic;
-use failure::{Error, Fail};
 
 use lancelot::workspace::Workspace;
 
 
-#[derive(Debug, Fail)]
-pub enum MainError {
-    #[fail(display = "foo")]
-    Foo,
-}
-
-pub struct Config {
-    pub filename: String,
-}
-
-impl Config {
-    pub fn from_args(args: env::Args) -> Result<Config, &'static str> {
-        let args: Vec<String> = args.collect();
-
-        if args.len() < 2 {
-            return Err("not enough arguments: provide `lancelot.exe /path/to/input`");
-        }
-
-        let filename = args[1].clone();
-        trace!("config: parsed filename: {:?}", filename);
-
-        Ok(Config { filename })
-    }
-}
-
-pub fn setup_logging(_args: &Config) {
-    simplelog::TermLogger::init(simplelog::LevelFilter::Info, simplelog::Config::default())
-        .expect("failed to setup logging");
-}
-
-pub fn run(args: &Config) -> Result<(), Error> {
-    info!("filename: {:?}", args.filename);
-
-    let ws = Workspace::from_file(&args.filename)?.load()?;
-
+fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     let mut functions = ws.get_functions().collect::<Vec<_>>();
     functions.sort();
 
@@ -61,14 +27,57 @@ pub fn run(args: &Config) -> Result<(), Error> {
 fn main() {
     better_panic::install();
 
-    let args = Config::from_args(env::args()).unwrap_or_else(|err| {
-        eprintln!("error parsing arguments: {}", err);
-        process::exit(1);
-    });
+    let matches = clap_app!(lancelot =>
+        (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
+        (about: "Binary analysis framework")
+        (@arg verbose: -v --verbose +multiple "log verbose messages")
+        (@subcommand functions =>
+            (about: "find functions")
+            (@arg input: +required "path to file to analyze")
+        )
+    ).get_matches();
 
-    setup_logging(&args);
+    let log_level = match matches.occurrences_of("verbose") {
+        0 => log::LevelFilter::Info,
+        1 => log::LevelFilter::Debug,
+        2 => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Trace,
+    };
 
-    if let Err(e) = run(&args) {
-        error!("{:?}", e)
-    }
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{} [{:5}] {} {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                message
+            ))
+        })
+        .level(log_level)
+        .chain(std::io::stderr())
+        .filter(|metadata| {
+            !metadata.target().starts_with("goblin::pe")
+        })
+        .apply()
+        .expect("failed to configure logging");
+
+    if let Some(matches) = matches.subcommand_matches("functions") {
+        debug!("mode: find functions");
+
+        let filename = matches.value_of("input").unwrap();
+        debug!("input: {}", filename);
+
+        let ws = Workspace::from_file(filename)
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+
+        let ws = ws.load()
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+
+        if let Err(e) = handle_functions(&ws) {
+            error!("error: {}", e)
+        }
+    };
+
+    return;
 }
