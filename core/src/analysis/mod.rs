@@ -44,10 +44,10 @@ pub enum AnalysisCommand {
 impl Display for AnalysisCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({:#x})", rva),
+            AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
-            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({:#x}, {})", rva, name),
-            AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({:#x})", rva),
+            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({}, {})", rva, name),
+            AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({})", rva),
         }
     }
 }
