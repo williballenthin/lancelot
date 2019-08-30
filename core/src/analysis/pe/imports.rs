@@ -179,6 +179,9 @@ impl Analyzer for ImportsAnalyzer {
 
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
                 // entries here may not point to the IMAGE_IMPORT_BY_NAME.
+                //
+                // in practice, using this array works better, as some OFT entries may be empty.
+                // see: be24e9d47cfe588a8ced0ac3e453d390 hotfix2.exe
                 let first_thunk = import_descriptor.first_thunk + RVA::from(j * psize);
 
                 match read_image_thunk_data(ws, first_thunk)? {
