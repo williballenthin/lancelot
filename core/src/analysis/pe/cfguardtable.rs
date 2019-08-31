@@ -71,7 +71,7 @@ impl Analyzer for CFGuardTableAnalyzer {
             (RVA::from(load_config_directory.virtual_address as i64), pe.is_64)
         };
 
-        debug!("load config directory: {:#x}", load_config_directory);
+        debug!("load config directory: {}", load_config_directory);
 
         // offsets defined here:
         // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
@@ -99,7 +99,7 @@ impl Analyzer for CFGuardTableAnalyzer {
         for _ in 0..cfg_table_count {
             let function = RVA::from(ws.read_i32(offset)?);
 
-            debug!("CF guard function: {:#x}", function);
+            debug!("CF guard function: {}", function);
             ws.make_function(function)?;
             ws.analyze()?;
 
