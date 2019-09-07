@@ -24,12 +24,12 @@ fn page_offset(rva: RVA) -> usize {
     (v as usize) & 0xFFF
 }
 
-pub struct Page<T: Default + Copy> {
-    pub elements: [T; PAGE_SIZE],
+struct Page<T: Default + Copy> {
+    elements: [T; PAGE_SIZE],
 }
 
 impl<T: Default + Copy> Page<T> {
-    pub fn new(items: &[T]) -> Page<T> {
+    fn new(items: &[T]) -> Page<T> {
         let mut page: Page<T> = Default::default();
         page.elements.copy_from_slice(items);
         page
@@ -44,6 +44,12 @@ impl<T: Default + Copy> Default for Page<T> {
     }
 }
 
+/// PageMap is a map-like data structure that stores `Copy` elements in pages of 0x1000.
+///
+/// Its a good choice when representing lots of small elements that are found at
+/// contiguous indices. At the moment, indices are `RVA`.
+///
+/// Lookups should be quick, as they boil down to just a couple dereferences.
 pub struct PageMap<T: Default + Copy> {
     pages: Vec<Option<Page<T>>>
 }
@@ -157,8 +163,42 @@ impl<T: Default + Copy> PageMap<T> {
         };
 
         Some(page.elements[page_offset(rva)])
-
     }
+
+    /// fetch one mutable item from the given address.
+    ///
+    /// ```
+    /// use lancelot::arch::RVA;
+    /// use lancelot::pagemap::PageMap;
+    ///
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
+    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
+    ///
+    /// // address 0x0 starts at 0
+    /// assert_eq!(d.get(0x0.into()), Some(0x0));
+    ///
+    /// // set address 0x0 to 1
+    /// let v = d.get_mut(0x0.into()).expect("should be mapped");
+    /// *v = 1;
+    ///
+    /// // address 0x0 is 1
+    /// assert_eq!(d.get(0x0.into()), Some(0x1));
+    /// ```
+    pub fn get_mut(&mut self, rva: RVA) -> Option<&mut T> {
+        if page(rva) > self.pages.len() {
+            return None;
+        }
+
+        let page = match &mut self.pages[page(rva)] {
+            // page is not mapped
+            None => return None,
+            // page is mapped
+            Some(page) => page,
+        };
+
+        Some(&mut page.elements[page_offset(rva)])
+    }
+
 
     /// handle the simple slice case: when start and end fall within the same page.
     /// for example, reading a dword from address 0x10.
@@ -171,7 +211,9 @@ impl<T: Default + Copy> PageMap<T> {
     /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
     /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
     /// ```
-    fn slice_simple(&self, start: RVA, end: RVA) -> Result<Vec<T>, Error> {
+    fn slice_into_simple(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+        // precondition: page(start) == page(start + buf.len())
+
         if page(start) > self.pages.len() {
             return Err(Error::NotMapped);
         }
@@ -183,7 +225,11 @@ impl<T: Default + Copy> PageMap<T> {
             Some(page) => page,
         };
 
-        Ok(page.elements[page_offset(start)..page_offset(end)].to_vec())
+        let end = start + buf.len();
+        let elements = &page.elements[page_offset(start)..page_offset(end)];
+        buf.copy_from_slice(elements);
+
+        Ok(())
     }
 
     /// handle the complex slice case: when start and end are on different pages.
@@ -220,8 +266,8 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// assert_eq!(d.slice(0x2000.into(), 0x3004.into()).unwrap().len(), 0x1004, "page, 4");
     /// ```
-    fn slice_split(&self, start: RVA, end: RVA) -> Result<Vec<T>, Error> {
-        // precondition: end > start
+    fn slice_into_split(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+        let end = start + buf.len();
 
         if page(end) > self.pages.len() {
             return Err(Error::NotMapped);
@@ -236,7 +282,7 @@ impl<T: Default + Copy> PageMap<T> {
             }
         }
 
-        let mut ret: Vec<T> = Vec::with_capacity((end - start).into());
+        let mut offset: usize = 0;
 
         // region one: from `start` to the end of its page
         // region two: any intermediate complete pages
@@ -245,8 +291,12 @@ impl<T: Default + Copy> PageMap<T> {
         // one.
         {
             let page = self.pages[page(start)].as_ref().unwrap();
-            let buf = &page.elements[page_offset(start)..];
-            ret.extend_from_slice(buf);
+            let elements = &page.elements[page_offset(start)..];
+            {
+                let dst = &mut buf[offset..offset+elements.len()];
+                dst.copy_from_slice(elements);
+                offset += elements.len();
+            }
         }
 
         // two.
@@ -255,19 +305,40 @@ impl<T: Default + Copy> PageMap<T> {
             let end_index = page(end);
             for page_index in start_index..end_index {
                 let page = self.pages[page_index].as_ref().unwrap();
-                let buf = &page.elements[..];
-                ret.extend_from_slice(buf);
+                let elements = &page.elements[..];
+                {
+                    let dst = &mut buf[offset..offset+elements.len()];
+                    dst.copy_from_slice(elements);
+                    offset += elements.len();
+                }
             }
         }
 
         // three.
         if page_offset(end) != 0x0 {
             let page = self.pages[page(end)].as_ref().unwrap();
-            let buf = &page.elements[..page_offset(end)];
-            ret.extend_from_slice(buf);
+            let elements = &page.elements[..page_offset(end)];
+            {
+                let dst = &mut buf[offset..offset+elements.len()];
+                dst.copy_from_slice(elements);
+            }
         }
 
-        Ok(ret)
+        Ok(())
+    }
+
+    /// fetch the items found in the given range, placing them into the given slice.
+    /// compared with `slice`, this routine avoids an allocation.
+    ///
+    /// errors:
+    ///   - Error::NotMapped: if any requested address is not mapped
+    pub fn slice_into(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+        let end = start + buf.len();
+        if page(start) == page(end) {
+            self.slice_into_simple(start, buf)
+        } else {
+            self.slice_into_split(start, buf)
+        }
     }
 
     /// fetch the items found in the given range.
@@ -277,17 +348,23 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// panic if:
     ///   - start > end
+    ///
+    /// ```
+    /// use lancelot::arch::RVA;
+    /// use lancelot::pagemap::PageMap;
+    ///
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
+    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
+    /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
+    /// ```
     pub fn slice(&self, start: RVA, end: RVA) -> Result<Vec<T>, Error> {
         if start > end {
             panic!("start > end");
         }
 
-        if page(start) == page(end) {
-            self.slice_simple(start, end)
-        } else {
-            self.slice_split(start, end)
-        }
-    }
+        let mut ret = vec![Default::default(); (end - start).into()];
+        self.slice_into(start, &mut ret)?;
 
-    // TODO: slice_into
+        Ok(ret)
+    }
 }
