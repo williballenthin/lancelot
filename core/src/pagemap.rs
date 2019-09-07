@@ -109,6 +109,31 @@ impl<T: Default + Copy> PageMap<T> {
         self.map(rva, &vec![Default::default(); size])
     }
 
+    /// map the given items at the given address, padding with the default value until the next page.
+    /// (map zero-extend).
+    ///
+    /// same error conditions as `map`.
+    ///
+    /// ```
+    /// use lancelot::arch::RVA;
+    /// use lancelot::pagemap::PageMap;
+    ///
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
+    /// assert_eq!(d.get(0x0.into()), None);
+    /// assert_eq!(d.get(0x1.into()), None);
+    ///
+    /// d.mapzx(0x0.into(), &[0x1, ]).expect("failed to map");
+    /// assert_eq!(d.get(0x0.into()), Some(0x1));
+    /// assert_eq!(d.get(0x0.into()), Some(0x0));
+    /// ```
+    pub fn mapzx(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+        let empty_count = PAGE_SIZE - page_offset(items.len().into());
+        let mut padded_items = Vec::with_capacity(items.len() + empty_count);
+        padded_items.extend(items);
+        padded_items.extend(&vec![Default::default(); empty_count]);
+        self.map(rva, &padded_items)
+    }
+
     /// is the given address mapped?
     ///
     /// ```
