@@ -11,6 +11,7 @@ pub mod loaders;
 pub mod util;
 pub mod workspace;
 pub mod xref;
+pub mod aspace;
 
 pub use basicblock::BasicBlock;
 pub use xref::Xref;
