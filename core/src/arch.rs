@@ -261,6 +261,15 @@ impl std::ops::Add<i32> for RVA {
     }
 }
 
+impl std::ops::Sub<RVA> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn sub(self, rhs: RVA) -> RVA {
+        RVA(self.0.checked_sub(rhs.0).expect("rva underflow"))
+    }
+}
+
 
 #[derive(Copy, Clone)]
 pub enum Arch {

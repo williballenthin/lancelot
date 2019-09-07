@@ -14,6 +14,7 @@ use super::loader::{LoadedModule, Loader};
 use super::xref::XrefType;
 use super::util;
 
+
 #[derive(Debug, Fail)]
 pub enum WorkspaceError {
     #[fail(display = "The given buffer is not supported (arch/plat/file format)")]
