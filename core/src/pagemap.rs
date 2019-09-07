@@ -44,17 +44,17 @@ impl<T: Default + Copy> Default for Page<T> {
     }
 }
 
-pub struct DenseAddressSpace<T: Default + Copy> {
+pub struct PageMap<T: Default + Copy> {
     pages: Vec<Option<Page<T>>>
 }
 
-impl<T: Default + Copy> DenseAddressSpace<T> {
-    pub fn with_capacity(capacity: RVA) -> DenseAddressSpace<T>{
+impl<T: Default + Copy> PageMap<T> {
+    pub fn with_capacity(capacity: RVA) -> PageMap<T>{
         let page_count = page(capacity) + 1;
         let mut pages = Vec::with_capacity(page_count);
         pages.resize_with(page_count, || None);
 
-        DenseAddressSpace {
+        PageMap {
             pages
         }
     }
@@ -107,9 +107,9 @@ impl<T: Default + Copy> DenseAddressSpace<T> {
     ///
     /// ```
     /// use lancelot::arch::RVA;
-    /// use lancelot::aspace::DenseAddressSpace;
+    /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: DenseAddressSpace<u32> = DenseAddressSpace::with_capacity(0x2000.into());
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
     /// assert_eq!(d.probe(0x0.into()), false);
     /// assert_eq!(d.probe(0x1000.into()), false);
     ///
@@ -130,9 +130,9 @@ impl<T: Default + Copy> DenseAddressSpace<T> {
     ///
     /// ```
     /// use lancelot::arch::RVA;
-    /// use lancelot::aspace::DenseAddressSpace;
+    /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: DenseAddressSpace<u32> = DenseAddressSpace::with_capacity(0x2000.into());
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
     /// assert_eq!(d.get(0x0.into()), None);
     /// assert_eq!(d.get(0x1000.into()), None);
     ///
@@ -165,9 +165,9 @@ impl<T: Default + Copy> DenseAddressSpace<T> {
     ///
     /// ```
     /// use lancelot::arch::RVA;
-    /// use lancelot::aspace::DenseAddressSpace;
+    /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: DenseAddressSpace<u32> = DenseAddressSpace::with_capacity(0x2000.into());
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
     /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
     /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
     /// ```
@@ -191,9 +191,9 @@ impl<T: Default + Copy> DenseAddressSpace<T> {
     ///
     /// ```
     /// use lancelot::arch::RVA;
-    /// use lancelot::aspace::DenseAddressSpace;
+    /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: DenseAddressSpace<u32> = DenseAddressSpace::with_capacity(0x5000.into());
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x5000.into());
     /// d.map_empty(0x1000.into(), 0x3000).expect("failed to map");
     ///
     /// // 0     unmapped
