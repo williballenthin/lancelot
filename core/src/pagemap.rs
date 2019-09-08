@@ -1,12 +1,14 @@
 use log::{debug};
+use failure::{Fail, Error};
 
 use super::arch::RVA;
 
 const PAGE_SIZE: usize = 0x1000;
 
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Debug, Fail)]
+pub enum PageMapError {
+    #[fail(display = "address not mapped")]
     NotMapped,
 }
 
@@ -245,7 +247,7 @@ impl<T: Default + Copy> PageMap<T> {
 
         let page = match &self.pages[page(start)] {
             // page is not mapped
-            None => return Err(Error::NotMapped),
+            None => return Err(PageMapError::NotMapped.into()),
             // page is mapped
             Some(page) => page,
         };
@@ -303,7 +305,7 @@ impl<T: Default + Copy> PageMap<T> {
         // ensure each page within the requested region is mapped.
         for page in start_page..end_page + 1 {
             if ! self.probe((page * PAGE_SIZE).into()) {
-                return Err(Error::NotMapped);
+                return Err(PageMapError::NotMapped.into());
             }
         }
 
@@ -369,7 +371,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// fetch the items found in the given range.
     ///
     /// errors:
-    ///   - Error::NotMapped: if any requested address is not mapped
+    ///   - PageMapError::NotMapped: if any requested address is not mapped
     ///
     /// panic if:
     ///   - start > end
