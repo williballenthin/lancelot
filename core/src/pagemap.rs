@@ -126,9 +126,10 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// d.mapzx(0x0.into(), &[0x1, ]).expect("failed to map");
     /// assert_eq!(d.get(0x0.into()), Some(0x1));
-    /// assert_eq!(d.get(0x0.into()), Some(0x0));
+    /// assert_eq!(d.get(0x1.into()), Some(0x0));
     /// ```
     pub fn mapzx(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+        // TODO: use lancelot::util::align
         let empty_count = PAGE_SIZE - page_offset(items.len().into());
         let mut padded_items = Vec::with_capacity(items.len() + empty_count);
         padded_items.extend(items);
@@ -237,6 +238,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
     /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
     /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
+    /// assert_eq!(d.slice(0x1000.into(), 0x1002.into()).is_err(), true);
     /// ```
     fn slice_into_simple<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
         // precondition: page(start) == page(start + buf.len())
@@ -382,7 +384,10 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
     /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
+    ///
     /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
+    /// assert!(d.slice(0x0.into(), 0x1000.into()).is_ok(), "read page");
+    /// assert!(d.slice(0x0.into(), 0x1001.into()).is_err(), "read more than a page");
     /// ```
     pub fn slice(&self, start: RVA, end: RVA) -> Result<Vec<T>, Error> {
         if start > end {
