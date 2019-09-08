@@ -1,6 +1,7 @@
 use failure::{Error};
 
 use super::super::arch::{Arch, VA, RVA};
+use super::super::pagemap::{PageMap};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, Permissions};
 use super::super::analysis::{Analyzer};
 
@@ -49,14 +50,18 @@ impl Loader for ShellcodeLoader {
     ///   .map_err(|e| panic!(e));
     /// ```
     fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
+        let mut address_space = PageMap::with_capacity(buf.len().into());
+        address_space.mapzx(0x0.into(), &buf)?;
+
         Ok((LoadedModule {
             base_address: VA(0x0),
             sections: vec![Section {
                 addr: RVA(0x0),
-                buf: buf.to_vec(),
+                size: buf.len() as u32, // danger
                 perms: Permissions::RWX,
                 name: "raw".to_string(),
             }],
+            address_space,
         },
         vec![]))
     }

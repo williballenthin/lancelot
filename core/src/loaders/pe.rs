@@ -5,6 +5,7 @@ use goblin::pe::section_table::SectionTable;
 
 use super::super::util;
 use super::super::arch::{Arch, VA, RVA};
+use super::super::pagemap::{PageMap};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
 use super::super::analysis::{Analyzer, OrphanFunctionAnalyzer};
 use super::super::analysis::pe;
@@ -65,13 +66,13 @@ impl PELoader {
 
         Ok(Section {
             addr: RVA(0x0),
-            buf: headerbuf,
+            size: hdr_virt_size as u32,  // danger
             perms: Permissions::R,
             name: String::from("header"),
         })
     }
 
-    fn load_section(&self, buf: &[u8], section: &SectionTable) -> Result<Section, Error> {
+    fn load_section(&self, section: &SectionTable) -> Result<Section, Error> {
         let name = String::from_utf8_lossy(&section.name[..])
             .into_owned()
             .trim_end_matches("\u{0}")
@@ -83,19 +84,6 @@ impl PELoader {
 
         // assumption: each section fits within one u32
         let virtual_size = util::align(section.virtual_size as usize, 0x200) as usize;
-        let mut secbuf = vec![0; virtual_size as usize];
-
-        {
-            // in nop.exe, we have virtualsize=0x12FE and rawsize=0x2000.
-            // this teaches us that we have to handle the case where rawsize > virtualsize.
-            //
-            // TODO: do we pick align(virtualsize, 0x200) or just virtualsize?
-            let raw_size = std::cmp::min(section.virtual_size, section.size_of_raw_data);
-            let rawbuf = &mut secbuf[..raw_size as usize];
-            let pstart = section.pointer_to_raw_data as usize;
-            let pend = pstart + raw_size as usize;
-            rawbuf.copy_from_slice(&buf[pstart..pend]);
-        }
 
         let mut perms = Permissions::empty();
         if section.characteristics & IMAGE_SCN_MEM_READ > 0 {
@@ -110,7 +98,7 @@ impl PELoader {
 
         Ok(Section{
             addr: RVA::from(section.virtual_address as i64), // ok: u32 -> i64
-            buf: secbuf,
+            size: virtual_size as u32,  // danger
             perms,
             name,
         })
@@ -181,10 +169,32 @@ impl Loader for PELoader {
 
             let base_address = VA::from(base_address);
 
-            let mut sections = vec![self.load_header(buf, &pe)];
-            sections.extend(pe.sections
-                            .iter()
-                            .map(|sec| self.load_section(buf, sec)));
+            let mut sections = vec![self.load_header(buf, &pe)?];
+            for section in pe.sections.iter() {
+                sections.push(self.load_section(section)?);
+            }
+
+            let max_address = pe.sections
+                .iter()
+                .map(|sec| sec.virtual_address + sec.virtual_size)
+                .max()
+                .unwrap();  // danger
+            let max_page_address: RVA = util::align(max_address as usize, 0x1000).into();  // danger
+            let mut address_space: PageMap<u8> = PageMap::with_capacity(max_page_address);
+
+            // TODO: map header buffer
+
+            for section in pe.sections.iter() {
+                // in nop.exe, we have virtualsize=0x12FE and rawsize=0x2000.
+                // this teaches us that we have to handle the case where rawsize > virtualsize.
+                //
+                // TODO: do we pick align(virtualsize, 0x200) or just virtualsize?
+                let raw_size = std::cmp::min(section.virtual_size, section.size_of_raw_data);
+                let pstart = section.pointer_to_raw_data as usize;
+                let pend = pstart + raw_size as usize;
+                let secbuf = &buf[pstart..pend];
+                address_space.mapzx(RVA::from(section.virtual_address as i32), secbuf)?;  // danger
+            }
 
             let mut analyzers: Vec<Box<dyn Analyzer>> = vec![
                 Box::new(pe::EntryPointAnalyzer::new()),
@@ -202,20 +212,11 @@ impl Loader for PELoader {
             // this always needs to go last
             analyzers.push(Box::new(OrphanFunctionAnalyzer::new()));
 
-
-            // collect sections into either list of sections, or error.
-            //
-            // via: https://doc.rust-lang.org/rust-by-example/error/iter_result.html
-            match sections.into_iter().collect::<Result<Vec<Section>, Error>>() {
-                Ok(sections) => Ok(
-                    (LoadedModule {
-                        base_address,
-                        sections,
-                     },
-                     analyzers
-                     )),
-                Err(e) => Err(e),
-            }
+            Ok((LoadedModule {
+                base_address,
+                sections,
+                address_space,
+            }, analyzers))
         } else {
             Err(LoaderError::NotSupported.into())
         }

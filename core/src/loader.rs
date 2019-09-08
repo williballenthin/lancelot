@@ -4,6 +4,7 @@ use log::{info};
 use bitflags::{bitflags};
 
 use super::arch::{Arch, RVA, VA};
+use super::pagemap::{PageMap};
 use super::loaders::pe::PELoader;
 use super::loaders::sc::ShellcodeLoader;
 use super::analysis::{Analyzer};
@@ -42,7 +43,7 @@ bitflags! {
 #[derive(Debug)]
 pub struct Section {
     pub addr: RVA,
-    pub buf: Vec<u8>,
+    pub size: u32,
     pub perms: Permissions,
     pub name: String,
 }
@@ -53,7 +54,7 @@ impl Section {
             return false;
         }
 
-        let max = self.addr + self.buf.len();
+        let max = self.addr + self.size as i32;  // danger
         if rva >= max {
             return false;
         }
@@ -64,11 +65,16 @@ impl Section {
     pub fn is_executable(&self) -> bool {
         self.perms.intersects(Permissions::X)
     }
+
+    pub fn end(&self) -> RVA {
+        self.addr + RVA::from(self.size as i64)
+    }
 }
 
 pub struct LoadedModule {
     pub base_address: VA,
     pub sections: Vec<Section>,
+    pub address_space: PageMap<u8>,
 }
 
 pub trait Loader {

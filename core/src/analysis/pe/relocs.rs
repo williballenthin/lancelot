@@ -224,17 +224,18 @@ impl Analyzer for RelocAnalyzer {
     /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
+    ///
     /// let anal = RelocAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// let meta = ws.get_meta(RVA(0xC7F0)).unwrap();
-    /// assert!(meta.is_insn());
+    ///
+    /// assert!(ws.get_meta(RVA(0xC7F0)).unwrap().is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
         let x_sections: Vec<Section> = ws.module.sections.iter()
             .filter(|section| section.perms.intersects(Permissions::X))
             .map(|section| Section {
                 start: section.addr,
-                end: section.addr + RVA::from(section.buf.len()),
+                end: section.end(),
             })
             .collect();
 
@@ -266,7 +267,7 @@ impl Analyzer for RelocAnalyzer {
             // TODO: maybe ensure that the insn decodes.
             .collect();
 
-        println!("found {} relocs that point to instructions", o.len());
+        debug!("found {} relocs that point to instructions", o.len());
 
         o.iter().for_each(|&rva| {
             debug!("found ptr from .text section to .text section at {:#x}", rva);

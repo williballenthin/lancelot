@@ -133,7 +133,7 @@ impl Analysis {
             .iter()
             .map(|section| -> Vec<FlowMeta> {
                 if section.is_executable() {
-                    vec![FlowMeta::zero(); section.buf.len()]
+                    vec![FlowMeta::zero(); section.size as usize]
                 } else {
                     vec![]
                 }
