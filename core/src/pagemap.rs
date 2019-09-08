@@ -238,7 +238,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
     /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
     /// ```
-    fn slice_into_simple(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+    fn slice_into_simple<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
         // precondition: page(start) == page(start + buf.len())
 
         if page(start) > self.pages.len() - 1 {
@@ -256,7 +256,7 @@ impl<T: Default + Copy> PageMap<T> {
         let elements = &page.elements[page_offset(start)..page_offset(end)];
         buf.copy_from_slice(elements);
 
-        Ok(())
+        Ok(buf)
     }
 
     /// handle the complex slice case: when start and end are on different pages.
@@ -293,7 +293,7 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// assert_eq!(d.slice(0x2000.into(), 0x3004.into()).unwrap().len(), 0x1004, "page, 4");
     /// ```
-    fn slice_into_split(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+    fn slice_into_split<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
         let end = start + buf.len();
         let start_page = page(start);
         let end_page = if page_offset(end) == 0 { page(end) - 1} else { page(end) };
@@ -351,15 +351,15 @@ impl<T: Default + Copy> PageMap<T> {
             }
         }
 
-        Ok(())
+        Ok(buf)
     }
 
     /// fetch the items found in the given range, placing them into the given slice.
     /// compared with `slice`, this routine avoids an allocation.
     ///
     /// errors:
-    ///   - Error::NotMapped: if any requested address is not mapped
-    pub fn slice_into(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
+    ///   - PageMapError::NotMapped: if any requested address is not mapped
+    pub fn slice_into<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
         let end = start + buf.len();
         if page(start) == page(end) {
             self.slice_into_simple(start, buf)
