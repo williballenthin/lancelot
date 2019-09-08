@@ -77,8 +77,8 @@ impl<T: Default + Copy> PageMap<T> {
             panic!("invalid map buffer size");
         }
         debug!("mapping page: {}", rva);
-        if page(rva) > self.pages.len() {
-            return Err(Error::NotMapped);
+        if page(rva) > self.pages.len() - 1 {
+            return Err(PageMapError::NotMapped.into());
         }
 
         self.pages[page(rva)] = Some(Page::new(items));
@@ -149,7 +149,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// assert_eq!(d.probe(0x1000.into()), false);
     /// ```
     pub fn probe(&self, rva: RVA) -> bool {
-        if page(rva) > self.pages.len() {
+        if page(rva) > self.pages.len() - 1 {
             return false;
         }
 
@@ -176,7 +176,7 @@ impl<T: Default + Copy> PageMap<T> {
     ///  assert_eq!(d.get(0x1000.into()), Some(0x2));
     /// ```
     pub fn get(&self, rva: RVA) -> Option<T> {
-        if page(rva) > self.pages.len() {
+        if page(rva) > self.pages.len() - 1 {
             return None;
         }
 
@@ -210,7 +210,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// assert_eq!(d.get(0x0.into()), Some(0x1));
     /// ```
     pub fn get_mut(&mut self, rva: RVA) -> Option<&mut T> {
-        if page(rva) > self.pages.len() {
+        if page(rva) > self.pages.len() - 1 {
             return None;
         }
 
@@ -239,8 +239,8 @@ impl<T: Default + Copy> PageMap<T> {
     fn slice_into_simple(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
         // precondition: page(start) == page(start + buf.len())
 
-        if page(start) > self.pages.len() {
-            return Err(Error::NotMapped);
+        if page(start) > self.pages.len() - 1 {
+            return Err(PageMapError::NotMapped.into());
         }
 
         let page = match &self.pages[page(start)] {
@@ -293,15 +293,15 @@ impl<T: Default + Copy> PageMap<T> {
     /// ```
     fn slice_into_split(&self, start: RVA, buf: &mut [T]) -> Result<(), Error> {
         let end = start + buf.len();
+        let start_page = page(start);
+        let end_page = if page_offset(end) == 0 { page(end) - 1} else { page(end) };
 
-        if page(end) > self.pages.len() {
-            return Err(Error::NotMapped);
+        if end_page > self.pages.len() - 1 {
+            return Err(PageMapError::NotMapped.into());
         }
 
         // ensure each page within the requested region is mapped.
-        let start_page = page(start);
-        let end_page = if page_offset(end) == 0 { page(end) - 1} else { page(end) };
-        for page in start_page..end_page {
+        for page in start_page..end_page + 1 {
             if ! self.probe((page * PAGE_SIZE).into()) {
                 return Err(Error::NotMapped);
             }
