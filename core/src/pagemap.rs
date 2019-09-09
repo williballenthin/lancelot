@@ -104,6 +104,9 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// see example under `get`.
     pub fn map(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+        if items.len() % PAGE_SIZE != 0 {
+            panic!("items must be page aligned");
+        }
         for (i, chunk) in items.chunks_exact(PAGE_SIZE).enumerate() {
             self.map_page(rva + i * PAGE_SIZE, chunk)?;
         }
