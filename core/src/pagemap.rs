@@ -85,7 +85,6 @@ impl<T: Default + Copy> PageMap<T> {
         if items.len() != PAGE_SIZE {
             panic!("invalid map buffer size");
         }
-        debug!("mapping page: {}", rva);
         if page(rva) > self.pages.len() - 1 {
             return Err(PageMapError::NotMapped.into());
         }
@@ -408,5 +407,37 @@ impl<T: Default + Copy> PageMap<T> {
         self.slice_into(start, &mut ret)?;
 
         Ok(ret)
+    }
+}
+
+impl<T: Default + Copy> std::fmt::Debug for PageMap<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut was_allocated = false;
+
+        write!(f, "regions:\n")?;
+        for (i, page) in self.pages.iter().enumerate() {
+            match page {
+                Some(_) => {
+                    if ! was_allocated {
+                        write!(f, "  - {:#x}", i * PAGE_SIZE)?;
+                    }
+                    was_allocated = true;
+                },
+                None => {
+                    if was_allocated {
+                        write!(f, "-{:#x} mapped\n", i * PAGE_SIZE)?;
+                    }
+                    was_allocated = false;
+                },
+            };
+        }
+
+        if was_allocated {
+            write!(f, " - {:#x} mapped\n", self.pages.len() * PAGE_SIZE)?;
+        }
+
+        write!(f, "capacity: {:#x}\n", self.pages.len() * PAGE_SIZE)?;
+
+        Ok(())
     }
 }
