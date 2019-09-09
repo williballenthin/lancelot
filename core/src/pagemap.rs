@@ -329,7 +329,7 @@ impl<T: Default + Copy> PageMap<T> {
 
         // one.
         {
-            let page = self.pages[page(start)].as_ref().unwrap();
+            let page = self.pages[page(start)].as_ref().expect("slice_into_split: one");
             let elements = &page.elements[page_offset(start)..];
             {
                 let dst = &mut buf[offset..offset+elements.len()];
@@ -343,7 +343,7 @@ impl<T: Default + Copy> PageMap<T> {
             let start_index = page(start) + 1;
             let end_index = page(end);
             for page_index in start_index..end_index {
-                let page = self.pages[page_index].as_ref().unwrap();
+                let page = self.pages[page_index].as_ref().expect("slice_into_split: two");
                 let elements = &page.elements[..];
                 {
                     let dst = &mut buf[offset..offset+elements.len()];
@@ -355,7 +355,7 @@ impl<T: Default + Copy> PageMap<T> {
 
         // three.
         if page_offset(end) != 0x0 {
-            let page = self.pages[page(end)].as_ref().unwrap();
+            let page = self.pages[page(end)].as_ref().expect("slice_into_split: three");
             let elements = &page.elements[..page_offset(end)];
             {
                 let dst = &mut buf[offset..offset+elements.len()];
