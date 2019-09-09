@@ -77,6 +77,16 @@ pub struct LoadedModule {
     pub address_space: PageMap<u8>,
 }
 
+impl LoadedModule {
+    pub fn max_address(&self) -> RVA {
+        self.sections
+            .iter()
+            .map(|sec| sec.end())
+            .max()
+            .unwrap()  // danger: assume there's at least one section.
+    }
+}
+
 pub trait Loader {
     /// Fetch the number of bits for a pointer in this architecture.
     fn get_arch(&self) -> Arch;
