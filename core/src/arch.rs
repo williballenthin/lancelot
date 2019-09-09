@@ -213,6 +213,12 @@ impl std::convert::Into<i64> for RVA {
     }
 }
 
+impl std::convert::From<u32> for RVA {
+    fn from(v: u32) -> RVA {
+        RVA(v as i64)
+    }
+}
+
 impl std::convert::From<i32> for RVA {
     fn from(v: i32) -> RVA {
         RVA(v as i64)
