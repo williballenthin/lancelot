@@ -1,7 +1,8 @@
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug};
+use log::{debug, trace};
 use goblin::{Object};
 use failure::{Error, Fail};
+use std::ops::Range;
 
 use super::super::super::arch::{RVA};
 use super::super::super::loader::Permissions;
@@ -22,11 +23,6 @@ impl RelocAnalyzer {
     pub fn new() -> RelocAnalyzer {
         RelocAnalyzer {}
     }
-}
-
-struct Section {
-    start: RVA,
-    end: RVA,
 }
 
 // TODO: make this much faster
@@ -205,8 +201,10 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
     Ok(ret)
 }
 
-fn sections_contain(sections: &[Section], rva: RVA) -> bool {
-    sections.iter().find(|section| section.start <= rva && section.end < rva).is_some()
+fn sections_contain(sections: &[Range<RVA>], rva: RVA) -> bool {
+    sections.iter()
+        .find(|section| section.contains(&rva))
+        .is_some()
 }
 
 impl Analyzer for RelocAnalyzer {
@@ -231,9 +229,9 @@ impl Analyzer for RelocAnalyzer {
     /// assert!(ws.get_meta(RVA(0xC7F0)).unwrap().is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
-        let x_sections: Vec<Section> = ws.module.sections.iter()
+        let x_sections: Vec<Range<RVA>> = ws.module.sections.iter()
             .filter(|section| section.perms.intersects(Permissions::X))
-            .map(|section| Section {
+            .map(|section| Range {
                 start: section.addr,
                 end: section.end(),
             })
@@ -241,6 +239,33 @@ impl Analyzer for RelocAnalyzer {
 
         let relocs = get_relocs(ws)?;
         debug!("found {} total relocs", relocs.len());
+
+        for reloc in relocs.iter() {
+            let target = ws.rva(ws.read_va(reloc.offset)?).expect("reloc target not in image");
+            trace!("found reloc {} -> {} {}",
+                   reloc.offset,
+                   target,
+                if sections_contain(&x_sections, target) {"(code)"} else {""}
+            );
+        }
+
+        // scan for relocations to code.
+        //
+        // a relocation is a hardcoded offset that must be fixed up if the desired base address
+        //  cannot be used.
+        // for example, the function pointer passed to CreateThread will be a hardcoded address
+        //  of the start of the function.
+        //
+        // relocated pointers may point to the .data section, e.g. strings or other constants.
+        // we want to ignore these.
+        // we are only interested in targets in executable sections.
+        // we assume these are pointers to instructions/code.
+        //
+        // looking for pointers into the .text section
+        // to things that
+        //   1. are not already in an instruction
+        //   2. don't appear to be a pointer
+        // and assume this is code.
 
         let mut unique_targets: HashSet<RVA> = HashSet::new();
         unique_targets.extend(relocs
@@ -252,13 +277,7 @@ impl Analyzer for RelocAnalyzer {
 
         debug!("reduced to {} unique reloc targets", unique_targets.len());
 
-        // scan the relocations
-        // looking for pointers into the .text section
-        // to things that
-        //   1. are not already in an instruction
-        //   2. don't appear to be a pointer
-        // and assume this is code.
-        let o: Vec<RVA> = unique_targets
+       let o: Vec<RVA> = unique_targets
             .iter()
             .filter(|&&rva| sections_contain(&x_sections, rva))
             .filter(|&&rva| !is_in_insn(ws, rva))
@@ -270,7 +289,7 @@ impl Analyzer for RelocAnalyzer {
         debug!("found {} relocs that point to instructions", o.len());
 
         o.iter().for_each(|&rva| {
-            debug!("found ptr from .text section to .text section at {:#x}", rva);
+            debug!("found pointer via relocations from executable section to {} (code)", rva);
 
             // TODO: consume result
             ws.make_insn(rva).unwrap();
