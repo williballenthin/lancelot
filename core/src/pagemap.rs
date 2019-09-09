@@ -1,6 +1,6 @@
-use log::{debug};
 use failure::{Fail, Error};
 
+use super::util;
 use super::arch::RVA;
 
 const PAGE_SIZE: usize = 0x1000;
@@ -24,6 +24,11 @@ fn page_offset(rva: RVA) -> usize {
     let v: u64 = rva.into();
     // #yolo
     (v as usize) & 0xFFF
+}
+
+pub fn page_align(i: RVA) -> RVA {
+    let v: i64 = i.into();
+    RVA::from(util::align(v as usize, PAGE_SIZE))
 }
 
 struct Page<T: Default + Copy> {
@@ -66,6 +71,8 @@ impl<T: Default + Copy> PageMap<T> {
             pages
         }
     }
+
+
 
     /// error if rva is not in a valid page.
     /// panic due to:
