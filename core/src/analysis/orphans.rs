@@ -37,7 +37,8 @@ impl Analyzer for OrphanFunctionAnalyzer {
     ///
     /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
-    ///    .load().unwrap();
+    ///    .load()
+    ///    .unwrap();
     ///
     /// RuntimeFunctionAnalyzer::new().analyze(&mut ws).unwrap();
     /// OrphanFunctionAnalyzer::new().analyze(&mut ws).unwrap();
@@ -45,7 +46,7 @@ impl Analyzer for OrphanFunctionAnalyzer {
     /// // this function is the impl of the export `GetApplicationRestartSettingsWorker`.
     /// // the exported symbol simply JMP to this function.
     /// // there is a RUNTIME_FUNCTION for this func, but not for the export.
-    /// assert!(ws.get_meta(RVA(0x645A4)).unwrap().is_insn());
+    /// assert!(ws.get_meta(RVA(0x645A4)).expect("not a code location").is_insn());
     /// assert!(ws.get_functions().find(|&&rva| rva == RVA(0x645A4)).is_some());
     ///
     /// //  .text:0000000180001010     mov     r11, rsp
@@ -61,8 +62,10 @@ impl Analyzer for OrphanFunctionAnalyzer {
         let existing_functions: HashSet<&RVA> = ws.get_functions().collect();
         let mut orphans: Vec<RVA> = vec![];
 
-        for (i, section) in ws.module.sections.iter().enumerate() {
-            orphans.extend(ws.analysis.flow.meta[i].iter()
+        for section in ws.module.sections.iter().filter(|section| section.is_executable()) {
+            orphans.extend(
+            ws.get_metas(section.addr, section.size as usize)?
+                .iter()
                 .enumerate()
                 .filter(|(_, meta)| meta.is_insn())
                 .filter(|(_, meta)| !meta.has_xrefs_to())
@@ -72,7 +75,7 @@ impl Analyzer for OrphanFunctionAnalyzer {
         }
 
         for rva in orphans.iter() {
-            debug!("orphan function: {:#x}", rva);
+            debug!("found orphan function {}", rva);
             ws.make_function(*rva)?;
             ws.analyze()?;
         }

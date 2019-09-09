@@ -9,11 +9,14 @@ use log::{trace, debug, warn};
 use zydis;
 
 use super::arch::{RVA, VA};
+use super::pagemap;
+use super::pagemap::{PageMap};
 use super::flowmeta;
 use super::flowmeta::FlowMeta;
-use super::loader::{LoadedModule, Section};
+use super::loader::{LoadedModule};
 use super::workspace::Workspace;
 use super::xref::{Xref, XrefType};
+use super::util;
 
 pub mod orphans;
 pub use orphans::OrphanFunctionAnalyzer;
@@ -103,11 +106,7 @@ pub struct XrefAnalysis {
 }
 
 pub struct FlowAnalysis {
-    // one entry for each section in the module.
-    // if executable, then one FlowMeta for each address in the section.
-    // that is, Vec<FlowMeta>.len() == Section.buf.len()
-    // TODO: order these entries so that the most common sections are first (`.code`?)
-    meta: Vec<Vec<FlowMeta>>,
+    meta: PageMap<FlowMeta>,
     pub xrefs: XrefAnalysis,
 }
 
@@ -128,24 +127,23 @@ pub struct Analysis {
 
 impl Analysis {
     pub fn new(module: &LoadedModule) -> Analysis {
-        let flow_meta: Vec<Vec<FlowMeta>> = module
-            .sections
-            .iter()
-            .map(|section| -> Vec<FlowMeta> {
-                if section.is_executable() {
-                    vec![FlowMeta::zero(); section.size as usize]
-                } else {
-                    vec![]
-                }
-            })
-            .collect();
+        let max_address: i64 = module.max_address().into();
+        let max_address = util::align(max_address as usize, 0x1000);
+        let mut meta = PageMap::with_capacity(RVA::from(max_address));
+
+        for section in module.sections.iter().filter(|section| section.is_executable()) {
+            let v = pagemap::page_align(RVA::from(section.size));
+            meta.map_empty(section.addr, v.into()).expect("failed to map section flowmeta");
+        }
+
+        println!("meta:\n{:?}", meta);
 
         Analysis {
             queue: VecDeque::new(),
             functions: HashSet::new(),
             symbols: HashMap::new(),
             flow: FlowAnalysis {
-                meta: flow_meta,
+                meta: meta,
                 xrefs: XrefAnalysis {
                     to: HashMap::new(),
                     from: HashMap::new(),
@@ -225,31 +223,17 @@ impl Workspace {
         self.analysis.symbols.get(&rva)
     }
 
-    /// fetch the (section, offset) indices for the given RVA.
-    fn get_coords(&self, rva: RVA) -> Option<(usize, usize)> {
-        self.module
-            .sections
-            .iter()
-            .enumerate()
-            .filter(|(_, section)| section.contains(rva))
-            .nth(0)
-            .and_then(
-                |(i, section): (usize, &Section)| -> Option<(usize, usize)> {
-                    // rva is guaranteed to be within this section,
-                    // so we can do an unchecked subtract here.
-                    let offset = RVA(rva.0 - section.addr.0);
-                    Some((i, offset.into()))
-                },
-            )
+    pub fn get_meta(&self, rva: RVA) -> Option<FlowMeta> {
+        self.analysis.flow.meta.get(rva)
     }
 
-    pub fn get_meta(&self, rva: RVA) -> Option<FlowMeta> {
-        self.get_coords(rva)
-            .and_then(|(section, offset)| {
-                // non-executable sections, such as the header, may not have flow meta
-                self.analysis.flow.meta[section].get(offset)
-                    .and_then(|meta| Some(*meta))
-            })
+    fn get_meta_mut(&mut self, rva: RVA) -> Option<&mut FlowMeta> {
+        self.analysis.flow.meta.get_mut(rva)
+    }
+
+    pub fn get_metas(&self, rva: RVA, length: usize) -> Result<Vec<FlowMeta>, Error> {
+        println!("get metas {} {:#x}", rva, length);
+        self.analysis.flow.meta.slice(rva, rva+length)
     }
 
     /// Does the given instruction have a fallthrough flow?
@@ -628,7 +612,7 @@ impl Workspace {
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a CALL, then its a programming error. panic!
         // all CALLs should have an operand.
-        let op = get_first_operand(insn).unwrap();
+        let op = get_first_operand(insn).expect("CALL has no operand");
 
         match self.get_operand_xref(rva, insn, op)? {
             Some(dst) => Ok(vec![Xref {
@@ -725,7 +709,7 @@ impl Workspace {
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
-        let op = get_first_operand(insn).unwrap();
+        let op = get_first_operand(insn).expect("JMP has no target");
 
         if op.ty == zydis::OperandType::MEMORY
             && op.mem.scale == 0x4
@@ -804,7 +788,7 @@ impl Workspace {
     ) -> Result<Vec<Xref>, Error> {
         // if this is not a CJMP, then its a programming error. panic!
         // all conditional jumps should have an operand.
-        let op = get_first_operand(insn).unwrap();
+        let op = get_first_operand(insn).expect("CJMP has no target");
 
         match self.get_operand_xref(rva, insn, op)? {
             Some(dst) => Ok(vec![Xref {
@@ -943,8 +927,7 @@ impl Workspace {
 
         // 5. update flowmeta
         {
-            let (section, offset) = self.get_coords(rva).unwrap();
-            let meta = &mut self.analysis.flow.meta[section][offset];
+            let meta = self.get_meta_mut(rva).expect("flowmeta not in section");
 
             meta.set_insn_length(length);
 
@@ -956,8 +939,7 @@ impl Workspace {
         // 6. update flowmeta for instruction fallthrough to
         if does_fallthrough {
             let next_rva = rva + length;
-            let (section, offset) = self.get_coords(next_rva).unwrap();
-            let meta = &mut self.analysis.flow.meta[section][offset];
+            let meta = self.get_meta_mut(next_rva).expect("flowmeta not in section");
             meta.set_other_fallthrough_to();
         }
 
@@ -998,15 +980,11 @@ impl Workspace {
         }
 
         // since we already validated the xref,
-        // unwrap should be safe here.
-        //
-        // TODO: we are duplicating the validation here.
-        let srcco = self.get_coords(xref.src).unwrap();
-        let dstco = self.get_coords(xref.dst).unwrap();
+        // meta unwraps should be safe here.
 
         // step 2a: update src flowmeta flag indicating xrefs-from
         {
-            let srcmeta = &mut self.analysis.flow.meta[srcco.0][srcco.1];
+            let srcmeta = self.get_meta_mut(xref.src).expect("flowmeta not in section");
             if !srcmeta.has_xrefs_from() {
                 srcmeta.set_xrefs_from();
             }
@@ -1027,7 +1005,7 @@ impl Workspace {
         // step 3: only if new entry, then insert dst xrefs-to
         if is_new {
             {
-                let dstmeta = &mut self.analysis.flow.meta[dstco.0][dstco.1];
+                let dstmeta = self.get_meta_mut(xref.dst).expect("flowmeta not in section");
                 if !dstmeta.has_xrefs_to() {
                     dstmeta.set_xrefs_to();
                 }
