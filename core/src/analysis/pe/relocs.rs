@@ -1,11 +1,14 @@
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug};
+use log::{debug, trace};
 use goblin::{Object};
 use failure::{Error, Fail};
+use std::ops::Range;
 
 use super::super::super::arch::{RVA};
+use super::super::super::loader::Permissions;
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
+use std::collections::{HashSet};
 
 
 #[derive(Debug, Fail)]
@@ -22,11 +25,7 @@ impl RelocAnalyzer {
     }
 }
 
-struct Section {
-    start: RVA,
-    end: RVA,
-}
-
+// TODO: make this much faster
 fn is_in_insn(ws: &Workspace, rva: RVA) -> bool {
     let start: usize = rva.into();
     // TODO: underflow
@@ -202,6 +201,11 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
     Ok(ret)
 }
 
+fn sections_contain(sections: &[Range<RVA>], rva: RVA) -> bool {
+    sections.iter()
+        .find(|section| section.contains(&rva))
+        .is_some()
+}
 
 impl Analyzer for RelocAnalyzer {
     fn get_name(&self) -> String {
@@ -218,47 +222,74 @@ impl Analyzer for RelocAnalyzer {
     /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()
     ///    .load().unwrap();
+    ///
     /// let anal = RelocAnalyzer::new();
     /// anal.analyze(&mut ws).unwrap();
-    /// let meta = ws.get_meta(RVA(0xC7F0)).unwrap();
-    /// assert!(meta.is_insn());
+    ///
+    /// assert!(ws.get_meta(RVA(0xC7F0)).unwrap().is_insn());
     /// ```
     fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
-        let text_section = match ws.module.sections.iter()
-            // currently limited to the text section.
-            // TODO: accept any writable section.
-            .filter(|&sec| sec.name == ".text")
-            .next() {
-                None => return Ok(()),
-                Some(s) => s,
-            };
+        let x_sections: Vec<Range<RVA>> = ws.module.sections.iter()
+            .filter(|section| section.perms.intersects(Permissions::X))
+            .map(|section| Range {
+                start: section.addr,
+                end: section.end(),
+            })
+            .collect();
 
-        let text_bounds = Section {
-            start: text_section.addr,
-            end: text_section.addr + RVA::from(text_section.buf.len()),
-        };
+        let relocs = get_relocs(ws)?;
+        debug!("found {} total relocs", relocs.len());
 
-        // scan the relocations
+        for reloc in relocs.iter() {
+            let target = ws.rva(ws.read_va(reloc.offset)?).expect("reloc target not in image");
+            trace!("found reloc {} -> {} {}",
+                   reloc.offset,
+                   target,
+                if sections_contain(&x_sections, target) {"(code)"} else {""}
+            );
+        }
+
+        // scan for relocations to code.
+        //
+        // a relocation is a hardcoded offset that must be fixed up if the desired base address
+        //  cannot be used.
+        // for example, the function pointer passed to CreateThread will be a hardcoded address
+        //  of the start of the function.
+        //
+        // relocated pointers may point to the .data section, e.g. strings or other constants.
+        // we want to ignore these.
+        // we are only interested in targets in executable sections.
+        // we assume these are pointers to instructions/code.
+        //
         // looking for pointers into the .text section
         // to things that
         //   1. are not already in an instruction
         //   2. don't appear to be a pointer
         // and assume this is code.
-        let o: Vec<RVA> = get_relocs(ws)?
+
+        let mut unique_targets: HashSet<RVA> = HashSet::new();
+        unique_targets.extend(relocs
             .iter()
             .map(|reloc| reloc.offset)
             .map(|rva| ws.read_va(rva))
             .filter_map(Result::ok)
-            .filter_map(|va| ws.rva(va))
-            .filter(|&rva| text_bounds.start <= rva)
-            .filter(|&rva| rva < text_bounds.end)
-            .filter(|&rva| !is_in_insn(ws, rva))
-            .filter(|&rva| !is_ptr(ws, rva))
+            .filter_map(|va| ws.rva(va)));
+
+        debug!("reduced to {} unique reloc targets", unique_targets.len());
+
+       let o: Vec<RVA> = unique_targets
+            .iter()
+            .filter(|&&rva| sections_contain(&x_sections, rva))
+            .filter(|&&rva| !is_in_insn(ws, rva))
+            .filter(|&&rva| !is_ptr(ws, rva))
+            .map(|&rva| rva)
             // TODO: maybe ensure that the insn decodes.
             .collect();
 
+        debug!("found {} relocs that point to instructions", o.len());
+
         o.iter().for_each(|&rva| {
-            debug!("found ptr from .text section to .text section at {:#x}", rva);
+            debug!("found pointer via relocations from executable section to {} (code)", rva);
 
             // TODO: consume result
             ws.make_insn(rva).unwrap();

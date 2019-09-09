@@ -657,7 +657,8 @@ impl Analyzer for ByteSigAnalyzer {
         let mut functions = vec![];
 
         for section in ws.module.sections.iter().filter(|section| section.perms.intersects(Permissions::X)) {
-            for capture in re.captures_iter(&section.buf) {
+            let buf = ws.read_bytes(section.addr, section.size as usize)?;
+            for capture in re.captures_iter(&buf) {
                 for pattern in patterns.values() {
                     if let Some(mat) = capture.name(pattern.get_mark()) {
                         let rva = section.addr + mat.start();

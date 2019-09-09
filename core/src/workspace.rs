@@ -14,6 +14,7 @@ use super::loader::{LoadedModule, Loader};
 use super::xref::XrefType;
 use super::util;
 
+
 #[derive(Debug, Fail)]
 pub enum WorkspaceError {
     #[fail(display = "The given buffer is not supported (arch/plat/file format)")]
@@ -109,7 +110,7 @@ impl WorkspaceBuilder {
 
         info!("loaded {} sections:", module.sections.len());
         module.sections.iter().for_each(|sec| {
-            info!("  - {:8} {:>8x}", sec.name, sec.addr);
+            info!("  - {:8} {:x} {:?}", sec.name, sec.addr, sec.perms);
         });
 
         let analysis = Analysis::new(&module);
@@ -194,30 +195,16 @@ impl Workspace {
     /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x1).unwrap().to_vec(), b"\xEB");
-    /// assert_eq!(ws.read_bytes(RVA(0x1), 0x1).unwrap().to_vec(), b"\xFE");
-    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x2).unwrap().to_vec(), b"\xEB\xFE");
-    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x3).is_err(), true);
-    /// assert_eq!(ws.read_bytes(RVA(0x2), 0x1).is_err(), true);
+    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x1).unwrap(), b"\xEB");
+    /// assert_eq!(ws.read_bytes(RVA(0x1), 0x1).unwrap(), b"\xFE");
+    /// assert_eq!(ws.read_bytes(RVA(0x0), 0x2).unwrap(), b"\xEB\xFE");
+    /// assert!(ws.read_bytes(RVA(0x0), 0xFFF).is_ok(), "read less than a page");
+    /// assert!(ws.read_bytes(RVA(0x0), 0x1000).is_ok(), "read page");
+    /// assert!(ws.read_bytes(RVA(0x0), 0x1001).is_err(), "read more than a page");
+    /// assert!(ws.read_bytes(RVA(0x1), 0x1000).is_err(), "read unaligned page");
     /// ```
-    pub fn read_bytes(&self, rva: RVA, length: usize) -> Result<&[u8], Error> {
-        self.module
-            .sections
-            .iter()
-            .filter(|section| section.contains(rva))
-            .nth(0)
-            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-            .and_then(|section| -> Result<&[u8], Error> {
-                // rva is guaranteed to be within this section,
-                // so we can do an unchecked subtract here.
-                let offset = RVA(rva.0 - section.addr.0);
-                if offset + length > section.buf.len().into() {
-                    Err(WorkspaceError::BufferOverrun.into())
-                } else {
-                    let end: usize = ((offset.0 as u64) + (length as u64)) as usize;
-                    Ok(&section.buf[offset.into()..end])
-                }
-            })
+    pub fn read_bytes(&self, rva: RVA, length: usize) -> Result<Vec<u8>, Error> {
+        self.module.address_space.slice(rva, rva+length)
     }
 
     /// Is the given range mapped?
@@ -231,12 +218,12 @@ impl Workspace {
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert!( ws.probe(RVA(0x0), 1));
     /// assert!( ws.probe(RVA(0x0), 2));
-    /// assert!(!ws.probe(RVA(0x0), 3));
+    /// assert!(!ws.probe(RVA(0x0), 0x1001));
     /// assert!( ws.probe(RVA(0x1), 1));
-    /// assert!(!ws.probe(RVA(0x2), 1));
+    /// assert!(!ws.probe(RVA(0x1), 0x1000));
     /// ```
     pub fn probe(&self, rva: RVA, length: usize) -> bool {
-        self.read_bytes(rva, length).is_ok()
+        self.module.address_space.probe(rva) && self.module.address_space.probe(rva + length)
     }
 
     /// Read a byte from the given RVA.
@@ -252,10 +239,14 @@ impl Workspace {
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert_eq!(ws.read_u8(RVA(0x0)).unwrap(), 0xEB);
     /// assert_eq!(ws.read_u8(RVA(0x1)).unwrap(), 0xFE);
-    /// assert_eq!(ws.read_u8(RVA(0x2)).is_err(), true);
+    ///
+    /// assert_eq!(ws.read_u8(RVA(0x1000)).is_err(), true);
     /// ```
     pub fn read_u8(&self, rva: RVA) -> Result<u8, Error> {
-        self.read_bytes(rva, 1).and_then(|buf| Ok(buf[0]))
+        let mut buf = [0u8; 1];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
+            .and_then(|buf| Ok(buf[0]))
     }
 
     /// Read a word from the given RVA.
@@ -270,35 +261,44 @@ impl Workspace {
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
     /// assert_eq!(ws.read_u16(RVA(0x0)).unwrap(), 0xFEEB);
-    /// assert_eq!(ws.read_u16(RVA(0x1)).is_err(), true);
-    /// assert_eq!(ws.read_u16(RVA(0x2)).is_err(), true);
+    /// assert_eq!(ws.read_u16(RVA(0x1000)).is_err(), true);
     /// ```
     pub fn read_u16(&self, rva: RVA) -> Result<u16, Error> {
-        self.read_bytes(rva, 2)
+        let mut buf = [0u8; 2];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
             .and_then(|buf| Ok(LittleEndian::read_u16(buf)))
     }
 
     /// Read a dword from the given RVA.
     pub fn read_u32(&self, rva: RVA) -> Result<u32, Error> {
-        self.read_bytes(rva, 4)
+        let mut buf = [0u8; 4];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
             .and_then(|buf| Ok(LittleEndian::read_u32(buf)))
     }
 
     /// Read a qword from the given RVA.
     pub fn read_u64(&self, rva: RVA) -> Result<u64, Error> {
-        self.read_bytes(rva, 8)
+        let mut buf = [0u8; 8];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
     }
 
     /// Read a dword from the given RVA.
     pub fn read_i32(&self, rva: RVA) -> Result<i32, Error> {
-        self.read_bytes(rva, 4)
+        let mut buf = [0u8; 4];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
             .and_then(|buf| Ok(LittleEndian::read_i32(buf)))
     }
 
     /// Read a qword from the given RVA.
     pub fn read_i64(&self, rva: RVA) -> Result<i64, Error> {
-        self.read_bytes(rva, 8)
+        let mut buf = [0u8; 8];
+        self.module.address_space
+            .slice_into(rva, &mut buf)
             .and_then(|buf| Ok(LittleEndian::read_i64(buf)))
     }
 
@@ -315,7 +315,7 @@ impl Workspace {
     ///
     /// let ws = test::get_shellcode32_workspace(b"\x00\x11\x22\x33");
     /// assert_eq!(ws.read_rva(RVA(0x0)).unwrap(), RVA(0x33221100));
-    /// assert_eq!(ws.read_rva(RVA(0x1)).is_err(), true);
+    /// assert_eq!(ws.read_rva(RVA(0x1000)).is_err(), true);
     /// ```
     pub fn read_rva(&self, rva: RVA) -> Result<RVA, Error> {
         match self.loader.get_arch() {
@@ -338,7 +338,6 @@ impl Workspace {
     /// Errors:
     ///
     ///   - InvalidAddress - if the address is not mapped.
-    ///   - BufferOverrun - if the requested region runs beyond the matching section.
     ///   - InvalidInstruction - if an instruction cannot be decoded.
     ///
     /// Example:
@@ -354,35 +353,39 @@ impl Workspace {
     /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic, zydis::Mnemonic::JMP);
     /// ```
     pub fn read_insn(&self, rva: RVA) -> Result<zydis::DecodedInstruction, Error> {
-        // this is `read_bytes` except that it reads at most 0x10 bytes.
-        // if less are available, then less are returned.
-        let buf = self
-            .module
-            .sections
-            .iter()
-            .filter(|section| section.contains(rva))
-            .nth(0)
-            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-            .and_then(|section| -> Result<&[u8], Error> {
-                // rva is guaranteed to be within this section,
-                // so we can do an unchecked subtract here.
-                let offset = RVA(rva.0 - section.addr.0);
-                if offset + 0x10 > section.buf.len().into() {
-                    Ok(&section.buf[offset.into()..])
-                } else {
-                    let end: usize = ((offset.0 as u64) + 0x10) as usize;
-                    Ok(&section.buf[offset.into()..end])
-                }
-            })?;
+        let mut buf = [0u8; 0x10];
 
-        match self.decoder.decode(&buf) {
-            Ok(Some(insn)) => Ok(insn),
-            Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
-            Err(_) => Err(WorkspaceError::InvalidInstruction.into()),
+        // we expect instructions to be at most 0x10 bytes long.
+        // so try to read that many and decode.
+        // this should usually work, unless we're at the end of a section.
+        // otherwise, keep trying smaller reads.
+        // this is naive and slow, but also uncommon.
+        for buflen in (0x0..0x10).rev() {
+            let mut buf = &mut buf[..buflen];
+
+            if let Ok(_) = self.module.address_space.slice_into(rva, &mut buf) {
+                return match self.decoder.decode(&buf) {
+                    Ok(Some(insn)) => Ok(insn),
+                    Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
+                    Err(_) => Err(WorkspaceError::InvalidInstruction.into()),
+                };
+            }
+
+            // if the first read fails,
+            // ensure at least the first requested address is mapped.
+            // this will avoid 15 subsequent failed attempts to read
+            // when the target is not mapped at all.
+            if buflen == 0x10 {
+                if ! self.module.address_space.probe(rva) {
+                    return Err(WorkspaceError::InvalidAddress.into());
+                }
+            }
         }
+        return Err(WorkspaceError::InvalidAddress.into());
     }
 
     /// Read a utf-8 encoded string at the given RVA.
+    /// Only strings less than 0x1000 bytes are currently recognized.
     ///
     /// Errors:
     ///
@@ -396,26 +399,31 @@ impl Workspace {
     /// use lancelot::arch::RVA;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\x00\x41\x41\x00");
-    /// assert!(ws.read_utf8(RVA(0x1)).is_ok());
     /// assert_eq!(ws.read_utf8(RVA(0x1)).unwrap(), "AA");
     /// ```
     pub fn read_utf8(&self, rva: RVA) -> Result<String, Error> {
-        // this is `read_bytes` except that it reads until the end of the section.
-        let buf = self
-            .module
-            .sections
-            .iter()
-            .filter(|section| section.contains(rva))
-            .nth(0)
-            .ok_or_else(|| WorkspaceError::InvalidAddress.into())
-            .and_then(|section| -> Result<&[u8], Error> {
-                // rva is guaranteed to be within this section,
-                // so we can do an unchecked subtract here.
-                let offset = RVA(rva.0 - section.addr.0);
-                Ok(&section.buf[offset.into()..])
-            })?;
+        let mut buf = [0u8; 0x1000];
 
-        // when we split, we're guaranteed at have at least one entry,
+        // ideally, we can just read 0x1000 bytes,
+        // but if this doesn't work, then we read up until the end of the current section.
+        // note: max read size is 0x1000 bytes.
+        if let Ok(_) = self.module.address_space.slice_into(rva, &mut buf) {
+            // pass
+        } else {
+            // read until the end of the section.
+            self.module
+                .sections
+                .iter()
+                .find(|section| section.contains(rva))
+                .ok_or_else(|| WorkspaceError::InvalidAddress.into())
+                .and_then(|section| {
+                    let size: usize = (section.end() - rva).into();
+                    let size = std::cmp::min(size, 0x1000);
+                    self.module.address_space.slice_into(rva, &mut buf[..size])
+                })?;
+        }
+
+         // when we split, we're guaranteed at have at least one entry,
         // so .next().unwrap() is safe.
         let sbuf = buf.split(|&b| b == 0x0).next().unwrap();
         Ok(std::str::from_utf8(sbuf)?.to_string())

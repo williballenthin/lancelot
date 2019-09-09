@@ -213,6 +213,12 @@ impl std::convert::Into<i64> for RVA {
     }
 }
 
+impl std::convert::From<u32> for RVA {
+    fn from(v: u32) -> RVA {
+        RVA(v as i64)
+    }
+}
+
 impl std::convert::From<i32> for RVA {
     fn from(v: i32) -> RVA {
         RVA(v as i64)
@@ -258,6 +264,15 @@ impl std::ops::Add<i32> for RVA {
     /// may panic on overflow
     fn add(self, rhs: i32) -> RVA {
         self + RVA::from(rhs as i64)
+    }
+}
+
+impl std::ops::Sub<RVA> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn sub(self, rhs: RVA) -> RVA {
+        RVA(self.0.checked_sub(rhs.0).expect("rva underflow"))
     }
 }
 
