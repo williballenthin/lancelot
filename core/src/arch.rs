@@ -121,7 +121,6 @@ impl std::convert::Into<u64> for VA {
 
 
 
-
 /// please don't access RVA.0 directly.
 /// /// its provided so you can construct RVA like:
 /// ```
@@ -181,13 +180,6 @@ impl Ord for RVA {
 
 impl Eq for RVA {}
 
-impl std::convert::From<usize> for RVA {
-    /// may panic on overflow
-    fn from(v: usize) -> RVA {
-        RVA(i64::from_usize(v).expect("usize too large for RVA"))
-    }
-}
-
 impl std::convert::Into<usize> for RVA {
     /// may panic on over/underflow
     fn into(self) -> usize {
@@ -231,21 +223,19 @@ impl std::convert::From<i64> for RVA {
     }
 }
 
+impl std::convert::From<usize> for RVA {
+    /// may panic on overflow
+    fn from(v: usize) -> RVA {
+        RVA(i64::from_usize(v).expect("usize too large for RVA"))
+    }
+}
+
 impl std::ops::Add<RVA> for RVA {
     type Output = RVA;
 
     /// may panic on overflow
     fn add(self, rhs: RVA) -> RVA {
         RVA(self.0.checked_add(rhs.0).expect("rva overflow"))
-    }
-}
-
-impl std::ops::Add<usize> for RVA {
-    type Output = RVA;
-
-    /// may panic on overflow
-    fn add(self, rhs: usize) -> RVA {
-        self + RVA::from(rhs)
     }
 }
 
@@ -258,12 +248,39 @@ impl std::ops::Add<u8> for RVA {
     }
 }
 
+impl std::ops::Add<u16> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: u16) -> RVA {
+        self + RVA::from(rhs as i64)
+    }
+}
+
 impl std::ops::Add<i32> for RVA {
     type Output = RVA;
 
     /// may panic on overflow
     fn add(self, rhs: i32) -> RVA {
         self + RVA::from(rhs as i64)
+    }
+}
+
+impl std::ops::Add<u32> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: u32) -> RVA {
+        self + RVA::from(rhs as i64)
+    }
+}
+
+impl std::ops::Add<usize> for RVA {
+    type Output = RVA;
+
+    /// may panic on overflow
+    fn add(self, rhs: usize) -> RVA {
+        self + RVA::from(rhs)
     }
 }
 
