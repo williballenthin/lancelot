@@ -136,8 +136,6 @@ impl Analysis {
             meta.map_empty(section.addr, v.into()).expect("failed to map section flowmeta");
         }
 
-        println!("meta:\n{:?}", meta);
-
         Analysis {
             queue: VecDeque::new(),
             functions: HashSet::new(),
@@ -293,23 +291,9 @@ impl Workspace {
         };
 
         // if there is a fallthrough, compute the xref.
-        // this looks a little complex because we have to handle the case
-        // where the instruction length is not cached.
         if let Some(meta) = self.get_meta(rva) {
             if meta.is_insn() && meta.does_fallthrough() {
-                // we have to do some extra legwork here to correctly handle long insns
-                let length = match meta.get_insn_length() {
-                    Ok(length) => length,
-                    Err(flowmeta::Error::LongInstruction) => {
-                        match self.read_insn(rva) {
-                            Ok(insn) => insn.length,
-                            Err(_) => 0,
-                        }
-                    },
-                    Err(flowmeta::Error::NotAnInstruction) => 0,
-                };
-
-                if length > 0 {
+                if let Ok(length) = self.get_insn_length(rva) {
                     xrefs.push(Xref {
                         src: rva,
                         dst: RVA::from(rva + length),
