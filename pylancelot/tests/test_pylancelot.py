@@ -48,9 +48,8 @@ def test_probe():
     assert     ws.probe(0x0)
     assert     ws.probe(0x0, 1)
     assert     ws.probe(0x0, 2)
-    assert not ws.probe(0x0, 3)
-    assert     ws.probe(0x1)
-    assert not ws.probe(0x2)
+    assert     ws.probe(0x0, 1000)
+    assert not ws.probe(0x1000)
 
 
 def test_read_bytes():
@@ -60,14 +59,14 @@ def test_read_bytes():
     assert ws.read_bytes(0x0, 2) == b'\xEB\xFE'
 
     with pytest.raises(LookupError):
-        assert ws.read_bytes(0x2, 2)
+        assert ws.read_bytes(0x1000, 1)
 
 
 def test_read_element():
     ws = pylancelot.from_bytes('foo.bin', b'\x00\x11\x22\x33\x44\x55\x66\x77')
 
     with pytest.raises(LookupError):
-        assert ws.read_u8(0x10)
+        _ = ws.read_u8(0x1000)
 
     assert ws.read_u8(0x0) == 0x00
     assert ws.read_u8(0x1) == 0x11
