@@ -204,7 +204,9 @@ impl Workspace {
     /// assert!(ws.read_bytes(RVA(0x1), 0x1000).is_err(), "read unaligned page");
     /// ```
     pub fn read_bytes(&self, rva: RVA, length: usize) -> Result<Vec<u8>, Error> {
-        self.module.address_space.slice(rva, rva+length)
+        self.module.address_space
+            .slice(rva, rva+length)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
     }
 
     /// Is the given range mapped?
@@ -246,6 +248,7 @@ impl Workspace {
         let mut buf = [0u8; 1];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(buf[0]))
     }
 
@@ -267,6 +270,7 @@ impl Workspace {
         let mut buf = [0u8; 2];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u16(buf)))
     }
 
@@ -275,6 +279,7 @@ impl Workspace {
         let mut buf = [0u8; 4];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u32(buf)))
     }
 
@@ -283,6 +288,7 @@ impl Workspace {
         let mut buf = [0u8; 8];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
     }
 
@@ -291,6 +297,7 @@ impl Workspace {
         let mut buf = [0u8; 4];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_i32(buf)))
     }
 
@@ -299,6 +306,7 @@ impl Workspace {
         let mut buf = [0u8; 8];
         self.module.address_space
             .slice_into(rva, &mut buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_i64(buf)))
     }
 
