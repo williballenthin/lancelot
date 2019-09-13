@@ -213,7 +213,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             Ok(self.ws.module.sections.iter()
                 .map(|section| PySection{
                     addr: section.addr.into(),
-                    length: section.buf.len() as u64,
+                    length: section.size.into(),
                     perms: section.perms.bits(),
                     name: section.name.clone(),
                 })
@@ -277,7 +277,7 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
         ///   - LookupError: if the address is not mapped, or the length overruns.
         pub fn read_bytes<'p>(&self, py: Python<'p>, rva: i64, length: usize) -> PyResult<&'p pyo3::types::PyBytes> {
             let buf = pyo3_try!(self.ws.read_bytes(RVA::from(rva), length));
-            Ok(pyo3::types::PyBytes::new(py, buf))
+            Ok(pyo3::types::PyBytes::new(py, &buf))
         }
 
         /// read_u8(self, rva, /)
