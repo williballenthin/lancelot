@@ -13,17 +13,18 @@
 
 extern crate log;
 extern crate lancelot;
+extern crate chrono;
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate clap;
 
 use std::collections::HashMap;
-use std::env;
+use fern;
 use std::ops::Range;
-use std::process;
 
 use better_panic;
 use failure::{Error, Fail};
 use goblin::Object;
-use log::{error, warn, info, trace};
+use log::{error, warn, info};
 use regex::bytes::Regex;
 
 use lancelot::arch::{RVA};
@@ -40,45 +41,6 @@ pub enum MainError {
     #[fail(display = "Unmapped address")]
     UnmappedVA,
 }
-
-pub struct Config {
-    pub filename: String,
-}
-
-impl Config {
-    pub fn from_args(args: env::Args) -> Result<Config, &'static str> {
-        let args: Vec<String> = args.collect();
-
-        if args.len() < 2 {
-            return Err("not enough arguments: provide `mapa.exe /path/to/input.exe`");
-        }
-
-        let filename = args[1].clone();
-        trace!("config: parsed filename: {:?}", filename);
-
-        Ok(Config { filename })
-    }
-}
-
-pub fn setup_logging(_args: &Config) {
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "{} [{:5}] {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Info)
-        .chain(std::io::stderr())
-        .filter(|metadata| {
-            !metadata.target().starts_with("goblin::pe")
-        })
-        .apply()
-        .expect("failed to configure logging");
-}
-
 
 /*
     File
@@ -627,10 +589,10 @@ fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn run(args: &Config) -> Result<(), Error> {
-    info!("filename: {:?}", args.filename);
+pub fn run(path: &str) -> Result<(), Error> {
+    info!("filename: {:?}", path);
 
-    let ws = Workspace::from_file(&args.filename)?.load()?;
+    let ws = Workspace::from_file(path)?.load()?;
     let map = compute_map(&ws)?;
     render_map(&map, &ws.buf)?;
 
@@ -640,14 +602,39 @@ pub fn run(args: &Config) -> Result<(), Error> {
 fn main() {
     better_panic::install();
 
-    let args = Config::from_args(env::args()).unwrap_or_else(|err| {
-        eprintln!("error parsing arguments: {}", err);
-        process::exit(1);
-    });
+    let matches = clap_app!(lancelot =>
+        (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
+        (about: "summarize an executable file's features")
+        (@arg verbose: -v --verbose +multiple "log verbose messages")
+        (@arg input: +required "path to file to analyze")
+    ).get_matches();
 
-    setup_logging(&args);
+    let log_level = match matches.occurrences_of("verbose") {
+        0 => log::LevelFilter::Info,
+        1 => log::LevelFilter::Debug,
+        2 => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Trace,
+    };
 
-    if let Err(e) = run(&args) {
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{} [{:5}] {} {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                message
+            ))
+        })
+        .level(log_level)
+        .chain(std::io::stderr())
+        .filter(|metadata| {
+            !metadata.target().starts_with("goblin::pe")
+        })
+        .apply()
+        .expect("failed to configure logging");
+
+    if let Err(e) = run(matches.value_of("input").unwrap()) {
         error!("{:?}", e)
     }
 }
