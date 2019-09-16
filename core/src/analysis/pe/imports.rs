@@ -4,6 +4,7 @@ use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
 
 use super::super::super::arch::{RVA};
+use super::super::super::loader::{Permissions};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
@@ -106,6 +107,45 @@ pub fn read_image_import_by_name(ws: &Workspace, rva: RVA) -> Result<ImageImport
     })
 }
 
+pub fn read_best_thunk_data(ws: &Workspace, original_first_thunk: RVA, first_thunk: RVA) -> Result<ImageThunkData, Error> {
+    // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
+    // FT and OFT are parallel arrays.
+
+    // the First Thunk (FT) is the pointer that will be overwritten upon load.
+    // entries here may not point to the IMAGE_IMPORT_BY_NAME.
+    //
+    // in practice, using this array works better, as some OFT entries may be empty.
+    // see: be24e9d47cfe588a8ced0ac3e453d390 hotfix2.exe
+    //
+    // however, this doesn't work if the PE has been dumped from memory
+    // (and the FTs fixed up).
+    match read_image_thunk_data(ws, first_thunk) {
+        Ok(ImageThunkData::Function(rva)) => {
+            if rva == RVA(0x0) {
+                // end of array, this is a valid entry, return it.
+                Ok(ImageThunkData::Function(rva))
+            } else if ws.probe(rva, 1, Permissions::R) {
+                // seems to be a valid address, return it.
+                Ok(ImageThunkData::Function(rva))
+            } else {
+                // invalid address, so let's try from the OFT array
+                // this might happen if we're dealing with a PE that was dumped from memory.
+                // the FT might have been overwritten, so we need to use the OFT, instead.
+                read_image_thunk_data(ws, original_first_thunk)
+            }
+        },
+        Ok(ImageThunkData::Ordinal(ord)) => {
+            // ordinal is a valid entry, return it.
+            Ok(ImageThunkData::Ordinal(ord))
+        }
+        Err(_) => {
+            // fall back to the OFT array
+            read_image_thunk_data(ws, original_first_thunk)
+        }
+    }
+}
+
+
 impl Analyzer for ImportsAnalyzer {
     fn get_name(&self) -> String {
         "PE imports analyzer".to_string()
@@ -179,19 +219,16 @@ impl Analyzer for ImportsAnalyzer {
 
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
                 // entries here may not point to the IMAGE_IMPORT_BY_NAME.
-                //
-                // in practice, using this array works better, as some OFT entries may be empty.
-                // see: be24e9d47cfe588a8ced0ac3e453d390 hotfix2.exe
                 let first_thunk = import_descriptor.first_thunk + RVA::from(j * psize);
 
-                match read_image_thunk_data(ws, first_thunk)? {
+                match read_best_thunk_data(ws, _original_first_thunk, first_thunk)? {
                     ImageThunkData::Function(rva) => {
                         if rva == RVA(0x0) {
+                            // end of array
                             break;
                         } else {
                             let imp = read_image_import_by_name(ws, rva)?;
                             debug!("found {:?}", imp);
-
                             symbols.push((first_thunk, format!("{}!{}", dll_name, imp.name)))
                         }
                     },
