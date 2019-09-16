@@ -39,7 +39,7 @@ impl VA {
                 None => return None,
                 Some(v) => v,
             };
-            if v > std::i64::MAX as u64{
+            if v > std::i64::MAX as u64 {
                 return None;
             }
             Some(RVA(-(v as i64)))
@@ -89,6 +89,18 @@ impl hash::Hash for VA {
 impl PartialEq for VA {
     fn eq(&self, other: &VA) -> bool {
         self.0 == other.0
+    }
+}
+
+impl PartialOrd for VA {
+    fn partial_cmp(&self, other: &VA) -> Option<std::cmp::Ordering> {
+        Some(self.0.cmp(&other.0))
+    }
+}
+
+impl std::cmp::Ord for VA {
+    fn cmp(&self, other: &VA) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
