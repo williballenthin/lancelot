@@ -257,15 +257,22 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                .collect())
         }
 
-        /// probe(self, rva, length=1, /)
+        /// probe(self, rva, length=1, permissions=PERM_R, /)
         /// --
         ///
         /// Is the given address mapped?
-        pub fn probe(&self, rva: i64, length: Option<usize>) -> PyResult<bool> {
-            match length {
-                Some(length) => Ok(self.ws.probe(RVA::from(rva), length)),
-                None =>  Ok(self.ws.probe(RVA::from(rva), 1)),
-            }
+        pub fn probe(&self, rva: i64, length: Option<usize>, perms: Option<u8>) -> PyResult<bool> {
+            let length = match length {
+                Some(length) => length,
+                None => 1,
+            };
+
+            let perms = match perms {
+                Some(perms) => lancelot::loader::Permissions::from_bits(perms).expect("invalid permissions"),
+                None => lancelot::loader::Permissions::R,
+            };
+
+            Ok(self.ws.probe(RVA::from(rva), length, perms))
         }
 
         /// read_bytes(self, rva, length, /)
