@@ -51,7 +51,7 @@ impl Loader for ShellcodeLoader {
     /// ```
     fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
         let mut address_space = PageMap::with_capacity(buf.len().into());
-        address_space.mapzx(0x0.into(), &buf)?;
+        address_space.writezx(0x0.into(), &buf)?;
 
         Ok((LoadedModule {
             base_address: VA(0x0),

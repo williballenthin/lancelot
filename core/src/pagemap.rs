@@ -72,13 +72,11 @@ impl<T: Default + Copy> PageMap<T> {
         }
     }
 
-
-
     /// error if rva is not in a valid page.
     /// panic due to:
     ///   - rva must be page aligned.
     ///   - must be PAGE_SIZE number of items.
-    fn map_page(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+    fn write_page(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
         if page_offset(rva) != 0 {
             panic!("invalid map address");
         }
@@ -102,12 +100,12 @@ impl<T: Default + Copy> PageMap<T> {
     ///   - must be multiple of PAGE_SIZE number of items.
     ///
     /// see example under `get`.
-    pub fn map(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+    pub fn write(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
         if items.len() % PAGE_SIZE != 0 {
             panic!("items must be page aligned");
         }
         for (i, chunk) in items.chunks_exact(PAGE_SIZE).enumerate() {
-            self.map_page(rva + i * PAGE_SIZE, chunk)?;
+            self.write_page(rva + i * PAGE_SIZE, chunk)?;
         }
         Ok(())
     }
@@ -117,7 +115,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// same error conditions as `map`.
     /// see example under `probe`.
     pub fn map_empty(&mut self, rva: RVA, size: usize) -> Result<(), Error> {
-        self.map(rva, &vec![Default::default(); size])
+        self.write(rva, &vec![Default::default(); size])
     }
 
     /// map the given items at the given address, padding with the default value until the next page.
@@ -133,17 +131,17 @@ impl<T: Default + Copy> PageMap<T> {
     /// assert_eq!(d.get(0x0.into()), None);
     /// assert_eq!(d.get(0x1.into()), None);
     ///
-    /// d.mapzx(0x0.into(), &[0x1, ]).expect("failed to map");
+    /// d.writezx(0x0.into(), &[0x1, ]).expect("failed to write");
     /// assert_eq!(d.get(0x0.into()), Some(0x1));
     /// assert_eq!(d.get(0x1.into()), Some(0x0));
     /// ```
-    pub fn mapzx(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+    pub fn writezx(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
         // TODO: use lancelot::util::align
         let empty_count = PAGE_SIZE - page_offset(items.len().into());
         let mut padded_items = Vec::with_capacity(items.len() + empty_count);
         padded_items.extend(items);
         padded_items.extend(&vec![Default::default(); empty_count]);
-        self.map(rva, &padded_items)
+        self.write(rva, &padded_items)
     }
 
     /// is the given address mapped?
@@ -179,11 +177,11 @@ impl<T: Default + Copy> PageMap<T> {
     /// assert_eq!(d.get(0x0.into()), None);
     /// assert_eq!(d.get(0x1000.into()), None);
     ///
-    /// d.map(0x1000.into(), &[0x1; 0x1000]).expect("failed to map");
+    /// d.write(0x1000.into(), &[0x1; 0x1000]).expect("failed to map");
     /// assert_eq!(d.get(0x0.into()), None);
     /// assert_eq!(d.get(0x1000.into()), Some(0x1));
     ///
-    /// d.map(0x0.into(), &[0x2; 0x2000]).expect("failed to map");
+    /// d.write(0x0.into(), &[0x2; 0x2000]).expect("failed to map");
     ///  assert_eq!(d.get(0x0.into()), Some(0x2));
     ///  assert_eq!(d.get(0x1000.into()), Some(0x2));
     /// ```

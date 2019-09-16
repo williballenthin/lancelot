@@ -180,6 +180,7 @@ impl Loader for PELoader {
                 .max()
                 .unwrap();  // danger
             let max_page_address: RVA = util::align(max_address as usize, 0x1000).into();  // danger
+            debug!("data address space capacity: {}", max_page_address);
             let mut address_space: PageMap<u8> = PageMap::with_capacity(max_page_address);
 
             // TODO: map header buffer
@@ -189,11 +190,24 @@ impl Loader for PELoader {
                 // this teaches us that we have to handle the case where rawsize > virtualsize.
                 //
                 // TODO: do we pick align(virtualsize, 0x200) or just virtualsize?
-                let raw_size = std::cmp::min(section.virtual_size, section.size_of_raw_data);
+
+
+                // given a section,
+                // for section size, use align(max(psize, vsize), 0x1000)
+                // copy align(psize, 0x200) into section
+
+                let vsize = std::cmp::max(section.virtual_size, section.size_of_raw_data);
+                let vsize = util::align(vsize as usize, 0x1000);
+                debug!("data address space mapping {:#x} {:#x}", section.virtual_address, section.virtual_address as usize + vsize);
+                address_space.map_empty(RVA::from(section.virtual_address as i32), vsize)?;
+
+                let psize = std::cmp::min(section.virtual_size, section.size_of_raw_data);
+                let psize = util::align(psize as usize, 0x200);  // sector alignment
+
                 let pstart = section.pointer_to_raw_data as usize;
-                let pend = pstart + raw_size as usize;
-                let secbuf = &buf[pstart..pend];
-                address_space.mapzx(RVA::from(section.virtual_address as i32), secbuf)?;  // danger
+                let pend = pstart + psize as usize;
+                let pbuf = &buf[pstart..pend];
+                address_space.writezx(RVA::from(section.virtual_address as i32), pbuf)?;
             }
 
             let mut analyzers: Vec<Box<dyn Analyzer>> = vec![
