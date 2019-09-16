@@ -230,7 +230,6 @@ impl Workspace {
     }
 
     pub fn get_metas(&self, rva: RVA, length: usize) -> Result<Vec<FlowMeta>, Error> {
-        println!("get metas {} {:#x}", rva, length);
         self.analysis.flow.meta.slice(rva, rva+length)
     }
 
