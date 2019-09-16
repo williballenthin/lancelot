@@ -237,7 +237,14 @@ impl Analyzer for RelocAnalyzer {
             })
             .collect();
 
-        let relocs = get_relocs(ws)?;
+        let relocs: Vec<Reloc> = get_relocs(ws)?
+            .into_iter()
+            .filter(|r| match r.typ {
+                RelocationType::ImageRelBasedHighLow => true,
+                RelocationType::ImageRelBasedDir64 => true,
+                _ => false,  // all other unsupported
+            })
+            .collect();
         debug!("found {} total relocs", relocs.len());
 
         for reloc in relocs.iter() {
