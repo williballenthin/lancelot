@@ -438,6 +438,9 @@ impl Workspace {
     }
 
     pub fn rva(&self, va: VA) -> Option<RVA> {
+        if va < self.module.base_address {
+            return None
+        }
         va.rva(self.module.base_address)
     }
 
