@@ -215,13 +215,13 @@ impl Analyzer for ImportsAnalyzer {
             for j in 0..std::usize::MAX {
                 // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
                 // FT and OFT are parallel arrays.
-                let _original_first_thunk = import_descriptor.original_first_thunk + RVA::from(j * psize);
+                let original_first_thunk = import_descriptor.original_first_thunk + RVA::from(j * psize);
 
                 // the First Thunk (FT) is the pointer that will be overwritten upon load.
                 // entries here may not point to the IMAGE_IMPORT_BY_NAME.
                 let first_thunk = import_descriptor.first_thunk + RVA::from(j * psize);
 
-                match read_best_thunk_data(ws, _original_first_thunk, first_thunk)? {
+                match read_best_thunk_data(ws, original_first_thunk, first_thunk)? {
                     ImageThunkData::Function(rva) => {
                         if rva == RVA(0x0) {
                             // end of array

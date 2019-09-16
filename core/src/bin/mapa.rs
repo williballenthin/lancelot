@@ -504,9 +504,17 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
         for j in 0..std::usize::MAX {
             // for each function name entry...
-            let image_thunk_data_rva = import_descriptor.original_first_thunk + RVA::from(j * psize);
-            match imports::read_image_thunk_data(ws, image_thunk_data_rva)? {
-                imports::ImageThunkData::Function(rva) => {
+
+            // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
+            // FT and OFT are parallel arrays.
+            let original_first_thunk = import_descriptor.original_first_thunk + RVA::from(j * psize);
+
+            // the First Thunk (FT) is the pointer that will be overwritten upon load.
+            // entries here may not point to the IMAGE_IMPORT_BY_NAME.
+            let first_thunk = import_descriptor.first_thunk + RVA::from(j * psize);
+
+            match imports::read_best_thunk_data(ws, original_first_thunk, first_thunk) {
+                Ok(imports::ImageThunkData::Function(rva)) => {
                     // until the empty entry (last one)
                     if rva == RVA(0x0) {
                         break;
@@ -530,7 +538,8 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
                         addrs.push(import_name_addr);
                     }
                 },
-                imports::ImageThunkData::Ordinal(_) => { /* pass */ },
+                Ok(imports::ImageThunkData::Ordinal(_)) => { /* pass */ },
+                Err(_) => { break },
             };
         }
     }
