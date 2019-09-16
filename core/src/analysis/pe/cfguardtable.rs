@@ -9,7 +9,7 @@ use log::{debug};
 use goblin::{Object};
 use failure::{Error};
 
-use super::super::super::arch::{RVA};
+use super::super::super::arch::{RVA, VA};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
@@ -93,9 +93,15 @@ impl Analyzer for CFGuardTableAnalyzer {
             false => ws.read_u32(load_config_directory + 84)?,
         };
 
-        let cfg_table_rva = ws.rva(cfg_table_va).unwrap();
-        let mut offset = cfg_table_rva;
+        if cfg_table_va == VA(0x0) {
+            debug!("CF guard table empty");
+            return Ok(())
+        };
 
+        let cfg_table_rva = ws.rva(cfg_table_va).unwrap();
+        debug!("CF guard table: {}", cfg_table_rva);
+
+        let mut offset = cfg_table_rva;
         for _ in 0..cfg_table_count {
             let function = RVA::from(ws.read_i32(offset)?);
 
