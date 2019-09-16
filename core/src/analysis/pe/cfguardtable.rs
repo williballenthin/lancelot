@@ -10,6 +10,7 @@ use goblin::{Object};
 use failure::{Error};
 
 use super::super::super::arch::{RVA, VA};
+use super::super::super::loader::{Permissions};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
@@ -118,9 +119,9 @@ impl Analyzer for CFGuardTableAnalyzer {
             true => ws.rva(ws.read_va(load_config_directory + 112)?).unwrap(),
             false => ws.rva(ws.read_va(load_config_directory + 72)?).unwrap(),
         };
-        if ws.probe(guard_check_icall_fptr, 8) {
+        if ws.probe(guard_check_icall_fptr, 8, Permissions::R) {
             let guard_check_icall = ws.rva(ws.read_va(guard_check_icall_fptr)?).unwrap();
-            if ws.probe(guard_check_icall, 1) {
+            if ws.probe(guard_check_icall, 1, Permissions::X) {
                 debug!("CF guard check function: {:#x}", guard_check_icall);
                 ws.make_function(guard_check_icall)?;
                 ws.analyze()?;
@@ -132,9 +133,9 @@ impl Analyzer for CFGuardTableAnalyzer {
             true => ws.rva(ws.read_va(load_config_directory + 120)?).unwrap(),
             false => ws.rva(ws.read_va(load_config_directory + 76)?).unwrap(),
         };
-        if ws.probe(guard_dispatch_icall_fptr, 8) {
+        if ws.probe(guard_dispatch_icall_fptr, 8, Permissions::R) {
             let guard_dispatch_icall = ws.rva(ws.read_va(guard_dispatch_icall_fptr)?).unwrap();
-            if ws.probe(guard_dispatch_icall, 1) {
+            if ws.probe(guard_dispatch_icall, 1, Permissions::X) {
                 debug!("CF guard dispatch function: {:#x}", guard_dispatch_icall);
                 ws.make_function(guard_dispatch_icall)?;
                 ws.analyze()?;

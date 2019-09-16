@@ -4,6 +4,7 @@ use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
 
 use super::super::super::arch::{RVA};
+use super::super::super::loader::{Permissions};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
@@ -93,13 +94,13 @@ impl Analyzer for RuntimeFunctionAnalyzer {
                 unwind_data: RVA::from(LittleEndian::read_i32(&b[8..])),
             })
             .filter(|rt| {
-                if ! ws.probe(rt.begin_address, 1) {
+                if ! ws.probe(rt.begin_address, 1, Permissions::X) {
                     return false;
                 }
-                if ! ws.probe(rt.end_address, 1) {
+                if ! ws.probe(rt.end_address, 1, Permissions::X) {
                     return false;
                 }
-                if ! ws.probe(rt.unwind_data, 1) {
+                if ! ws.probe(rt.unwind_data, 1, Permissions::R) {
                     return false;
                 }
                 return true;

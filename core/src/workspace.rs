@@ -10,7 +10,7 @@ use super::analysis::Analysis;
 use super::arch::{Arch, VA, RVA};
 use super::basicblock::BasicBlock;
 use super::loader;
-use super::loader::{LoadedModule, Loader};
+use super::loader::{LoadedModule, Loader, Permissions};
 use super::xref::XrefType;
 use super::util;
 
@@ -216,16 +216,36 @@ impl Workspace {
     /// ```
     /// use lancelot::test;
     /// use lancelot::arch::RVA;
+    /// use lancelot::loader::Permissions;
     ///
     /// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-    /// assert!( ws.probe(RVA(0x0), 1));
-    /// assert!( ws.probe(RVA(0x0), 2));
-    /// assert!(!ws.probe(RVA(0x0), 0x1001));
-    /// assert!( ws.probe(RVA(0x1), 1));
-    /// assert!(!ws.probe(RVA(0x1), 0x1000));
+    /// assert!( ws.probe(RVA(0x0), 1, Permissions::R));
+    /// assert!( ws.probe(RVA(0x0), 1, Permissions::X));
+    /// assert!( ws.probe(RVA(0x0), 1, Permissions::RX));
+    /// assert!( ws.probe(RVA(0x0), 2, Permissions::R));
+    /// assert!(!ws.probe(RVA(0x0), 0x1001, Permissions::R));
+    /// assert!( ws.probe(RVA(0x1), 1, Permissions::R));
+    /// assert!(!ws.probe(RVA(0x1), 0x1000, Permissions::R));
     /// ```
-    pub fn probe(&self, rva: RVA, length: usize) -> bool {
-        self.module.address_space.probe(rva) && self.module.address_space.probe(rva + length)
+    pub fn probe(&self, rva: RVA, length: usize, perms: Permissions) -> bool {
+        if perms.intersects(Permissions::X) {
+            // hack: flowmeta is only mapped for executable regions
+            if ! (self.get_meta(rva).is_some() && self.get_meta(rva + length).is_some()) {
+                return false;
+            }
+        }
+
+        if perms.intersects(Permissions::R) {
+            if ! (self.module.address_space.probe(rva) && self.module.address_space.probe(rva + length)) {
+                return false;
+            }
+        }
+
+        if perms.intersects(Permissions::W) {
+            // TODO
+        }
+
+        return true;
     }
 
     /// Read a byte from the given RVA.

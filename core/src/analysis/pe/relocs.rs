@@ -52,7 +52,7 @@ fn is_in_insn(ws: &Workspace, rva: RVA) -> bool {
 fn is_ptr(ws: &Workspace, rva: RVA) -> bool {
     if let Ok(ptr) = ws.read_va(rva) {
         if let Some(ptr) = ws.rva(ptr) {
-            return ws.probe(ptr, 1);
+            return ws.probe(ptr, 1, Permissions::R);
         }
     }
     return false;
@@ -180,13 +180,13 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
                 let (m, n) = split_u32(entry);
 
                 let reloc1 = parse_reloc(page_rva, m)?;
-                if !ws.probe(reloc1.offset, 4) {
+                if !ws.probe(reloc1.offset, 4, Permissions::R) {
                     break
                 }
                 ret.push(reloc1);
 
                 let reloc2 = parse_reloc(page_rva, n)?;
-                if !ws.probe(reloc2.offset, 4) {
+                if !ws.probe(reloc2.offset, 4, Permissions::R) {
                     break
                 }
                 ret.push(reloc2);
@@ -218,6 +218,7 @@ impl Analyzer for RelocAnalyzer {
     /// use lancelot::analysis::Analyzer;
     /// use lancelot::workspace::Workspace;
     /// use lancelot::analysis::pe::RelocAnalyzer;
+    /// lancelot::test::init_logging();
     ///
     /// let mut ws = Workspace::from_bytes("k32.dll", &get_buf(Rsrc::K32))
     ///    .disable_analysis()

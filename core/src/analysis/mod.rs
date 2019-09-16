@@ -13,7 +13,7 @@ use super::pagemap;
 use super::pagemap::{PageMap};
 use super::flowmeta;
 use super::flowmeta::FlowMeta;
-use super::loader::{LoadedModule};
+use super::loader::{LoadedModule, Permissions};
 use super::workspace::Workspace;
 use super::xref::{Xref, XrefType};
 use super::util;
@@ -423,7 +423,7 @@ impl Workspace {
                 None => return Ok(None),
             };
 
-            if !self.probe(dst, 1) {
+            if !self.probe(dst, 1, Permissions::X) {
                 return Ok(None);
             };
 
@@ -454,7 +454,7 @@ impl Workspace {
                     None => return Ok(None),
                 };
 
-                if !self.probe(dst, 1) {
+                if !self.probe(dst, 1, Permissions::X) {
                     return Ok(None);
                 };
 
@@ -538,7 +538,7 @@ impl Workspace {
 
             let dst = rva + imm + insn.length;
 
-            if self.probe(dst, 1) {
+            if self.probe(dst, 1, Permissions::X) {
                 Ok(Some(dst))
             } else {
                 // invalid address
@@ -623,7 +623,7 @@ impl Workspace {
                 None => break,
             };
 
-            if ! self.probe(ptr_rva, 1) {
+            if ! self.probe(ptr_rva, 1, Permissions::R) {
                 break
             }
 
@@ -954,11 +954,11 @@ impl Workspace {
         //  3. if did (2), insert xref-to dst
 
         // step 1. validate arguments
-        if !self.probe(xref.src, 1) {
+        if !self.probe(xref.src, 1, Permissions::X) {
             warn!("invalid xref src address: {:#x}", xref.src);
             return Ok(vec![]);
         }
-        if !self.probe(xref.dst, 1) {
+        if !self.probe(xref.dst, 1, Permissions::X) {
             warn!("invalid xref dst address: {:#x}", xref.dst);
             return Ok(vec![]);
         }
@@ -1011,7 +1011,7 @@ impl Workspace {
     }
 
     fn handle_make_symbol(&mut self, rva: RVA, name: &str) -> Result<Vec<AnalysisCommand>, Error> {
-        if !self.probe(rva, 1) {
+        if !self.probe(rva, 1, Permissions::R) {
             warn!("invalid symbol address: {:#x}", rva);
             return Ok(vec![]);
         }
@@ -1026,7 +1026,7 @@ impl Workspace {
 
     fn handle_make_function(&mut self, rva: RVA) -> Result<Vec<AnalysisCommand>, Error> {
         // TODO: probably ensure this is code, not just readable.
-        if !self.probe(rva, 1) {
+        if !self.probe(rva, 1, Permissions::X) {
             warn!("invalid function address: {:#x}", rva);
             return Ok(vec![]);
         }
