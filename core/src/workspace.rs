@@ -110,7 +110,7 @@ impl WorkspaceBuilder {
 
         info!("loaded {} sections:", module.sections.len());
         module.sections.iter().for_each(|sec| {
-            info!("  - {:8} {:x} {:?}", sec.name, sec.addr, sec.perms);
+            info!("  - {:8} {:x}-{:x} {:?}", sec.name, sec.addr, sec.end(), sec.perms);
         });
 
         let analysis = Analysis::new(&module);
