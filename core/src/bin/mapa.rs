@@ -222,50 +222,49 @@ impl MapNode {
         }
     }
 
-    fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
+    fn render_structure_hex(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
         let mut ret: Vec<String> = vec![];
-
-        if let Structure::String(s) = &self.structure {
-            ret.push(format!("    {:#08x} string \"{}\"", self.range.start, s));
-        } else {
-            // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
-            ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
-
-            match &self.structure {
-                Structure::IMAGE_SECTION_HEADER(_, _)
-                | Structure::IMAGE_DOS_HEADER
-                | Structure::Signature
-                | Structure::IMAGE_FILE_HEADER
-                | Structure::IMAGE_OPTIONAL_HEADER
-                => {
-                    // render hexdump
-                    let region = &buf[self.range.start as usize..self.range.end as usize];
-                    for line in lancelot::util::hexdump(region,
-                                                        self.range.start as usize).split("\n") {
-                        if line != "" {
-                            ret.push(format!("│   {}", line))
-                        }
-                    }
-                },
-                _ => {
-                    // render children
-                    for (i, child) in self.children.iter().enumerate() {
-                        for line in child.render(buf)?.iter() {
-                            ret.push(format!("│  {}", line))
-                        }
-                        if i < self.children.len() - 1 {
-                            match (&self.children[i].structure,  &self.children[i + 1].structure) {
-                                (Structure::String(_), Structure::String(_)) => {},
-                                _ => {ret.push(format!("│")) }
-                            }
-                        }
-                    }
-                }
+        // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
+        ret.push(format!(""));
+        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
+        let region = &buf[self.range.start as usize..self.range.end as usize];
+        for line in lancelot::util::hexdump(region,
+                                            self.range.start as usize).split("\n") {
+            if line != "" {
+                ret.push(format!("│   {}", line))
             }
-
-            ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
         }
+        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
+        ret.push(format!(""));
+        Ok(ret)
+    }
 
+    fn render_structure_tree(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
+        let mut ret: Vec<String> = vec![];
+        // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
+        ret.push(format!(""));
+        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
+        for child in self.children.iter() {
+            for line in child.render(buf)?.iter() {
+                ret.push(format!("│  {}", line))
+            }
+        }
+        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
+        ret.push(format!(""));
+        Ok(ret)
+    }
+
+    fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
+        let ret = match (self.children.len(), &self.structure) {
+            (_, Structure::String(s)) => vec![format!("    {:#08x} string \"{}\"", self.range.start, s)],
+            (_, Structure::IMAGE_SECTION_HEADER(_, _)) => self.render_structure_hex(buf)?,
+            (_, Structure::IMAGE_DOS_HEADER) => self.render_structure_hex(buf)?,
+            (_, Structure::Signature) => self.render_structure_hex(buf)?,
+            (_, Structure::IMAGE_FILE_HEADER) => self.render_structure_hex(buf)?,
+            (_, Structure::IMAGE_OPTIONAL_HEADER) => self.render_structure_hex(buf)?,
+            (0, _) => vec![format!("    {:#08x} [ {} ]", self.range.start, self.structure)],
+            (_, _) => self.render_structure_tree(buf)?,
+        };
         Ok(ret)
     }
 }
