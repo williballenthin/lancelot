@@ -24,7 +24,7 @@ use std::ops::Range;
 use better_panic;
 use failure::{Error, Fail};
 use goblin::Object;
-use log::{error, warn, info};
+use log::{error, warn, info, debug};
 use regex::bytes::Regex;
 
 use lancelot::arch::{RVA};
@@ -435,11 +435,24 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         }
     }
 
+    // enumerate all the functions,
+    // for each function,
+    // enumerate all the basic blocks,
+    // these regions should be raw instructions (not data).
+    //
+    // when we find a string, ensure it is not found in a basic block.
+    let code_filter = FunctionMap::new(ws);
     for (loc, string) in find_strings(&ws.buf).iter() {
-        locations.insert(Range {
-            start: loc.start as u64,
-            end: loc.end as u64,
-        }, Structure::String(string.clone()));
+        if let Ok(string_rva) = pfile2rva(&pe, loc.start) {
+            if code_filter.find(string_rva).is_none() {
+                // no overlap with recognized code.
+                // probably a real string.
+                locations.insert(Range {
+                    start: loc.start as u64,
+                    end: loc.end as u64,
+                }, Structure::String(string.clone()));
+            }
+        }
     }
 
     if let Some(r) = find_import_data_range(&ws)? {
@@ -450,6 +463,59 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         locations
     })
 }
+
+/// basic block descriptor.
+struct FunctionEntry {
+    start: RVA,
+    end: RVA,
+    func: RVA,
+}
+
+struct FunctionMap {
+    basic_blocks: Vec<FunctionEntry>,
+}
+
+/// layout of basic blocks across the entire file.
+impl FunctionMap {
+    pub fn new(ws: &Workspace) -> FunctionMap {
+        let mut functions = ws.get_functions().collect::<Vec<_>>();
+        functions.sort();
+        debug!("found {} functions", functions.len());
+
+        let mut basic_blocks = vec![];
+        for rva in functions.iter() {
+            if let Ok(bbs) = ws.get_basic_blocks(**rva) {
+                for bb in bbs.iter() {
+                    basic_blocks.push(FunctionEntry {
+                        start: bb.addr,
+                        end: bb.addr + (bb.length as u32),
+                        func: **rva,
+                    });
+                }
+            }
+        }
+        basic_blocks.sort_unstable_by(|a, b| a.start.cmp(&b.start));
+        debug!("found {} basic blocks", basic_blocks.len());
+
+        FunctionMap {
+            basic_blocks
+        }
+    }
+
+    /// is the given address found within a basic block?
+    pub fn find(&self, rva: RVA) -> Option<RVA> {
+        self.basic_blocks.binary_search_by(|probe| {
+            if probe.start > rva{
+                std::cmp::Ordering::Greater
+            } else if probe.end < rva {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        }).and_then(|index| Ok(self.basic_blocks[index].func)).ok()
+    }
+}
+
 
 // in typical binaries compiled by MSVC,
 // the import table and import address table immediately precede the ASCII strings
@@ -584,6 +650,33 @@ pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
         // this must be found in the headers of the file.
         // and therefore the rva == pfile.
         return Ok(rva as usize);
+    }
+
+    return Err(MainError::UnmappedVA.into())
+}
+
+pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
+    // track the minimum section.pointer_to_raw_data.
+    // assume all data before this is part of the headers,
+    //  and can be indexed directly via the RVA.
+    let mut min_section_addr = std::u32::MAX;
+    let rva = rva as u32;
+
+    for section in pe.sections.iter() {
+        if section.pointer_to_raw_data <= rva && rva < section.pointer_to_raw_data + section.size_of_raw_data {
+            let offset = rva - section.pointer_to_raw_data;
+            return Ok(RVA::from(section.virtual_address + offset))
+        }
+
+        if section.pointer_to_raw_data < min_section_addr {
+            min_section_addr = section.pointer_to_raw_data;
+        }
+    }
+
+    if rva < min_section_addr {
+        // this must be found in the headers of the file.
+        // and therefore the rva == pfile.
+        return Ok(RVA::from(rva));
     }
 
     return Err(MainError::UnmappedVA.into())
