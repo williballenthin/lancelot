@@ -259,6 +259,7 @@ impl MapNode {
     fn render(&self, buf: &[u8]) -> Result<Vec<String>, Error> {
         let ret = match (self.children.len(), &self.structure) {
             (_, Structure::String(s)) => vec![format!("    {:#08x} string \"{}\"", self.range.start, s)],
+            (_, Structure::Function(s)) => vec![format!("    {:#08x} function {}", self.range.start, s)],
             (_, Structure::IMAGE_SECTION_HEADER(_, _)) => self.render_structure_hex(buf)?,
             (_, Structure::IMAGE_DOS_HEADER) => self.render_structure_hex(buf)?,
             (_, Structure::Signature) => self.render_structure_hex(buf)?,
@@ -465,34 +466,21 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
             }
         };
 
-        // find the minimum and maximum addresses of basic blocks in this function.
-        // this is useful when the function is laid out contiguously.
-        // when function chunks are interspersed... i have no idea what will happen.
-        // probably ugly.
-        let mut min_addr: RVA = RVA(0);
-        let mut max_addr: RVA = RVA(0);
-        for (i, bb) in ws.get_basic_blocks(function)?.iter().enumerate() {
-            let start = bb.addr;
-            let end = bb.addr + (bb.length as u32);
-
-            if i == 0 {
-                min_addr = start;
-                max_addr = end;
-            }
-
-            if bb.addr < min_addr {
-                min_addr = start;
-            }
-
-            if bb.addr > max_addr {
-                max_addr = end;
-            }
-        }
-
+        // TODO: see git history (46de2af) for an attempt at function ranges.
+        // this didn't work great while we used naive basic blocks.
+        // e.g. thunks messed things up, because the `jmp impl` was
+        // often located far away from `impl`.
+        //
+        // what we'd like would be intelligent "function chunks" that:
+        //   1. know not to cross `jmp SomeFunctionStart` boundaries
+        //   2. know how to detect exception handler blocks
+        //
+        // in the meantime, consider a function a 1-sized region.
+        let floc = rva2pfile(&pe, function.into())?;
         locations.insert(Range {
             // note: technically, start != function
-            start: min_addr.into(),
-            end: max_addr.into(),
+            start: floc as u64,
+            end: floc as u64,
         }, Structure::Function(name.clone()));
     }
 
