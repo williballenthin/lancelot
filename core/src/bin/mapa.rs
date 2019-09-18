@@ -81,6 +81,7 @@ enum Structure {
     DelayImportDescriptor,
     ClrRuntimeHeader,
     String(String),
+    Function(String),
 }
 
 impl std::fmt::Display for Structure {
@@ -108,6 +109,7 @@ impl std::fmt::Display for Structure {
             Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
             Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
             Structure::String(s) => write!(f, "string: {}", s),
+            Structure::Function(name) => write!(f, "function: {}", name),
         }
     }
 }
@@ -452,6 +454,46 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
                 }, Structure::String(string.clone()));
             }
         }
+    }
+
+    for &function in ws.get_functions() {
+        let name = match ws.get_symbol(function) {
+            Some(name) => name.to_string(),
+            None => {
+                let va: u64 = ws.va(function).unwrap().into();
+                format!("sub_{:x}", va)
+            }
+        };
+
+        // find the minimum and maximum addresses of basic blocks in this function.
+        // this is useful when the function is laid out contiguously.
+        // when function chunks are interspersed... i have no idea what will happen.
+        // probably ugly.
+        let mut min_addr: RVA = RVA(0);
+        let mut max_addr: RVA = RVA(0);
+        for (i, bb) in ws.get_basic_blocks(function)?.iter().enumerate() {
+            let start = bb.addr;
+            let end = bb.addr + (bb.length as u32);
+
+            if i == 0 {
+                min_addr = start;
+                max_addr = end;
+            }
+
+            if bb.addr < min_addr {
+                min_addr = start;
+            }
+
+            if bb.addr > max_addr {
+                max_addr = end;
+            }
+        }
+
+        locations.insert(Range {
+            // note: technically, start != function
+            start: min_addr.into(),
+            end: max_addr.into(),
+        }, Structure::Function(name.clone()));
     }
 
     if let Some(r) = find_import_data_range(&ws)? {
