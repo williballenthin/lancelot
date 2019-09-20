@@ -34,6 +34,9 @@ pub struct WorkspaceBuilder {
     loader: Option<Box<dyn Loader>>,
 
     should_analyze: bool,
+
+    /// when true, the analysis failures should fail the loading of the module.
+    strict_mode: bool,
 }
 
 impl WorkspaceBuilder {
@@ -53,6 +56,14 @@ impl WorkspaceBuilder {
         info!("disabling analysis");
         WorkspaceBuilder {
             should_analyze: false,
+            ..self
+        }
+    }
+
+    pub fn enable_strict_mode(self: WorkspaceBuilder) -> WorkspaceBuilder {
+        info!("enabling strict mode");
+        WorkspaceBuilder {
+            strict_mode: true,
             ..self
         }
     }
@@ -137,6 +148,9 @@ impl WorkspaceBuilder {
                 info!("analyzing with {}", analyzer.get_name());
                 if let Err(e) = analyzer.analyze(&mut ws) {
                     warn!("analyzer failed: {}: {}", analyzer.get_name(), e);
+                    if self.strict_mode {
+                        return Err(e)
+                    }
                 }
             }
         }
@@ -171,6 +185,7 @@ impl Workspace {
             buf: buf.to_vec(),
             loader: None,
             should_analyze: true,
+            strict_mode: false,
         }
     }
 
@@ -180,6 +195,7 @@ impl Workspace {
             buf: util::read_file(filename)?,
             loader: None,
             should_analyze: true,
+            strict_mode: false,
         })
     }
 
