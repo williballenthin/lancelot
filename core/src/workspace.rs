@@ -4,7 +4,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
 use zydis;
 use zydis::Decoder;
-use log::{info};
+use log::{info, warn};
 
 use super::analysis::Analysis;
 use super::arch::{Arch, VA, RVA};
@@ -135,7 +135,9 @@ impl WorkspaceBuilder {
         if self.should_analyze {
             for analyzer in analyzers.iter() {
                 info!("analyzing with {}", analyzer.get_name());
-                analyzer.analyze(&mut ws)?;
+                if let Err(e) = analyzer.analyze(&mut ws) {
+                    warn!("analyzer failed: {}: {}", analyzer.get_name(), e);
+                }
             }
         }
 
