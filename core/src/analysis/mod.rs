@@ -474,17 +474,42 @@ impl Workspace {
         }
     }
 
-    fn get_pointer_operand_xref(
+
+    /// ```
+    /// use lancelot::test;
+    /// use lancelot::analysis;
+    /// use lancelot::arch::RVA;
+    ///
+    /// // this is a far ptr jump from addr 0x0 to itself:
+    /// // JMP FAR PTR 0:00000000
+    /// // [ EA ] [ 00 00 00 00 ] [ 00 00 ]
+    /// // opcode   ptr            segment
+    /// let mut ws = test::get_shellcode32_workspace(b"\xEA\x00\x00\x00\x00\x00\x00");
+    /// let insn = ws.read_insn(RVA(0x0)).unwrap();
+    /// let op = analysis::get_first_operand(&insn).unwrap();
+    /// let xref = ws.get_pointer_operand_xref(RVA(0x0), &insn, &op).unwrap();
+    ///
+    /// assert_eq!(xref.is_some(), true);
+    /// assert_eq!(xref.unwrap(), RVA(0x0));
+    /// ```
+    pub fn get_pointer_operand_xref(
         &self,
-        rva: RVA,
+        _rva: RVA,
         _insn: &zydis::DecodedInstruction,
         op: &zydis::DecodedOperand,
     ) -> Result<Option<RVA>, Error> {
-        // TODO
-        println!("get ptr op xref {}", rva);
-        print_op(op);
-        panic!("not supported");
-        //Ok(None)
+        // ref: https://c9x.me/x86/html/file_module_x86_id_147.html
+        //
+        // > Far Jumps in Real-Address or Virtual-8086 Mode.
+        // > When executing a far jump in realaddress or virtual-8086 mode,
+        // > the processor jumps to the code segment and offset specified with the target operand.
+        // > Here the target operand specifies an absolute far address either directly with a
+        // > pointer (ptr16:16 or ptr16:32) or indirectly with a memory location (m16:16 or m16:32).
+        // > With the pointer method, the segment and address of the called procedure is encoded
+        // > in the instruction, using a 4-byte (16-bit operand size) or
+        // > 6-byte (32-bit operand size) far address immediate.
+        // TODO: do something intelligent with the segment.
+        Ok(self.rva(VA::from(op.ptr.offset)))
     }
 
     /// ## test relative immediate operand

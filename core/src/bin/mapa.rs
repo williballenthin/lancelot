@@ -478,7 +478,6 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         // in the meantime, consider a function a 1-sized region.
         let floc = rva2pfile(&pe, function.into())?;
         locations.insert(Range {
-            // note: technically, start != function
             start: floc as u64,
             end: floc as u64,
         }, Structure::Function(name.clone()));
