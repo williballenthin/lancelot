@@ -15,6 +15,8 @@ use std::collections::{HashSet};
 pub enum RelocAnalyzerError {
     #[fail(display = "Invalid relocation type")]
     InvalidRelocType,
+    #[fail(display = "Relocation target not found in image")]
+    InvalidTargetAddress,
 }
 
 pub struct RelocAnalyzer {}
@@ -249,7 +251,7 @@ impl Analyzer for RelocAnalyzer {
         debug!("found {} total relocs", relocs.len());
 
         for reloc in relocs.iter() {
-            let target = ws.rva(ws.read_va(reloc.offset)?).expect("reloc target not in image");
+            let target = ws.rva(ws.read_va(reloc.offset)?).ok_or(RelocAnalyzerError::InvalidTargetAddress)?;
             trace!("found reloc {} -> {} {}",
                    reloc.offset,
                    target,
