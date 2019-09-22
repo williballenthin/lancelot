@@ -27,6 +27,10 @@ fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     Ok(())
 }
 
+fn handle_layout(ws: &Workspace) -> Result<(), Error> {
+    Ok(())
+}
+
 fn main() {
     better_panic::install();
 
@@ -36,8 +40,13 @@ fn main() {
         (@arg verbose: -v --verbose +multiple "log verbose messages")
         (@subcommand functions =>
             (about: "find functions")
-            (@arg input: +required "path to file to analyze")
-        )
+            (@arg input: +required "path to file to analyze"))
+        (@subcommand layout =>
+            (about: "show file sections")
+            (@arg input: +required "path to file to analyze"))
+        (@subcommand smoketest =>
+            (about: "analyze file and exit on analysis failure")
+            (@arg input: +required "path to file to analyze"))
     ).get_matches();
 
     let log_level = match matches.occurrences_of("verbose") {
@@ -79,6 +88,37 @@ fn main() {
 
         if let Err(e) = handle_functions(&ws) {
             error!("error: {}", e)
+        }
+    } else if let Some(matches) = matches.subcommand_matches("layout") {
+        debug!("mode: layout");
+
+        let filename = matches.value_of("input").unwrap();
+        debug!("input: {}", filename);
+
+        let ws = Workspace::from_file(filename)
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
+            .disable_analysis()
+            .load()
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+
+        if let Err(e) = handle_functions(&ws) {
+            error!("error: {}", e)
+        }
+    } else if let Some(matches) = matches.subcommand_matches("smoketest") {
+        debug!("mode: smoketest");
+
+        let filename = matches.value_of("input").unwrap();
+        debug!("input: {}", filename);
+
+        match Workspace::from_file(filename)
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
+            .enable_strict_mode()
+            .load() {
+            Err(e) => {
+                println!("error");
+                eprintln!("{:?}", e);
+            },
+            Ok(_) => println!("ok"),
         }
     };
 
