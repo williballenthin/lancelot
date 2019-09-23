@@ -21,19 +21,65 @@
 //     __EH_prolog /mnt/c/Windows/SysWOW64//vcruntime140_clr0400.dll
 //     __EH_prolog /mnt/c/Windows/SysWOW64//vcruntime140d.dll
 // ```
-#[macro_use] extern crate nom;
-
-use regex::bytes::Regex;
-
+extern crate nom;
 
 pub mod pat;
 
+#[derive(Debug)]
+enum SigElement {
+    Byte(u8),
+    Wildcard,
+}
 
-pub struct ByteSignature(Regex);
+impl std::fmt::Display for SigElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SigElement::Byte(v) => write!(f, "{:02x}", v),
+            SigElement::Wildcard => write!(f, ".."),
+        }
+    }
+}
 
+#[derive(Debug)]
+pub struct ByteSignature(Vec<SigElement>);
+
+impl std::fmt::Display for ByteSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for elem in self.0.iter() {
+            write!(f, "{}", elem)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum Offset {
+    Public(u16),
+    Local(u16),
+    Reference(u16),
+}
+
+#[derive(Debug)]
 pub struct Name {
     offset: u16,
     name: String,
+}
+
+#[derive(Debug)]
+enum Symbol {
+    Public(Name),
+    Local(Name),
+    Reference(Name),
+}
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Symbol::Public(name) => write!(f, ":{:04x} {}", name.offset, name.name),
+            Symbol::Local(name) => write!(f, ":{:04x}@ {}", name.offset, name.name),
+            Symbol::Reference(name) => write!(f, "^{:04x} {}", name.offset, name.name),
+        }
+    }
 }
 
 pub struct FlirtSignature {
@@ -44,7 +90,33 @@ pub struct FlirtSignature {
     crc16: u16,
     size_of_function: u16,  // max: 0x8000
 
-    public_names: Vec<Name>,
-    local_names: Vec<Name>,
-    referenced_names: Vec<Name>,
+    names: Vec<Symbol>,
+
+    footer: Option<ByteSignature>,
+}
+
+impl std::fmt::Display for FlirtSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ", self.byte_sig)?;
+        write!(f, "{:02x} ", self.size_of_bytes_crc16)?;
+        write!(f, "{:04x} ", self.crc16)?;
+        write!(f, "{:04x} ", self.size_of_function)?;
+        for (i, name) in self.names.iter().enumerate() {
+            write!(f, "{}", name)?;
+            if i != self.names.len() - 1 {
+                write!(f, " ")?;
+            }
+        }
+        if let Some(footer) = &self.footer {
+            write!(f, " ")?;
+            write!(f, "{}", footer)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for FlirtSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
 }
