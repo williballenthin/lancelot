@@ -60,6 +60,12 @@ fn is_ptr(ws: &Workspace, rva: RVA) -> bool {
     return false;
 }
 
+fn is_zero(ws: &Workspace, rva: RVA) -> bool {
+    if let Ok(v) = ws.read_u32(rva) {
+        return v == 0;
+    }
+    return false;
+}
 
 pub enum RelocationType {
     ImageRelBasedAbsolute,
@@ -292,6 +298,7 @@ impl Analyzer for RelocAnalyzer {
             .filter(|&&rva| sections_contain(&x_sections, rva))
             .filter(|&&rva| !is_in_insn(ws, rva))
             .filter(|&&rva| !is_ptr(ws, rva))
+            .filter(|&&rva| !is_zero(ws, rva))
             .map(|&rva| rva)
             // TODO: maybe ensure that the insn decodes.
             .collect();
