@@ -895,7 +895,7 @@ impl Workspace {
                 // this might happen if:
                 //   - the instruction is in a non-executable section
                 //   - the memory is not mapped
-                warn!("invalid instruction: no flow meta: {:x}", rva);
+                warn!("invalid instruction: not executable memory: {:x}", rva);
                 return Ok(vec![]);
             }
             Some(meta) => meta,
@@ -914,6 +914,9 @@ impl Workspace {
             Ok(insn) => insn,
         };
 
+        // TODO: blacklist of bad instructions.
+        // eg. `00 00    add    BYTE PTR [eax], al`
+
         // 2. compute instruction len
         let length = insn.length;
 
@@ -921,7 +924,7 @@ impl Workspace {
         let does_fallthrough = Workspace::does_insn_fallthrough(&insn);
 
         // 4. compute flow ref
-        // TODO: maybe don't fail, but just return empty list?
+        // TODO: don't fail, but just return empty list?
         let flows = self.get_insn_flow(rva, &insn)?;
         ret.extend(flows.iter().map(|f| AnalysisCommand::MakeXref(*f)));
         ret.extend(flows.iter().map(|f| match f.typ {
