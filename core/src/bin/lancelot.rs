@@ -38,6 +38,7 @@ fn main() {
         (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
         (about: "Binary analysis framework")
         (@arg verbose: -v --verbose +multiple "log verbose messages")
+        (@arg quiet: -q --quiet "disable informational messages")
         (@subcommand functions =>
             (about: "find functions")
             (@arg input: +required "path to file to analyze"))
@@ -49,11 +50,16 @@ fn main() {
             (@arg input: +required "path to file to analyze"))
     ).get_matches();
 
-    let log_level = match matches.occurrences_of("verbose") {
-        0 => log::LevelFilter::Info,
-        1 => log::LevelFilter::Debug,
-        2 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Trace,
+    // --quiet overrides --verbose
+    let log_level = if matches.is_present("quiet") {
+        log::LevelFilter::Error
+    } else {
+        match matches.occurrences_of("verbose") {
+            0 => log::LevelFilter::Info,
+            1 => log::LevelFilter::Debug,
+            2 => log::LevelFilter::Trace,
+            _ => log::LevelFilter::Trace,
+        }
     };
 
     fern::Dispatch::new()
