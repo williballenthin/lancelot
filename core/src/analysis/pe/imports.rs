@@ -76,8 +76,10 @@ pub enum ImageThunkData {
 pub fn read_image_thunk_data(ws: &Workspace, rva: RVA) -> Result<ImageThunkData, Error> {
     // see: https://reverseengineering.stackexchange.com/a/13387/17194
     let thunk = ws.read_rva(rva)?;
-    let v: i64 = thunk.into();
-    if v & (1 << (ws.loader.get_arch().get_pointer_size() * 8 - 1)) > 0x0 {
+    let v: u64 = thunk.into();
+
+    let ordinal_mask: u64 = (1 as u64) << ((ws.loader.get_arch().get_pointer_size() * 8) - 1);
+    if v & ordinal_mask > 0x0 {
         // MSB is set, this is an ordinal
         Ok(ImageThunkData::Ordinal((v & 0xFFFF) as u32))
     } else {
