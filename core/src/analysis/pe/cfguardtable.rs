@@ -77,6 +77,22 @@ impl Analyzer for CFGuardTableAnalyzer {
         // offsets defined here:
         // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
 
+        // according to IDA, the first DWORD is `Size` not `Characteristics` (unused).
+        let size = ws.read_u32(load_config_directory)?;
+
+        // max offset into the config directory that we'll read.
+        let max_config_directory_offset = match is_64 {
+            true => 0x94,   // CFG flags
+            false => 0x58,  // CFG flags
+        };
+
+        // in `d3d11sdklayers.dll` for example, the config size is 0x70,
+        // which is much too small to read the CFG table options.
+        if max_config_directory_offset > size {
+            debug!("no CF Guard table: load config directory too small");
+            return Ok(())
+        }
+
         let cfg_flags = match is_64 {
             true => ws.read_u32(load_config_directory + 0x90)?,
             false => ws.read_u32(load_config_directory + 0x58)?,
