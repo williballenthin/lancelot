@@ -78,21 +78,23 @@ impl Analyzer for CFGuardTableAnalyzer {
         // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
 
         let cfg_flags = match is_64 {
-            true => ws.read_u32(load_config_directory + 144)?,
-            false => ws.read_u32(load_config_directory + 88)?,
+            true => ws.read_u32(load_config_directory + 0x90)?,
+            false => ws.read_u32(load_config_directory + 0x58)?,
         };
 
         let stride = (cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK) >> IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT;
 
         let cfg_table_va = match is_64 {
-            true => ws.read_va(load_config_directory + 128)?,
-            false => ws.read_va(load_config_directory + 80)?,
+            true => ws.read_va(load_config_directory + 0x80)?,
+            false => ws.read_va(load_config_directory + 0x50)?,
         };
+        debug!("CF Guard table: {}", cfg_table_va);
 
         let cfg_table_count = match is_64 {
-            true => ws.read_u32(load_config_directory + 136)?,
-            false => ws.read_u32(load_config_directory + 84)?,
+            true => ws.read_u32(load_config_directory + 0x88)?,
+            false => ws.read_u32(load_config_directory + 0x54)?,
         };
+        debug!("CF Guard table count: {}", cfg_table_count);
 
         if cfg_table_va == VA(0x0) {
             debug!("CF guard table empty");
