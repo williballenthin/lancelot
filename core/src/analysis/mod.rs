@@ -933,6 +933,13 @@ impl Workspace {
         }));
 
         if does_fallthrough {
+            // validate that the fallthrough address can be an instruction.
+            // otherwise, this must not be a valid instruction.
+            if !self.probe(rva + insn.length, 1, Permissions::X) {
+                warn!("invalid instruction: fallthrough to non-executable memory: {}", rva);
+                return Ok(vec![]);
+            }
+
             ret.push(AnalysisCommand::MakeInsn(rva + insn.length));
         }
 
