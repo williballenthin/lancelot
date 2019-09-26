@@ -27,10 +27,6 @@ fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle_layout(ws: &Workspace) -> Result<(), Error> {
-    Ok(())
-}
-
 fn main() {
     better_panic::install();
 
@@ -41,9 +37,6 @@ fn main() {
         (@arg quiet: -q --quiet "disable informational messages")
         (@subcommand functions =>
             (about: "find functions")
-            (@arg input: +required "path to file to analyze"))
-        (@subcommand layout =>
-            (about: "show file sections")
             (@arg input: +required "path to file to analyze"))
         (@subcommand smoketest =>
             (about: "analyze file and exit on analysis failure")
@@ -90,21 +83,6 @@ fn main() {
             .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
 
         let ws = ws.load()
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
-
-        if let Err(e) = handle_functions(&ws) {
-            error!("error: {}", e)
-        }
-    } else if let Some(matches) = matches.subcommand_matches("layout") {
-        debug!("mode: layout");
-
-        let filename = matches.value_of("input").unwrap();
-        debug!("input: {}", filename);
-
-        let ws = Workspace::from_file(filename)
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
-            .disable_analysis()
-            .load()
             .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
 
         if let Err(e) = handle_functions(&ws) {
