@@ -147,18 +147,33 @@ impl Analyzer for CFGuardTableAnalyzer {
         };
 
         // add function pointed to by GuardCFDispatchFunctionPointer
+        //
+        // set to 0x0 when not used.
         let guard_dispatch_icall_fptr = match is_64 {
-            true => ws.rva(ws.read_va(load_config_directory + 120)?).unwrap(),
-            false => ws.rva(ws.read_va(load_config_directory + 76)?).unwrap(),
+            true => ws.read_va(load_config_directory + 0x78)?,
+            false => ws.read_va(load_config_directory + 0x4c)?,
         };
-        if ws.probe(guard_dispatch_icall_fptr, 8, Permissions::R) {
-            let guard_dispatch_icall = ws.rva(ws.read_va(guard_dispatch_icall_fptr)?).unwrap();
-            if ws.probe(guard_dispatch_icall, 1, Permissions::X) {
-                debug!("CF guard dispatch function: {:#x}", guard_dispatch_icall);
-                ws.make_function(guard_dispatch_icall)?;
-                ws.analyze()?;
+        // first: is the field initialized?
+        if guard_dispatch_icall_fptr != VA(0x0) {
+
+            // and is the pointer valid?
+            if let Some(guard_dispatch_icall_fptr) = ws.rva(guard_dispatch_icall_fptr) {
+
+                // good.
+                // now, does the pointer point to something readable in the image?
+                if ws.probe(guard_dispatch_icall_fptr, 8, Permissions::R) {
+
+                    // if so, dereference it, and this is the GuardCFDispatchFunction
+                    // TODO: dangerous unwrap.
+                    let guard_dispatch_icall = ws.rva(ws.read_va(guard_dispatch_icall_fptr)?).unwrap();
+                    if ws.probe(guard_dispatch_icall, 1, Permissions::X) {
+                        debug!("CF guard dispatch function: {:#x}", guard_dispatch_icall);
+                        ws.make_function(guard_dispatch_icall)?;
+                        ws.analyze()?;
+                    }
+                };
             }
-        };
+        }
 
         Ok(())
     }
