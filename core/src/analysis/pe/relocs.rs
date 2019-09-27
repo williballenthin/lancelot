@@ -262,7 +262,28 @@ impl Analyzer for RelocAnalyzer {
         debug!("found {} total relocs", relocs.len());
 
         for reloc in relocs.iter() {
-            let target = ws.rva(ws.read_va(reloc.offset)?).ok_or(RelocAnalyzerError::InvalidTargetAddress)?;
+            // a relocation fixes up an existing pointer (hardcoded virtual address).
+            // so we'll validate that the pointer actually points to something in the image.
+            //
+            // we might want to simply assume an invalid pointer means the reloc table is invalid;
+            // however,
+            // legit `Windows.Media.Protection.PlayReady.dll` has some invalid relocs (not sure way).
+            let ptr = match ws.read_va(reloc.offset) {
+                Ok(ptr) => ptr,
+                Err(_) => {
+                    warn!("reloc fixes up an invalid pointer: {}", reloc.offset);
+                    continue;
+                }
+            };
+
+            let target = match ws.rva(ptr) {
+                Some(target) => target,
+                None => {
+                    warn!("reloc fixes up a pointer to unmapped data: {} {}", reloc.offset, ptr);
+                    continue
+                }
+            };
+
             trace!("found reloc {} -> {} {}",
                    reloc.offset,
                    target,
