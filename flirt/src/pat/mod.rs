@@ -76,7 +76,7 @@ fn hex_byte(input: &str) -> IResult<&str, u8> {
 fn hex_word(input: &str) -> IResult<&str, u16> {
     let (input, v1) = hex(input)?;
     let (input, v2) = hex(input)?;
-    let v: u16 = ((v1 as u16) << 2) | (v2 as u16);
+    let v: u16 = ((v1 as u16) << 8) | (v2 as u16);
     Ok((input, v))
 }
 
