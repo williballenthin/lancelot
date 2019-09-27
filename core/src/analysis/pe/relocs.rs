@@ -1,5 +1,5 @@
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use goblin::{Object};
 use failure::{Error, Fail};
 use std::ops::Range;
@@ -67,6 +67,7 @@ fn is_zero(ws: &Workspace, rva: RVA) -> bool {
     return false;
 }
 
+#[derive(Debug)]
 pub enum RelocationType {
     ImageRelBasedAbsolute,
     ImageRelBasedHigh,
@@ -248,10 +249,14 @@ impl Analyzer for RelocAnalyzer {
 
         let relocs: Vec<Reloc> = get_relocs(ws)?
             .into_iter()
-            .filter(|r| match r.typ {
+            .filter(|r| match &r.typ {
                 RelocationType::ImageRelBasedHighLow => true,
                 RelocationType::ImageRelBasedDir64 => true,
-                _ => false,  // all other unsupported
+                reloc_type @ _ => {
+                    // all other reloc types are currently unsupported (uncommon)
+                    warn!("ignoring relocation with unsupported type: {:?}", reloc_type);
+                    false
+                },
             })
             .collect();
         debug!("found {} total relocs", relocs.len());
