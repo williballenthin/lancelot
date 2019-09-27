@@ -133,6 +133,8 @@ impl Analyzer for CFGuardTableAnalyzer {
         }
 
         // add function pointed to by GuardCFCheckFunctionPointer
+        // TODO: ensure the pointer is non-zero.
+        // TODO: refactor this logic out.
         let guard_check_icall_fptr = match is_64 {
             true => ws.rva(ws.read_va(load_config_directory + 0x70)?).unwrap(),
             false => ws.rva(ws.read_va(load_config_directory + 0x48)?).unwrap(),
@@ -148,7 +150,7 @@ impl Analyzer for CFGuardTableAnalyzer {
 
         // add function pointed to by GuardCFDispatchFunctionPointer
         //
-        // set to 0x0 when not used.
+        // set to 0x0 when not used, as is often the case on 32-bit Windows DLLs.
         let guard_dispatch_icall_fptr = match is_64 {
             true => ws.read_va(load_config_directory + 0x78)?,
             false => ws.read_va(load_config_directory + 0x4c)?,
