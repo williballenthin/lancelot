@@ -134,8 +134,8 @@ impl Analyzer for CFGuardTableAnalyzer {
 
         // add function pointed to by GuardCFCheckFunctionPointer
         let guard_check_icall_fptr = match is_64 {
-            true => ws.rva(ws.read_va(load_config_directory + 112)?).unwrap(),
-            false => ws.rva(ws.read_va(load_config_directory + 72)?).unwrap(),
+            true => ws.rva(ws.read_va(load_config_directory + 0x70)?).unwrap(),
+            false => ws.rva(ws.read_va(load_config_directory + 0x48)?).unwrap(),
         };
         if ws.probe(guard_check_icall_fptr, 8, Permissions::R) {
             let guard_check_icall = ws.rva(ws.read_va(guard_check_icall_fptr)?).unwrap();
