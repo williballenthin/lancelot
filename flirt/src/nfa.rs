@@ -48,7 +48,8 @@ use nom::branch::alt;
 use nom::combinator::map;
 use nom::combinator::map_res;
 use bitvec::prelude::*;
-use log::Level::Warn;
+use log::{trace};
+use crate::SigElement::Wildcard;
 
 
 // u16 because we need 257 possible values, all unsigned.
@@ -211,6 +212,10 @@ impl StateTable {
         self.states.push(State::new(self.capacity));
         Transition(index)
     }
+
+    fn initial_state(&self) -> Transition {
+        Transition(0)
+    }
 }
 
 pub struct NFA {
@@ -220,8 +225,63 @@ pub struct NFA {
 
 impl NFA {
     pub fn r#match(&self, buf: &[u8]) -> Vec<&Pattern> {
-        // TODO
-        vec![]
+        #[derive(Debug)]
+        struct Step<'a> {
+            /// the index to the state that we need to match next.
+            state_pointer: Transition,
+            /// the remaining bytes that need to be matched.
+            buf: &'a[u8],
+        };
+
+        let mut q: VecDeque<Step> = VecDeque::new();
+        q.push_back(Step {
+            state_pointer: self.table.initial_state(),
+            buf: buf,
+        });
+
+        let mut matches = vec![];
+        while let Some(step) = q.pop_front() {
+            trace!("match step: {:?}", step);
+
+            let index: usize = step.state_pointer.into();
+            let state: &State = &self.table.states[index];
+
+            if state.is_terminal() {
+                trace!("match: found terminal state: {}", step.state_pointer);
+
+                let match_indices = state.alive
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, is_alive)| *is_alive)
+                    .map(|(i, _)| i);
+
+                for i in match_indices {
+                    matches.push(&self.patterns[i])
+                }
+
+                continue
+            }
+
+            let literal_transition = state.transitions[step.buf[0] as usize];
+            trace!("match: found transition to {} for input {:02x}", literal_transition, step.buf[0]);
+            if literal_transition.is_valid() {
+                q.push_back(Step {
+                    state_pointer: literal_transition,
+                    buf: &step.buf[1..],
+                })
+            }
+
+            let index: usize = WILDCARD.into();
+            let wildcard_transition = state.transitions[index];
+            if wildcard_transition.is_valid() {
+                q.push_back(Step {
+                    state_pointer: wildcard_transition,
+                    buf: &step.buf[1..],
+                })
+            }
+        }
+
+        matches
     }
 
     pub fn new() -> NFABuilder {
@@ -260,7 +320,7 @@ impl std::fmt::Debug for NFA {
         // TODO: compute these dynamically
         let symbols = [Symbol(0xAA), Symbol(0xBB), Symbol(0xCC), Symbol(0xDD), WILDCARD];
         writeln!(f, "transition table:").unwrap();
-        write!(f, "     ");
+        write!(f, "     ").unwrap();
         for symbol in symbols.iter() {
             write!(f, " {} ", symbol).unwrap();
         }
@@ -344,7 +404,7 @@ impl NFABuilder {
             // I'm not quite sure how to cast this correctly.
             // maybe we need the Index type???
             let index: usize = step.state_pointer.into();
-            let mut state = &mut nfa.table.states[index];
+            let state = &mut nfa.table.states[index];
 
             // mark the current pattern as "alive" at the given state.
             state.alive.set(step.pattern_index, true);
@@ -412,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_empty_build() {
-        let nfa = NFA::new().build();
+        NFA::new().build();
     }
 
     // patterns:
@@ -432,6 +492,7 @@ mod tests {
         b.add_pattern(Pattern::from("AABBCCDD"));
 
         let nfa = b.build();
+        println!("{:?}", nfa);
     }
 
     // patterns:
@@ -454,6 +515,39 @@ mod tests {
         b.add_pattern(Pattern::from("AABBCCCC"));
 
         let nfa = b.build();
-        assert!(false);
+        println!("{:?}", nfa);
     }
+
+    // we don't match when we don't have any patterns.
+    #[test]
+    fn test_match_empty() {
+        let nfa = NFA::new().build();
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 0);
+    }
+
+    // we match things we want to, and don't match other data.
+    #[test]
+    fn test_match_one() {
+        let mut b = NFA::new();
+        b.add_pattern(Pattern::from("AABBCCDD"));
+        let nfa = b.build();
+
+        // true positive
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 1);
+        // true negative
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 0);
+    }
+
+    // we match from the beginning of the buffer onwards,
+    // ignoring trailing bytes beyond the length of the pattern.
+    #[test]
+    fn test_match_long() {
+        let mut b = NFA::new();
+        b.add_pattern(Pattern::from("AABBCCDD"));
+        let nfa = b.build();
+
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD\x00").len(), 1);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD\x11").len(), 1);
+    }
+
 }
