@@ -27,6 +27,7 @@ use log::{trace};
 use regex::bytes::Regex;
 
 pub mod pat;
+pub mod nfa;
 
 #[derive(Debug)]
 enum SigElement {
