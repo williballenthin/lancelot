@@ -39,6 +39,7 @@
 ///   5 |          terminal, alive: p1
 /// ```
 use std::collections::VecDeque;
+use std::collections::HashSet;
 
 use nom::IResult;
 use nom::multi::many1;
@@ -239,7 +240,7 @@ impl NFA {
             buf: buf,
         });
 
-        let mut matches = vec![];
+        let mut matches: HashSet<usize> = HashSet::new();
         while let Some(step) = q.pop_front() {
             trace!("match step: {:?}", step);
 
@@ -256,15 +257,16 @@ impl NFA {
                     .map(|(i, _)| i);
 
                 for i in match_indices {
-                    matches.push(&self.patterns[i])
+                    trace!("match index: {}", i);
+                    matches.insert(i);
                 }
 
                 continue
             }
 
             let literal_transition = state.transitions[step.buf[0] as usize];
-            trace!("match: found transition to {} for input {:02x}", literal_transition, step.buf[0]);
             if literal_transition.is_valid() {
+                trace!("match: found literal transition to {} for input {:02x}", literal_transition, step.buf[0]);
                 q.push_back(Step {
                     state_pointer: literal_transition,
                     buf: &step.buf[1..],
@@ -274,6 +276,7 @@ impl NFA {
             let index: usize = WILDCARD.into();
             let wildcard_transition = state.transitions[index];
             if wildcard_transition.is_valid() {
+                trace!("match: found wildcard transition to {} for input {:02x}", wildcard_transition, step.buf[0]);
                 q.push_back(Step {
                     state_pointer: wildcard_transition,
                     buf: &step.buf[1..],
@@ -281,13 +284,24 @@ impl NFA {
             }
         }
 
+        trace!("match: matching against state:\n{:?}", self);
+
         matches
+            .iter()
+            .map(|&i| &self.patterns[i])
+            .collect()
     }
 
     pub fn new() -> NFABuilder {
         NFABuilder {
             patterns: vec![],
         }
+    }
+
+    pub fn from_patterns(patterns: Vec<Pattern>) -> NFA {
+        NFABuilder {
+            patterns
+        }.build()
     }
 }
 
@@ -398,8 +412,8 @@ impl NFABuilder {
         }
 
         while let Some(step) = q.pop_front() {
-            println!("state:\n{:?}", nfa);
-            println!("step: {:?}", step);
+            trace!("state:\n{:?}", nfa);
+            trace!("step: {:?}", step);
 
             // I'm not quite sure how to cast this correctly.
             // maybe we need the Index type???
@@ -428,41 +442,49 @@ impl NFABuilder {
             let index: usize = symbol.into();
             let transition: Transition = state.transitions[index];
 
-            if step.symbols[0] == WILDCARD {
-                // wildcard
-
+            let next_state = if transition.is_valid() {
+                // there is already a pointer to a state
+                transition
             } else {
-                // byte value
-                let next_state = if transition.is_valid() {
-                    // there is already a pointer to a state
-                    transition
-                } else {
-                    // need to alloc a new state
-                    let next_state = nfa.table.add_state();
+                // need to alloc a new state
+                let next_state = nfa.table.add_state();
 
-                    let index: usize = step.state_pointer.into();
-                    let mut state = &mut nfa.table.states[index];
+                let index: usize = step.state_pointer.into();
+                let mut state = &mut nfa.table.states[index];
 
-                    let index: usize = step.symbols[0].into();
-                    state.transitions[index] = next_state;
+                let index: usize = step.symbols[0].into();
+                state.transitions[index] = next_state;
 
-                    next_state
-                };
+                next_state
+            };
+            q.push_back(Step {
+                state_pointer: next_state,
+                pattern_index: step.pattern_index,
+                symbols: &step.symbols[1..]
+            });
 
-                q.push_back(Step {
-                    state_pointer: next_state,
-                    pattern_index: step.pattern_index,
-                    symbols: &step.symbols[1..]
-                })
+            // if its a wildcard, then must follow any existing literal transitions, too
+            if symbol == WILDCARD {
+                // thanks, borrow checker!
+                let index: usize = step.state_pointer.into();
+                let mut state = &mut nfa.table.states[index];
+
+                for (i, &literal_transition) in state.transitions.iter().enumerate() {
+                    if literal_transition.is_valid() {
+                        q.push_back(Step {
+                            state_pointer: literal_transition,
+                            pattern_index: step.pattern_index,
+                            symbols: &step.symbols[1..],
+                        })
+                    }
+                }
             }
         }
 
-        println!("final state:\n{:?}", nfa);
+        trace!("final state:\n{:?}", nfa);
 
         nfa
     }
-
-
 }
 
 
@@ -518,6 +540,28 @@ mod tests {
         println!("{:?}", nfa);
     }
 
+    // patterns:
+    //   - pat0: aabbccdd
+    //   - pat1: aabbcc..
+    //
+    // transition table:
+    //       aa  bb  cc  dd  ..
+    //    0:  1                   alive: pat0 pat1
+    //    1:      2               alive: pat0 pat1
+    //    2:          3           alive: pat0 pat1
+    //    3:              4   5   alive: pat0 pat1
+    //    4:                      matches: pat0 pat1
+    //    5:                      matches: pat1
+    #[test]
+    fn test_add_one_wildcard() {
+        let mut b = NFA::new();
+        b.add_pattern(Pattern::from("AABBCCDD"));
+        b.add_pattern(Pattern::from("AABBCC.."));
+
+        let nfa = b.build();
+        println!("{:?}", nfa);
+    }
+
     // we don't match when we don't have any patterns.
     #[test]
     fn test_match_empty() {
@@ -550,4 +594,66 @@ mod tests {
         assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD\x11").len(), 1);
     }
 
+    // we can match when there are single character wildcards present,
+    // and order of the pattern declarations should not matter.
+    #[test]
+    fn test_match_one_tail_wildcard() {
+        let mut b = NFA::new();
+        b.add_pattern(Pattern::from("AABBCC.."));
+        b.add_pattern(Pattern::from("AABBCCDD"));
+        let nfa = b.build();
+
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+
+        // order of patterns should not matter
+        let mut b = NFA::new();
+        b.add_pattern(Pattern::from("AABBCCDD"));
+        b.add_pattern(Pattern::from("AABBCC.."));
+        let nfa = b.build();
+
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+    }
+
+    // wildcards can be found in the middle of patterns, too.
+    #[test]
+    fn test_match_one_middle_wildcard() {
+        let nfa = NFA::from_patterns(vec![
+            Pattern::from("AABB..DD"),
+            Pattern::from("AABBCCDD"),
+        ]);
+
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+
+        // order of patterns should not matter
+        let nfa = NFA::from_patterns(vec![
+            Pattern::from("AABBCCDD"),
+            Pattern::from("AABB..DD"),
+        ]);
+
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+    }
+
+    // we can have an arbitrary mix of wildcards and literals.
+    #[test]
+    fn test_match_many() {
+        let nfa = NFA::from_patterns(vec![
+            Pattern::from("AABB..DD"),
+            Pattern::from("AABBCCDD"),
+            Pattern::from("........"),
+            Pattern::from("....CCDD"),
+        ]);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 4);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 1);
+        assert_eq!(nfa.r#match(b"\x00\x00\xCC\xDD").len(), 2);
+        assert_eq!(nfa.r#match(b"\x00\x00\x00\x00").len(), 1);
+    }
 }
