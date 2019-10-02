@@ -467,9 +467,9 @@ impl NFABuilder {
             if symbol == WILDCARD {
                 // thanks, borrow checker!
                 let index: usize = step.state_pointer.into();
-                let mut state = &mut nfa.table.states[index];
+                let state = &mut nfa.table.states[index];
 
-                for (i, &literal_transition) in state.transitions.iter().enumerate() {
+                for &literal_transition in state.transitions.iter() {
                     if literal_transition.is_valid() {
                         q.push_back(Step {
                             state_pointer: literal_transition,
