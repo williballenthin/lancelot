@@ -234,13 +234,16 @@ impl NFA {
             buf: &'a[u8],
         };
 
+        // the set of pattern indices that have been matched.
+        let mut matches: HashSet<usize> = HashSet::new();
+        // the queue of matching steps that remain to be done.
         let mut q: VecDeque<Step> = VecDeque::new();
-        q.push_back(Step {
+
+        q.push_front(Step {
             state_pointer: self.table.initial_state(),
             buf: buf,
         });
 
-        let mut matches: HashSet<usize> = HashSet::new();
         while let Some(step) = q.pop_front() {
             trace!("match step: {:?}", step);
 
@@ -264,23 +267,24 @@ impl NFA {
                 continue
             }
 
-            let literal_transition = state.transitions[step.buf[0] as usize];
-            if literal_transition.is_valid() {
-                trace!("match: found literal transition to {} for input {:02x}", literal_transition, step.buf[0]);
-                q.push_back(Step {
-                    state_pointer: literal_transition,
-                    buf: &step.buf[1..],
-                })
+            if step.buf.len() == 0 {
+                // input buffer is shorter than the pattern,
+                // so it can't match.
+                continue
             }
 
-            let index: usize = WILDCARD.into();
-            let wildcard_transition = state.transitions[index];
-            if wildcard_transition.is_valid() {
-                trace!("match: found wildcard transition to {} for input {:02x}", wildcard_transition, step.buf[0]);
-                q.push_back(Step {
-                    state_pointer: wildcard_transition,
-                    buf: &step.buf[1..],
-                })
+            // two paths to attempt to follow:
+            //  1. the literal symbol
+            //  2. a wildcard
+            for &index in [step.buf[0] as usize, WILDCARD.into()].iter() {
+                let transition = state.transitions[index];
+                if transition.is_valid() {
+                    trace!("match: found transition to {} for input {:02x}", transition, step.buf[0]);
+                    q.push_front(Step {
+                        state_pointer: transition,
+                        buf: &step.buf[1..],
+                    })
+                }
             }
         }
 
@@ -307,7 +311,6 @@ impl NFA {
 
 
 // output looks something like:
-//
 //
 //     patterns:
 //       - pat0: aabbccdd
@@ -419,6 +422,11 @@ impl NFABuilder {
             // maybe we need the Index type???
             let index: usize = step.state_pointer.into();
             let state = &mut nfa.table.states[index];
+
+            // this state is already explored by this pattern.
+            if state.alive.get(step.pattern_index).unwrap() {
+                continue
+            }
 
             // mark the current pattern as "alive" at the given state.
             state.alive.set(step.pattern_index, true);
@@ -655,5 +663,26 @@ mod tests {
         assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 1);
         assert_eq!(nfa.r#match(b"\x00\x00\xCC\xDD").len(), 2);
         assert_eq!(nfa.r#match(b"\x00\x00\x00\x00").len(), 1);
+    }
+
+    #[test]
+    fn test_match_pathological_case() {
+        let nfa = NFA::from_patterns(vec![
+            // 10 symbols - 65 states
+            // 15 symbols - 135 states
+            // 17 symbols - 170 states
+            // 19 symbols - 209 states
+            // 22 symbols - 278 states
+            // 25 symbols - 253 states
+            // 30 symbols - 498 states
+            // 32 symbols - 562 states
+            Pattern::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+            Pattern::from("................................................................"),
+        ]);
+        println!("{:?}", nfa);
+        //assert!(false);
+        // this is suuuuper slow. O(n^2).
+        assert_eq!(nfa.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
+        //assert_eq!(nfa.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
     }
 }
