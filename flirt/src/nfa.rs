@@ -51,8 +51,8 @@ use log::{trace};
 
 
 // u16 because we need 257 possible values, all unsigned.
-#[derive(Copy, Clone)]
-pub struct Symbol(u16);
+#[derive(Copy, Clone, Hash, Eq)]
+pub struct Symbol(pub u16);
 
 // impl note: value 256 is WILDCARD.
 pub const WILDCARD: Symbol = Symbol(0x100);
@@ -90,7 +90,8 @@ impl std::fmt::Debug for Symbol {
 }
 
 // a pattern is just a sequence of symbols.
-pub struct Pattern(Vec<Symbol>);
+#[derive(Hash, PartialEq, Eq, Clone)]
+pub struct Pattern(pub Vec<Symbol>);
 
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
