@@ -29,15 +29,13 @@
 ///
 /// transition table:
 ///
-/// ```ignore
-///       A B C D
+///   __  A B C D
 ///   0 | 1        alive: p0, p1
 ///   1 |   2   4  alive: p0, p1
 ///   2 |     3    alive: p0
 ///   3 |          terminal, alive: p0
 ///   4 |     5    alive: p1
 ///   5 |          terminal, alive: p1
-/// ```
 use std::collections::VecDeque;
 use std::collections::HashSet;
 
@@ -50,7 +48,6 @@ use nom::combinator::map;
 use nom::combinator::map_res;
 use bitvec::prelude::*;
 use log::{trace};
-use crate::SigElement::Wildcard;
 
 
 // u16 because we need 257 possible values, all unsigned.
