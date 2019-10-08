@@ -141,6 +141,60 @@ impl FlirtSignature {
 
         return None;
     }
+
+    /// compute the IDA-specific CRC16 checksum for the given bytes.
+    ///
+    /// This is ported from flair tools flair/crc16.cpp
+    fn crc16(buf: &[u8]) -> u16 {
+        const POLY: u32 = 0x8408;
+
+        if buf.len() == 0 {
+            return 0;
+        }
+
+        let mut crc: u32 = 0xFFFF;
+        for &b in buf {
+            let mut b = b as u32;
+
+            for _ in 0..8 {
+                if ((crc ^ b) & 1) > 0 {
+                    crc = (crc >> 1) ^ POLY;
+                } else {
+                    crc >>= 1;
+                }
+                b >>= 1;
+            }
+        }
+
+        crc = !crc;  // bitwise invert
+
+        // swap u16 byte order
+        let h1: u16 = ((crc >> 0) & 0xFF) as u16;
+        let h2: u16 = ((crc >> 8) & 0xFF) as u16;
+
+        (h1 << 8) | (h2 << 0)
+    }
+
+    pub fn match_crc16(&self, buf: &[u8]) -> bool {
+        if self.size_of_bytes_crc16 > 0 {
+            let byte_sig_size= self.byte_sig.0.len();
+            let start = byte_sig_size;
+            let end = byte_sig_size + (self.size_of_bytes_crc16 as usize);
+            if end > buf.len() {
+                trace!("flirt signature: buffer not large enough");
+                return false
+            }
+
+            let crc16 = FlirtSignature::crc16(&buf[start..end]);
+
+            if crc16 != self.crc16 {
+                trace!("flirt signature: crc16 fails");
+                return false
+            }
+        }
+
+        return true
+    }
 }
 
 pub struct FlirtSignatureMatcher<'a> {
@@ -188,39 +242,6 @@ impl<'a> FlirtSignatureMatcher<'a> {
         let pattern = format!("(?-u)(^{})", create_pattern(sig));
 
         Regex::new(&pattern).expect("failed to compile regex")
-    }
-
-    /// compute the IDA-specific CRC16 checksum for the given bytes.
-    ///
-    /// This is ported from flair tools flair/crc16.cpp
-    fn crc16(buf: &[u8]) -> u16 {
-        const POLY: u32 = 0x8408;
-
-        if buf.len() == 0 {
-            return 0;
-        }
-
-        let mut crc: u32 = 0xFFFF;
-        for &b in buf {
-            let mut b = b as u32;
-
-            for _ in 0..8 {
-                if ((crc ^ b) & 1) > 0 {
-                    crc = (crc >> 1) ^ POLY;
-                } else {
-                    crc >>= 1;
-                }
-                b >>= 1;
-            }
-        }
-
-        crc = !crc;  // bitwise invert
-
-        // swap u16 byte order
-        let h1: u16 = ((crc >> 0) & 0xFF) as u16;
-        let h2: u16 = ((crc >> 8) & 0xFF) as u16;
-
-        (h1 << 8) | (h2 << 0)
     }
 
     /// ```
