@@ -144,7 +144,6 @@ impl FlirtSignature {
 }
 
 pub struct FlirtSignatureMatcher<'a> {
-    num_bytes_needed: u16,
     re: Regex,
     sig: &'a FlirtSignature,
 }
@@ -176,11 +175,6 @@ fn create_pattern(sig: &FlirtSignature) -> String {
 impl<'a> FlirtSignatureMatcher<'a> {
     pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher {
         FlirtSignatureMatcher {
-            num_bytes_needed: if sig.size_of_function < 32 {
-                sig.size_of_function
-            } else {
-                (sig.byte_sig.0.len() as u16) + (sig.size_of_bytes_crc16 as u16)
-            },
             re: FlirtSignatureMatcher::create_match_re(sig),
             sig: sig,
         }
