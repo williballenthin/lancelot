@@ -226,6 +226,37 @@ pub struct NFA {
 
 impl NFA {
     pub fn r#match(&self, buf: &[u8]) -> Vec<&Pattern> {
+        // to match against the patterns, we make transitions
+        // from state to state using bytes from the input buffer.
+        //
+        // for example, consider the following transition table:
+        //
+        //       A B C D *
+        //   0 | 1
+        //   1 |   2   4
+        //   2 |     3
+        //   3 |
+        //   4 |     5
+        //   5 |
+        //
+        // the start state is state 0.
+        // if we see an input byte of A, then we go to state 1.
+        // any other byte does not match any pattern,
+        // so we can exit with no match
+        //
+        // at a given state, there are up to two subsequent steps
+        // that we must follow (and we must follow both):
+        //
+        //   - the transition for the literal byte, and
+        //   - the transition for a wildcard
+        //
+        // the only computation state for any step is:
+        //   1. the current state, and
+        //   2. the remaining bytes to match against
+        //
+        // we maintain a queue of these `Steps`,
+        // pushing Steps when there is a transition to follow,
+        // and popping from the front.
         #[derive(Debug)]
         struct Step<'a> {
             /// the index to the state that we need to match next.
@@ -251,6 +282,8 @@ impl NFA {
             let state: &State = &self.table.states[index];
 
             if state.is_terminal() {
+                // if its a terminal state, then we've found matches.
+                // any patterns that were still alive at this state are matches.
                 trace!("match: found terminal state: {}", step.state_pointer);
 
                 let match_indices = state.alive
@@ -268,7 +301,8 @@ impl NFA {
             }
 
             if step.buf.len() == 0 {
-                // input buffer is shorter than the pattern,
+                // there are no remaining input bytes, yet we're at a non-terminal state.
+                // therefore, the input buffer is shorter than the pattern,
                 // so it can't match.
                 continue
             }
@@ -276,10 +310,11 @@ impl NFA {
             // two paths to attempt to follow:
             //  1. the literal symbol
             //  2. a wildcard
-            for &index in [step.buf[0] as usize, WILDCARD.into()].iter() {
+            let input_byte = step.buf[0];
+            for &index in [input_byte as usize, WILDCARD.into()].iter() {
                 let transition = state.transitions[index];
                 if transition.is_valid() {
-                    trace!("match: found transition to {} for input {:02x}", transition, step.buf[0]);
+                    trace!("match: found transition to {} for input {:02x}", transition, input_byte);
                     q.push_front(Step {
                         state_pointer: transition,
                         buf: &step.buf[1..],
@@ -318,7 +353,7 @@ impl NFA {
 //
 //     transition table:
 //
-//       aa  bb  cc  dd  ..
+//           aa  bb  cc  dd  ..
 //       0:  1                   alive: pat0 pat1
 //       1:      2               alive: pat0 pat1
 //       2:          3           alive: pat0 pat1
@@ -680,9 +715,6 @@ mod tests {
             Pattern::from("................................................................"),
         ]);
         println!("{:?}", nfa);
-        //assert!(false);
-        // this is suuuuper slow. O(n^2).
         assert_eq!(nfa.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
-        //assert_eq!(nfa.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
     }
 }
