@@ -25,6 +25,7 @@
 extern crate nom;
 use log::{trace};
 use regex::bytes::Regex;
+use std::collections::HashMap;
 
 pub mod pat;
 pub mod nfa;
@@ -285,24 +286,91 @@ impl<'a> FlirtSignatureMatcher<'a> {
             return false
         }
 
-        if self.sig.size_of_bytes_crc16 > 0 {
-            let byte_sig_size= self.sig.byte_sig.0.len();
-            let start = byte_sig_size;
-            let end = byte_sig_size + (self.sig.size_of_bytes_crc16 as usize);
-            if end > buf.len() {
-                trace!("flirt signature: buffer not large enough");
-                return false
-            }
-
-            let crc16 = FlirtSignatureMatcher::crc16(&buf[start..end]);
-
-            if crc16 != self.sig.crc16 {
-                trace!("flirt signature: crc16 fails");
-                return false
-            }
+        if !self.sig.match_crc16(buf) {
+            trace!("flirt signature: crc16 fails");
+            return false
         }
 
         trace!("flirt signature: match");
         true
+    }
+}
+
+pub struct FlirtSignatureSet {
+    sigs: HashMap<nfa::Pattern, FlirtSignature>,
+    matcher: nfa::NFA,
+}
+
+// translate from the FLIRT signature format to NFA matcher format (already essentially the same).
+impl std::convert::Into<nfa::Pattern> for &FlirtSignature {
+    fn into(self) -> nfa::Pattern {
+        nfa::Pattern(
+            self.byte_sig.0.iter()
+                .map(|s| match s {
+                    SigElement::Wildcard => nfa::WILDCARD,
+                    SigElement::Byte(v) => nfa::Symbol(*v as u16),
+                })
+                .collect()
+        )
+    }
+}
+
+impl FlirtSignatureSet {
+    pub fn with_signatures(sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
+        let sigs: HashMap<nfa::Pattern, FlirtSignature> = sigs
+            .into_iter()
+            .map(|sig| ((&sig).into(), sig))
+            .collect();
+
+        let patterns = sigs.keys().cloned().collect();
+
+        FlirtSignatureSet {
+            sigs,
+            matcher: nfa::NFA::from_patterns(patterns)
+        }
+    }
+
+    /// ```
+    /// use flirt;
+    /// use flirt::pat;
+    ///
+    /// let pat_buf = "\
+    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 1F E4CF 0063 :0000 __EH_prolog3_align ^003F ___security_cookie ........33C5508B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 22 E4CE 006F :0000 __EH_prolog3_catch_GS_align ^0042 ___security_cookie ........33C5508941FC8B4DF08965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 20 6562 0067 :0000 __EH_prolog3_catch_align ^0040 ___security_cookie ........33C5508965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+    /// ---";
+    ///
+    /// let sigs = flirt::FlirtSignatureSet::with_signatures(pat::parse(pat_buf).unwrap());
+    /// let matches = sigs.r#match(&[
+    ///     // apds.dll / 4FD932C41DF96D019DC265E26E94B81B
+    ///     // __EH_prolog3_catch_align
+    ///
+    ///     // first 0x20
+    ///     0x51, 0x8B, 0x4C, 0x24, 0x0C, 0x89, 0x5C, 0x24,
+    ///     0x0C, 0x8D, 0x5C, 0x24, 0x0C, 0x50, 0x8D, 0x44,
+    ///     0x24, 0x08, 0xF7, 0xD9, 0x23, 0xC1, 0x8D, 0x60,
+    ///     0xF8, 0x8B, 0x43, 0xF0, 0x89, 0x04, 0x24, 0x8B,
+    ///     // crc16 start
+    ///     0x43, 0xF8, 0x50, 0x8B, 0x43, 0xFC, 0x8B, 0x4B,
+    ///     0xF4, 0x89, 0x6C, 0x24, 0x0C, 0x8D, 0x6C, 0x24,
+    ///     0x0C, 0xC7, 0x44, 0x24, 0x08, 0xFF, 0xFF, 0xFF,
+    ///     0xFF, 0x51, 0x53, 0x2B, 0xE0, 0x56, 0x57, 0xA1,
+    ///     // crc end
+    ///     0xD4, 0xAD, 0x19, 0x01, 0x33, 0xC5, 0x50, 0x89,
+    ///     0x65, 0xF0, 0x8B, 0x43, 0x04, 0x89, 0x45, 0x04,
+    ///     0xFF, 0x75, 0xF4, 0x64, 0xA1, 0x00, 0x00, 0x00,
+    ///     0x00, 0x89, 0x45, 0xF4, 0x8D, 0x45, 0xF4, 0x64,
+    ///     0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3]);
+    ///
+    /// assert_eq!(matches.len(), 1);
+    /// assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
+    /// ```
+    pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
+        self.matcher.r#match(buf)
+            .iter()
+            .map(|&pattern| self.sigs.get(pattern).unwrap())
+            .filter(|&sig| sig.match_crc16(buf))
+            .collect()
     }
 }
