@@ -276,8 +276,7 @@ impl NFA {
         while let Some(step) = q.pop_front() {
             trace!("match step: {:?}", step);
 
-            let index: usize = step.state_pointer.into();
-            let state: &State = &self.table.states[index];
+            let state: &State = &self.table.states[Into::<usize>::into(step.state_pointer)];
 
             if state.is_terminal() {
                 // if its a terminal state, then we've found matches.
@@ -380,8 +379,7 @@ impl std::fmt::Debug for NFA {
             write!(f, "  {:>2}:", i).unwrap();
 
             for &symbol in symbols.iter() {
-                let index: usize = symbol.into();
-                let transition = state.transitions[index];
+                let transition = state.transitions[Into::<usize>::into(symbol)];
                 if transition.is_valid() {
                     write!(f, " {:>2} ", transition.0).unwrap();
                 } else {
@@ -451,10 +449,8 @@ impl NFABuilder {
             trace!("state:\n{:?}", nfa);
             trace!("step: {:?}", step);
 
-            // I'm not quite sure how to cast this correctly.
-            // maybe we need the Index type???
-            let index: usize = step.state_pointer.into();
-            let state = &mut nfa.table.states[index];
+            // syntax ref: https://stackoverflow.com/a/41208016/87207
+            let state = &mut nfa.table.states[Into::<usize>::into(step.state_pointer)];
 
             // this state is already explored by this pattern.
             if state.alive.get(step.pattern_index).unwrap() {
@@ -480,8 +476,7 @@ impl NFABuilder {
             //
             // if the value is unset, then we need to allocate a new row,
             // and point this cell towards it.
-            let index: usize = symbol.into();
-            let transition: Transition = state.transitions[index];
+            let transition: Transition = state.transitions[Into::<usize>::into(symbol)];
 
             let next_state = if transition.is_valid() {
                 // there is already a pointer to a state
@@ -490,11 +485,9 @@ impl NFABuilder {
                 // need to alloc a new state
                 let next_state = nfa.table.add_state();
 
-                let index: usize = step.state_pointer.into();
-                let mut state = &mut nfa.table.states[index];
+                let mut state = &mut nfa.table.states[Into::<usize>::into(step.state_pointer)];
 
-                let index: usize = step.symbols[0].into();
-                state.transitions[index] = next_state;
+                state.transitions[Into::<usize>::into(step.symbols[0])] = next_state;
 
                 next_state
             };
@@ -506,9 +499,7 @@ impl NFABuilder {
 
             // if its a wildcard, then must follow any existing literal transitions, too
             if symbol == WILDCARD {
-                // thanks, borrow checker!
-                let index: usize = step.state_pointer.into();
-                let state = &mut nfa.table.states[index];
+                let state = &mut nfa.table.states[Into::<usize>::into(step.state_pointer)];
 
                 for &literal_transition in state.transitions.iter() {
                     if literal_transition.is_valid() {
