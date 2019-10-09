@@ -483,7 +483,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         }, Structure::Function(name.clone()));
     }
 
-    if let Some(r) = find_import_data_range(&ws)? {
+    if let Ok(Some(r)) = find_import_data_range(&ws) {
         locations.insert(r, Structure::ImportTable);
     }
 
