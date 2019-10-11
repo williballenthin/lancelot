@@ -36,6 +36,8 @@ better-panic = "0.1.1"
 md5 = "0.6.1"
 regex = "1.1.7"
 
+flirt = { path = "../flirt" }
+
 [features]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669

@@ -19,6 +19,9 @@ pub use cfguardtable::CFGuardTableAnalyzer;
 pub mod sigs;
 pub use sigs::ByteSigAnalyzer;
 
+pub mod flirt;
+pub use self::flirt::FlirtAnalyzer;
+
 
 // TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
 // TODO: analyzer for import thunks

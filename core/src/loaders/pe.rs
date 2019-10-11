@@ -217,6 +217,7 @@ impl Loader for PELoader {
                 Box::new(pe::CFGuardTableAnalyzer::new()),
                 Box::new(pe::RelocAnalyzer::new()),
                 Box::new(pe::ByteSigAnalyzer::new()),
+                Box::new(pe::FlirtAnalyzer::new()),
             ];
 
             if pe.is_64 {
