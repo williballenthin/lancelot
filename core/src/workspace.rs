@@ -227,6 +227,13 @@ impl Workspace {
             .map_err(|_| WorkspaceError::InvalidAddress.into())
     }
 
+    pub fn read_bytes_into<'a>(&self, rva: RVA, buf: &'a mut [u8]) -> Result<&'a [u8], Error> {
+        self.module.address_space
+            .slice_into(rva, buf)
+            .map_err(|_| WorkspaceError::InvalidAddress.into())
+            .and_then(|buf| Ok(buf))
+    }
+
     /// Is the given range mapped?
     ///
     /// Example:
