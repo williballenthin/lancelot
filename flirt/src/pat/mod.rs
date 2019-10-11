@@ -203,7 +203,7 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
 fn pat(input: &str) -> IResult<&str, Vec<FlirtSignature>> {
     // each signature is newline separated.
     // drop the newline after we've parsed it.
-    let pat_sig_line = map(pair(pat_signature, tag("\n")), |p| p.0);
+    let pat_sig_line = map(pair(pat_signature, alt((tag("\r\n"), tag("\n")))), |p| p.0);
     let (input, sigs) = many0(pat_sig_line)(input)?;
 
     // the file ends with `---`.
