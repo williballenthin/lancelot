@@ -31,7 +31,7 @@ pub mod pat;
 pub mod nfa;
 
 #[derive(Debug)]
-enum SigElement {
+pub enum SigElement {
     Byte(u8),
     Wildcard,
 }
@@ -46,7 +46,7 @@ impl std::fmt::Display for SigElement {
 }
 
 #[derive(Debug)]
-pub struct ByteSignature(Vec<SigElement>);
+pub struct ByteSignature(pub Vec<SigElement>);
 
 impl std::fmt::Display for ByteSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,12 +88,12 @@ impl std::fmt::Display for Symbol {
 }
 
 pub struct FlirtSignature {
-    byte_sig: ByteSignature,
+    pub byte_sig: ByteSignature,
 
     /// number of bytes passed to the CRC16 checksum
-    size_of_bytes_crc16: u8,  // max: 0xFF
+    pub size_of_bytes_crc16: u8,  // max: 0xFF
     crc16: u16,
-    size_of_function: u16,  // max: 0x8000
+    pub size_of_function: u16,  // max: 0x8000
 
     names: Vec<Symbol>,
 
@@ -106,23 +106,34 @@ impl std::fmt::Display for FlirtSignature {
         write!(f, "{:02x} ", self.size_of_bytes_crc16)?;
         write!(f, "{:04x} ", self.crc16)?;
         write!(f, "{:04x} ", self.size_of_function)?;
-        for (i, name) in self.names.iter().enumerate() {
+
+        if let Some(name) = self.get_name() {
             write!(f, "{}", name)?;
-            if i != self.names.len() - 1 {
-                write!(f, " ")?;
-            }
         }
-        if let Some(footer) = &self.footer {
-            write!(f, " ")?;
-            write!(f, "{}", footer)?;
-        }
+
         Ok(())
     }
 }
 
 impl std::fmt::Debug for FlirtSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{}", self)?;
+
+        // emit local names
+        for (i, name) in self.names.iter().enumerate() {
+            write!(f, "{}", name)?;
+            if i != self.names.len() - 1 {
+                write!(f, " ")?;
+            }
+        }
+
+        // emit trailing byte patterns
+        if let Some(footer) = &self.footer {
+            write!(f, " ")?;
+            write!(f, "{}", footer)?;
+        }
+
+        Ok(())
     }
 }
 
