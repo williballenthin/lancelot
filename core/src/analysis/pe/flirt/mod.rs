@@ -134,9 +134,7 @@ impl Analyzer for FlirtAnalyzer {
                     continue;
                 }
 
-                let match_ = if matches.len() == 1 {
-                    matches[0]
-                } else {
+                if matches.len() > 1 {
                     // more than one match.
                     //
                     // the only time this is acceptable is if we've loaded multiple signature sets
@@ -150,13 +148,13 @@ impl Analyzer for FlirtAnalyzer {
                         .iter()
                         .find(|m| m.get_name() != name1) {
 
-                        debug!("ambiguous FLIRT signature match: {}: {} and {}",
+                        debug!("ambiguous FLIRT signature match: {}: {:?} and {:?}",
                                fva, name1, m2.get_name());
                         continue;
                     }
-
-                    matches[0]
                 };
+
+                let match_ = matches[0];
 
                 // TODO: should not apply the same symbol name to more than one location?
                 // TODO: apply reference names
