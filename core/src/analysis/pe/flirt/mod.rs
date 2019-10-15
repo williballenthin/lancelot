@@ -1,5 +1,4 @@
 use std::path::{Path};
-use std::collections::HashSet;
 
 use log::{debug, info, trace};
 use failure::{Error};
@@ -98,7 +97,6 @@ impl FlirtAnalyzer {
                 debug!("FLIRT analyzer: skipping file: {:?}", path);
             }
         }
-
         debug!("loaded {} total FLIRT signatures", sigs.len());
 
         let sigs = FlirtAnalyzer::filter_flirt_signatures(sigs);
@@ -136,37 +134,38 @@ impl Analyzer for FlirtAnalyzer {
                     continue;
                 }
 
-                // one match, so we can take its name directly.
-                if matches.len() == 1 {
-                    // can unwrap name cause its guaranteed to have a name due to filter above.
-                    let name = matches[0].get_name().unwrap();
-                    debug!("FLIRT signature match: {} {}", fva, name);
-                    ws.make_symbol(fva, name).unwrap();  // danger
-                    continue;
-                }
-
-                // more than one match.
-                //
-                // the only time this is acceptable is if we've loaded multiple signature sets
-                // and these match the same functions.
-                // in this case, all the names should be the same.
-                // so, lets ensure their names don't conflict.
-                let names: HashSet<&str> = matches
-                    .iter()
-                    // can unwrap name cause its guaranteed to have a name due to filter above.
-                    .map(|m| m.get_name().unwrap())
-                    .collect();
-
-                if names.len() > 1 {
-                    debug!("ambiguous FLIRT signature match: {}", fva);
+                let match_ = if matches.len() == 1 {
+                    matches[0]
                 } else {
-                    // can unwrap name cause its guaranteed to have a name due to filter above.
-                    let name = matches[0].get_name().unwrap();
-                    debug!("FLIRT signature match: {} {}", fva, name);
-                    ws.make_symbol(fva, name).unwrap();  // danger
-                }
+                    // more than one match.
+                    //
+                    // the only time this is acceptable is if we've loaded multiple signature sets
+                    //  and these match the same functions.
+                    // in this case, all the names should be the same.
+                    // so, lets ensure their names don't conflict.
+                    //
+                    // implementation: the first name should be the same as all the other names.
+                    let name1 = matches[0].get_name();
+                    if let Some(m2) = matches[1..]
+                        .iter()
+                        .find(|m| m.get_name() != name1) {
 
+                        debug!("ambiguous FLIRT signature match: {}: {} and {}",
+                               fva, name1, m2.get_name());
+                        continue;
+                    }
+
+                    matches[0]
+                };
+
+                // TODO: should not apply the same symbol name to more than one location?
                 // TODO: apply reference names
+
+                // can unwrap name cause its guaranteed to have a name due to filter above.
+                let name = match_.get_name().unwrap();
+                debug!("FLIRT signature match: {} {}", fva, name);
+                ws.make_symbol(fva, name).unwrap();  // danger
+                continue;
             }
         }
 
