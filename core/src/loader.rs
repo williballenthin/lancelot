@@ -148,7 +148,7 @@ pub fn default_loaders() -> Vec<Box<dyn Loader>> {
 ///   None => panic!("no matching loaders"),
 /// };
 /// ```
-pub fn taste(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader>> {
+pub fn taste(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader>> + '_ {
     default_loaders()
         .into_iter()
         .filter(move |loader| loader.taste(buf))
