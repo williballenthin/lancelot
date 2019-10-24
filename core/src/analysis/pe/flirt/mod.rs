@@ -108,7 +108,11 @@ impl FlirtAnalyzer {
     pub fn new() -> FlirtAnalyzer {
         // TODO: add startup signatures to detect runtime/signature set
         // TODO: use .sig rather than .pat files
-        let sigs = FlirtAnalyzer::load_flirt_directory("C:/Users/user/Documents/code/Lancelot/flirt/sigs/pat/").unwrap();
+
+        let sigs = match FlirtAnalyzer::load_flirt_directory("C:/Users/user/Documents/code/Lancelot/flirt/sigs/pat/") {
+            Ok(sigs) => sigs,
+            Err(_) => flirt::FlirtSignatureSet::with_signatures(vec![]),
+        };
 
         FlirtAnalyzer{
             sigs
