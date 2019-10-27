@@ -8,6 +8,7 @@ use super::pagemap::{PageMap};
 use super::loaders::pe::PELoader;
 use super::loaders::sc::ShellcodeLoader;
 use super::analysis::{Analyzer};
+use super::config::Config;
 
 #[derive(Debug, Fail)]
 pub enum LoaderError {
@@ -103,14 +104,14 @@ pub trait Loader {
     }
 
     /// Returns True if this Loader knows how to load the given bytes.
-    fn taste(&self, buf: &[u8]) -> bool;
+    fn taste(&self, config: &Config, buf: &[u8]) -> bool;
 
     /// Load the given bytes into a Module and suggest the appropriate Analyzers.
     ///
     /// While the loader is parsing a file, it should determine what
     ///  the most appropriate analyzers are, e.g. a PE loader may inspect the headers
     ///  to determine if there is Control Flow Guard metadata that can be analyzed.
-    fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error>;
+    fn load(&self, config: &Config, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error>;
 }
 
 pub fn default_loaders() -> Vec<Box<dyn Loader>> {
@@ -148,10 +149,10 @@ pub fn default_loaders() -> Vec<Box<dyn Loader>> {
 ///   None => panic!("no matching loaders"),
 /// };
 /// ```
-pub fn taste(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader>> + '_ {
+pub fn taste<'a>(config: &'a Config, buf: &'a [u8]) -> impl Iterator<Item = Box<dyn Loader>> + 'a {
     default_loaders()
         .into_iter()
-        .filter(move |loader| loader.taste(buf))
+        .filter(move |loader| loader.taste(config, buf))
 }
 
 /// Load the given sample using the first matching loader from `default_loaders`.
@@ -170,11 +171,11 @@ pub fn taste(buf: &[u8]) -> impl Iterator<Item = Box<dyn Loader>> + '_ {
 ///   })
 ///   .map_err(|e| panic!(e));
 /// ```
-pub fn load(buf: &[u8]) -> Result<(Box<dyn Loader>, LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
-    match taste(buf).nth(0) {
+pub fn load(config: &Config, buf: &[u8]) -> Result<(Box<dyn Loader>, LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
+    match taste(config, buf).nth(0) {
         Some(loader) => {
             info!("auto-detected loader: {}", loader.get_name());
-            loader.load(buf).map(|(module, analyzers)| (loader, module, analyzers))
+            loader.load(config, buf).map(|(module, analyzers)| (loader, module, analyzers))
         },
         None => Err(LoaderError::NotSupported.into()),
     }

@@ -1,6 +1,6 @@
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use failure::{Error};
 
 use flirt;
@@ -10,6 +10,19 @@ use super::super::super::arch::{RVA};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
+#[derive(Clone)]
+pub struct FlirtConfig {
+    pub pat_dir: PathBuf,
+}
+
+impl Default for FlirtConfig {
+    fn default() -> FlirtConfig {
+        FlirtConfig {
+            // TODO: per OS, pick a better default
+            pat_dir: PathBuf::from("~/.lancelot/sig/flirt/pat/")
+        }
+    }
+}
 
 pub struct FlirtAnalyzer {
     sigs: flirt::FlirtSignatureSet,
@@ -71,13 +84,13 @@ impl FlirtAnalyzer {
     ///
     /// the directory structure should look like:
     ///   - flat directory of .pat files
-    fn load_flirt_directory(path: &str) -> Result<flirt::FlirtSignatureSet, Error> {
+    fn load_flirt_directory(path: &Path) -> Result<flirt::FlirtSignatureSet, Error> {
 
         // TODO: need lots of error handling here.
 
         let mut sigs = vec![];
 
-        for entry in std::fs::read_dir(Path::new(path))? {
+        for entry in std::fs::read_dir(path)? {
             let entry = entry?;
             let path = entry.path();
 
@@ -105,13 +118,19 @@ impl FlirtAnalyzer {
         Ok(flirt::FlirtSignatureSet::with_signatures(sigs))
     }
 
-    pub fn new() -> FlirtAnalyzer {
+    pub fn new(config: FlirtConfig) -> FlirtAnalyzer {
         // TODO: add startup signatures to detect runtime/signature set
         // TODO: use .sig rather than .pat files
 
-        let sigs = match FlirtAnalyzer::load_flirt_directory("C:/Users/user/Documents/code/Lancelot/flirt/sigs/pat/") {
-            Ok(sigs) => sigs,
-            Err(_) => flirt::FlirtSignatureSet::with_signatures(vec![]),
+        // TODO: flirt dir vs pat dir
+        let sigs = if config.pat_dir.exists() {
+            match FlirtAnalyzer::load_flirt_directory(&config.pat_dir) {
+                Ok(sigs) => sigs,
+                Err(_) => flirt::FlirtSignatureSet::with_signatures(vec![]),
+            }
+        } else {
+            warn!("FLIRT .pat directory does not exist: {:?}", config.pat_dir);
+            flirt::FlirtSignatureSet::with_signatures(vec![])
         };
 
         FlirtAnalyzer{

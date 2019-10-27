@@ -18,6 +18,7 @@ use super::workspace::Workspace;
 use super::xref::{Xref, XrefType};
 use super::util;
 
+pub mod config;
 pub mod orphans;
 pub use orphans::OrphanFunctionAnalyzer;
 

@@ -11,25 +11,26 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
+use std::ops::Range;
+use std::path::PathBuf;
+use std::collections::HashMap;
+
+use log::{error, warn, info, debug};
+use fern;
+use regex::bytes::Regex;
+use goblin::Object;
+use failure::{Error, Fail};
+use better_panic;
 extern crate log;
-extern crate lancelot;
+extern crate clap;
 extern crate chrono;
 #[macro_use] extern crate lazy_static;
-#[macro_use] extern crate clap;
 
-use std::collections::HashMap;
-use fern;
-use std::ops::Range;
-
-use better_panic;
-use failure::{Error, Fail};
-use goblin::Object;
-use log::{error, warn, info, debug};
-use regex::bytes::Regex;
-
+extern crate lancelot;
 use lancelot::arch::{RVA};
 use lancelot::workspace::Workspace;
 use lancelot::analysis::pe::imports;
+use lancelot::config::Config;
 
 
 #[derive(Debug, Fail)]
@@ -719,10 +720,12 @@ fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn run(path: &str) -> Result<(), Error> {
+pub fn run(config: Config, path: &str) -> Result<(), Error> {
     info!("filename: {:?}", path);
 
-    let ws = Workspace::from_file(path)?.load()?;
+    let ws = Workspace::from_file(path)?
+        .with_config(config)
+        .load()?;
     let map = compute_map(&ws)?;
     render_map(&map, &ws.buf)?;
 
@@ -732,12 +735,31 @@ pub fn run(path: &str) -> Result<(), Error> {
 fn main() {
     better_panic::install();
 
-    let matches = clap_app!(lancelot =>
-        (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
-        (about: "summarize an executable file's features")
-        (@arg verbose: -v --verbose +multiple "log verbose messages")
-        (@arg input: +required "path to file to analyze")
-    ).get_matches();
+    let mut config: Config = Default::default();
+
+    // while the macro form of clap is more readable,
+    // it doesn't seem to allow us to use dynamically-generated values,
+    // such as the defaults pulled from env vars, etc.
+    let matches = clap::App::new("lancelot")
+        .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
+        .about("summarize an executable file's features")
+        .arg(clap::Arg::with_name("verbose")
+            .short("v")
+            .long("verbose")
+            .multiple(true)
+            .help("log verbose messages")
+        )
+        .arg(clap::Arg::with_name("pat_dir")
+            .long("config.flirt.pat_dir")
+            .takes_value(true)
+            .help(&format!("directory containing FLIRT .pat signature files (default: {})",
+                          config.analysis.flirt.pat_dir.to_str().unwrap()))
+        )
+        .arg(clap::Arg::with_name("input")
+            .required(true)
+            .index(1)
+            .help("path to file to analyze")
+        ).get_matches();
 
     let log_level = match matches.occurrences_of("verbose") {
         0 => log::LevelFilter::Info,
@@ -764,7 +786,14 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(matches.value_of("input").unwrap()) {
+    if let Some(pat_dir) = matches.value_of("pat_dir") {
+        use std::borrow::Borrow;
+        let a = shellexpand::tilde(&pat_dir);
+        let b: &str = a.borrow();
+        config.analysis.flirt.pat_dir = PathBuf::from(b.to_string())
+    }
+
+    if let Err(e) = run(config, matches.value_of("input").unwrap()) {
         error!("{:?}", e)
     }
 }

@@ -4,6 +4,7 @@ use goblin::{Object};
 use goblin::pe::section_table::SectionTable;
 
 use super::super::util;
+use super::super::config::Config;
 use super::super::arch::{Arch, VA, RVA};
 use super::super::pagemap::{PageMap};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
@@ -128,7 +129,7 @@ impl Loader for PELoader {
     /// assert!( ! loader32.taste(&get_buf(Rsrc::K32)));
     /// assert!(   loader64.taste(&get_buf(Rsrc::K32)));
     /// ```
-    fn taste(&self, buf: &[u8]) -> bool {
+    fn taste(&self, _config: &Config, buf: &[u8]) -> bool {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
             match self.arch {
                 Arch::X32 => !pe.is_64,
@@ -152,7 +153,7 @@ impl Loader for PELoader {
     /// let loader32 = lancelot::loaders::pe::PELoader::new(Arch::X32);
     /// assert!(loader32.load(&get_buf(Rsrc::K32)).is_err());
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
+    fn load(&self, config: &Config, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
             match self.arch {
                 Arch::X32 => if  pe.is_64 { return Err(LoaderError::MismatchedBitness.into());},
@@ -217,7 +218,7 @@ impl Loader for PELoader {
                 Box::new(pe::CFGuardTableAnalyzer::new()),
                 Box::new(pe::RelocAnalyzer::new()),
                 Box::new(pe::ByteSigAnalyzer::new()),
-                Box::new(pe::FlirtAnalyzer::new()),
+                Box::new(pe::FlirtAnalyzer::new(config.analysis.flirt.clone())),
             ];
 
             if pe.is_64 {

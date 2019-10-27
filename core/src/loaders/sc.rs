@@ -1,6 +1,7 @@
 use failure::{Error};
 
 use super::super::arch::{Arch, VA, RVA};
+use super::super::config::Config;
 use super::super::pagemap::{PageMap};
 use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, Permissions};
 use super::super::analysis::{Analyzer};
@@ -32,7 +33,7 @@ impl Loader for ShellcodeLoader {
         FileFormat::Raw
     }
 
-    fn taste(&self, _buf: &[u8]) -> bool {
+    fn taste(&self, _config: &Config, _buf: &[u8]) -> bool {
         // we can load anything as shellcode
         true
     }
@@ -49,7 +50,7 @@ impl Loader for ShellcodeLoader {
     ///   })
     ///   .map_err(|e| panic!(e));
     /// ```
-    fn load(&self, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
+    fn load(&self, _config: &Config, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
         let mut address_space = PageMap::with_capacity(buf.len().into());
         address_space.writezx(0x0.into(), &buf)?;
 

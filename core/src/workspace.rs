@@ -9,6 +9,7 @@ use log::{info, warn};
 use super::analysis::Analysis;
 use super::arch::{Arch, VA, RVA};
 use super::basicblock::BasicBlock;
+use super::config::Config;
 use super::loader;
 use super::loader::{LoadedModule, Loader, Permissions};
 use super::xref::XrefType;
@@ -30,6 +31,7 @@ pub enum WorkspaceError {
 pub struct WorkspaceBuilder {
     filename: String,
     buf: Vec<u8>,
+    config: Config,
 
     loader: Option<Box<dyn Loader>>,
 
@@ -64,6 +66,16 @@ impl WorkspaceBuilder {
         info!("enabling strict mode");
         WorkspaceBuilder {
             strict_mode: true,
+            ..self
+        }
+    }
+
+    pub fn with_config(
+        self: WorkspaceBuilder,
+        config: Config,
+    ) -> WorkspaceBuilder {
+        WorkspaceBuilder {
+            config: config,
             ..self
         }
     }
@@ -113,10 +125,10 @@ impl WorkspaceBuilder {
         let (ldr, module, analyzers) = match self.loader {
             // TODO: let users specify analyzers via builder
             Some(ldr) => {
-                let (module, analyzers) = ldr.load(&self.buf)?;
+                let (module, analyzers) = ldr.load(&self.config, &self.buf)?;
                 (ldr, module, analyzers)
             }
-            None => loader::load(&self.buf)?,
+            None => loader::load(&self.config, &self.buf)?,
         };
 
         info!("loaded {} sections:", module.sections.len());
@@ -183,6 +195,7 @@ impl Workspace {
         WorkspaceBuilder {
             filename: filename.to_string(),
             buf: buf.to_vec(),
+            config: Default::default(),
             loader: None,
             should_analyze: true,
             strict_mode: false,
@@ -193,6 +206,7 @@ impl Workspace {
         Ok(WorkspaceBuilder {
             filename: filename.to_string(),
             buf: util::read_file(filename)?,
+            config: Default::default(),
             loader: None,
             should_analyze: true,
             strict_mode: false,

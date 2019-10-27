@@ -5,6 +5,7 @@ extern crate rust_embed;
 pub mod analysis;
 pub mod arch;
 pub mod basicblock;
+pub mod config;
 pub mod flowmeta;
 pub mod loader;
 pub mod loaders;
