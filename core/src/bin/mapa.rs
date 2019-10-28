@@ -737,6 +737,12 @@ fn main() {
 
     let mut config: Config = Default::default();
 
+    // TODO: we should do this in a central place.
+    if let Ok(v) = std::env::var("FLIRT_PAT_DIR") {
+        // PathBuf doesn't expand ~ by default.
+        config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&v).into_owned());
+    }
+
     // while the macro form of clap is more readable,
     // it doesn't seem to allow us to use dynamically-generated values,
     // such as the defaults pulled from env vars, etc.
