@@ -787,10 +787,8 @@ fn main() {
         .expect("failed to configure logging");
 
     if let Some(pat_dir) = matches.value_of("pat_dir") {
-        use std::borrow::Borrow;
-        let a = shellexpand::tilde(&pat_dir);
-        let b: &str = a.borrow();
-        config.analysis.flirt.pat_dir = PathBuf::from(b.to_string())
+        // PathBuf doesn't expand ~ by default.
+        config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&pat_dir).into_owned());
     }
 
     if let Err(e) = run(config, matches.value_of("input").unwrap()) {
