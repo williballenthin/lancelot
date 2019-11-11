@@ -1,0 +1,8 @@
+*.dmp
+*.txt
+*.idb
+*.i64
+*.exe
+*.exe_
+*.dll
+*.dll_
