@@ -23,11 +23,13 @@
 // ```
 
 extern crate nom;
+#[macro_use] extern crate bitflags;
 use log::{trace};
 use regex::bytes::Regex;
 use std::collections::HashMap;
 
 pub mod pat;
+pub mod sig;
 pub mod nfa;
 
 #[derive(Debug)]

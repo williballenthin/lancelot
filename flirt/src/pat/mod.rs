@@ -226,6 +226,3 @@ pub fn parse(buf: &str) -> Result<Vec<FlirtSignature>, Error> {
         Err(PatError::CorruptPatFile.into())
     }
 }
-
-
-
