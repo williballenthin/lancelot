@@ -1,0 +1,321 @@
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned uint64 uint64_t;
+
+
+
+// bits available:
+// 0x8*   0xE    1 0 * * * * * * | * * * * * * * *
+// 0xC*   0x15   1 1 0 * * * * * | * * * * * * * * | * * * * * * * *
+uint8_t variable_bits_used(int64 loc) {
+    local uint8_t b = ReadByte(loc);
+
+    if (b == 0x80 && ReadByte(loc + 1) == 0xC0) {
+        return 8;
+    } else if (b == 0x80) {
+        return 8;
+    } else if ((b & 0xE0) == 0xE0) {
+        return 4 + 8 + 8 + 8;
+    } else if ((b & 0xC0) == 0xC0) {
+        return 5 + 8 + 8;
+    } else if ((b & 0x80) == 0x80) {
+        return 6 + 8;
+    } else {
+        return 8;
+    }
+}
+
+
+typedef struct {
+    local int64 loc = FTell();
+    local uint8_t b = ReadByte(loc) & 0xFF;
+
+    local uint64_t v;
+    if (b == 0x80 && (ReadByte(FTell() + 1) & 0xFF) == 0xC0) {
+        // special case observed in `libcmt_15_msvc_x86.sig` at offset 0x454.
+        // 80 C0 --> C0
+        // 80 acts like an "escape"
+        uint8_t buf[2];
+        v = buf[1];
+        //Printf("vint %02x %02x -> %02x\n", buf[0], buf[1], v);
+    } else if (b == 0x80) {
+        // special case observed in `libcmt_15_msvc_x86.sig` at offset 0x5A.
+        uint8_t buf[1];
+        v = buf[0];
+        //Printf("vint %02x -> %02x\n", buf[0], v);
+    } else if ((b & 0xE0) == 0xE0) {
+        uint8_t buf[4];
+        v = ((buf[0] & 0xFFFFFF1F) << 24) +
+            ((buf[1] & 0xFFFFFFFF) << 16) +
+            ((buf[2] & 0xFFFFFFFF) << 8) +
+            ((buf[3] & 0xFFFFFFFF));
+        //Printf("vint %02x %02x %02x %02x -> %08x\n", buf[0], buf[1], buf[2], buf[3], v);
+    } else if ((b & 0xC0) == 0xC0) {
+        uint8_t buf[3];
+        v = ((buf[0] & 0xFFFFFF3F) << 16) +
+            ((buf[1] & 0xFFFFFFFF) << 8) +
+            ((buf[2] & 0xFFFFFFFF));
+        //Printf("vint %02x %02x %02x -> %06x\n", buf[0], buf[1], buf[2], v);
+    } else if ((b & 0x80) == 0x80) {
+        uint8_t buf[2];
+        // use this crazy bitmasking to promote the array element to a uint32_t,
+        // so that it can be shifted beyond 8 bits.
+        v = ((buf[0] & 0xFFFFFF7F) << 8) +
+            ((buf[1] & 0xFFFFFFFF));
+        //Printf("vint %02x %02x -> %04x\n", buf[0], buf[1], v);
+    } else {
+        uint8_t buf[1];
+        v = buf[0];
+        //Printf("vint %02x -> %02x\n", buf[0], v);
+    }
+} VariableInt <read=readVariableInt>;
+
+string readVariableInt( VariableInt &v ) {
+    string s;   
+    SPrintf(s, "%x", v.v);
+    return s;
+}
+
+uint8_t count_bits(uint32_t v) {
+    local uint8_t count = 0;
+    local int i;
+    for(i = 0; i < 32; i++) {
+        if ((v & (1 << i)) != 0) {
+            count += 1;
+        }
+    }
+    //Printf("count_bits: 0x%02x %d\n", v, count);
+    return count;
+}
+
+typedef struct {
+    local int64 loc = FTell();
+    local int length = 0;
+
+    while (ReadByte(loc + length) > 0x20) {
+        length++;
+    }
+
+    char v[length]<optimize=false>;
+    uint8_t footer;
+} Name <read=readName>;
+
+string readName( Name &v ) {
+    return v.v;
+}
+
+typedef struct {
+    uint8_t relative_offset;
+    uint8_t size;
+    char name[size];
+} ReferencedName;
+
+
+struct Rule;
+
+
+typedef struct {
+
+    // initial public name
+    uint8_t offset;
+    
+    if ((ReadByte(FTell()) == 0x02) != 0x00) {
+        // local function
+        uint8_t flags;
+    } else if ((ReadByte(FTell()) == 0x08) != 0x00) {
+        // unresolved collision
+        uint8_t flags;
+    }
+    Name name;
+    local uint8_t mode = name.footer;
+
+
+    while (mode) {
+
+        if ((mode & 0x10) != 0) {
+            // more modules
+            struct Rule rule;
+            break;
+        } else if ((mode & 0x01) != 0) {
+            // more public names
+            uint8_t flags;
+            uint8_t offset;
+            uint8_t flags2;
+            Name name;
+    
+            mode = name.footer;
+        } else if ((mode & 0x04) != 0) {
+            // more references
+            uint8_t flags;
+            uint8_t offset;
+            uint8_t size;
+            char name_[size]<optimize=false>;
+
+            break;
+        } else {
+            // 0x02 tail bytes
+            // 0x08 modules with same crc32
+            1 / 0;
+        }
+    }
+
+} Names<optimize=false>;
+
+typedef struct {
+    uint8_t crc_len;
+    uint16_t crc;
+    VariableInt function_size;
+    Names names;
+    /*
+    VariableInt public_name_offset;
+    Name public_name;
+
+    if (public_name.footer == 0x0) {
+
+    } else if ((public_name.footer & 0x10) != 0) {
+        struct Rule more_module;
+    } else {
+        uint8_t flags;
+
+        if (flags == 0x01) {
+            ReferencedName ref_name;
+        } else {        
+            uint8_t local_name_relative_offset;
+            uint8_t local_name_flags;
+            Name local_name;
+        
+            if (local_name.footer != 0x00) {
+                uint8_t local_name_relative_offset2;
+                uint8_t local_name_flags2;
+                Name local_name2;
+            }
+        }
+    }
+    */
+} Module;
+
+typedef struct Node {
+    // number of bytes that this node covers.
+    uint8_t length;
+    // number of literal bytes,
+    // which will be `length - number_of_wildcards`
+    local uint8_t literal_byte_count = length;
+
+    // masks is a bitmask that applies to the `length` bytes of this pattern.
+    // when a bit is set, then it will be a wildcard in the pattern.
+    // when its unset, then the next literal byte is used.
+    // the bitmask can be less than `length` bits;
+    //  in this case, it is applied from the end of the pattern.
+    // for example, in `libcmt_15_msvc_x86.sig` at offset 0x7F8:
+    //
+    //   expected pattern: B90000FFFF8BC623C174103BC1740C6A01FF7504E8........59
+    //   expected mask:     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 0
+    //   observed mask: 0x1E                                    0 0 0 1 1 1 1 0
+
+    Printf("0x%x: node mask, length: %02x bits: %02x   %02x %02x %02x %02x %02x\n",
+           FTell(), length, variable_bits_used(FTell()),
+           ReadByte(FTell() + 0) & 0xFF, ReadByte(FTell() + 1) & 0xFF,
+           ReadByte(FTell() + 2) & 0xFF, ReadByte(FTell() + 3) & 0xFF,
+           ReadByte(FTell() + 4) & 0xFF);
+
+
+    // cases (from libcmt_15_msvc_x86.sig):
+    //
+    // offset 0x1B1:
+    // length: 0x9
+    // mask:   3C
+    //         --
+    //          8 bits available
+    //
+    // offset 0x1F1:
+    // length: 0xD
+    // mask:   87 80
+    //         -----
+    //          0xE bits available
+    //
+    // offset 0x25d: 
+    // length: 1e 
+    // mask:   78
+    //         --
+    //          8 bits available
+    //
+    // offset 0x110:
+    // length: 0x14
+    // mask:   C0 00 F0 00
+    //         -------- --
+    //          0x15     8   bits available
+
+
+    local uint8_t mask1_bits = variable_bits_used(FTell());
+    VariableInt mask;
+    literal_byte_count -= count_bits(mask[0].v);
+
+    if (length > 0x10) {
+        // cannot fit 0x10 bits in a byte literal or 0x8* variable int,
+        // so this case can use a C* ** ** variable int structure.
+        //
+        // if it does not use a C* ** ** construct, then less than
+        // 0xE bits were needed, so no overflow mask needed.
+        // 
+        // however, if it does use a C* ** ** construct, then we add another
+        // variable int mask field, to catch any overflow.
+        // in the case at offset 0x110 above, then its not even
+        // strictly required, but it is still present.
+        if (mask1_bits > 0xE) {
+            VariableInt mask;
+            literal_byte_count -= count_bits(mask[1].v);
+        }
+    }
+
+    // the byte literals in this pattern.
+    uint8_t buf[literal_byte_count]<optimize=false>;
+
+    // number of children nodes
+    VariableInt count;
+    if (count.v > 0) {
+        struct Node nodes[count.v]<optimize=false>;
+    } else {
+        Module module;
+    }
+} Node;
+
+
+typedef struct TreeRoot {
+    VariableInt count;
+    Node nodes[count.v]<optimize=false>;
+} TreeRoot;
+
+
+typedef struct Sig {
+    uint8_t magic[6];
+	uint8_t version;   /*from 5 to 9*/
+	uint8_t arch;
+	uint32_t file_types;
+	uint16_t os_types;
+	uint16_t app_types;
+	uint16_t features;
+	uint16_t old_n_functions;
+	uint16_t crc16;
+	uint8_t ctype[12];  // XXX: how to use it
+	uint8_t library_name_len;
+	uint16_t ctypes_crc16;
+
+    if (version > 5) {
+        uint32_t function_count;
+    }
+
+    if (version > 7) {
+        uint16_t pattern_size;
+    }
+
+    if (version > 9) {
+        uint16_t unknown;
+    }
+
+    char library_name[library_name_len];
+
+    TreeRoot root;
+} Sig;
+
+struct Sig s;

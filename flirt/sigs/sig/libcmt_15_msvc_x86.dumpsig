@@ -1,0 +1,748 @@
+0F28:
+  1D........0F59D80F2825........0F280D........660F5BD30F283D:
+    0. 00 0000 02C0 0000:___sse4_expf4 (l)00BC:_2TAG_PACKET_1_0_1 (l)00C0:_2TAG_PACKET_0_0_1
+  D80F28:
+    0D........0F28E00F2815........0F54D90F55C80F28EA0FC2E9:
+      0. 17 73DC 0050 0000:___sse2_floorf4
+    15........0F28:
+      0D........0F28EA0F54D90F55C8660FC2E90166:
+        0. 18 BB98 0050 0000:___sse2_ceil2
+      E00F280D........0F28EA0F54D90F55C8660FC2:
+        0. 18 7B09 0050 0000:___sse2_floor2
+33:
+  C0:
+    3905........0F:
+      94C0C3:
+        0. 00 0000 000C 0000:___scrt_is_user_matherr_present
+      95C0C3:
+        0. 00 0000 000C 0000:___scrt_is_ucrt_dll_in_use
+    40C20C00:
+      0. 00 0000 0006 0000:_DllMain@12
+  CDF2E8........F2E9:
+    0. 00 0000 000E 0000:__EH_epilog3_GS_align (REF 0004: @__security_check_cookie@4)
+3B0D........F27502F2C3F2E9:
+  0. 00 0000 0011 0000:@__security_check_cookie@4 (l)000B:$failure$4
+50:
+  51528BC8FF15........5A5958C3:
+    0. 00 0000 000F 0000:___guard_check_icall_thunk
+  64FF35000000008D44240C2B64240C53565789288BE8A1........33C550:
+    89:
+      0. 1A 43D9 003A 0000:__EH_prolog3_catch_GS
+      1. 17 9031 0037 0000:__EH_prolog3_catch
+      2. 17 B181 0037 0000:__EH_prolog3_GS
+    FF:
+      0. 14 C529 0034 0000:__EH_prolog3
+51:
+  8B4C24:
+    08895C24088D5C2408F7D923E18B4BF8892C248BEC6AFF5064A10000:
+      0. 18 D9E4 0038 0000:__EH_prolog2
+    0C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B:
+      0. 20 6562 0067 0000:__EH_prolog3_catch_align
+      1. 21 B4FE 006E 0000:__EH_prolog3_GS_align
+      2. 22 E4CE 006F 0000:__EH_prolog3_catch_GS_align
+      3. 1F E4CF 0063 0000:__EH_prolog3_align
+  8D4C24:
+    042BC81BC0F7D023C88BC42500F0FFFF3BC8F2720B8BC159948B0089:
+      0. 0D 1585 002D 0000:__alloca_probe (l)0014:cs10 (l)0024:cs20
+    082BC883E10F03C11BC90BC159E9........518D4C24082BC883E107:
+      0. 08 984C 002C 0000:__alloca_probe_16 0016:__alloca_probe_8
+53:
+  56:
+    576A0068A00F000068........E8........83C40C68........FF15:
+      0. 00 0000 00C0 (l)0000:?__scrt_initialize_thread_safe_statics@@YAHXZ (l)00BF:$LN11
+    8B4424180BC075188B4C24148B44241033D2F7F18BD88B44240CF7F18BD3:
+      0. 48 D0A0 0068 0000:__aulldiv
+    BE........BB........3BF37318578B3E85FF74098BCFE8........FFD7:
+      0. 0B DBAF 002B 0000:__RTC_Terminate (REF 0003: ___rtc_taa)
+      1. 0B DBAF 002B 0000:__RTC_Initialize (REF 0003: ___rtc_iaa)
+  8B:
+    4424140BC075188B4C24108B44240C33D2F7F18B442408F7F18BC233D2EB:
+      0. 55 27A6 0075 0000:__aullrem
+    DC83E4C055558B6B04896C24048BEC81ECB8000000C5FD103D........C5:
+      0. 03 3A67 01B0 0000:___avx_atan4
+558BEC:
+  33:
+    C0817D0863736DE00F94C05DC3:
+      0. 00 0000 0011 (l)0000:_dyntls_init_exception_filter
+    C98BC10B450C7412837D0CFF740C6A01FF7504E8........59598B45:
+      0. 05 2CBA 0025 0000:@_RTC_Check_8_to_4@8
+  51:
+    51:
+      5356578BDA33FF85DB7448897DFC393B7E418BF78BF98B4B048B14:
+        0. 22 A366 00C6 0000:@_RTC_CheckStackVars2@12
+      837D0C037406837D0C0075678B0D........64A1........53568B:
+        0. 07 F38C 007E (l)0000:___dyn_tls_dtor@12
+    538BDA8BC15633F68945FC39337E3F578BFE8B4B048B140F817C02FC:
+      0. 20 3AD2 0058 0000:@_RTC_CheckStackVars@8
+  53:
+    568BF18BDA85F6741F85DB741B8B550885D2741457B0CC8BFE8BCBF3:
+      0. 12 FD60 0032 0000:@_RTC_AllocaHelper@12
+    8BD9B900FF:
+      00008BC323C174103BC1740C6A01FF7504E8........59:
+        0. 06 2977 0026 0000:@_RTC_Check_2_to_1@4
+      FFFF8BC323C174103BC1740C6A01FF7504E8........59:
+        0. 06 2977 0026 0000:@_RTC_Check_4_to_1@4
+  56:
+    8B:
+      35........85F6750533C040EB12FF75108BCEFF750CFF7508E8:
+        0. 00 0000 002A (l)0000:?dllmain_raw@@YGHQAUHINSTANCE__@@KQAX@Z
+      F1:
+        8D4604C706........:
+          50E8........F645080159740A6A0C56E8:
+            0. 00 0000 002D (!)0000:?
+          83200083600400508B450883C00450E8:
+            0. 00 0000 002C 0000:??0exception@std@@QAE@ABV01@@Z
+        B90000FFFF8BC623C174103BC1740C6A01FF7504E8........59:
+          0. 07 D799 0027 0000:@_RTC_Check_4_to_2@4
+    E8........8B7508EB086A64E8........59833E007421833EFF74EE:
+      0. 02 F1B9 0046 0000:__Init_thread_header
+    FF75:
+      088BF1E8........C706........8BC65E5DC20400:
+        0. 00 0000 001B 0000:??0bad_array_new_length@std@@QAE@ABV01@@Z (REF 0010: ??_7bad_array_new_length@std@@6B@)
+        1. 00 0000 001B 0000:??0bad_alloc@std@@QAE@ABV01@@Z (REF 0010: ??_7bad_alloc@std@@6B@)
+      148B7508FF7510FF750C56E8........83C410F6460466750D81:
+        0. 10 B1C0 0035 0000:__except_handler4_noexcept (l)0034:$LN7
+  5DE9:
+    0. 00 0000 0009 0000:??_U@YAPAXIABUnothrow_t@std@@@Z (REF 0005: ??2@YAPAXIABUnothrow_t@std@@@Z)
+    1. 00 0000 0009 0000:??_U@YAPAXI@Z (REF 0005: ??2@YAPAXI@Z)
+    2. 00 0000 0009 0000:__CRT_INIT@12 (REF 0005: ?dllmain_crt_dispatch@@YGHQAUHINSTANCE__@@KQAX@Z)
+  64A1........8B0D........56578B34888B86........85C075118D86:
+    0. 00 0000 007B 0000:___tlregdtor
+  6A:
+    00FF15........FF7508FF15........68090400C0FF15........50:
+      0. 02 ABB7 0028 0000:___raise_securityfailure
+    08E8........5DC3:
+      0. 00 0000 000C 0000:___report_rangecheckfailure
+    FE68........68........64A1000000005083EC08535657A1:
+      0. 00 0000 00BA 0000:__IsNonwritableInCurrentImage (l)0089:$LN7 (l)009B:$LN11 (l)009C:$LN8
+    FF68........64A1000000005051535657A1........33C5508D45F4:
+      0. 11 7A6F 0052 0000:??2@YAPAXIABUnothrow_t@std@@@Z (l)0038:__catch$??2@YAPAXIABUnothrow_t@std@@@Z$0 (l)003E:$LN7
+  803D........007406807D0C007512FF7508E8........FF7508E8:
+    0. 00 0000 0028 0000:___scrt_uninitialize_crt
+  81EC:
+    04040000A1........33C58945FC833D........FF8B55080F84AE:
+      0. 2C CA67 00DF 0000:__RTC_UninitUse
+    08040000A1........33C58945FC833D........FF8B45088B550C:
+      0. 36 DA5B 00EC 0000:?_RTC_StackFailure@@YAXPAXPBD@Z
+    1C:
+      020000A1........33C58945FC535657BE0008000033DB565368:
+        0. 00 0000 01F9 (l)0000:?GetPdbDllFromInstallPath@@YAPAUHINSTANCE__@@XZ
+      0300006A17E8........85C074058B4D08CD29A3........890D:
+        0. 00 0000 00D0 0000:___report_securityfailure
+    200300006A17E8........85C074058B4D08CD29A3........890D:
+      0. 00 0000 0116 0000:___report_securityfailureEx
+    24030000:
+      53566A17E8........85C074058B4D08CD2933F68D85DC:
+        0. 0C 68B4 011B 0000:___scrt_fastfail
+      6A17E8........85C074056A0259CD29A3........890D:
+        0. 00 0000 00FB 0000:___report_gsfailure
+    3C0E0000A1........33C58945FC8B45105356578B7D0833DB8985:
+      0. 0F 889D 01FC (l)0000:?failwithmessage@@YAXPAXHHPBD@Z
+    48010000A1........33C58945FC8B4508538B5D0C578B3D:
+      0. 00 0000 0108 0000:?_RTC_AllocaFailure@@YAXPAXPAU_RTC_ALLOCA_NODE@@H@Z
+  83:
+    25........0083EC285333DB43091D........6A0AE8........85C0:
+      0. 0E 458E 019A 0000:___isa_available_init
+    3D........005675318B35........8BCEFF75083335........83E1:
+      0. 04 1952 0065 0000:__Init_thread_wait
+    610400836108008B45088941048BC1C701........5DC20400:
+      0. 00 0000 001D 0000:??0bad_alloc@std@@AAE@QBD@Z
+    7D:
+      08007507C605........01E8........E8........84C0750432C0:
+        0. 03 D431 0039 0000:___scrt_initialize_crt
+      0C017505E8........FF7510FF750CFF7508E8........83C40C5D:
+        0. 03 4ED0 0023 0000:__DllMainCRTStartup@12
+    E4:
+      C0:
+        5657:
+          5381EC:
+            B4:
+              000000C5FC28E0C5FC11642420C5F81035:
+                0. 00 0000 0270 0000:___avx_tanhf8
+              020000C5FC1015........C5FC54DAC5E4C225:
+                0. 00 0000 1000 0000:___avx_tanf8
+            F4020000C5FC:
+              101D........C5E9EFD2C5FC54CBC5:
+                0. 03 2CA6 0C80 0000:___avx_sinf8
+              5415........C5E1EFDBC5ECC225:
+                0. 00 0000 0C80 0000:___avx_cosf8
+          81EC:
+            38010000C5FD11442420C5F81025........C5F8101D:
+              0. 00 0000 02D0 0000:___avx_tanh4
+            B8000000C5FD5435........C5CD57C8C5FD1025:
+              0. 00 0000 0200 0000:___avx_sinh4
+        575381EC:
+          38030000C5FD100D........C5FD54E1C5DDC21D:
+            0. 00 0000 0AB0 0000:___avx_tan4
+          78020000C5FD582D........C5D55435........C5CD:
+            0. 02 B82D 0930 0000:___avx_cos4
+          B8020000C5FD101D........C5E555F0C5FD54DBC5E5:
+            0. 02 B82D 0940 0000:___avx_sin4
+        81EC:
+          00010000:
+            0F28F10F12F10F28D00F5AD90F5AEE0F5AF80F12:
+              0. 12 E25A 03C0 0000:___sse2_powf4
+            C5:
+              FC1035........C5FC114C2420C5FC28E8C5F4:
+                0. 18 C254 0200 0000:___avx_atan2f8
+              FD:
+                1035........C5FD103D........C5FD1104:
+                  0. 2C B1EB 0270 0000:___avx_atan24
+                110424C5FD114C2420C4E37D19C201C5F8C6:
+                  0. 06 2C3B 0400 0000:___avx_pow4
+          80020000C5FC114C2420C5FC110424C4E37D19C401C5FC5A:
+            0. 21 64B0 05D0 0000:___avx_powf8
+          C0000000:
+            0F28:
+              2D........0F28F50F55E80F54F00F281D:
+                0. 00 0000 0150 0000:___sse2_asinf4
+              3D........0F28F70F54F80F56F00F2815:
+                0. 00 0000 0160 0000:___sse2_acosf4
+              C80F283D........0F281D........0F55F9:
+                0. 06 1A75 0140 0000:___sse2_coshf4
+              F00F2805........0F54C60F28D80F2825:
+                0. 00 0000 0140 0000:___sse2_sinhf4
+            C5:
+              F8101D........C5F81025........C5F9FAEB:
+                0. 24 F70D 0170 0000:___avx_log10f8
+              FC:
+                10:
+                  0D........C5FC101D........C5F81015:
+                    0. 00 0000 0180 0000:___avx_coshf8
+                  15........C5FC1025........C5FC1104:
+                    0. 11 CDB8 0160 0000:___avx_asinf8
+                  1D........C5FC102D........C5E456E0:
+                    0. 14 7780 0170 0000:___avx_acosf8
+                  25........C5FC590D........C5F81015:
+                    0. 00 0000 0140 0000:___avx_expf8
+                110424C5F8101D........C5F8103D:
+                  0. 00 0000 0160 0000:___avx_logf8
+                28C8C5F4542D........C5D457F9C5FC1035:
+                  0. 00 0000 0170 0000:___avx_sinhf8
+              FD:
+                10:
+                  1D........C5FD1015........C5FD1104:
+                    0. 0F E1B3 0210 0000:___avx_cosh4
+                  2D........C5FD103D........C5FD1104:
+                    0. 11 A8AB 01E0 0000:___avx_asin4
+                  35........C5FD:
+                    1025........C5FD1104:
+                      0. 13 10EA 0200 0000:___avx_acos4
+                    5915........C5F91025:
+                      0. 00 0000 0160 0000:___avx_exp4
+                54:
+                  0D........C5F55625........C5FD5AF4:
+                    0. 1C C8E9 01A0 0000:___avx_log104
+                  2D........C5D5561D........C5FD5ACB:
+                    0. 1C 9326 01A0 0000:___avx_log4
+      F056575383EC54B80000F07F8B550C8B5D102BD00F8DB702000033:
+        0. 4C 9499 0950 0000:___common_sin_reduction_LA (l)02F0:___common_srl (l)030C:_2TAG_PACKET_3_0_2 (l)0317:_2TAG_PACKET_2_0_2 (l)0320:___common_sll (l)033C:_2TAG_PACKET_1_0_1 (l)0346:_2TAG_PACKET_0_0_1 0350:___common_cos_reduction_LA 0640:___common_pi04_reduction_LA
+      F8:
+        5383EC:
+          348B45080FB7500681E2F07F0000C1EA0481FAFF070000:
+            0. 2A BD1F 05F0 0000:___common_datan_cout_rare
+          3C8B4D080FB7410225807F0000C1E8073DFF0000000F84:
+            0. 28 8CBF 05F0 0000:___common_satan_cout_rare
+        56:
+          5383EC788B4D08F20F1015........0FB705........0FB759:
+            0. 51 3AFC 0760 0000:___common_dsinh_cout_rare
+          575383EC:
+            1C8B450C8B55088B188BFB8B328BCEF30F10228BD3:
+              0. 53 ADB8 0C60 (l)0000:__vmlsAtan24Spec 0AF0:___sse2_atan2f4 (l)0C2F:_2TAG_PACKET_0_0_4 (l)0C56:_2TAG_PACKET_1_0_4
+            5C8B4D080FB741:
+              0225807F0000F30F10113D807F00:
+                0. 20 C5F4 0A70 0000:___common_sacos_cout_rare
+              0625F07F0000F20F10093DF07F00:
+                0. 22 CC33 0A70 0000:___common_dacos_cout_rare
+            648B:
+              4508F20F100D........8B550C0F28D1F20F10:
+                0. 4A 52A2 1020 0000:___common_datan2_cout_rare
+              55080FB742:
+                0225807F0000F30F10123D807F00:
+                  0. 20 830F 09E0 0000:___common_sasin_cout_rare
+                0625F07F0000F20F10123DF07F00:
+                  0. 22 4CA3 09F0 0000:___common_dasin_cout_rare
+            6C8B:
+              45088B4D0CF30F1018F30F1011F30F5AC3F30F:
+                0. E4 ED7C 1060 0000:___common_satan2_cout_rare
+              55088B750C0FB64207F20F10160FB67E070FB7:
+                0. FF EB1D 0AB0 0000:___common_dpow_cout_rare
+          83EC:
+            3C8B4D08F20F100D........0FB705........0FB751:
+              02:
+                0. 42 DE43 03F0 0000:___common_scosh_cout_rare
+              06:
+                0. 48 B27B 03D0 0000:___common_dcosh_cout_rare
+            4C8B4508F20F1015........0FB70D........F20F1000:
+              0. 2C EDB8 0390 0000:___common_dexp_cout_rare
+            7C8B4D08F20F1015........0FB705........0FB75102:
+              0. 57 6C41 0780 0000:___common_ssinh_cout_rare
+        83EC:
+          088B55080FB74A06:
+            81E1F07F0000F20F100A0FB6420783E0:
+              0. 29 F95D 0080 0000:___common_dsin_cout_rare (REF 0049: __vmldSinHATab)
+              1. 29 F95D 0080 0000:___common_dcos_cout_rare (REF 0049: __vmldCosHATab)
+            F20F100A81E1F07F00000FB6420783E0:
+              0. 2F 9CF8 0080 0000:___common_dtan_cout_rare
+          188B4508:
+            0FB748068BD181E2F07F000081FAF07F00000F84:
+              0. 1A 3C0A 02B0 0000:___common_dlog_cout_rare
+              1. 1A AADE 02E0 0000:___common_dlog10_cout_rare
+            8B550C0FB7480281E1807F000081F9807F00000F:
+              0. 1F 83EB 02C0 0000:___common_slog_cout_rare
+    EC:
+      0C:
+        568B750885F6740583FE01757CE8........85C0742A85F67526:
+          0. 01 361F 0097 0000:___scrt_initialize_onexit_tables (l)0096:$LN15
+        8B4D108B550C535633F6C745FC310000002B4D08578B7D08894D:
+          0. 1E 19F9 0079 (l)0000:?_getMemBlockDataString@@YAXPAD00I@Z
+        8D4DF4E8........68........8D45F450E8........CC:
+          0. 00 0000 001D 0000:?__scrt_throw_std_bad_array_new_length@@YAXXZ (l)001C:$LN4 (REF 000A: ??0bad_array_new_length@std@@QAE@XZ)
+          1. 00 0000 001D 0000:?__scrt_throw_std_bad_alloc@@YAXXZ (l)001C:$LN4 (REF 000A: ??0bad_alloc@std@@QAE@XZ)
+      148365F4008365F800A1........5657BF4EE640BBBE0000FFFF3B:
+        0. 0A DA5F 009C 0000:___security_init_cookie
+      446A448D45BC6A0050E8........83C40C8D45BC50FF15:
+        0. 13 FEF6 0033 0000:___scrt_get_show_window_mode
+  8B:
+    45:
+      08:
+        33D25356578B483C03C80FB741140FB7590683C01803C185DB74:
+          0. 23 EF8F 0043 0000:__FindPESection
+        568B483C03C80FB741148D511803D00FB741066BF02803F23BD6:
+          0. 24 C338 0044 (l)0000:?find_pe_section@@YAPAU_IMAGE_SECTION_HEADER@@QAEI@Z
+        83F80477098B0485........5DC333C05DC3:
+          0. 00 0000 0018 0000:__RTC_GetErrDesc
+        85C0750432C05DC3B94D5A000066390875F28B483C03C8813950:
+          0. 13 8B04 0033 (l)0000:?is_potentially_valid_image_base@@YA_NQAX@Z
+        89018BC15DC20400:
+          0. 00 0000 000E 0000:??0?$__crt_unique_heap_ptr@UTlsDtorNode@@U__crt_internal_free_policy@@@@QAE@QAUTlsDtorNode@@@Z
+        8A084084C975F92B4508485DC3:
+          0. 00 0000 0013 (l)0000:?_strlen_priv@@YAIPBD@Z
+        8B:
+          00813863736DE0:
+            740433C05DC3E9:
+              0. 00 0000 0019 (l)0000:?ArrayUnwindFilter@@YAHPAU_EXCEPTION_POINTERS@@@Z
+            752583781003751F8B40143D20059319741B:
+              0. 1C 0F51 0041 0000:___scrt_unhandled_exception_filter@4 (l)0040:$LN8
+          4D0CD3C85DC3:
+            0. 00 0000 000D 0000:?__crt_rotate_pointer_value@@YAIIH@Z
+        B94D5A0000663908740433C05DC38B483C03C833C08139504500:
+          0. 11 843B 0031 0000:__ValidateImageBase
+        C701........83610400836108008941048BC15DC20800:
+          0. 00 0000 001D 0000:??0exception@std@@QAE@QBDH@Z
+      0C83:
+        E800743383E801742083E801741183E801740533C040EB30E8:
+          0. 00 0000 0053 (l)0000:?dllmain_crt_dispatch@@YGHQAUHINSTANCE__@@KQAX@Z
+        F80477108B0C85........8B1485........EB0C8B15:
+          0. 00 0000 003C 0000:?_RTC_Failure@@YAXPAXH@Z
+      1483EC4C33C98320008B450C568B75086A1C6689084E8D45B45056:
+        0. 02 ABB7 0339 0000:?_RTC_GetSrcLine@@YAHPAEPA_WKPAH1K@Z (l)021B:$DONE5$81 (l)022B:$DONE4$82 (l)023D:$DONE3$83 (l)0250:$DONE2$84 (l)0263:$DONE1$85
+    4D08BA00:
+      00FFFF23CA8BC10B450C74163BCA7506837D0CFF740C6A01:
+        0. 04 4F8C 0032 0000:@_RTC_Check_8_to_2@8
+      FFFFFF23CA8BC10B450C74163BCA7506837D0CFF740C6A01:
+        0. 04 4F8C 0031 0000:@_RTC_Check_8_to_1@8
+    550883FA0477138B0495........8B4D0C890C95........5DC383C8:
+      0. 03 2797 0023 0000:__RTC_SetErrorType
+  8D4514506A00FF7510FF750CFF7508E8........83C4145DC3:
+    0. 00 0000 001C 0000:_sprintf_s
+  A1........:
+    83E01F6A20592BC88B4508D3C83305........5DC3:
+      0. 00 0000 001D (!)0000:?
+    8B:
+      4D088325........00890D........5DC3:
+        0. 00 0000 001A 0000:__RTC_SetErrorFuncW (REF 0004: ?_RTC_ErrorReportFuncW@@3P6AHHPB_WH00ZZA)
+        1. 00 0000 001A 0000:__RTC_SetErrorFunc (REF 0004: ?_RTC_ErrorReportFunc@@3P6AHHPBDH00ZZA)
+      C833:
+        05........83E11F:
+          D3C883F8FF75065DE9:
+            0. 04 E7A1 0031 0000:_at_quick_exit
+          FF7508D3C883F8FF7507E8:
+            0. 00 0000 003B 0000:__onexit
+        450883E11FD3C85DC3:
+          0. 00 0000 0014 (!)0000:?
+  E8........:
+    85C0:
+      740F807D0800750933C0B9........87015DC3:
+        0. 00 0000 001D 0000:___scrt_release_startup_lock
+      7518837D0C017512FF75108B4D1450FF7508E8:
+        0. 00 0000 0033 0000:___scrt_dllmain_exception_filter
+    8B:
+      0D........8B450841890D........890864A1:
+        0. 02 C6BC 003F 0000:__Init_thread_footer
+      4508832000E8........5DE9:
+        0. 00 0000 0019 0000:__Init_thread_abort
+  EB1FFF7508E8........5985C07512837D08FF7507E8........EB05E8:
+    0. 00 0000 0033 0000:??2@YAPAXI@Z
+  F6450801568BF1C706........740A6A0C56E8........59598BC65E5D:
+    0. 03 8E1E 0023 0000:??_Gtype_info@@UAEPAXI@Z
+  FF75:
+    08E8........:
+      595D:
+        C20400:
+          0. 00 0000 0010 0000:??$?RUTlsDtorNode@@@__crt_internal_free_policy@@QBEXQBUTlsDtorNode@@@Z
+        C3:
+          0. 00 0000 000E (!)0000:?
+      F7D8591BC0F7D8485DC3:
+        0. 00 0000 0015 0000:_atexit
+    18FF7514FF7510FF750CFF7508E8........FF7004FF30E8:
+      0. 00 0000 002D 0000:__vsprintf_s_l
+56:
+  57:
+    535583EC308B442444660FEFC08B542448F30F1020F30F101A0F28CC8B12:
+      0. FF DF27 0B90 0000:___common_spow_cout_rare
+    E8........8BF8E8........8BF0E8........50FF37FF36E8........83:
+      0. 05 704A 0025 (l)0000:?invoke_main@@YAHXZ
+  6A:
+    01E8........E8........50E8........E8........8BF0E8........6A:
+      0. 04 014F 00A4 (l)0000:?pre_c_initialization@@YAHXZ (l)00A3:$LN17
+    02E8........E8........50E8........E8........8BF0E8........6A:
+      0. 04 014F 00A4 (l)0000:?pre_c_initialization@@YAHXZ (l)00A3:$LN17
+  8B:
+    4424140BC075288B4C24108B44240C33D2F7F18BD88B442408F7F18BF08B:
+      0. 75 26D8 0095 0000:__aulldvrm
+    5424088B020FB74A0289042481E1807F0000C1E81883E07FF30F100A81F9:
+      0. 40 386A 0060 0000:___common_stan_cout_rare
+      1. 40 EA1A 0060 (!)0000:?
+    F1FF36E8........832600595EC3:
+      0. 00 0000 0010 (!)0000:?
+    F285C9F2742785F6F274228D51048B0A8D520C8B42F82BC1F30F1B4401FF:
+      0. 11 86BD 0031 0000:@__mpx_init_static_rep@8
+57:
+  565533FF33ED8B4424140BC07D1547458B542410F7D8F7DA83D80089442414:
+    0. BF B5C2 00DF 0000:__alldvrm
+  8B7C240C81E7FFFFFF7F8BD78B4424080BD074698D97000010C081FA000000:
+    0. FF 8B45 10F0 (l)0000:_TestInt (l)0090:__vmldPow_HA_scalar (l)0570:__raise_zerodivide (l)0590:_pow_scalar (l)0604:_2TAG_PACKET_2_0_5 (l)083C:_2TAG_PACKET_5_0_5 (l)0858:_2TAG_PACKET_8_0_5 (l)0918:_2TAG_PACKET_4_0_5 (l)0934:_2TAG_PACKET_6_0_5 (l)0948:_2TAG_PACKET_7_0_5 (l)0A92:_2TAG_PACKET_10_0_5 (l)0B34:_2TAG_PACKET_1_0_5 (l)0B72:_2TAG_PACKET_11_0_5 (l)0BAD:_2TAG_PACKET_12_0_5 (l)0BD8:_2TAG_PACKET_0_0_5 (l)0C08:_2TAG_PACKET_3_0_5 (l)0C4F:_2TAG_PACKET_14_0_5 (l)0C68:_2TAG_PACKET_13_0_5 (l)0C79:_2TAG_PACKET_15_0_5 (l)0C8C:_2TAG_PACKET_9_0_5 0CA0:___sse2_pow2 (l)103C:_2TAG_PACKET_16_0_6 (l)107E:_2TAG_PACKET_17_0_6 (l)109F:_2TAG_PACKET_19_0_6 (l)10BB:_2TAG_PACKET_20_0_6 (l)10D3:_2TAG_PACKET_18_0_6 (l)10E0:__raise_invalid
+64A118000000C3:
+  0. 00 0000 0007 0000:_NtCurrentTeb
+660F:
+  281D........:
+    660F2815........660F59D8660F2825........660F280D:
+      0. 00 0000 02A0 0000:___sse4_exp2 (l)00F7:_2TAG_PACKET_2_0_1 (l)0100:_2TAG_PACKET_0_0_1 (l)0140:_2TAG_PACKET_1_0_1
+    8B70048B088BFE81E6FFFFFF7F81FE0000F07F660FFECB77:
+      0. 75 9CD8 02B0 (l)0000:__exp_spec_sd (l)002C:_2TAG_PACKET_1_0_1 (l)0048:_2TAG_PACKET_3_0_1 (l)005A:_2TAG_PACKET_5_0_1 (l)006C:_2TAG_PACKET_7_0_1 (l)007E:_2TAG_PACKET_9_0_1 (l)0084:_2TAG_PACKET_0_0_1 (l)0091:_2TAG_PACKET_8_0_1 (l)00A3:_2TAG_PACKET_6_0_1 (l)00B2:_2TAG_PACKET_4_0_1 (l)00DE:_2TAG_PACKET_2_0_1 (l)00E7:_2TAG_PACKET_10_0_1 (l)00EE:_2TAG_PACKET_11_0_1 (l)00FF:_2TAG_PACKET_12_0_1 0110:___sse2_exp2 (l)0268:_2TAG_PACKET_13_0_2 (l)02A6:_2TAG_PACKET_14_0_2
+  3A:
+    08C0:
+      01C38DA424000000008BFF:
+        0. 00 0000 0010 0000:___sse4_floorf4
+      02C38DA424000000008BFF:
+        0. 00 0000 0010 0000:___sse4_ceilf4
+    09C0:
+      01C38DA424000000008BFF:
+        0. 00 0000 0010 0000:___sse4_floor2
+      02C38DA424000000008BFF:
+        0. 00 0000 0010 0000:___sse4_ceil2
+68:
+  0000030068000001006A00E8........83C40C85C07501C36A07E8:
+    0. 01 18FC 0021 0000:__initialize_default_precision (l)0020:$LN7
+  ........:
+    64:
+      A100000000508B442410896C24108D6C24102BE05356578B45F8:
+        0. 2E 3097 004E 0000:__SEH_prolog 003C:__SEH_epilog
+      FF35000000008B442410896C24108D6C24102BE0535657A1:
+        0. 00 0000 005B 0000:__SEH_prolog4 0046:__SEH_epilog4 (0007: 50)
+        1. 00 0000 005A 0000:__SEH_prolog4_GS 0049:__SEH_epilog4_GS (0007: 89)
+    E8........59C3:
+      0. 00 0000 000C 0000:?__scrt_uninitialize_type_info@@YAXXZ (REF 0001: ?__type_info_root_node@@3U__type_info_node@@A)
+    FF15........:
+      A1........85C0740750FF15........C3:
+        0. 00 0000 001C (l)0000:?__scrt_uninitialize_thread_safe_statics@@YAXXZ
+      C3:
+        0. 00 0000 000C 0000:__Init_thread_lock (REF 0007: EnterCriticalSection)
+        1. 00 0000 000C 0000:__Init_thread_unlock (REF 0007: LeaveCriticalSection)
+        2. 00 0000 000C 0000:?__scrt_initialize_type_info@@YAXXZ (REF 0001: ?__type_info_root_node@@3U__type_info_node@@A)
+        3. 00 0000 000C 0000:___scrt_set_unhandled_exception_filter (REF 0001: ___scrt_unhandled_exception_filter@4)
+6A:
+  00:
+    E8........:
+      59E9:
+        0. 00 0000 000D 0000:___scrt_dllmain_uninitialize_critical (REF 0003: ___acrt_uninitialize_critical)
+      84C0590F95C0C3:
+        0. 00 0000 000E 0000:___scrt_dllmain_before_initialize_c
+    FF15........8BC885C9750332C0C3B84D5A000066390175F38B413C03C1:
+      0. 24 21B6 0044 0000:___scrt_is_managed_app
+  0868........E8........8365FC00B84D5A0000663905........755DA1:
+    0. 00 0000 008A 0000:___scrt_is_nonwritable_in_current_image (l)0065:$LN8 (l)0077:$LN19 (l)0078:$LN9
+  0C68........E8........:
+    837D0C02752F8365FC00BE........8975E481FE:
+      0. 00 0000 0062 0000:___dyn_tls_init@12 (l)0049:$LN10 (l)0058:$LN17 (l)0059:$LN11 (l)0061:$LN21
+    8B7D0C85FF750F393D........7F0733C0E9D400:
+      0. 1E 511D 00FC (l)0000:?dllmain_dispatch@@YAHQAUHINSTANCE__@@KQAX@Z (l)00C6:$LN15 (l)00E4:$LN20 (l)00E5:$LN16
+    A1........85C07F0433C0EB4F48A3........E8:
+      0. 00 0000 007D (l)0000:?dllmain_crt_process_detach@@YAH_N@Z (l)003B:$LN15 (l)0053:$LN11 (l)006E:$LN8 (l)007C:$LN9 (l)007D:$LN13
+    C645E7008B5D0C8BC38B7D100FAFC78B750803F0:
+      0. 1A AEA4 007A 0000:??_M@YGXPAXIIP6EX0@Z@Z (l)0056:$LN11 (l)005E:$LN8 (l)006A:$LN10 (l)0079:$LN9
+  1068........E8........:
+    33DB895DE0885DE7895DFC:
+      33C0403B5D:
+        10741B50:
+          0. 04 1B71 006B 0000:??_N@YGXPAXIIP6EX0@Z1@Z (l)0049:$LN12 (l)0051:$LN9 (l)0057:$LN11 (l)006A:$LN10
+        14742150:
+          0. 07 0680 0071 0000:??__D@YGXPAX0IIP6EX00@ZP6EX0@Z@Z (l)004F:$LN12 (l)0057:$LN9 (l)005D:$LN11 (l)0070:$LN10
+      3B5D:
+        10741A8B4D14E8:
+          0. 00 0000 0069 0000:??_L@YGXPAXIIP6EX0@Z1@Z (l)0047:$LN12 (l)004F:$LN9 (l)0055:$LN11 (l)0068:$LN10
+        147420FF750C8B:
+          0. 03 D20F 006F 0000:??__C@YGXPAX0IIP6EX00@ZP6EX0@Z@Z (l)004D:$LN12 (l)0055:$LN9 (l)005B:$LN11 (l)006E:$LN10
+    6A00E8........5984C0750733C0E9E0000000E8:
+      0. 00 0000 0112 (l)0000:?dllmain_crt_process_attach@@YAHQAUHINSTANCE__@@QAX@Z (l)0040:$LN21 (l)00C4:$LN15 (l)0105:$LN12 (l)0108:$LN14 (l)0111:$LN13 (l)0112:$LN18
+  1468........E8........6A01E8........5984C075076A07E8........32:
+    0. 09 EDC3 0168 (l)0000:?__scrt_common_main_seh@@YAHXZ (l)001F:$LN27 (l)0107:$LN28 (l)0125:$LN17 (l)0138:$LN23 (l)0139:$LN18 (l)014D:$LN29 (l)0168:$LN24 (003F: F6)
+    1. 09 EDC3 016F (l)0000:?__scrt_common_main_seh@@YAHXZ (l)001F:$LN27 (l)010D:$LN28 (l)012C:$LN17 (l)013F:$LN23 (l)0140:$LN18 (l)0154:$LN29 (l)016F:$LN24 (003F: FD)
+  1868........E8........33F68975FC8B7D088975E43B751074422B7D0C89:
+    0. 06 B4D0 006D 0000:?__ArrayUnwind@@YGXPAXIIP6EX0@Z@Z (l)0032:$LN8 (l)0055:$LN10 (l)005B:$LN27 (l)006D:$LN24
+  2468........E8........33C9884DE7C745CC:
+    011000008B45088945D08D45:
+      0. 15 B99B 0062 (l)0000:?DebuggerProbe@@YAHK@Z (l)003B:$LN5 (l)004D:$LN9 (l)004E:$LN6
+    021000008B45088945D08B45:
+      0. 27 B288 0074 (l)0000:?DebuggerRuntime@@YAHKHPAXPB_W@Z (l)004D:$LN5 (l)005F:$LN9 (l)0060:$LN6
+  FF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3:
+    0. 00 0000 0020 0000:__EH_prolog
+80:
+  3D........00:
+    740333C0C3C605........01E9:
+      0. 00 0000 0018 (l)0000:?GetPdbDll@@YAPAUHINSTANCE__@@XZ
+    750F6A00C605........01E8........59C3:
+      0. 00 0000 0019 0000:__RTC_InitBase
+  F940731580F92073060FADD0D3EAC38BC233D280E11FD3E8C333C033D2C3:
+    0. 00 0000 001F 0000:__aullshr (l)0010:MORE32 (l)001A:RETZERO
+83:
+  25........00C3:
+    0. 00 0000 0008 0000:__crt_debugger_hook (REF 0002: ___scrt_debugger_hook_flag)
+  3D........:
+    007437558BEC83EC0883E4F8DD1C24F20F2C0424C9C3833D:
+      0. 00 0000 00B5 0000:__ftol2_sse 0009:__ftol2_pentium4 001C:__ftol2_sse_excpt 0040:__ftol2 (l)0063:arg_is_not_integer_QnaN (l)0087:positive (l)009F:integer_QnaN_or_zero (l)00B3:localexit
+    020F8D........E9:
+      0. 00 0000 0012 0000:___vdecl_exp2 (REF 0009: ___sse4_exp2)
+      1. 00 0000 0012 0000:___vdecl_floor2 (REF 0009: ___sse4_floor2)
+      2. 00 0000 0012 0000:___vdecl_ceilf4 (REF 0009: ___sse4_ceilf4)
+      3. 00 0000 0012 0000:___vdecl_expf4 (REF 0009: ___sse4_expf4)
+      4. 00 0000 0012 0000:___vdecl_floorf4 (REF 0009: ___sse4_floorf4)
+      5. 00 0000 0012 0000:___vdecl_ceil2 (REF 0009: ___sse4_ceil2)
+  6104008BC183610800C74104........C701........C3:
+    0. 00 0000 0018 0000:??0bad_array_new_length@std@@QAE@XZ (REF 000D: ??_C@_0BF@KINCDENJ@bad?5array?5new?5length?$AA@)
+    1. 00 0000 0018 0000:??0bad_alloc@std@@QAE@XZ (REF 000D: ??_C@_0P@GHFPNOJB@bad?5allocation?$AA@)
+  EC:
+    0C8B4424108B5424140FB7480281E1807F000081F9807F00000F844E0200:
+      0. 19 89C0 02B0 0000:___common_slog10_cout_rare
+    108B4424140FB7500281E2807F000081FA807F00000F840C020000F30F10:
+      0. 07 37F8 0260 0000:___common_sexp_cout_rare
+    20F30F7F0424F30F7F4C2410:
+      D90424D9442410E8........D91C24D94424:
+        0. 06 C6D4 0059 0000:___vdecl_fmodf4
+      DD0424DD442410E8........DD1C24DD4424:
+        0. 06 8261 0037 0000:___vdecl_fmod2
+    40C5FE7F0424C5FE7F4C2420:
+      D90424D9442420E8........D91C24D94424:
+        0. 06 6462 009D 0000:___vdecl_fmodf8
+      DD0424DD442420E8........DD1C24DD4424:
+        0. 06 20D7 0059 0000:___vdecl_fmod4
+8B:
+  01832100C3:
+    0. 00 0000 0006 0000:?detach@?$__crt_unique_heap_ptr@UTlsDtorNode@@U__crt_internal_free_policy@@@@QAEPAUTlsDtorNode@@XZ
+  0D........33C081F9........0F95C0C3:
+    0. 00 0000 0012 0000:__guard_icall_checks_enforced
+  410485C07505B8........C3:
+    0. 00 0000 000D 0000:?what@exception@std@@UBEPBDXZ
+  4D:
+    EC33CDF2E8........F2E9:
+      0. 00 0000 0011 0000:__EH_epilog3_catch_GS
+    F033CDF2E8........F2E9:
+      0. 00 0000 0011 0000:__EH_epilog3_GS
+    F464890D00000000595F5F5E:
+      5B8BE55D51F2C3:
+        0. 00 0000 0015 0000:__EH_epilog3
+      8BE55D8BE35B51F2C3:
+        0. 00 0000 0017 0000:__EH_epilog3_align
+  5424:
+    04:
+      0FB642032580000000C1E8070FB74A0281E1807F000081F9807F0000:
+        0. 03 4357 0050 0000:___common_stanh_cout_rare
+      8B4424080FB64A0781E180000000C1E907F20F1004CD........0FB7:
+        0. 29 D0DB 0080 0000:___common_dtanh_cout_rare
+    088D420C8B4AEC33C8E8........B8........E9:
+      0. 00 0000 001B (l)0000:__ehhandler$??2@YAPAXIABUnothrow_t@std@@@Z
+  58048B0881E3FFFFFF7F81FB362386400F82:
+    010100000F87BA00000081FB50:
+      0. 2B 8D11 0360 (l)0000:__cosh_spec_sd (l)0029:_2TAG_PACKET_2_0_1 (l)003B:_2TAG_PACKET_4_0_1 (l)005E:_2TAG_PACKET_3_0_1 (l)006A:_2TAG_PACKET_5_0_1 (l)00D7:_2TAG_PACKET_1_0_1 (l)00F1:_2TAG_PACKET_8_0_1 (l)00F3:_2TAG_PACKET_9_0_1 (l)00FD:_2TAG_PACKET_7_0_1 (l)010B:_2TAG_PACKET_10_0_1 (l)0114:_2TAG_PACKET_6_0_1 (l)0118:_2TAG_PACKET_0_0_1 (l)0119:_2TAG_PACKET_11_0_1 0130:___sse2_cosh2 (l)0322:_2TAG_PACKET_12_0_2 (l)034B:_2TAG_PACKET_13_0_2
+    15010000F20F10300F87BE0000:
+      0. 2F 6857 0370 (l)0000:__sinh_spec_sd (l)002D:_2TAG_PACKET_2_0_1 (l)003F:_2TAG_PACKET_4_0_1 (l)0062:_2TAG_PACKET_3_0_1 (l)006E:_2TAG_PACKET_5_0_1 (l)00DF:_2TAG_PACKET_1_0_1 (l)00F9:_2TAG_PACKET_8_0_1 (l)00FB:_2TAG_PACKET_9_0_1 (l)0105:_2TAG_PACKET_7_0_1 (l)0113:_2TAG_PACKET_10_0_1 (l)011C:_2TAG_PACKET_6_0_1 (l)012C:_2TAG_PACKET_0_0_1 (l)012D:_2TAG_PACKET_11_0_1 0140:___sse2_sinh2 (l)0332:_2TAG_PACKET_12_0_2 (l)0361:_2TAG_PACKET_13_0_2
+  C4:
+    81EC:
+      3001000083E4F0898424F4000000660F28C8660F2805........660F:
+        0. 1C EC66 0210 0000:___sse2_acos2 (l)0202:_2TAG_PACKET_0_0_1
+      9000000083E4F089442454:
+        0F28:
+          25........0F28DC0F55D80F54E00F:
+            0. 02 D208 00D0 0000:___sse2_atanf4
+          3D........894C24340F280D:
+            0. 00 0000 0220 0000:___sse2_expf4 (l)0120:_2TAG_PACKET_0_0_1 (l)0190:_2TAG_PACKET_3_0_1 (l)01C8:_2TAG_PACKET_5_0_1 (l)01E2:_2TAG_PACKET_6_0_1 (l)0202:_2TAG_PACKET_4_0_1 (l)020F:_2TAG_PACKET_2_0_1 (l)0217:_2TAG_PACKET_1_0_1
+          C80F28F0660FDB05........660FDB:
+            0. 01 9D2B 0200 0000:___sse2_tanf4 (l)00B0:_2TAG_PACKET_1_0_1 (l)0100:_2TAG_PACKET_0_0_1 (l)01EC:_2TAG_PACKET_2_0_1
+          F00F28D00F28F80F280D........66:
+            0. 06 0E2D 01C0 0000:___sse2_sinf4 (l)00A4:_2TAG_PACKET_1_0_1 (l)00C8:_2TAG_PACKET_0_0_1 (l)01B2:_2TAG_PACKET_2_0_1
+        660F290424660FDB05........660F2825:
+          0. 00 0000 01A0 0000:___sse2_cos2 (l)00A9:_2TAG_PACKET_1_0_1 (l)012F:_2TAG_PACKET_0_0_1 (l)019B:_2TAG_PACKET_2_0_1
+      A000000083E4F089442464660F290424660F28C8660FDB05:
+        0. 04 3BFF 0200 0000:___sse2_tan2 (l)00BB:_2TAG_PACKET_1_0_1 (l)0154:_2TAG_PACKET_0_0_1 (l)01EF:_2TAG_PACKET_2_0_1 (0006: 28)
+        1. 04 3BFF 01C0 0000:___sse2_sin2 (l)00A9:_2TAG_PACKET_1_0_1 (l)0132:_2TAG_PACKET_0_0_1 (l)01B6:_2TAG_PACKET_2_0_1 (0006: DB)
+      C000000083E4F089842484000000660F:
+        28:
+          3D........660F28C8894C:
+            0. 06 96F1 0290 0000:___sse2_tanh2 (l)022C:_2TAG_PACKET_1_0_1 (l)0238:_2TAG_PACKET_3_0_1 (l)0244:_2TAG_PACKET_0_0_1 (l)0248:_2TAG_PACKET_4_0_1 (l)0285:_2TAG_PACKET_2_0_1
+          C8660F2805........660F:
+            0. 14 A648 01D0 0000:___sse2_asin2 (l)01BC:_2TAG_PACKET_0_0_1
+        290424660F294C2410660F28:
+          0. 01 54B7 0290 0000:___sse2_atan22 (l)0263:_2TAG_PACKET_0_0_1 (l)0284:_2TAG_PACKET_1_0_1
+    83EC:
+      5083E4F089442414660F6FC8F30F5BD0660F72E11F660F6FD8660FDB:
+        0. 01 D5A7 0070 0000:___sse2_ceilf4
+      6083E4F089442424660F6F:
+        15........660F6F1D........660FDBD0:
+          0. 04 1F59 0140 0000:___sse2_log10f4 (l)0100:_2TAG_PACKET_0_0_1 (l)0132:_2TAG_PACKET_1_0_1
+        E0660F6F15........0F28F0660F6F0D:
+          0. 00 0000 0110 0000:___sse2_logf4 (l)00E1:_2TAG_PACKET_1_0_1 (l)00E3:_2TAG_PACKET_0_0_1 (l)00EC:_2TAG_PACKET_3_0_1 (l)0101:_2TAG_PACKET_2_0_1
+      7083E4F0894424:
+        2C660F28F8660F28F0660F73D720895C2410894C24:
+          0. 3B 0307 01D0 0000:___sse2_log102 (l)01A0:_2TAG_PACKET_0_0_1 (l)01C8:_2TAG_PACKET_1_0_1
+        34:
+          0F2835........0F283D........0F54F80F58F7:
+            0. 03 D426 00F0 0000:___sse2_tanhf4 (l)00EA:_2TAG_PACKET_0_0_1
+          660F280D........660F2815........660F281D:
+            0. 00 0000 01A0 0000:___sse2_atan2
+          891C24894C2404660F28F8660F28F0660F73D720:
+            0. 3A 727A 01D0 0000:___sse2_log2 (l)0192:_2TAG_PACKET_0_0_1 (l)01BD:_2TAG_PACKET_1_0_1
+8D4104C701........50E8........59C3:
+  0. 00 0000 0011 (!)0000:?
+A1........:
+  85C07524568B35........8BCE3335........83E11FD3CE68:
+    0. 00 0000 0041 0000:__Init_thread_notify
+  C3:
+    0. 00 0000 0006 0000:?_RTC_GetErrorFuncW@@YAP6AHHPB_WH00ZZPBX@Z (REF 0001: ?_RTC_ErrorReportFuncW@@3P6AHHPB_WH00ZZA)
+    1. 00 0000 0006 0000:?_RTC_GetErrorFunc@@YAP6AHHPBDH00ZZPBX@Z (REF 0001: ?_RTC_ErrorReportFunc@@3P6AHHPBDH00ZZA)
+B8:
+  00400000C3:
+    0. 00 0000 0006 0000:__get_startup_file_mode
+  ........C3:
+    0. 00 0000 0006 0000:___local_stdio_scanf_options (REF 0001: ?_OptionsStorage@?1??__local_stdio_scanf_options@@9@4_KA)
+    1. 00 0000 0006 0000:___scrt_get_dyn_tls_init_callback (REF 0001: ___dyn_tls_init_callback)
+    2. 00 0000 0006 0000:___scrt_get_dyn_tls_dtor_callback (REF 0001: ___dyn_tls_dtor_callback)
+    3. 00 0000 0006 0000:___local_stdio_printf_options (REF 0001: ?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA)
+B901000000F20F102D........EB1CB902000000F20F102D........EB0DB903:
+  0. 07 9CE7 0377 0000:__ftoui3 000F:__ftoul3 001E:__ftol3 002B:__ftol3_NaN 0043:__ftol3_work (l)0060:_ftol3_non_ftoul3 00C9:__ftol3_common (l)017D:_ftol3_exact 018B:__ftol3_arg_error 019D:__ftol3_except (l)01B5:_ftol3_eh_gen (l)01DD:_ftol3_eh_cont 01E1:__dtoui3 01F0:__dtoul3 01FF:__dtol3 020C:__dtol3_NaN 0229:__dtol3_work (l)0269:_dtoul3_overflow (l)027D:_dtol3_underflow (l)02B2:_dtol3_inexact (l)02CD:_dtol3_inexact_1 (l)02ED:_dtol3_exact 0310:__ultod3 (l)0346:_ultod3_uint32 0350:__ltod3
+C4E37D:
+  08C0:
+    01C38DA424000000008BFF:
+      0. 00 0000 0010 0000:___avx_floorf8
+    02C38DA424000000008BFF:
+      0. 00 0000 0010 0000:___avx_ceilf8
+  09C0:
+    01C38DA424000000008BFF:
+      0. 00 0000 0010 0000:___avx_floor4
+    02C38DA424000000008BFF:
+      0. 00 0000 0010 0000:___avx_ceil4
+C5FC1015........C5FC103D........C5FC5425........C5DCC2F212C5EC5D:
+  0. 09 8E41 00C0 0000:___avx_atanf8
+C701........C3:
+  0. 00 0000 0007 0000:??1type_info@@UAE@XZ (REF 0002: ??_7type_info@@6B@)
+E8........:
+  0FB7C050E8........506A0068........E8........C3:
+    0. 00 0000 001C (l)0000:?invoke_main@@YAHXZ
+  33C0C3:
+    0. 00 0000 0008 (l)0000:?post_pgo_initialization@@YAHXZ (REF 0001: ___scrt_initialize_default_local_stdio_options)
+  50E8........59C3:
+    0. 00 0000 000D 0000:?configure_argv@__scrt_wide_argv_policy@@SAHXZ (REF 0007: __configure_wide_argv)
+    1. 00 0000 000D 0000:?configure_argv@__scrt_narrow_argv_policy@@SAHXZ (REF 0007: __configure_narrow_argv)
+  84C0750332C0C3E8........84C07507E8........EBEDB001C3:
+    0. 00 0000 001F 0000:___scrt_dllmain_crt_thread_attach
+  85C0:
+    74:
+      07E8........EB18E8........50E8........5985C07403:
+        0. 04 4408 002B 0000:___scrt_dllmain_after_initialize_c
+      0C68........E8........59C3E8........85C00F84:
+        0. 00 0000 0023 0000:___scrt_dllmain_uninitialize_c
+    750332C0C364A11800000056BE........8B5004EB043BD074:
+      0. 15 87DF 0035 0000:___scrt_acquire_startup_lock
+  8B4804830804894804E8........8B4804830802894804C3:
+    0. 00 0000 001D 0000:___scrt_initialize_default_local_stdio_options
+  E8........:
+    50E8........59C3:
+      0. 00 0000 0012 (l)0000:?pre_cpp_initialization@@YAXXZ (REF 0001: ___scrt_set_unhandled_exception_filter)
+    B001C3:
+      0. 00 0000 000D 0000:___scrt_dllmain_crt_thread_detach (REF 0001: ___acrt_thread_detach)
+  E9:
+    0. 00 0000 000A (l!)0000:? (REF 0001: ___security_init_cookie)
+E9:
+  0. 00 0000 0005 0000:___vdecl_acos2 (REF 0001: ___sse2_acos2)
+  1. 00 0000 0005 0000:___vdecl_acos4 (REF 0001: ___avx_acos4)
+  2. 00 0000 0005 0000:___vdecl_asin2 (REF 0001: ___sse2_asin2)
+  3. 00 0000 0005 0000:___vdecl_asin4 (REF 0001: ___avx_asin4)
+  4. 00 0000 0005 0000:___vdecl_atan22 (REF 0001: ___sse2_atan22)
+  5. 00 0000 0005 0000:___vdecl_atan24 (REF 0001: ___avx_atan24)
+  6. 00 0000 0005 0000:___vdecl_atan2 (REF 0001: ___sse2_atan2)
+  7. 00 0000 0005 0000:___vdecl_atan4 (REF 0001: ___avx_atan4)
+  8. 00 0000 0005 0000:___vdecl_ceil4 (REF 0001: ___avx_ceil4)
+  9. 00 0000 0005 0000:___vdecl_cos2 (REF 0001: ___sse2_cos2)
+  10. 00 0000 0005 0000:___vdecl_cos4 (REF 0001: ___avx_cos4)
+  11. 00 0000 0005 0000:___vdecl_cosh2 (REF 0001: ___sse2_cosh2)
+  12. 00 0000 0005 0000:___vdecl_cosh4 (REF 0001: ___avx_cosh4)
+  13. 00 0000 0005 0000:___vdecl_exp4 (REF 0001: ___avx_exp4)
+  14. 00 0000 0005 0000:___vdecl_floor4 (REF 0001: ___avx_floor4)
+  15. 00 0000 0005 0000:___vdecl_log102 (REF 0001: ___sse2_log102)
+  16. 00 0000 0005 0000:___vdecl_log104 (REF 0001: ___avx_log104)
+  17. 00 0000 0005 0000:___vdecl_log2 (REF 0001: ___sse2_log2)
+  18. 00 0000 0005 0000:___vdecl_log4 (REF 0001: ___avx_log4)
+  19. 00 0000 0005 0000:___vdecl_pow2 (REF 0001: ___sse2_pow2)
+  20. 00 0000 0005 0000:___vdecl_pow4 (REF 0001: ___avx_pow4)
+  21. 00 0000 0005 0000:___vdecl_sin2 (REF 0001: ___sse2_sin2)
+  22. 00 0000 0005 0000:___vdecl_sin4 (REF 0001: ___avx_sin4)
+  23. 00 0000 0005 0000:___vdecl_sinh2 (REF 0001: ___sse2_sinh2)
+  24. 00 0000 0005 0000:___vdecl_sinh4 (REF 0001: ___avx_sinh4)
+  25. 00 0000 0005 0000:___vdecl_tan2 (REF 0001: ___sse2_tan2)
+  26. 00 0000 0005 0000:___vdecl_tan4 (REF 0001: ___avx_tan4)
+  27. 00 0000 0005 0000:___vdecl_tanh2 (REF 0001: ___sse2_tanh2)
+  28. 00 0000 0005 0000:___vdecl_tanh4 (REF 0001: ___avx_tanh4)
+  29. 00 0000 0005 0000:___vdecl_acosf4 (REF 0001: ___sse2_acosf4)
+  30. 00 0000 0005 0000:___vdecl_acosf8 (REF 0001: ___avx_acosf8)
+  31. 00 0000 0005 0000:___vdecl_asinf4 (REF 0001: ___sse2_asinf4)
+  32. 00 0000 0005 0000:___vdecl_asinf8 (REF 0001: ___avx_asinf8)
+  33. 00 0000 0005 0000:___vdecl_atan2f4 (REF 0001: ___sse2_atan2f4)
+  34. 00 0000 0005 0000:___vdecl_atan2f8 (REF 0001: ___avx_atan2f8)
+  35. 00 0000 0005 0000:___vdecl_atanf4 (REF 0001: ___sse2_atanf4)
+  36. 00 0000 0005 0000:___vdecl_atanf8 (REF 0001: ___avx_atanf8)
+  37. 00 0000 0005 0000:___vdecl_ceilf8 (REF 0001: ___avx_ceilf8)
+  38. 00 0000 0005 0000:___vdecl_cosf4 (REF 0001: ___sse2_cosf4)
+  39. 00 0000 0005 0000:___vdecl_cosf8 (REF 0001: ___avx_cosf8)
+  40. 00 0000 0005 0000:___vdecl_coshf4 (REF 0001: ___sse2_coshf4)
+  41. 00 0000 0005 0000:___vdecl_coshf8 (REF 0001: ___avx_coshf8)
+  42. 00 0000 0005 0000:___vdecl_expf8 (REF 0001: ___avx_expf8)
+  43. 00 0000 0005 0000:___vdecl_floorf8 (REF 0001: ___avx_floorf8)
+  44. 00 0000 0005 0000:___vdecl_log10f4 (REF 0001: ___sse2_log10f4)
+  45. 00 0000 0005 0000:___vdecl_log10f8 (REF 0001: ___avx_log10f8)
+  46. 00 0000 0005 0000:___vdecl_logf4 (REF 0001: ___sse2_logf4)
+  47. 00 0000 0005 0000:___vdecl_logf8 (REF 0001: ___avx_logf8)
+  48. 00 0000 0005 0000:___vdecl_powf4 (REF 0001: ___sse2_powf4)
+  49. 00 0000 0005 0000:___vdecl_powf8 (REF 0001: ___avx_powf8)
+  50. 00 0000 0005 0000:___vdecl_sinf4 (REF 0001: ___sse2_sinf4)
+  51. 00 0000 0005 0000:___vdecl_sinf8 (REF 0001: ___avx_sinf8)
+  52. 00 0000 0005 0000:___vdecl_sinhf4 (REF 0001: ___sse2_sinhf4)
+  53. 00 0000 0005 0000:___vdecl_sinhf8 (REF 0001: ___avx_sinhf8)
+  54. 00 0000 0005 0000:___vdecl_tanf4 (REF 0001: ___sse2_tanf4)
+  55. 00 0000 0005 0000:___vdecl_tanf8 (REF 0001: ___avx_tanf8)
+  56. 00 0000 0005 0000:___vdecl_tanhf4 (REF 0001: ___sse2_tanhf4)
+  57. 00 0000 0005 0000:___vdecl_tanhf8 (REF 0001: ___avx_tanhf8)
+  58. 00 0000 0005 (l)0000:?initialize_environment@@YAXXZ (REF 0001: __initialize_wide_environment)
+  59. 00 0000 0005 0000:??3@YAXPAX@Z (REF 0001: _free)
+  60. 00 0000 0005 0000:??_V@YAXPAX@Z (REF 0001: ??3@YAXPAX@Z)
+  61. 00 0000 0005 0000:??_M@YGXPAXIHP6EX0@Z@Z (REF 0001: ??_M@YGXPAXIIP6EX0@Z@Z)
+  62. 00 0000 0005 0000:??_N@YGXPAXIHP6EX0@Z1@Z (REF 0001: ??_N@YGXPAXIIP6EX0@Z1@Z)
+  63. 00 0000 0005 0000:??_L@YGXPAXIHP6EX0@Z1@Z (REF 0001: ??_L@YGXPAXIIP6EX0@Z1@Z)
+  64. 00 0000 0005 0000:??__D@YGXPAX0IHP6EX00@ZP6EX0@Z@Z (REF 0001: ??__D@YGXPAX0IIP6EX00@ZP6EX0@Z@Z)
+  65. 00 0000 0005 0000:??__C@YGXPAX0IHP6EX00@ZP6EX0@Z@Z (REF 0001: ??__C@YGXPAX0IIP6EX00@ZP6EX0@Z@Z)
+F2:
+  0F1015........81E6FFFFFF7F250000807F3D0000807F0F840E010000C1EE:
+    0. 12 EA43 0670 (l)0000:___libm_sse2_cosf (l)012C:_2TAG_PACKET_0_0_1 (l)0130:_2TAG_PACKET_1_0_1 0140:___sse2_cosf4 (l)01F5:_2TAG_PACKET_2_0_2 (l)04C9:_2TAG_PACKET_4_0_2 (l)0576:_2TAG_PACKET_5_0_2 (l)05B1:_2TAG_PACKET_6_0_2 (l)05DD:_2TAG_PACKET_7_0_2 (l)0606:_2TAG_PACKET_8_0_2 (l)0634:_2TAG_PACKET_9_0_2 (l)063F:_2TAG_PACKET_3_0_2 (l)0662:_2TAG_PACKET_10_0_2
+  7502F2C3558BEC83EC00500F1B0404525356576A00FF7504E8........5959:
+    0. 0F 620B 002F 0000:__RTC_CheckEsp (l)0005:$esperror$4
+FF25:
+  0. 00 0000 0006 0000:@_guard_check_icall@4 (REF 0002: ___guard_check_icall_fptr)
