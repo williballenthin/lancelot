@@ -31,16 +31,9 @@ _testmain.go
 *.bin
 
 # binaries
-CrystalTiger
-emudbg
-hexdump
-cli
-
-/app/dora/dora
 
 /target
 **/*.rs.bk
-
 
 *.id0
 *.id1
@@ -48,3 +41,14 @@ cli
 *.nam
 *.til
 resources/test/k32.dll
+
+pylancelot/.eggs/*
+__pycache__
+*egg-info
+*.pyd
+
+.idea
+
+
+*.pat
+*.sig
