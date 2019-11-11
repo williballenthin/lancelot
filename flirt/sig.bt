@@ -98,102 +98,105 @@ typedef struct {
     }
 
     char v[length]<optimize=false>;
-    uint8_t footer;
 } Name <read=readName>;
 
 string readName( Name &v ) {
     return v.v;
 }
 
-typedef struct {
-    uint8_t relative_offset;
+uint8_t is_flag_set(uint32_t v, uint32_t flag) {
+    return (v & flag) == flag;
+}
+
+#define MORE_PUBLIC_NAMES            0x01
+#define READ_TAIL_BYTES              0x02
+#define READ_REFERENCED_FUNCTIONS    0x04
+#define MORE_MODULES_WITH_SAME_CRC   0x08
+#define MORE_MODULES                 0x10
+#define LOCAL                     0x02
+#define UNRESOLVED_COLLISION      0x08
+
+typedef struct PublicNames {
+    local uint8_t flags;
+    do {
+        VariableInt offset;
+    
+        if (ReadByte(FTell()) < 0x20) {
+            uint8_t flags2;
+            if (is_flag_set(flags2, LOCAL)) {}
+            if (is_flag_set(flags2, UNRESOLVED_COLLISION)) {}
+            if (is_flag_set(flags2, 0x1)) {}  // unknown
+            if (is_flag_set(flags2, 0x4)) {}  // unknown
+        }
+    
+        Name name;
+        uint8_t flags_;
+        flags = flags_;
+    } while (is_flag_set(flags, MORE_PUBLIC_NAMES));
+} PublicNames;
+
+typedef struct TailByte {
+    VariableInt offset;
+    uint8_t value;
+} TailByte;
+
+typedef struct TailBytes {
+    uint8_t count;
+    TailByte entries[count]<optimize=false>;
+} TailBytes;
+
+typedef struct ReferencedName {
+    VariableInt offset;
     uint8_t size;
-    char name[size];
+    if (size == 0x0) {
+        // this is a literal port of r2
+        VariableInt size2;
+        char name[size2]<optimize=false>;
+        if (name[size2 - 1] == 0x0) {
+            // offset is negative
+        }
+    } else {
+        char name[size]<optimize=false>;
+        if (name[size] == 0x0) {
+            // offset is negative
+        }
+    }
 } ReferencedName;
 
+typedef struct ReferencedNames {
+    VariableInt count;
+} ReferencedNames;
 
-struct Rule;
+typedef struct Leaf {
+    local uint8_t flags;
 
+    do {
+        // for each module with sample prefix
 
-typedef struct {
+        uint8_t crc_len;
+        BigEndian();
+        uint16_t crc;
+        LittleEndian();
 
-    // initial public name
-    uint8_t offset;
+        do {
+            // for each module with same crc
+
+            VariableInt size;
+
+            PublicNames pub_names;
+            flags = pub_names.flags;
     
-    if ((ReadByte(FTell()) == 0x02) != 0x00) {
-        // local function
-        uint8_t flags;
-    } else if ((ReadByte(FTell()) == 0x08) != 0x00) {
-        // unresolved collision
-        uint8_t flags;
-    }
-    Name name;
-    local uint8_t mode = name.footer;
-
-
-    while (mode) {
-
-        if ((mode & 0x10) != 0) {
-            // more modules
-            struct Rule rule;
-            break;
-        } else if ((mode & 0x01) != 0) {
-            // more public names
-            uint8_t flags;
-            uint8_t offset;
-            uint8_t flags2;
-            Name name;
-    
-            mode = name.footer;
-        } else if ((mode & 0x04) != 0) {
-            // more references
-            uint8_t flags;
-            uint8_t offset;
-            uint8_t size;
-            char name_[size]<optimize=false>;
-
-            break;
-        } else {
-            // 0x02 tail bytes
-            // 0x08 modules with same crc32
-            1 / 0;
-        }
-    }
-
-} Names<optimize=false>;
-
-typedef struct {
-    uint8_t crc_len;
-    uint16_t crc;
-    VariableInt function_size;
-    Names names;
-    /*
-    VariableInt public_name_offset;
-    Name public_name;
-
-    if (public_name.footer == 0x0) {
-
-    } else if ((public_name.footer & 0x10) != 0) {
-        struct Rule more_module;
-    } else {
-        uint8_t flags;
-
-        if (flags == 0x01) {
-            ReferencedName ref_name;
-        } else {        
-            uint8_t local_name_relative_offset;
-            uint8_t local_name_flags;
-            Name local_name;
-        
-            if (local_name.footer != 0x00) {
-                uint8_t local_name_relative_offset2;
-                uint8_t local_name_flags2;
-                Name local_name2;
+            if (is_flag_set(flags, READ_TAIL_BYTES)) {
+                TailBytes tail_bytes;
             }
-        }
-    }
-    */
-} Module;
+    
+            if (is_flag_set(flags, READ_REFERENCED_FUNCTIONS)) {
+                ReferencedNames ref_names;
+            }
+        } while (is_flag_set(flags, MORE_MODULES_WITH_SAME_CRC));
+    } while (is_flag_set(flags, MORE_MODULES));
+
+} Leaf;
 
 typedef struct Node {
     // number of bytes that this node covers.
@@ -218,7 +221,6 @@ typedef struct Node {
            ReadByte(FTell() + 0) & 0xFF, ReadByte(FTell() + 1) & 0xFF,
            ReadByte(FTell() + 2) & 0xFF, ReadByte(FTell() + 3) & 0xFF,
            ReadByte(FTell() + 4) & 0xFF);
-
 
     // cases (from libcmt_15_msvc_x86.sig):
     //
@@ -246,10 +248,9 @@ typedef struct Node {
     //         -------- --
     //          0x15     8   bits available
 
-
     local uint8_t mask1_bits = variable_bits_used(FTell());
-    VariableInt mask;
-    literal_byte_count -= count_bits(mask[0].v);
+    VariableInt wildcard_mask;
+    literal_byte_count -= count_bits(wildcard_mask[0].v);
 
     if (length > 0x10) {
         // cannot fit 0x10 bits in a byte literal or 0x8* variable int,
@@ -263,20 +264,20 @@ typedef struct Node {
         // in the case at offset 0x110 above, then its not even
         // strictly required, but it is still present.
         if (mask1_bits > 0xE) {
-            VariableInt mask;
-            literal_byte_count -= count_bits(mask[1].v);
+            VariableInt wildcard_mask;
+            literal_byte_count -= count_bits(wildcard_mask[1].v);
         }
     }
 
     // the byte literals in this pattern.
-    uint8_t buf[literal_byte_count]<optimize=false>;
+    uint8_t byte_literals[literal_byte_count]<optimize=false>;
 
     // number of children nodes
-    VariableInt count;
-    if (count.v > 0) {
-        struct Node nodes[count.v]<optimize=false>;
+    VariableInt child_node_count;
+    if (child_node_count.v > 0) {
+        struct Node nodes[child_node_count.v]<optimize=false>;
     } else {
-        Module module;
+        struct Leaf leaf;
     }
 } Node;
 
