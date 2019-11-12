@@ -74,6 +74,12 @@ struct Header {
     library_name: String,
 }
 
+fn utf8(input: &[u8], size: u8) -> IResult<&[u8], String> {
+    let (input, s) = take(size)(input)?;
+    let s = String::from_utf8(s.to_vec()).expect("invalid string");
+    Ok((input, s))
+}
+
 fn header(input: &[u8]) -> IResult<&[u8], Header> {
     let (input, _) = tag(b"IDASGN")(input)?;
 
@@ -114,8 +120,7 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
         _ => unimplemented!(),
     };
 
-    let (input, library_name) = take(library_name_length)(input)?;
-    let library_name = String::from_utf8(library_name.to_vec()).expect("invalid library name");
+    let (input, library_name) = utf8(input, library_name_length)?;
 
     Ok((input, Header{
         version,
@@ -326,8 +331,7 @@ fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], V
 
         let (input_, size) = be_u8(input_)?;
 
-        let (input_, name) = take(size)(input_)?;
-        let name = String::from_utf8(name.to_vec()).expect("invalid ref name");
+        let (input_, name) = utf8(input_, size)?;
 
         ret.push(ReferencedName{
             offset,
