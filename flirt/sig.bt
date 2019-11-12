@@ -115,6 +115,7 @@ uint8_t is_flag_set(uint32_t v, uint32_t flag) {
 #define MORE_MODULES                 0x10
 #define LOCAL                     0x02
 #define UNRESOLVED_COLLISION      0x08
+#define NEGATIVE_OFFSET           0x10
 
 typedef struct PublicNames {
     local uint8_t flags;
@@ -165,6 +166,7 @@ typedef struct ReferencedName {
 
 typedef struct ReferencedNames {
     VariableInt count;
+    //ReferencedName names[count.v];
 } ReferencedNames;
 
 typedef struct Leaf {
