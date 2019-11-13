@@ -392,7 +392,7 @@ fn referenced_names<'a>(
 
 #[derive(Debug)]
 struct Name {
-    offset: u64,
+    offset: i64,
     flags: NameFlags,
     name: String,
 }
@@ -406,10 +406,9 @@ struct Name {
 fn name<'a>(
     input: &'a [u8],
     header: &Header,
-    base_offset: u64,
+    base_offset: i64,
 ) -> IResult<&'a [u8], (Name, ParsingFlags)> {
     let (input, relative_offset) = vword(input, header)?;
-    let offset = base_offset + relative_offset;
 
     // note: this field is only optionally present.
     let (input, name_flags) = if peek(be_u8)(input)?.1 < 0x20 {
@@ -418,8 +417,10 @@ fn name<'a>(
         (input, 0u8)
     };
     let name_flags = NameFlags::from_bits(name_flags).expect("invalid name flags");
-    if name_flags.intersects(NameFlags::NEGATIVE_OFFSET) {
-        unimplemented!("name negative offset");
+    let offset = if name_flags.intersects(NameFlags::NEGATIVE_OFFSET) {
+        base_offset - (relative_offset as i64)
+    } else {
+        base_offset + (relative_offset as i64)
     };
 
     let (input, s) = take_while(|b| b >= 0x20)(input)?;
@@ -455,7 +456,7 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
 
         loop {
             // module with crc
-            let mut offset = 0u64;
+            let mut offset = 0i64;
 
             let (input_, function_size) = vword(input, header)?;
             input = input_;
