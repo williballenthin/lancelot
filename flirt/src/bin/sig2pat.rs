@@ -1,4 +1,3 @@
-use log::{error};
 use fern;
 use failure::{Error};
 use better_panic;
@@ -60,6 +59,6 @@ fn main() {
         .expect("failed to configure logging");
 
     if let Err(e) = run(matches.value_of("sig").unwrap()) {
-        error!("{:?}", e)
+        println!("error: {:}", e);
     }
 }
