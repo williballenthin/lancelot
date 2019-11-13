@@ -51,6 +51,17 @@ enum HeaderExtra {
     },
 }
 
+impl HeaderExtra {
+    /// get the size of this structure in bytes.
+    fn get_size(&self) -> usize {
+        match self {
+            HeaderExtra::V5 | HeaderExtra::V6_7 { .. } => 4,
+            HeaderExtra::V8_9 { .. } => 6,
+            HeaderExtra::V10 { .. } => 8,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Header {
     // offset 6
@@ -65,13 +76,19 @@ struct Header {
     app_types: u16,
     // offset: 0x10
     features: Features,
-    // offset: 0x11
+    // offset: 0x14
     crc16: u16,
-    // offset: 0x13
+    // offset: 0x23
     ctypes_crc16: u16,
-    // offset 0x15
+    // offset 0x25
     extra: HeaderExtra,
     library_name: String,
+}
+
+impl Header {
+    fn get_size(&self) -> usize {
+        0x25 + self.extra.get_size() + self.library_name.as_bytes().len()
+    }
 }
 
 fn utf8(input: &[u8], size: u8) -> IResult<&[u8], String> {
@@ -538,9 +555,13 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
 fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
     if let Ok((payload, header)) = header(input) {
         if header.features.intersects(Features::COMPRESSED) {
+            let header_buf = &input[..header.get_size()];
             match inflate::inflate_bytes_zlib(payload) {
-                Ok(buf) => {
-                    // TODO: need to stitch the header buf back on
+                Ok(decompressed) => {
+                    // stitch together the header with the decompressed payload
+                    let mut buf = vec![];
+                    buf.extend(header_buf);
+                    buf.extend(decompressed);
                     Ok(buf)
                 }
                 Err(e) => {
