@@ -1,7 +1,7 @@
 use bitflags;
 use failure::{Error, Fail};
 use inflate;
-use log::{debug, error};
+use log::debug;
 use nom::branch::alt;
 use nom::bytes::complete::take;
 use nom::bytes::complete::{tag, take_while};
@@ -17,8 +17,10 @@ use super::FlirtSignature;
 
 #[derive(Debug, Fail)]
 pub enum SigError {
-    #[fail(display = "The pattern is not supported")]
+    #[fail(display = "The sig file is not supported")]
     NotSupported,
+    #[fail(display = "The sig file compression method is not support: {}", _0)]
+    CompressionNotSupported(String),
     #[fail(display = "The .sig file is corrupt (or unsupported)")]
     CorruptSigFile,
 }
@@ -570,28 +572,37 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
     Ok(sigs)
 }
 
-fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
-    if let Ok((payload, header)) = header(input) {
-        if header.features.intersects(Features::COMPRESSED) {
-            let header_buf = &input[..header.get_size()];
-            match inflate::inflate_bytes_zlib(payload) {
-                Ok(decompressed) => {
-                    // stitch together the header with the decompressed payload
-                    let mut buf = vec![];
-                    buf.extend(header_buf);
-                    buf.extend(decompressed);
-                    Ok(buf)
+pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
+    match header(input) {
+        Ok((compressed, header)) => {
+            /*
+            println!("{:02x?}", &input[..0x50]);
+            println!("{:02x?}", &compressed[..0x50]);
+            */
+
+            if header.features.intersects(Features::COMPRESSED) {
+                let header_buf = &input[..header.get_size()];
+                match inflate::inflate_bytes_zlib(&compressed) {
+                    Ok(decompressed) => {
+                        // stitch together the header with the decompressed payload
+                        let mut buf = vec![];
+                        buf.extend(header_buf);
+                        buf.extend(decompressed);
+                        Ok(buf)
+                    }
+                    Err(e) => {
+                        // I've see possible CMF values:
+                        //  0xC4 - IDA Pro 7.4/sig/pc/bc31cls.sig
+                        //  0x0C - IDA Pro 7.4/sig/pc/bc15owl
+                        //  0x05 - IDA Pro 7.4/sig/pc/bc15c2.sig
+                        Err(SigError::CompressionNotSupported(e).into())
+                    }
                 }
-                Err(e) => {
-                    error!("error: {:?}", e);
-                    Err(SigError::CorruptSigFile.into())
-                }
+            } else {
+                Ok(input.to_vec())
             }
-        } else {
-            Ok(input.to_vec())
         }
-    } else {
-        Err(SigError::CorruptSigFile.into())
+        Err(_) => Err(SigError::CorruptSigFile.into()),
     }
 }
 
