@@ -307,9 +307,6 @@ struct TailByte {
 ///
 /// a tail byte differentiates two (or more) otherwise identical functions
 /// by specifying the first byte that differs.
-///
-/// note: unknown from where the offset is relative.
-/// note: unknown if there can be more than one tail byte (suspected).
 fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<TailByte>> {
     let (input, count) = be_u8(input)?;
 
@@ -317,7 +314,8 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
     let mut input = input;
 
     for _ in 0..count {
-        // TODO: is this relative to the prior offset?
+        // this offset is relative to the start of the function.
+        // it is *not* relative to the prior offset.
         let (input_, offset) = vword(input, header)?;
         let (input_, value) = be_u8(input_)?;
 
@@ -345,7 +343,6 @@ struct ReferencedName {
 /// note: i'm not yet sure how the pointer itself will be encoded. is it always a global offset?
 ///
 /// note: unknown from where the offset is relative.
-/// note: unknown if there can be more than one (suspected).
 fn referenced_names<'a>(
     input: &'a [u8],
     header: &Header,
