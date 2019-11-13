@@ -100,7 +100,14 @@ fn utf8(input: &[u8], size: u16) -> IResult<&[u8], String> {
 fn header(input: &[u8]) -> IResult<&[u8], Header> {
     let (input, _) = tag(b"IDASGN")(input)?;
 
-    let (input, version) = alt((tag(b"\x0A"), tag(b"\x09")))(input)?;
+    let (input, version) = alt((
+        tag(b"\x0A"),
+        tag(b"\x09"),
+        tag(b"\x08"),
+        tag(b"\x07"),
+        tag(b"\x06"),
+        tag(b"\x05"),
+    ))(input)?;
     let version = version[0];
 
     let (input, arch) = le_u8(input)?;
@@ -308,7 +315,11 @@ struct TailByte {
 /// a tail byte differentiates two (or more) otherwise identical functions
 /// by specifying the first byte that differs.
 fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<TailByte>> {
-    let (input, count) = be_u8(input)?;
+    let (input, count) = if header.version < 8 {
+        (input, 1)
+    } else {
+        vword(input, header)?
+    };
 
     let mut ret = vec![];
     let mut input = input;
@@ -341,19 +352,21 @@ struct ReferencedName {
 /// i think its probably the former.
 ///
 /// note: i'm not yet sure how the pointer itself will be encoded. is it always a global offset?
-///
-/// note: unknown from where the offset is relative.
 fn referenced_names<'a>(
     input: &'a [u8],
     header: &Header,
 ) -> IResult<&'a [u8], Vec<ReferencedName>> {
-    // if version < 8, then this isn't used.
-    let (input, count) = vword(input, header)?;
+    let (input, count) = if header.version < 8 {
+        (input, 1)
+    } else {
+        vword(input, header)?
+    };
 
     let mut ret = vec![];
     let mut input = input;
     for _ in 0..count {
-        // TODO: is this relative to the prior offset?
+        // this offset is relative to the start of the function.
+        // it is *not* relative to the prior offset.
         let (input_, offset) = vword(input, header)?;
 
         let (input_, size) = be_u8(input_)?;
