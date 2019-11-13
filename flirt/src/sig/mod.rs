@@ -1,19 +1,19 @@
+use bitflags;
+use failure::{Error, Fail};
+use inflate;
 use log::{debug, error};
-use nom::IResult;
-use nom::bytes::complete::{tag, take_while};
+use nom::branch::alt;
 use nom::bytes::complete::take;
-use nom::number::complete::le_u8;
+use nom::bytes::complete::{tag, take_while};
+use nom::combinator::peek;
+use nom::number::complete::be_u16;
 use nom::number::complete::be_u8;
 use nom::number::complete::le_u16;
-use nom::number::complete::be_u16;
 use nom::number::complete::le_u32;
-use nom::combinator::peek;
-use nom::branch::alt;
-use failure::{Error, Fail};
-use bitflags;
-use inflate;
+use nom::number::complete::le_u8;
+use nom::IResult;
 
-use super::{FlirtSignature};
+use super::FlirtSignature;
 
 #[derive(Debug, Fail)]
 pub enum SigError {
@@ -83,10 +83,7 @@ fn utf8(input: &[u8], size: u8) -> IResult<&[u8], String> {
 fn header(input: &[u8]) -> IResult<&[u8], Header> {
     let (input, _) = tag(b"IDASGN")(input)?;
 
-    let (input, version) = alt((
-        tag(b"\x0A"),
-        tag(b"\x09"),
-    ))(input)?;
+    let (input, version) = alt((tag(b"\x0A"), tag(b"\x09")))(input)?;
     let version = version[0];
 
     let (input, arch) = le_u8(input)?;
@@ -105,35 +102,51 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
         6 | 7 => {
             let (input, functions_count) = le_u32(input)?;
             (input, HeaderExtra::V6_7 { functions_count })
-        },
+        }
         8 | 9 => {
             let (input, functions_count) = le_u32(input)?;
             let (input, pattern_size) = le_u16(input)?;
-            (input, HeaderExtra::V8_9 { functions_count, pattern_size })
-        },
+            (
+                input,
+                HeaderExtra::V8_9 {
+                    functions_count,
+                    pattern_size,
+                },
+            )
+        }
         10 => {
             let (input, functions_count) = le_u32(input)?;
             let (input, pattern_size) = le_u16(input)?;
             let (input, unknown) = le_u16(input)?;
-            (input, HeaderExtra::V10 { functions_count, pattern_size, unknown })
+            (
+                input,
+                HeaderExtra::V10 {
+                    functions_count,
+                    pattern_size,
+                    unknown,
+                },
+            )
         }
         _ => unimplemented!(),
     };
 
     let (input, library_name) = utf8(input, library_name_length)?;
 
-    Ok((input, Header{
-        version,
-        arch,
-        file_types,
-        os_types,
-        app_types,
-        features: Features::from_bits(features).expect("invalid features"),
-        crc16,
-        ctypes_crc16,
-        extra,
-        library_name,
-    }))
+    Ok((
+        input,
+        Header {
+            version,
+            arch,
+            file_types,
+            os_types,
+            app_types,
+            features: Features::from_bits(features).expect("invalid features"),
+            crc16,
+            ctypes_crc16,
+            extra,
+            library_name,
+        },
+    ))
 }
 
 /// unpack a variable-length integer with max range 16 bits.
@@ -168,10 +181,8 @@ fn vint32(input: &[u8]) -> IResult<&[u8], u32> {
         let (input, mid) = be_u8(input)?;
         let (input, low) = be_u16(input)?;
         let (high, mid, low) = (b as u32, mid as u32, low as u32);
-        return Ok((input, ((((high & 0x3F) << 8) + mid) << 16) + low))
-    }
-
-    else {
+        return Ok((input, ((((high & 0x3F) << 8) + mid) << 16) + low));
+    } else {
         let (input, high) = be_u16(input)?;
         let (input, low) = be_u16(input)?;
         let (high, low) = (high as u32, low as u32);
@@ -262,7 +273,10 @@ bitflags! {
 
 fn parsing_flags(input: &[u8]) -> IResult<&[u8], ParsingFlags> {
     let (input, b) = be_u8(input)?;
-    Ok((input, ParsingFlags::from_bits(b).expect("invalid parsing flags")))
+    Ok((
+        input,
+        ParsingFlags::from_bits(b).expect("invalid parsing flags"),
+    ))
 }
 
 #[derive(Debug)]
@@ -291,10 +305,7 @@ fn tail_byte<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], TailByte
 
     let (input, value) = be_u8(input)?;
 
-    Ok((input, TailByte {
-        offset,
-        value,
-    }))
+    Ok((input, TailByte { offset, value }))
 }
 
 #[derive(Debug)]
@@ -315,7 +326,10 @@ struct ReferencedName {
 ///
 /// note: unknown from where the offset is relative.
 /// note: unknown if there can be more than one (suspected).
-fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<ReferencedName>> {
+fn referenced_names<'a>(
+    input: &'a [u8],
+    header: &Header,
+) -> IResult<&'a [u8], Vec<ReferencedName>> {
     // if version < 8, then this isn't used.
     let (input, count) = vword(input, header)?;
     if count > 1 {
@@ -333,10 +347,7 @@ fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], V
 
         let (input_, name) = utf8(input_, size)?;
 
-        ret.push(ReferencedName{
-            offset,
-            name,
-        });
+        ret.push(ReferencedName { offset, name });
         input = input_;
     }
 
@@ -356,7 +367,11 @@ struct Name {
 /// usually, they are found at relative offset 0x0 from the rule match,
 /// but its possible for this offset to be non-zero.
 /// apparently its possible to specify a negative offset, but that's not supported here.
-fn name<'a>(input: &'a [u8], header: &Header, base_offset: u64) -> IResult<&'a [u8], (Name, ParsingFlags)> {
+fn name<'a>(
+    input: &'a [u8],
+    header: &Header,
+    base_offset: u64,
+) -> IResult<&'a [u8], (Name, ParsingFlags)> {
     let (input, relative_offset) = vword(input, header)?;
     let offset = base_offset + relative_offset;
 
@@ -376,11 +391,17 @@ fn name<'a>(input: &'a [u8], header: &Header, base_offset: u64) -> IResult<&'a [
 
     let (input, pflags) = parsing_flags(input)?;
 
-    Ok((input, (Name {
-        offset,
-        flags: name_flags,
-        name: pname
-    }, pflags)))
+    Ok((
+        input,
+        (
+            Name {
+                offset,
+                flags: name_flags,
+                name: pname,
+            },
+            pflags,
+        ),
+    ))
 }
 
 fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSignature>> {
@@ -413,7 +434,9 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
                 flags = flags_;
                 debug!("name: {:x?}", name);
 
-                if ! flags.intersects(ParsingFlags::MORE_PUBLIC_NAMES) { break };
+                if !flags.intersects(ParsingFlags::MORE_PUBLIC_NAMES) {
+                    break;
+                };
             }
 
             if flags.intersects(ParsingFlags::TAIL_BYTES) {
@@ -428,10 +451,14 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
                 debug!("references: {:x?}", ref_names);
             }
 
-            if ! flags.intersects(ParsingFlags::MORE_MODULES_WITH_SAME_CRC) { break };
+            if !flags.intersects(ParsingFlags::MORE_MODULES_WITH_SAME_CRC) {
+                break;
+            };
         }
 
-        if ! flags.intersects(ParsingFlags::MORE_MODULES) { break };
+        if !flags.intersects(ParsingFlags::MORE_MODULES) {
+            break;
+        };
     }
 
     Ok((input, vec![]))
@@ -461,7 +488,6 @@ fn node<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
     }
 
     for _ in 0..child_count {
-
         let (input_, length) = if header.version < 10 {
             let (input, length) = be_u8(input)?;
             (input, length as u16)
@@ -496,14 +522,14 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
     //nom::util::dbg_dmp(...);
     let (input, header) = match header(input) {
         Err(_) => return Err(SigError::CorruptSigFile.into()),
-        Ok((input, header)) => (input, header)
+        Ok((input, header)) => (input, header),
     };
 
     debug!("header: {:#?}", header);
 
     let (_input, sigs) = match node(input, &header) {
         Err(_) => return Err(SigError::CorruptSigFile.into()),
-        Ok((input, sigs)) => (input, sigs)
+        Ok((input, sigs)) => (input, sigs),
     };
 
     Ok(sigs)
@@ -516,7 +542,7 @@ fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
                 Ok(buf) => {
                     // TODO: need to stitch the header buf back on
                     Ok(buf)
-                },
+                }
                 Err(e) => {
                     error!("error: {:?}", e);
                     Err(SigError::CorruptSigFile.into())
