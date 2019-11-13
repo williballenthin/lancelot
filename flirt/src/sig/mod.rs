@@ -1,4 +1,4 @@
-use log::{debug};
+use log::{debug, error};
 use nom::IResult;
 use nom::bytes::complete::{tag, take_while};
 use nom::bytes::complete::take;
@@ -510,12 +510,17 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
 }
 
 fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
-    if let Ok((_, header)) = header(input) {
+    if let Ok((payload, header)) = header(input) {
         if header.features.intersects(Features::COMPRESSED) {
-            if let Ok(buf) = inflate::inflate_bytes_zlib(input) {
-                Ok(buf)
-            } else {
-                Err(SigError::CorruptSigFile.into())
+            match inflate::inflate_bytes_zlib(payload) {
+                Ok(buf) => {
+                    // TODO: need to stitch the header buf back on
+                    Ok(buf)
+                },
+                Err(e) => {
+                    error!("error: {:?}", e);
+                    Err(SigError::CorruptSigFile.into())
+                }
             }
         } else {
             Ok(input.to_vec())
