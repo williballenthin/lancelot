@@ -91,7 +91,7 @@ impl Header {
     }
 }
 
-fn utf8(input: &[u8], size: u8) -> IResult<&[u8], String> {
+fn utf8(input: &[u8], size: u16) -> IResult<&[u8], String> {
     let (input, s) = take(size)(input)?;
     let s = String::from_utf8(s.to_vec()).expect("invalid string");
     Ok((input, s))
@@ -147,7 +147,7 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
         _ => unimplemented!(),
     };
 
-    let (input, library_name) = utf8(input, library_name_length)?;
+    let (input, library_name) = utf8(input, library_name_length as u16)?;
 
     Ok((
         input,
@@ -358,6 +358,14 @@ fn referenced_names<'a>(
 
         let (input_, size) = be_u8(input_)?;
 
+        // when size is zero, then read a vint16 with the true size.
+        let (input_, size) = if size == 0x0 {
+            let (input_, size) = vint16(input_)?;
+            (input_, size)
+        } else {
+            (input_, size as u16)
+        };
+
         let (input_, name) = utf8(input_, size)?;
 
         ret.push(ReferencedName { offset, name });
@@ -446,6 +454,7 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
                 offset = name.offset;
                 flags = flags_;
                 debug!("name: {:x?}", name);
+                debug!("flags: {:?}", flags);
 
                 if !flags.intersects(ParsingFlags::MORE_PUBLIC_NAMES) {
                     break;
