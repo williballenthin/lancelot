@@ -5,12 +5,11 @@ extern crate log;
 extern crate clap;
 extern crate chrono;
 
-fn run(sig_path: &str) -> Result<(), Error> {
+fn run(sig_path: &str, output_path: &str) -> Result<(), Error> {
     let buf = std::fs::read(sig_path)?;
+    let buf = flirt::sig::unpack_sig(&buf)?;
 
-    for sig in flirt::sig::parse(&buf)?.iter() {
-        println!("{:}", sig);
-    }
+    std::fs::write(output_path, &buf)?;
 
     Ok(())
 }
@@ -34,7 +33,13 @@ fn main() {
             .required(true)
             .index(1)
             .help("path to .sig file")
-        ).get_matches();
+        )
+        .arg(clap::Arg::with_name("output")
+            .required(true)
+            .index(2)
+            .help("path to output file")
+        )
+        .get_matches();
 
     let log_level = match matches.occurrences_of("verbose") {
         0 => log::LevelFilter::Info,
@@ -58,7 +63,10 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(matches.value_of("sig").unwrap()) {
+    if let Err(e) = run(
+        matches.value_of("sig").unwrap(),
+        matches.value_of("output").unwrap()
+    ) {
         println!("error: {:}", e);
     }
 }
