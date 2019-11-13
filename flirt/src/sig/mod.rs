@@ -310,19 +310,22 @@ struct TailByte {
 ///
 /// note: unknown from where the offset is relative.
 /// note: unknown if there can be more than one tail byte (suspected).
-fn tail_byte<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], TailByte> {
-    // is this really what this means?
+fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<TailByte>> {
     let (input, count) = be_u8(input)?;
-    if count > 1 {
-        unimplemented!("unexpected tail byte count > 1");
+
+    let mut ret = vec![];
+    let mut input = input;
+
+    for _ in 0..count {
+        // TODO: is this relative to the prior offset?
+        let (input_, offset) = vword(input, header)?;
+        let (input_, value) = be_u8(input_)?;
+
+        ret.push(TailByte { offset, value });
+        input = input_;
     }
 
-    // TODO: is this relative to the prior offset?
-    let (input, offset) = vword(input, header)?;
-
-    let (input, value) = be_u8(input)?;
-
-    Ok((input, TailByte { offset, value }))
+    Ok((input, ret))
 }
 
 #[derive(Debug)]
@@ -349,10 +352,6 @@ fn referenced_names<'a>(
 ) -> IResult<&'a [u8], Vec<ReferencedName>> {
     // if version < 8, then this isn't used.
     let (input, count) = vword(input, header)?;
-    if count > 1 {
-        unimplemented!("unexpected referenced name count > 1");
-        // TODO: check the below logic of placing $count into array.
-    }
 
     let mut ret = vec![];
     let mut input = input;
@@ -457,9 +456,9 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
             }
 
             if flags.intersects(ParsingFlags::TAIL_BYTES) {
-                let (input_, tbyte) = tail_byte(input, header)?;
+                let (input_, tbytes) = tail_bytes(input, header)?;
                 input = input_;
-                debug!("tail byte: {:x?}", tbyte);
+                debug!("tail bytes: {:x?}", tbytes);
             }
 
             if flags.intersects(ParsingFlags::REFERENCED_FUNCTIONS) {
