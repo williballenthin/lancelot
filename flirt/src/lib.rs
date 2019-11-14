@@ -32,7 +32,7 @@ pub mod pat;
 pub mod sig;
 pub mod nfa;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum SigElement {
     Byte(u8),
     Wildcard,
@@ -68,7 +68,7 @@ enum Offset {
 
 #[derive(Debug)]
 pub struct Name {
-    offset: u16,
+    offset: i64,
     name: String,
 }
 
@@ -89,17 +89,37 @@ impl std::fmt::Display for Symbol {
     }
 }
 
+#[derive(Debug)]
+struct TailByte {
+    offset: u64,
+    value: u8,
+}
+
+impl std::fmt::Display for TailByte {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({:04X}: {:02X})", self.offset, self.value)
+    }
+}
+
 pub struct FlirtSignature {
     pub byte_sig: ByteSignature,
 
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8,  // max: 0xFF
     crc16: u16,
-    pub size_of_function: u16,  // max: 0x8000
+    pub size_of_function: u64,  // max: 0x8000
 
     names: Vec<Symbol>,
 
+    // the .pat file format uses a ByteSignature-style to specify a footer mask
+    // which starts "at the end of the crc16 block."
+    // not sure how these are translated into tail bytes.
     footer: Option<ByteSignature>,
+
+    // the .sig file format tracks (offset, byte value) pairs that differentiate
+    // signatures with the same pattern/crc16/references.
+    // not sure how these are translated into the footer.
+    tail_bytes: Vec<TailByte>,
 }
 
 impl std::fmt::Display for FlirtSignature {
@@ -111,6 +131,10 @@ impl std::fmt::Display for FlirtSignature {
 
         if let Some(name) = self.get_name() {
             write!(f, "{}", name)?;
+        }
+
+        for tail_byte in self.tail_bytes.iter() {
+            write!(f, " {}", tail_byte)?;
         }
 
         Ok(())

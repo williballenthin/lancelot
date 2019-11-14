@@ -37,7 +37,7 @@ use nom::combinator::peek;
 use nom::combinator::opt;
 use failure::{Error, Fail};
 
-use super::{SigElement, ByteSignature, Offset, Name, Symbol, FlirtSignature};
+use super::{SigElement, ByteSignature, Offset, Name, Symbol, FlirtSignature, TailByte};
 
 
 #[derive(Debug, Fail)]
@@ -151,19 +151,36 @@ fn symbol(input: &str) -> IResult<&str, Symbol> {
     let (input, _) = opt(whitespace)(input)?;
     match offset {
         Offset::Public(v) => {
-            Ok((input, Symbol::Public(Name {name: name.to_string(), offset: v})))
+            Ok((input, Symbol::Public(Name {name: name.to_string(), offset: v as i64})))
         },
         Offset::Local(v) => {
-            Ok((input, Symbol::Local(Name {name: name.to_string(), offset: v})))
+            Ok((input, Symbol::Local(Name {name: name.to_string(), offset: v as i64})))
         },
         Offset::Reference(v) => {
-            Ok((input, Symbol::Reference(Name {name: name.to_string(), offset: v})))
+            Ok((input, Symbol::Reference(Name {name: name.to_string(), offset: v as i64})))
         },
     }
 }
 
 fn symbols(input: &str) -> IResult<&str, Vec<Symbol>> {
     many1(symbol)(input)
+}
+
+fn tail_byte(input: &str) -> IResult<&str, TailByte> {
+    let (input, _) = tag("(")(input)?;
+    let (input, offset) = hex_offset(input)?;
+    let (input, _) = whitespace(input)?;
+    let (input, value) = hex_byte(input)?;
+    let (input, _) = tag(")")(input)?;
+
+    Ok((input, TailByte { offset: offset as u64, value }))
+}
+
+fn tail_bytes(input: &str) -> IResult<&str, Vec<TailByte>> {
+    match opt(many1(tail_byte))(input)? {
+        (input, Some(tail_bytes)) => Ok((input, tail_bytes)),
+        (input, None) => Ok((input, vec![])),
+    }
 }
 
 fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
@@ -189,13 +206,17 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     let (input, footer) = opt(byte_signature)(input)?;
     trace!("footer: {:?}", footer);
 
+    let (input, tail_bytes) = tail_bytes(input)?;
+    trace!("tail bytes: {:02x?}", tail_bytes);
+
     Ok((input, FlirtSignature {
         byte_sig,
         size_of_bytes_crc16,
         crc16,
-        size_of_function,
+        size_of_function: size_of_function as u64,
         names,
         footer,
+        tail_bytes,
     }))
 }
 

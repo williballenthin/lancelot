@@ -13,7 +13,8 @@ use nom::number::complete::le_u32;
 use nom::number::complete::le_u8;
 use nom::IResult;
 
-use super::FlirtSignature;
+use super::{FlirtSignature, TailByte};
+use crate::{SigElement, ByteSignature};
 
 #[derive(Debug, Fail)]
 pub enum SigError {
@@ -305,13 +306,6 @@ fn parsing_flags(input: &[u8]) -> IResult<&[u8], ParsingFlags> {
     ))
 }
 
-#[derive(Debug)]
-struct TailByte {
-    // this can probably be negative?
-    offset: u64,
-    value: u8,
-}
-
 /// parse a tail byte definition.
 ///
 /// a tail byte differentiates two (or more) otherwise identical functions
@@ -341,7 +335,6 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
 
 #[derive(Debug)]
 struct ReferencedName {
-    // this can probably be negative?
     offset: u64,
     name: String,
 }
@@ -411,12 +404,16 @@ fn name<'a>(
     let (input, relative_offset) = vword(input, header)?;
 
     // note: this field is only optionally present.
+    // it is present if the value of the byte is less than 0x20.
+    // otherwise, expect to parse the name as ASCII.
     let (input, name_flags) = if peek(be_u8)(input)?.1 < 0x20 {
         be_u8(input)?
     } else {
         (input, 0u8)
     };
     let name_flags = NameFlags::from_bits(name_flags).expect("invalid name flags");
+
+    // offset was parsed before, but can be interpreted only after name_flags.
     let offset = if name_flags.intersects(NameFlags::NEGATIVE_OFFSET) {
         base_offset - (relative_offset as i64)
     } else {
@@ -441,9 +438,14 @@ fn name<'a>(
     ))
 }
 
-fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+fn leaf<'a>(
+    input: &'a [u8],
+    header: &Header,
+    prefix: Vec<SigElement>
+) -> IResult<&'a [u8], Vec<FlirtSignature>> {
     let mut flags: ParsingFlags;
     let mut input = input;
+    let mut ret = vec![];
 
     loop {
         // module
@@ -462,6 +464,8 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
             input = input_;
             debug!("size: {:04x}", function_size);
 
+            let mut names = vec![];
+
             loop {
                 // name
 
@@ -472,22 +476,55 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
                 debug!("name: {:x?}", name);
                 debug!("flags: {:?}", flags);
 
+                if name.flags.intersects(NameFlags::LOCAL) {
+                    names.push(super::Symbol::Local(super::Name {
+                        offset: name.offset,
+                        name: name.name,
+                    }));
+                } else {
+                    names.push(super::Symbol::Public(super::Name {
+                        offset: name.offset,
+                        name: name.name,
+                    }));
+                }
+
                 if !flags.intersects(ParsingFlags::MORE_PUBLIC_NAMES) {
                     break;
                 };
             }
 
-            if flags.intersects(ParsingFlags::TAIL_BYTES) {
-                let (input_, tbytes) = tail_bytes(input, header)?;
-                input = input_;
+            let (input_, tbytes) = if flags.intersects(ParsingFlags::TAIL_BYTES) {
+                tail_bytes(input, header)?
+            } else {
+                (input, vec![])
+            };
+            if !tbytes.is_empty() {
                 debug!("tail bytes: {:x?}", tbytes);
             }
+            input = input_;
 
             if flags.intersects(ParsingFlags::REFERENCED_FUNCTIONS) {
                 let (input_, ref_names) = referenced_names(input, header)?;
                 input = input_;
                 debug!("references: {:x?}", ref_names);
+
+                for ref_name in ref_names.into_iter() {
+                    names.push(super::Symbol::Reference(super::Name {
+                        offset: ref_name.offset as i64,
+                        name: ref_name.name,
+                    }));
+                }
             }
+
+            ret.push(FlirtSignature{
+                byte_sig: ByteSignature(prefix.clone()),
+                size_of_bytes_crc16: crc_len,
+                crc16: crc,
+                size_of_function: function_size,
+                names,
+                footer: None,
+                tail_bytes: tbytes,
+            });
 
             if !flags.intersects(ParsingFlags::MORE_MODULES_WITH_SAME_CRC) {
                 break;
@@ -499,30 +536,23 @@ fn leaf<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
         };
     }
 
-    Ok((input, vec![]))
+    Ok((input, ret))
 }
 
-// expected pattern:
-//  literals:  1D........0F59D80F2825........0F280D........660F5BD30F283D
-//  mask:       0 1 1 1 1 0 0 0 0 0 0 1 1 1 1 0 0 0 1 1 1 1 0 0 0 0 0 0 0
-//              01111000000111100011110000000 == 0xf03c780
-//  bits set:  0xC
-//  remaining: (0x1D - 0xC) = 0x11 = number of literals
-//
-// got bytes:
-//   1D CF 03 C7 80 1D 0F 59 D8 0F 28 25 0F 28 0D 66 0F 5B D3 0F 28 3D
-//   -- ----------- --------------------------------------------------
-//      0xf03c780
-
 /// prefix_length: number of pattern bytes covered by parent nodes.
-fn node<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+fn node<'a>(
+    input: &'a [u8],
+    header: &Header,
+    prefix: Vec<SigElement>
+) -> IResult<&'a [u8], Vec<FlirtSignature>> {
     let (input, child_count) = vint16(input)?;
     let mut input = input;
+    let mut ret = vec![];
 
     debug!("child count: {:#x}", child_count);
 
     if child_count == 0 {
-        return leaf(input, header);
+        return leaf(input, header, prefix);
     }
 
     for _ in 0..child_count {
@@ -544,13 +574,43 @@ fn node<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<FlirtSign
         input = input_;
         debug!("byte_literals: {:02x?}", byte_literals);
 
-        let (input_, sigs) = node(input, header)?;
+        // expected pattern:
+        //  literals:  1D........0F59D80F2825........0F280D........660F5BD30F283D
+        //  mask:       0 1 1 1 1 0 0 0 0 0 0 1 1 1 1 0 0 0 1 1 1 1 0 0 0 0 0 0 0
+        //              01111000000111100011110000000 == 0xf03c780
+        //  bits set:  0xC
+        //  remaining: (0x1D - 0xC) = 0x11 = number of literals
+        //
+        // got bytes:
+        //   1D CF 03 C7 80 1D 0F 59 D8 0F 28 25 0F 28 0D 66 0F 5B D3 0F 28 3D
+        //   -- ----------- --------------------------------------------------
+        //      0xf03c780
+
+        let mut pattern = Vec::with_capacity(prefix.len() + length as usize);
+        pattern.extend(prefix.iter());
+
+        let mut j: usize = remaining_bytes as usize;
+        for i in 0..length as u64 {
+            if (mask & (1 << i)) > 0 {
+                pattern.push(SigElement::Wildcard)
+            } else {
+                pattern.push(SigElement::Byte(byte_literals[j - 1]));
+                j -= 1;
+            }
+        }
+
+        // we have:
+        //  [ prefix1 prefix2   C B A ]
+        // and we need to reverse the current pattern to end up like:
+        //  [ prefix1 prefix2   A B C ]
+        &pattern[prefix.len()..].reverse();
+
+        let (input_, sigs) = node(input, header, pattern)?;
         input = input_;
-        // TODO: merge sigs together
+        ret.extend(sigs.into_iter());
     }
 
-    // TODO: return sigs
-    Ok((input, vec![]))
+    Ok((input, ret))
 }
 
 /// parse an (unpacked) .sig file into FLIRT signatures.
@@ -565,7 +625,7 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
 
     debug!("header: {:#?}", header);
 
-    let (_input, sigs) = match node(input, &header) {
+    let (_input, sigs) = match node(input, &header, vec![]) {
         Err(_) => return Err(SigError::CorruptSigFile.into()),
         Ok((input, sigs)) => (input, sigs),
     };
