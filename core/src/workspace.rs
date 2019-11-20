@@ -237,7 +237,7 @@ impl Workspace {
             .address_space
             .slice_into(rva, buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
-            .and_then(|buf| Ok(buf))
+            .and_then(Ok)
     }
 
     /// Is the given range mapped?
@@ -258,6 +258,7 @@ impl Workspace {
     /// assert!( ws.probe(RVA(0x1), 1, Permissions::R));
     /// assert!(!ws.probe(RVA(0x1), 0x1000, Permissions::R));
     /// ```
+    #[allow(clippy::collapsible_if)]
     pub fn probe(&self, rva: RVA, length: usize, perms: Permissions) -> bool {
         if perms.intersects(Permissions::X) {
             // hack: flowmeta is only mapped for executable regions
@@ -276,7 +277,7 @@ impl Workspace {
             // TODO
         }
 
-        return true;
+        true
     }
 
     /// Read a byte from the given RVA.
@@ -417,6 +418,7 @@ impl Workspace {
     /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().length, 2);
     /// assert_eq!(ws.read_insn(RVA(0x0)).unwrap().mnemonic, zydis::Mnemonic::JMP);
     /// ```
+    #[allow(clippy::collapsible_if)]
     pub fn read_insn(&self, rva: RVA) -> Result<zydis::DecodedInstruction, Error> {
         let mut buf = [0u8; 0x10];
 
@@ -428,7 +430,7 @@ impl Workspace {
         for buflen in (0x0..0x10).rev() {
             let mut buf = &mut buf[..buflen];
 
-            if let Ok(_) = self.module.address_space.slice_into(rva, &mut buf) {
+            if self.module.address_space.slice_into(rva, &mut buf).is_ok() {
                 return match self.decoder.decode(&buf) {
                     Ok(Some(insn)) => Ok(insn),
                     Ok(None) => Err(WorkspaceError::InvalidInstruction.into()),
@@ -446,7 +448,8 @@ impl Workspace {
                 }
             }
         }
-        return Err(WorkspaceError::InvalidAddress.into());
+
+        Err(WorkspaceError::InvalidAddress.into())
     }
 
     /// Read a utf-8 encoded string at the given RVA.
@@ -472,9 +475,7 @@ impl Workspace {
         // ideally, we can just read 0x1000 bytes,
         // but if this doesn't work, then we read up until the end of the current
         // section. note: max read size is 0x1000 bytes.
-        if let Ok(_) = self.module.address_space.slice_into(rva, &mut buf) {
-            // pass
-        } else {
+        if self.module.address_space.slice_into(rva, &mut buf).is_err() {
             // read until the end of the section.
             self.module
                 .sections

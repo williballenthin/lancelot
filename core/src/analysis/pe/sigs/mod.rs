@@ -165,7 +165,7 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
         if term.len() > 2 {
             Ok(format!("({})", out.join("")))
         } else {
-            Ok(out.join("").to_string())
+            Ok(out.join(""))
         }
     } else if term.chars().all(|c| ['0', '1', '.'].contains(&c)) {
         // handle binary pattern
@@ -179,7 +179,7 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
         if term.len() > 8 {
             Ok(format!("({})", out.join("")))
         } else {
-            Ok(out.join("").to_string())
+            Ok(out.join(""))
         }
     } else {
         panic!("unexpected pattern character: {}", term)
@@ -195,7 +195,8 @@ pub fn render_pattern(id: &str, pattern: &str) -> Result<String, Error> {
         .map(|term| render_pattern_term(id, term))
         .collect();
     let parts = parts?;
-    Ok(format!("{}", parts.join("")))
+
+    Ok(parts.join(""))
 }
 
 /// represents a pattern spec that can be rendered into a binary regular
@@ -392,9 +393,9 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
                 }
 
                 let node = Node {
-                    tag:      name.local_name.clone(),
+                    tag: name.local_name.clone(),
                     attrs,
-                    text:     "".to_string(),
+                    text: "".to_string(),
                     children: vec![],
                 };
 
@@ -419,8 +420,8 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
                 // this is the happy path
                 return Ok(path.pop().unwrap());
             }
-            Err(_) => {
-                panic!("invalid document");
+            Err(e) => {
+                panic!("invalid document: {}", e);
             }
             _ => {}
         }
@@ -598,6 +599,12 @@ impl ByteSigAnalyzer {
     }
 }
 
+impl Default for ByteSigAnalyzer {
+    fn default() -> Self {
+        ByteSigAnalyzer {}
+    }
+}
+
 impl ByteSigAnalyzer {
     fn is_64(&self, ws: &Workspace) -> bool {
         match Object::parse(&ws.buf) {
@@ -629,9 +636,10 @@ impl Analyzer for ByteSigAnalyzer {
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
 
-        let language = match self.is_64(ws) {
-            true => "x86:LE:64:default",
-            false => "x86:LE:32:default",
+        let language = if self.is_64(ws) {
+            "x86:LE:64:default"
+        } else {
+            "x86:LE:32:default"
         };
 
         for pattern in Assets::get_patterns(language, "windows")?.into_iter() {

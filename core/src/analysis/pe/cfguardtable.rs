@@ -22,12 +22,13 @@ use super::super::{
 pub struct CFGuardTableAnalyzer {}
 
 impl CFGuardTableAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> CFGuardTableAnalyzer {
         CFGuardTableAnalyzer {}
     }
 }
 
-const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK: u32 = 0xF0000000;
+const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK: u32 = 0xF000_0000;
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT: u32 = 28;
 
 impl Analyzer for CFGuardTableAnalyzer {
@@ -85,9 +86,10 @@ impl Analyzer for CFGuardTableAnalyzer {
         let size = ws.read_u32(load_config_directory)?;
 
         // max offset into the config directory that we'll read.
-        let max_config_directory_offset = match is_64 {
-            true => 0x94,  // CFG flags
-            false => 0x58, // CFG flags
+        let max_config_directory_offset = if is_64 {
+            0x94 // CFG flags
+        } else {
+            0x58 // CFG flags
         };
 
         // in `d3d11sdklayers.dll` for example, the config size is 0x70,
@@ -97,22 +99,25 @@ impl Analyzer for CFGuardTableAnalyzer {
             return Ok(());
         }
 
-        let cfg_flags = match is_64 {
-            true => ws.read_u32(load_config_directory + 0x90)?,
-            false => ws.read_u32(load_config_directory + 0x58)?,
+        let cfg_flags = if is_64 {
+            ws.read_u32(load_config_directory + 0x90)?
+        } else {
+            ws.read_u32(load_config_directory + 0x58)?
         };
 
         let stride = (cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK) >> IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT;
 
-        let cfg_table_va = match is_64 {
-            true => ws.read_va(load_config_directory + 0x80)?,
-            false => ws.read_va(load_config_directory + 0x50)?,
+        let cfg_table_va = if is_64 {
+            ws.read_va(load_config_directory + 0x80)?
+        } else {
+            ws.read_va(load_config_directory + 0x50)?
         };
         debug!("CF Guard table: {}", cfg_table_va);
 
-        let cfg_table_count = match is_64 {
-            true => ws.read_u32(load_config_directory + 0x88)?,
-            false => ws.read_u32(load_config_directory + 0x54)?,
+        let cfg_table_count = if is_64 {
+            ws.read_u32(load_config_directory + 0x88)?
+        } else {
+            ws.read_u32(load_config_directory + 0x54)?
         };
         debug!("CF Guard table count: {}", cfg_table_count);
 
@@ -139,9 +144,10 @@ impl Analyzer for CFGuardTableAnalyzer {
         // add function pointed to by GuardCFCheckFunctionPointer
         // TODO: ensure the pointer is non-zero.
         // TODO: refactor this logic out.
-        let guard_check_icall_fptr = match is_64 {
-            true => ws.rva(ws.read_va(load_config_directory + 0x70)?).unwrap(),
-            false => ws.rva(ws.read_va(load_config_directory + 0x48)?).unwrap(),
+        let guard_check_icall_fptr = if is_64 {
+            ws.rva(ws.read_va(load_config_directory + 0x70)?).unwrap()
+        } else {
+            ws.rva(ws.read_va(load_config_directory + 0x48)?).unwrap()
         };
         if ws.probe(guard_check_icall_fptr, 8, Permissions::R) {
             let guard_check_icall = ws.rva(ws.read_va(guard_check_icall_fptr)?).unwrap();
@@ -155,9 +161,10 @@ impl Analyzer for CFGuardTableAnalyzer {
         // add function pointed to by GuardCFDispatchFunctionPointer
         //
         // set to 0x0 when not used, as is often the case on 32-bit Windows DLLs.
-        let guard_dispatch_icall_fptr = match is_64 {
-            true => ws.read_va(load_config_directory + 0x78)?,
-            false => ws.read_va(load_config_directory + 0x4c)?,
+        let guard_dispatch_icall_fptr = if is_64 {
+            ws.read_va(load_config_directory + 0x78)?
+        } else {
+            ws.read_va(load_config_directory + 0x4c)?
         };
         // first: is the field initialized?
         if guard_dispatch_icall_fptr != VA(0x0) {

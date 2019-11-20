@@ -10,6 +10,7 @@ use super::super::{
 pub struct ExportsAnalyzer {}
 
 impl ExportsAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> ExportsAnalyzer {
         ExportsAnalyzer {}
     }
@@ -35,7 +36,7 @@ impl Analyzer for ExportsAnalyzer {
             // therefore, they're not functions/code.
             .filter(|exp| exp.reexport.is_none())
             .map(|exp| exp.rva)
-            .map(|rva| RVA::from(rva))
+            .map(RVA::from)
             .collect();
 
         let symbols: Vec<(RVA, String)> = pe

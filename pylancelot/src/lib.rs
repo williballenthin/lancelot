@@ -431,9 +431,10 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                 zydis::enums::OperandType::IMMEDIATE => {
                     ret.imm = Some(PyImm {
                         is_relative: operand.imm.is_relative,
-                        value:       match operand.imm.is_signed {
-                            true => lancelot::util::u64_i64(operand.imm.value) as i128,
-                            false => operand.imm.value as i128,
+                        value:       if operand.imm.is_signed {
+                            lancelot::util::u64_i64(operand.imm.value) as i128
+                        } else {
+                            operand.imm.value as i128
                         },
                     })
                 }
@@ -453,9 +454,10 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
                             _ => Some(format!("{:?}", operand.mem.segment).to_lowercase()),
                         },
                         scale:   operand.mem.scale,
-                        disp:    match operand.mem.disp.has_displacement {
-                            true => Some(operand.mem.disp.displacement),
-                            false => None,
+                        disp:    if operand.mem.disp.has_displacement {
+                            Some(operand.mem.disp.displacement)
+                        } else {
+                            None
                         },
                     })
                 }
@@ -499,9 +501,11 @@ fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
             let mut buffer = [0u8; 200];
             let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
 
-            match formatter.format_instruction(&self.raw, &mut buffer, None, None) {
-                Err(_) => return Err(pyo3::exceptions::ValueError::py_err("failed to render insn")),
-                _ => {}
+            if formatter
+                .format_instruction(&self.raw, &mut buffer, None, None)
+                .is_err()
+            {
+                return Err(pyo3::exceptions::ValueError::py_err("failed to render insn"));
             }
 
             Ok(format!("{}", buffer))

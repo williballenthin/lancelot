@@ -50,7 +50,7 @@ impl FlirtAnalyzer {
     fn filter_flirt_signatures(sigs: Vec<flirt::FlirtSignature>) -> Vec<flirt::FlirtSignature> {
         sigs.into_iter()
             .filter(|sig| {
-                if let None = sig.get_name() {
+                if sig.get_name().is_none() {
                     // must have a name that we can apply.
                     return false;
                 }
@@ -70,7 +70,8 @@ impl FlirtAnalyzer {
                     // lancelot specific: don't use signatures for functions less than 0x8 bytes.
                     // this just seems too short to be unique and specific.
                     trace!("sig too short: {} {:?}", sig.size_of_function, sig.get_name());
-                    return false;
+
+                    false
                 } else if sig.size_of_function < 0x10 && wc_count > 0 {
                     // lancelot specific: don't allow many wildcards for short functions.
                     trace!(
@@ -79,7 +80,8 @@ impl FlirtAnalyzer {
                         sig.size_of_function,
                         sig.get_name()
                     );
-                    return false;
+
+                    false
                 } else if sig.size_of_function < 0x18 && wc_count > 4 {
                     trace!(
                         "sig too many wildcards: {}/{} {:?}",
@@ -87,7 +89,8 @@ impl FlirtAnalyzer {
                         sig.size_of_function,
                         sig.get_name()
                     );
-                    return false;
+
+                    false
                 } else if sig.size_of_function < 0x20 && wc_count > 0x10 {
                     trace!(
                         "sig too many wildcards: {}/{} {:?}",
@@ -95,9 +98,10 @@ impl FlirtAnalyzer {
                         sig.size_of_function,
                         sig.get_name()
                     );
-                    return false;
+
+                    false
                 } else {
-                    return true;
+                    true
                 }
             })
             .collect()
@@ -180,7 +184,7 @@ impl Analyzer for FlirtAnalyzer {
                 let matches = self.sigs.r#match(buf);
 
                 // no matches
-                if matches.len() == 0 {
+                if matches.is_empty() {
                     continue;
                 }
 

@@ -21,6 +21,7 @@ pub enum RelocAnalyzerError {
 pub struct RelocAnalyzer {}
 
 impl RelocAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> RelocAnalyzer {
         RelocAnalyzer {}
     }
@@ -47,7 +48,8 @@ fn is_in_insn(ws: &Workspace, rva: RVA) -> bool {
             }
         }
     }
-    return false;
+
+    false
 }
 
 fn is_ptr(ws: &Workspace, rva: RVA) -> bool {
@@ -56,14 +58,16 @@ fn is_ptr(ws: &Workspace, rva: RVA) -> bool {
             return ws.probe(ptr, 1, Permissions::R);
         }
     }
-    return false;
+
+    false
 }
 
 fn is_zero(ws: &Workspace, rva: RVA) -> bool {
     if let Ok(v) = ws.read_u32(rva) {
         return v == 0;
     }
-    return false;
+
+    false
 }
 
 #[derive(Debug)]
@@ -96,8 +100,8 @@ pub struct Reloc {
 }
 
 fn parse_reloc(base: RVA, entry: u16) -> Result<Reloc, Error> {
-    let reloc_type = (entry & 0b1111000000000000) >> 12;
-    let reloc_offset = entry & 0b0000111111111111;
+    let reloc_type = (entry & 0b1111_0000_0000_0000) >> 12;
+    let reloc_offset = entry & 0b0000_1111_1111_1111;
 
     // TODO: this should probably be on `RelocationType` as a `From` trait.
     let reloc_type = match reloc_type {
@@ -122,8 +126,8 @@ fn parse_reloc(base: RVA, entry: u16) -> Result<Reloc, Error> {
 }
 
 fn split_u32(e: u32) -> (u16, u16) {
-    let m = ((e & 0x0000FFFF) >> 0) as u16;
-    let n = ((e & 0xFFFF0000) >> 16) as u16;
+    let m = (e & 0x0000_FFFF) as u16;
+    let n = ((e & 0xFFFF_0000) >> 16) as u16;
     (m, n)
 }
 
@@ -206,7 +210,7 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
 }
 
 fn sections_contain(sections: &[Range<RVA>], rva: RVA) -> bool {
-    sections.iter().find(|section| section.contains(&rva)).is_some()
+    sections.iter().any(|section| section.contains(&rva))
 }
 
 impl Analyzer for RelocAnalyzer {
@@ -248,7 +252,7 @@ impl Analyzer for RelocAnalyzer {
             .filter(|r| match &r.typ {
                 RelocationType::ImageRelBasedHighLow => true,
                 RelocationType::ImageRelBasedDir64 => true,
-                reloc_type @ _ => {
+                reloc_type => {
                     // all other reloc types are currently unsupported (uncommon)
                     warn!("ignoring relocation with unsupported type: {:?}", reloc_type);
                     false
@@ -329,7 +333,7 @@ impl Analyzer for RelocAnalyzer {
             .filter(|&&rva| !is_in_insn(ws, rva))
             .filter(|&&rva| !is_ptr(ws, rva))
             .filter(|&&rva| !is_zero(ws, rva))
-            .map(|&rva| rva)
+            .copied()
             // TODO: maybe ensure that the insn decodes.
             .collect();
 

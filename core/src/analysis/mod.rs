@@ -261,17 +261,20 @@ impl Workspace {
     pub fn get_insn_length(&self, rva: RVA) -> Result<u8, Error> {
         match self.get_meta(rva) {
             None => Err(flowmeta::Error::NotAnInstruction.into()),
-            Some(meta) => match meta.is_insn() {
-                false => Err(flowmeta::Error::NotAnInstruction.into()),
-                true => match meta.get_insn_length() {
-                    Ok(length) => Ok(length),
-                    Err(flowmeta::Error::LongInstruction) => match self.read_insn(rva) {
-                        Ok(insn) => Ok(insn.length),
-                        Err(e) => Err(e),
-                    },
-                    Err(e) => Err(e.into()),
-                },
-            },
+            Some(meta) => {
+                if meta.is_insn() {
+                    match meta.get_insn_length() {
+                        Ok(length) => Ok(length),
+                        Err(flowmeta::Error::LongInstruction) => match self.read_insn(rva) {
+                            Ok(insn) => Ok(insn.length),
+                            Err(e) => Err(e),
+                        },
+                        Err(e) => Err(e.into()),
+                    }
+                } else {
+                    Err(flowmeta::Error::NotAnInstruction.into())
+                }
+            }
         }
     }
 
@@ -287,7 +290,7 @@ impl Workspace {
                 if let Ok(length) = self.get_insn_length(rva) {
                     xrefs.push(Xref {
                         src: rva,
-                        dst: RVA::from(rva + length),
+                        dst: rva + length,
                         typ: XrefType::Fallthrough,
                     });
                 }
@@ -373,6 +376,7 @@ impl Workspace {
     /// assert_eq!(xref.is_some(), true);
     /// assert_eq!(xref.unwrap(), RVA(0x0));
     /// ```
+    #[allow(clippy::if_same_then_else)]
     pub fn get_memory_operand_xref(
         &self,
         rva: RVA,
@@ -419,7 +423,7 @@ impl Workspace {
             };
 
             // this is the happy path!
-            return Ok(Some(dst));
+            Ok(Some(dst))
         } else if op.mem.base == zydis::Register::RIP
             // only valid on x64
             && op.mem.index == zydis::Register::NONE
@@ -450,15 +454,15 @@ impl Workspace {
             };
 
             // this is the happy path!
-            return Ok(Some(dst));
+            Ok(Some(dst))
         } else if op.mem.base != zydis::Register::NONE {
             // this is something like `CALL [eax+4]`
             // can't resolve without emulation
             // TODO: add test
-            return Ok(None);
+            Ok(None)
         } else if op.mem.scale == 0x4 {
             // this is something like `JMP [0x1000+eax*4]` (32-bit)
-            return Ok(None);
+            Ok(None)
         } else {
             println!("{:#x}: get mem op xref", rva);
             print_op(op);
@@ -624,12 +628,7 @@ impl Workspace {
         let mut ret = vec![];
 
         let mut rva = rva;
-        loop {
-            let ptr_va = match self.read_va(rva) {
-                Ok(va) => va,
-                Err(_) => break,
-            };
-
+        while let Ok(ptr_va) = self.read_va(rva) {
             let ptr_rva = match self.rva(ptr_va) {
                 Some(va) => va,
                 None => break,

@@ -11,6 +11,7 @@ use super::super::{
 pub struct ImportsAnalyzer {}
 
 impl ImportsAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> ImportsAnalyzer {
         ImportsAnalyzer {}
     }
@@ -112,6 +113,7 @@ pub fn read_best_thunk_data(
     //
     // however, this doesn't work if the PE has been dumped from memory
     // (and the FTs fixed up).
+    #[allow(clippy::if_same_then_else)]
     match read_image_thunk_data(ws, first_thunk) {
         Ok(ImageThunkData::Function(rva)) => {
             if rva == RVA(0x0) {

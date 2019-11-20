@@ -14,7 +14,7 @@ pub struct VA(pub u64);
 impl VA {
     /// Compute the VA given a delta RVA, like `self:va + other:rva`.
     /// Returns None on over/underflow.
-    pub fn va(&self, other: RVA) -> Option<VA> {
+    pub fn va(self, other: RVA) -> Option<VA> {
         if other.0 < 0 {
             Some(VA(match self.0.checked_sub((-other.0) as u64) {
                 None => return None,
@@ -30,7 +30,7 @@ impl VA {
 
     /// Compute the delta RVA from `self:va - other:va`.
     /// Returns None on over/underflow.
-    pub fn rva(&self, other: VA) -> Option<RVA> {
+    pub fn rva(self, other: VA) -> Option<RVA> {
         if other.0 > self.0 {
             let v = match other.0.checked_sub(self.0) {
                 None => return None,

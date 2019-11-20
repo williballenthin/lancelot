@@ -161,7 +161,7 @@ impl<T: Default + Copy> PageMap<T> {
             return false;
         }
 
-        return self.pages[page(rva)].is_some();
+        self.pages[page(rva)].is_some()
     }
 
     /// fetch one item from the given address.
@@ -313,7 +313,7 @@ impl<T: Default + Copy> PageMap<T> {
         }
 
         // ensure each page within the requested region is mapped.
-        for page in start_page..end_page + 1 {
+        for page in start_page..=end_page {
             if !self.probe((page * PAGE_SIZE).into()) {
                 return Err(PageMapError::NotMapped.into());
             }
@@ -413,7 +413,7 @@ impl<T: Default + Copy> std::fmt::Debug for PageMap<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let mut was_allocated = false;
 
-        write!(f, "regions:\n")?;
+        writeln!(f, "regions:")?;
         for (i, page) in self.pages.iter().enumerate() {
             match page {
                 Some(_) => {
@@ -424,7 +424,7 @@ impl<T: Default + Copy> std::fmt::Debug for PageMap<T> {
                 }
                 None => {
                     if was_allocated {
-                        write!(f, "-{:#x} mapped\n", i * PAGE_SIZE)?;
+                        writeln!(f, "-{:#x} mapped", i * PAGE_SIZE)?;
                     }
                     was_allocated = false;
                 }
@@ -432,10 +432,10 @@ impl<T: Default + Copy> std::fmt::Debug for PageMap<T> {
         }
 
         if was_allocated {
-            write!(f, " - {:#x} mapped\n", self.pages.len() * PAGE_SIZE)?;
+            writeln!(f, " - {:#x} mapped", self.pages.len() * PAGE_SIZE)?;
         }
 
-        write!(f, "capacity: {:#x}\n", self.pages.len() * PAGE_SIZE)?;
+        writeln!(f, "capacity: {:#x}", self.pages.len() * PAGE_SIZE)?;
 
         Ok(())
     }

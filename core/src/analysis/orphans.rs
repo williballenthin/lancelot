@@ -17,6 +17,7 @@ use super::{
 pub struct OrphanFunctionAnalyzer {}
 
 impl OrphanFunctionAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> OrphanFunctionAnalyzer {
         OrphanFunctionAnalyzer {}
     }

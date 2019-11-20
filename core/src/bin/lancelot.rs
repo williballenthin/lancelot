@@ -107,6 +107,4 @@ fn main() {
             Ok(_) => println!("ok"),
         }
     };
-
-    return;
 }

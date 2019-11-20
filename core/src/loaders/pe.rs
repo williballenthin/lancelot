@@ -12,13 +12,13 @@ use super::super::{
 };
 
 /// The section can be executed as code.
-const IMAGE_SCN_MEM_EXECUTE: u32 = 0x20000000;
+const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
 
 /// The section can be read.
-const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
+const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 
 /// The section can be written to.
-const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
+const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
 pub struct PELoader {
     arch: Arch,
@@ -72,9 +72,9 @@ impl PELoader {
     fn load_section(&self, section: &SectionTable) -> Result<Section, Error> {
         let name = String::from_utf8_lossy(&section.name[..])
             .into_owned()
-            .trim_end_matches("\u{0}")
+            .trim_end_matches('\u{0}')
             .trim_end()
-            .splitn(2, "\u{0}")
+            .splitn(2, '\u{0}')
             .next()
             .unwrap()
             .to_string();

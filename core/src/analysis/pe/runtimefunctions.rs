@@ -11,6 +11,7 @@ use super::super::{
 pub struct RuntimeFunctionAnalyzer {}
 
 impl RuntimeFunctionAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> RuntimeFunctionAnalyzer {
         RuntimeFunctionAnalyzer {}
     }
@@ -102,7 +103,8 @@ impl Analyzer for RuntimeFunctionAnalyzer {
                 if !ws.probe(rt.unwind_data, 1, Permissions::R) {
                     return false;
                 }
-                return true;
+
+                true
             })
             .map(|rt: RuntimeFunction| -> RVA { rt.begin_address })
             .collect();

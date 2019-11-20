@@ -110,6 +110,7 @@ impl std::fmt::Display for Structure {
     }
 }
 
+#[allow(clippy::if_same_then_else)]
 fn cmp_ranges<T: PartialOrd>(a: &Range<T>, b: &Range<T>) -> std::cmp::Ordering {
     if a.start < b.start {
         std::cmp::Ordering::Less
@@ -236,7 +237,7 @@ impl MapNode {
             self.range.start, self.structure
         ));
         let region = &buf[self.range.start as usize..self.range.end as usize];
-        for line in lancelot::util::hexdump(region, self.range.start as usize).split("\n") {
+        for line in lancelot::util::hexdump(region, self.range.start as usize).split('\n') {
             if line != "" {
                 ret.push(format!("│   {}", line))
             }
@@ -417,6 +418,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     }
 
     if let Some(opt) = pe.header.optional_header {
+        #[allow(clippy::type_complexity)]
         let mut directories: Vec<(
             Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>,
             Structure,
@@ -691,7 +693,7 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
         }
     }
 
-    if addrs.len() == 0 {
+    if addrs.is_empty() {
         return Ok(None);
     }
 
@@ -733,7 +735,7 @@ pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
         return Ok(rva as usize);
     }
 
-    return Err(MainError::UnmappedVA.into());
+    Err(MainError::UnmappedVA.into())
 }
 
 pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
@@ -760,7 +762,7 @@ pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
         return Ok(RVA::from(rva));
     }
 
-    return Err(MainError::UnmappedVA.into());
+    Err(MainError::UnmappedVA.into())
 }
 
 fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
@@ -816,14 +818,14 @@ fn main() {
                 .long("config.flirt.pat_dir")
                 .takes_value(true)
                 .default_value(&pat_default)
-                .help(&format!("directory containing FLIRT .pat signature files")),
+                .help(&"directory containing FLIRT .pat signature files".to_string()),
         )
         .arg(
             clap::Arg::with_name("sig_dir")
                 .long("config.flirt.sig_dir")
                 .takes_value(true)
                 .default_value(&sig_default)
-                .help(&format!("directory containing FLIRT .sig signature files")),
+                .help(&"directory containing FLIRT .sig signature files".to_string()),
         )
         .arg(
             clap::Arg::with_name("input")

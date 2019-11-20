@@ -10,6 +10,7 @@ use super::super::{
 pub struct EntryPointAnalyzer {}
 
 impl EntryPointAnalyzer {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> EntryPointAnalyzer {
         EntryPointAnalyzer {}
     }
