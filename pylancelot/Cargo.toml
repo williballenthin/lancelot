@@ -17,6 +17,7 @@ zydis = { git = "https://github.com/zyantific/zydis-rs", rev="c4474211863004ce87
 [features]
 # see: https://github.com/PyO3/pyo3/issues/340
 # see: https://github.com/bytecodealliance/wasmtime/issues/468
+# see: https://github.com/PyO3/pyo3/blob/master/guide/src/advanced.md#testing
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 
