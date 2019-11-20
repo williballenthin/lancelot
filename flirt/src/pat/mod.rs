@@ -166,6 +166,7 @@ fn symbols(input: &str) -> IResult<&str, Vec<Symbol>> {
     many1(symbol)(input)
 }
 
+// like: `(0012: 87)`
 fn tail_byte(input: &str) -> IResult<&str, TailByte> {
     let (input, _) = tag("(")(input)?;
     let (input, offset) = hex_offset(input)?;
@@ -203,9 +204,17 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     let (input, names) = symbols(input)?;
     trace!("names: {:?}", names);
 
+    // i'm not sure which of these comes first, footer pattern or tail bytes.
+    // are they both actually valid in a .pat file!?!
+    // pat.txt only describes the footer pattern (which it calls "tail bytes").
+    // whereas the .sig file format uses (offset, value) tuples for tail bytes,
+    // and dumpsig.exe uses a format like `(AAAA: BB)` for these.
+
+    let (input, _) = opt(whitespace)(input)?;
     let (input, footer) = opt(byte_signature)(input)?;
     trace!("footer: {:?}", footer);
 
+    let (input, _) = opt(whitespace)(input)?;
     let (input, tail_bytes) = tail_bytes(input)?;
     trace!("tail bytes: {:02x?}", tail_bytes);
 
