@@ -1,7 +1,7 @@
 use bitflags;
 use failure::{Error, Fail};
 use inflate;
-use log::debug;
+use log::trace;
 use nom::branch::alt;
 use nom::bytes::complete::take;
 use nom::bytes::complete::{tag, take_while};
@@ -454,7 +454,7 @@ fn leaf<'a>(
         input = input_;
         let (input_, crc) = be_u16(input)?;
         input = input_;
-        debug!("crc: {:02x} {:04x}", crc_len, crc);
+        trace!("crc: {:02x} {:04x}", crc_len, crc);
 
         loop {
             // module with crc
@@ -462,7 +462,7 @@ fn leaf<'a>(
 
             let (input_, function_size) = vword(input, header)?;
             input = input_;
-            debug!("size: {:04x}", function_size);
+            trace!("size: {:04x}", function_size);
 
             let mut names = vec![];
 
@@ -473,8 +473,8 @@ fn leaf<'a>(
                 input = input_;
                 offset = name.offset;
                 flags = flags_;
-                debug!("name: {:x?}", name);
-                debug!("flags: {:?}", flags);
+                trace!("name: {:x?}", name);
+                trace!("flags: {:?}", flags);
 
                 if name.flags.intersects(NameFlags::LOCAL) {
                     names.push(super::Symbol::Local(super::Name {
@@ -499,14 +499,14 @@ fn leaf<'a>(
                 (input, vec![])
             };
             if !tbytes.is_empty() {
-                debug!("tail bytes: {:x?}", tbytes);
+                trace!("tail bytes: {:x?}", tbytes);
             }
             input = input_;
 
             if flags.intersects(ParsingFlags::REFERENCED_FUNCTIONS) {
                 let (input_, ref_names) = referenced_names(input, header)?;
                 input = input_;
-                debug!("references: {:x?}", ref_names);
+                trace!("references: {:x?}", ref_names);
 
                 for ref_name in ref_names.into_iter() {
                     names.push(super::Symbol::Reference(super::Name {
@@ -549,7 +549,7 @@ fn node<'a>(
     let mut input = input;
     let mut ret = vec![];
 
-    debug!("child count: {:#x}", child_count);
+    trace!("child count: {:#x}", child_count);
 
     if child_count == 0 {
         return leaf(input, header, prefix);
@@ -563,16 +563,16 @@ fn node<'a>(
             vint16(input)?
         };
         input = input_;
-        debug!("length: {:#x}", length);
+        trace!("length: {:#x}", length);
 
         let (input_, mask) = wildcard_mask(input, length)?;
         input = input_;
-        debug!("wildcard_mask: {:#x}", mask);
+        trace!("wildcard_mask: {:#x}", mask);
 
         let remaining_bytes = length - count_bits(mask);
         let (input_, byte_literals) = take(remaining_bytes)(input)?;
         input = input_;
-        debug!("byte_literals: {:02x?}", byte_literals);
+        trace!("byte_literals: {:02x?}", byte_literals);
 
         // expected pattern:
         //  literals:  1D........0F59D80F2825........0F280D........660F5BD30F283D
@@ -623,7 +623,7 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
         Ok((input, header)) => (input, header),
     };
 
-    debug!("header: {:#?}", header);
+    trace!("header: {:#?}", header);
 
     let (_input, sigs) = match node(input, &header, vec![]) {
         Err(_) => return Err(SigError::CorruptSigFile.into()),

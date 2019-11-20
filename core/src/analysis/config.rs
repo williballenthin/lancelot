@@ -1,6 +1,6 @@
 use super::pe::flirt::FlirtConfig;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AnalysisConfig {
     pub flirt: FlirtConfig,
 }

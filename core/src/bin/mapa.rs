@@ -813,6 +813,7 @@ fn main() {
         config.analysis.flirt.sig_dir = PathBuf::from(shellexpand::tilde(&sig_dir).into_owned());
     }
 
+    debug!("config:\n{:#?}", config);
 
     if let Err(e) = run(config, matches.value_of("input").unwrap()) {
         error!("{:?}", e)

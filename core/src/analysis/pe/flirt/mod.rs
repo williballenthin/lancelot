@@ -11,7 +11,7 @@ use super::super::super::arch::{RVA};
 use super::super::super::workspace::Workspace;
 use super::super::{Analyzer};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FlirtConfig {
     pub pat_dir: PathBuf,
     pub sig_dir: PathBuf,
@@ -118,7 +118,7 @@ impl FlirtAnalyzer {
         debug!("loaded {} total FLIRT signatures", sigs.len());
 
         let sigs = FlirtAnalyzer::filter_flirt_signatures(sigs);
-        info!("loaded {} FLIRT signatures", sigs.len());
+        info!("filtered to {} usable FLIRT signatures", sigs.len());
 
         Ok(sigs)
     }
