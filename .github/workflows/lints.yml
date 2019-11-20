@@ -3,9 +3,23 @@ on: [push, pull_request]
 name: Lints
 
 jobs:
+  check:
+    name: check
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    needs: [check]
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
