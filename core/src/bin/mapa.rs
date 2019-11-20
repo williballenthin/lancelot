@@ -739,9 +739,14 @@ fn main() {
 
     // TODO: we should do this in a central place.
     if let Ok(v) = std::env::var("FLIRT_PAT_DIR") {
-        // PathBuf doesn't expand ~ by default.
-        config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&v).into_owned());
+        config.analysis.flirt.pat_dir = PathBuf::from(v);
     }
+    let pat_default = config.analysis.flirt.pat_dir.to_str().unwrap().to_string();
+
+    if let Ok(v) = std::env::var("FLIRT_SIG_DIR") {
+        config.analysis.flirt.sig_dir = PathBuf::from(v);
+    }
+    let sig_default = config.analysis.flirt.sig_dir.to_str().unwrap().to_string();
 
     // while the macro form of clap is more readable,
     // it doesn't seem to allow us to use dynamically-generated values,
@@ -758,8 +763,14 @@ fn main() {
         .arg(clap::Arg::with_name("pat_dir")
             .long("config.flirt.pat_dir")
             .takes_value(true)
-            .help(&format!("directory containing FLIRT .pat signature files (default: {})",
-                          config.analysis.flirt.pat_dir.to_str().unwrap()))
+            .default_value(&pat_default)
+            .help(&format!("directory containing FLIRT .pat signature files"))
+        )
+        .arg(clap::Arg::with_name("sig_dir")
+            .long("config.flirt.sig_dir")
+            .takes_value(true)
+            .default_value(&sig_default)
+            .help(&format!("directory containing FLIRT .sig signature files"))
         )
         .arg(clap::Arg::with_name("input")
             .required(true)
@@ -796,6 +807,12 @@ fn main() {
         // PathBuf doesn't expand ~ by default.
         config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&pat_dir).into_owned());
     }
+
+    if let Some(sig_dir) = matches.value_of("sig_dir") {
+        // PathBuf doesn't expand ~ by default.
+        config.analysis.flirt.sig_dir = PathBuf::from(shellexpand::tilde(&sig_dir).into_owned());
+    }
+
 
     if let Err(e) = run(config, matches.value_of("input").unwrap()) {
         error!("{:?}", e)

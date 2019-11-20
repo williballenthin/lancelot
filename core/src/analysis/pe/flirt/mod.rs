@@ -5,6 +5,7 @@ use failure::{Error};
 
 use flirt;
 use flirt::pat;
+use flirt::sig;
 use super::super::super::util;
 use super::super::super::arch::{RVA};
 use super::super::super::workspace::Workspace;
@@ -13,13 +14,15 @@ use super::super::{Analyzer};
 #[derive(Clone)]
 pub struct FlirtConfig {
     pub pat_dir: PathBuf,
+    pub sig_dir: PathBuf,
 }
 
 impl Default for FlirtConfig {
     fn default() -> FlirtConfig {
         FlirtConfig {
             // TODO: per OS, pick a better default
-            pat_dir: PathBuf::from("~/.lancelot/sig/flirt/pat/")
+            pat_dir: PathBuf::from("~/.lancelot/sig/flirt/pat/"),
+            sig_dir: PathBuf::from("~/.lancelot/sig/flirt/sig/"),
         }
     }
 }
@@ -30,10 +33,15 @@ pub struct FlirtAnalyzer {
 
 impl FlirtAnalyzer {
     /// parse the given file system path into a collection of FLIRT signatures.
-    fn load_flirt_file(path: &Path) -> Result<Vec<flirt::FlirtSignature>, Error> {
+    fn load_pat_file(path: &Path) -> Result<Vec<flirt::FlirtSignature>, Error> {
         let buf = util::read_file(path.to_str().unwrap())?;  // danger
         let s = String::from_utf8(buf)?;
         pat::parse(&s)
+    }
+
+    fn load_sig_file(path: &Path) -> Result<Vec<flirt::FlirtSignature>, Error> {
+        let buf = util::read_file(path.to_str().unwrap())?;  // danger
+        sig::parse(&buf)
     }
 
     /// remove sigantures from the given collection that don't match basic criteria:
@@ -83,11 +91,8 @@ impl FlirtAnalyzer {
     ///   - shorter functions must not have too many wildcards
     ///
     /// the directory structure should look like:
-    ///   - flat directory of .pat files
-    fn load_flirt_directory(path: &Path) -> Result<flirt::FlirtSignatureSet, Error> {
-
-        // TODO: need lots of error handling here.
-
+    ///   - flat directory of .pat or .sig files
+    fn load_flirt_directory(path: &Path) -> Result<Vec<flirt::FlirtSignature>, Error> {
         let mut sigs = vec![];
 
         for entry in std::fs::read_dir(path)? {
@@ -102,10 +107,10 @@ impl FlirtAnalyzer {
 
             if ext == "pat" {
                 debug!("FLIRT analyzer: loading .pat file: {:?}", path);
-                sigs.extend(FlirtAnalyzer::load_flirt_file(&path).unwrap()); //danger
+                sigs.extend(FlirtAnalyzer::load_pat_file(&path).unwrap()); //danger
             } else if ext == ".sig" {
-                // ....
-                debug!("FLIRT analyzer: skipping .sig file: {:?}", path);
+                debug!("FLIRT analyzer: loading .sig file: {:?}", path);
+                sigs.extend(FlirtAnalyzer::load_sig_file(&path).unwrap()); //danger
             } else {
                 debug!("FLIRT analyzer: skipping file: {:?}", path);
             }
@@ -115,26 +120,30 @@ impl FlirtAnalyzer {
         let sigs = FlirtAnalyzer::filter_flirt_signatures(sigs);
         info!("loaded {} FLIRT signatures", sigs.len());
 
-        Ok(flirt::FlirtSignatureSet::with_signatures(sigs))
+        Ok(sigs)
     }
 
     pub fn new(config: FlirtConfig) -> FlirtAnalyzer {
         // TODO: add startup signatures to detect runtime/signature set
-        // TODO: use .sig rather than .pat files
 
-        // TODO: flirt dir vs pat dir
-        let sigs = if config.pat_dir.exists() {
-            match FlirtAnalyzer::load_flirt_directory(&config.pat_dir) {
-                Ok(sigs) => sigs,
-                Err(_) => flirt::FlirtSignatureSet::with_signatures(vec![]),
-            }
-        } else {
-            warn!("FLIRT .pat directory does not exist: {:?}", config.pat_dir);
-            flirt::FlirtSignatureSet::with_signatures(vec![])
-        };
+        let mut sigs = vec![];
+
+        for path in [config.pat_dir, config.sig_dir].iter() {
+            sigs.extend(
+                if path.exists() {
+                    match FlirtAnalyzer::load_flirt_directory(&path) {
+                        Ok(sigs) => sigs,
+                        Err(_) => vec![],
+                    }
+                } else {
+                    warn!("FLIRT directory does not exist: {:?}", path);
+                    vec![]
+                }
+            );
+        }
 
         FlirtAnalyzer{
-            sigs
+            sigs: flirt::FlirtSignatureSet::with_signatures(sigs)
         }
     }
 }
