@@ -142,9 +142,10 @@ pub fn default_loaders() -> Vec<Box<dyn Loader>> {
 ///
 /// ```
 /// use lancelot::arch::*;
+/// use lancelot::config::*;
 /// use lancelot::loader::*;
 ///
-/// match taste(b"\xEB\xFE").nth(0) {
+/// match taste(&Config::default(), b"\xEB\xFE").nth(0) {
 ///   Some(loader) => assert_eq!(loader.get_name(), "Windows/x32/Raw"),
 ///   None => panic!("no matching loaders"),
 /// };
@@ -161,9 +162,10 @@ pub fn taste<'a>(config: &'a Config, buf: &'a [u8]) -> impl Iterator<Item = Box<
 ///
 /// ```
 /// use lancelot::arch::*;
+/// use lancelot::config::*;
 /// use lancelot::loader::*;
 ///
-/// load(b"\xEB\xFE")
+/// load(&Config::default(), b"\xEB\xFE")
 ///   .map(|(loader, module, analyzers)| {
 ///     assert_eq!(loader.get_name(),       "Windows/x32/Raw");
 ///     assert_eq!(module.base_address,     VA(0x0));
