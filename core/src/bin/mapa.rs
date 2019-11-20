@@ -232,20 +232,14 @@ impl MapNode {
         let mut ret: Vec<String> = vec![];
         // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
         ret.push(format!(""));
-        ret.push(format!(
-            "┌── {:#08x} {} ────────",
-            self.range.start, self.structure
-        ));
+        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
         let region = &buf[self.range.start as usize..self.range.end as usize];
         for line in lancelot::util::hexdump(region, self.range.start as usize).split('\n') {
             if line != "" {
                 ret.push(format!("│   {}", line))
             }
         }
-        ret.push(format!(
-            "└── {:#08x} ────────────────────────",
-            self.range.end
-        ));
+        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
         ret.push(format!(""));
         Ok(ret)
     }
@@ -254,19 +248,13 @@ impl MapNode {
         let mut ret: Vec<String> = vec![];
         // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
         ret.push(format!(""));
-        ret.push(format!(
-            "┌── {:#08x} {} ────────",
-            self.range.start, self.structure
-        ));
+        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
         for child in self.children.iter() {
             for line in child.render(buf)?.iter() {
                 ret.push(format!("│  {}", line))
             }
         }
-        ret.push(format!(
-            "└── {:#08x} ────────────────────────",
-            self.range.end
-        ));
+        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
         ret.push(format!(""));
         Ok(ret)
     }
