@@ -17,8 +17,8 @@ jobs:
       - name: python
         run: |
           sudo apt-get install -y python3.7 python3.7-dev
-          python3.7 -m pip install -U pip setuptools
-          python3.7 -m pip install setuptools-rust pytest tox
+          sudo python3.7 -m pip install -U pip setuptools
+          sudo python3.7 -m pip install setuptools-rust pytest tox
 
       - uses: actions-rs/cargo@v1
         with:
@@ -38,8 +38,8 @@ jobs:
       - name: python
         run: |
           sudo apt-get install -y python3.7 python3.7-dev
-          python3.7 -m pip install -U pip setuptools
-          python3.7 -m pip install setuptools-rust pytest tox
+          sudo python3.7 -m pip install -U pip setuptools
+          sudo python3.7 -m pip install setuptools-rust pytest tox
           
       - uses: actions-rs/cargo@v1
         with:
@@ -60,8 +60,8 @@ jobs:
       - name: python
         run: |
           sudo apt-get install -y python3.7 python3.7-dev
-          python3.7 -m pip install -U pip setuptools
-          python3.7 -m pip install setuptools-rust pytest tox
+          sudo python3.7 -m pip install -U pip setuptools
+          sudo python3.7 -m pip install setuptools-rust pytest tox
           
       #- uses: actions-rs/cargo@v1
       #  with:
