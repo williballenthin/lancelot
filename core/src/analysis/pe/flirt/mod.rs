@@ -108,7 +108,7 @@ impl FlirtAnalyzer {
             if ext == "pat" {
                 debug!("FLIRT analyzer: loading .pat file: {:?}", path);
                 sigs.extend(FlirtAnalyzer::load_pat_file(&path).unwrap()); //danger
-            } else if ext == ".sig" {
+            } else if ext == "sig" {
                 debug!("FLIRT analyzer: loading .sig file: {:?}", path);
                 sigs.extend(FlirtAnalyzer::load_sig_file(&path).unwrap()); //danger
             } else {
