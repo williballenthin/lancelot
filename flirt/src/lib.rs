@@ -233,6 +233,20 @@ impl FlirtSignature {
 
         return true
     }
+
+    /// return true if all tail bytes match (if there are any).
+    pub fn match_tail_bytes(&self, buf: &[u8]) -> bool {
+        ! self.tail_bytes
+            .iter()
+            .map(|tail_byte| {
+                match buf.get(tail_byte.offset as usize) {
+                    None => false,
+                    Some(&v) => v == tail_byte.value
+                }
+            })
+            .find(|&b| !b)
+            .is_some()
+    }
 }
 
 pub struct FlirtSignatureMatcher<'a> {
@@ -408,6 +422,7 @@ impl FlirtSignatureSet {
             .iter()
             .map(|&pattern| self.sigs.get(pattern).unwrap())
             .filter(|&sig| sig.match_crc16(buf))
+            .filter(|&sig| sig.match_tail_bytes(buf))
             .collect()
     }
 }
