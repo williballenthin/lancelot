@@ -180,7 +180,7 @@ impl FlirtSignature {
             }
         }
 
-        return None;
+        None
     }
 
     /// compute the IDA-specific CRC16 checksum for the given bytes.
@@ -189,7 +189,7 @@ impl FlirtSignature {
     fn crc16(buf: &[u8]) -> u16 {
         const POLY: u32 = 0x8408;
 
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return 0;
         }
 
@@ -210,10 +210,10 @@ impl FlirtSignature {
         crc = !crc; // bitwise invert
 
         // swap u16 byte order
-        let h1: u16 = ((crc >> 0) & 0xFF) as u16;
+        let h1: u16 = (crc & 0xFF) as u16;
         let h2: u16 = ((crc >> 8) & 0xFF) as u16;
 
-        (h1 << 8) | (h2 << 0)
+        (h1 << 8) | h2
     }
 
     pub fn match_crc16(&self, buf: &[u8]) -> bool {
@@ -234,7 +234,7 @@ impl FlirtSignature {
             }
         }
 
-        return true;
+        true
     }
 
     /// return true if all tail bytes match (if there are any).
@@ -246,8 +246,7 @@ impl FlirtSignature {
                 None => false,
                 Some(&v) => v == tail_byte.value,
             })
-            .find(|&b| !b)
-            .is_some()
+            .any(|b| !b)
     }
 }
 
@@ -274,7 +273,7 @@ fn create_pattern(sig: &FlirtSignature) -> String {
             // lots of allocations here.
             // could create a static translation table to the &str formats.
             SigElement::Byte(v) => format!("\\x{:02x}", v),
-            SigElement::Wildcard => format!("."),
+            SigElement::Wildcard => ".".to_string(),
         })
         .collect::<Vec<String>>()
         .join("")
@@ -283,7 +282,7 @@ fn create_pattern(sig: &FlirtSignature) -> String {
 impl<'a> FlirtSignatureMatcher<'a> {
     pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher {
         FlirtSignatureMatcher {
-            re:  FlirtSignatureMatcher::create_match_re(sig),
+            re: FlirtSignatureMatcher::create_match_re(sig),
             sig,
         }
     }

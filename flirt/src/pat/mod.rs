@@ -7,23 +7,23 @@
 //
 //                                                                     00 0000
 // 0011                                                                     ^^
-// number of bytes crc16'd                                                      
-// ^^^^ crc16                                                                   
+// number of bytes crc16'd
+// ^^^^ crc16
 // ^^^^ size of fn
 //
-//                                                                              
-// :0000 @__security_check_cookie@4                                             
-// ^^^^^ offset of match                                                        
+//
+// :0000 @__security_check_cookie@4
+// ^^^^^ offset of match
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^ name
 //
-//                                                                              
-// :000B@ $failure$4                                                            
-// ^^^^^^ local offset                                                          
+//
+// :000B@ $failure$4
+// ^^^^^^ local offset
 // ^^^^^^^^^^ local name
 //
-//                                                                              
-// ^0002 ___security_cookie                                                     
-// ^^^^^ reference offset                                                       
+//
+// ^0002 ___security_cookie
+// ^^^^^ reference offset
 // ^^^^^^^^^^^^^^^^^^ reference name
 
 use failure::{Error, Fail};
@@ -79,10 +79,7 @@ fn hex_word(input: &str) -> IResult<&str, u16> {
 /// parse a single byte signature element, which is either a hex byte or a
 /// wildcard.
 fn sig_element(input: &str) -> IResult<&str, SigElement> {
-    alt((
-        map(hex, |v| SigElement::Byte(v)),
-        map(tag(".."), |_| SigElement::Wildcard),
-    ))(input)
+    alt((map(hex, SigElement::Byte), map(tag(".."), |_| SigElement::Wildcard)))(input)
 }
 
 /// parse byte signature elements, hex or wildcard.
@@ -128,9 +125,9 @@ fn offset(input: &str) -> IResult<&str, Offset> {
     alt((
         // this must go first, because it has trailing `@`,
         // otherwise, the same as public.
-        map(local_offset, |v| Offset::Local(v)),
-        map(public_offset, |v| Offset::Public(v)),
-        map(reference_offset, |v| Offset::Reference(v)),
+        map(local_offset, Offset::Local),
+        map(public_offset, Offset::Public),
+        map(reference_offset, Offset::Reference),
     ))(input)
 }
 

@@ -50,7 +50,7 @@ use nom::{
 };
 
 // u16 because we need 257 possible values, all unsigned.
-#[derive(Copy, Clone, Hash, Eq)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Symbol(pub u16);
 
 // impl note: value 256 is WILDCARD.
@@ -67,12 +67,6 @@ impl std::convert::From<u8> for Symbol {
 impl std::convert::Into<usize> for Symbol {
     fn into(self) -> usize {
         self.0 as usize
-    }
-}
-
-impl std::cmp::PartialEq for Symbol {
-    fn eq(&self, other: &Symbol) -> bool {
-        self.0 == other.0
     }
 }
 
@@ -119,7 +113,7 @@ fn hex(input: &str) -> IResult<&str, u8> {
 /// parse a single byte signature element, which is either a hex byte or a
 /// wildcard.
 fn sig_element(input: &str) -> IResult<&str, Symbol> {
-    alt((map(hex, |v| Symbol::from(v)), map(tag(".."), |_| WILDCARD)))(input)
+    alt((map(hex, Symbol::from), map(tag(".."), |_| WILDCARD)))(input)
 }
 
 /// parse byte signature elements, hex or wildcard.
@@ -168,7 +162,7 @@ impl std::convert::Into<usize> for Transition {
 }
 
 impl Transition {
-    fn is_valid(&self) -> bool {
+    fn is_valid(self) -> bool {
         self.0 != 0
     }
 }
@@ -301,7 +295,7 @@ impl NFA {
                 continue;
             }
 
-            if step.buf.len() == 0 {
+            if step.buf.is_empty() {
                 // there are no remaining input bytes, yet we're at a non-terminal state.
                 // therefore, the input buffer is shorter than the pattern,
                 // so it can't match.
@@ -329,7 +323,7 @@ impl NFA {
         matches.iter().map(|&i| &self.patterns[i]).collect()
     }
 
-    pub fn new() -> NFABuilder {
+    pub fn builder() -> NFABuilder {
         NFABuilder { patterns: vec![] }
     }
 
@@ -356,49 +350,49 @@ impl NFA {
 // ````
 impl std::fmt::Debug for NFA {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        writeln!(f, "patterns:").unwrap();
+        writeln!(f, "patterns:")?;
         for (i, pattern) in self.patterns.iter().enumerate() {
-            writeln!(f, "  - pat{}: {}", i, pattern).unwrap();
+            writeln!(f, "  - pat{}: {}", i, pattern)?;
         }
-        writeln!(f, "").unwrap();
+        writeln!(f)?;
 
         // TODO: compute these dynamically
         let symbols = [Symbol(0xAA), Symbol(0xBB), Symbol(0xCC), Symbol(0xDD), WILDCARD];
-        writeln!(f, "transition table:").unwrap();
-        write!(f, "     ").unwrap();
+        writeln!(f, "transition table:")?;
+        write!(f, "     ")?;
         for symbol in symbols.iter() {
-            write!(f, " {} ", symbol).unwrap();
+            write!(f, " {} ", symbol)?;
         }
-        writeln!(f, "").unwrap();
+        writeln!(f)?;
 
         for (i, state) in self.table.states.iter().enumerate() {
-            write!(f, "  {:>2}:", i).unwrap();
+            write!(f, "  {:>2}:", i)?;
 
             for &symbol in symbols.iter() {
                 let transition = state.transitions[Into::<usize>::into(symbol)];
                 if transition.is_valid() {
-                    write!(f, " {:>2} ", transition.0).unwrap();
+                    write!(f, " {:>2} ", transition.0)?;
                 } else {
-                    write!(f, "    ").unwrap();
+                    write!(f, "    ")?;
                 }
             }
 
-            if state.alive.iter().find(|&b| b).is_some() {
+            if state.alive.iter().any(|b| b) {
                 if state.is_terminal() {
-                    write!(f, "  matches:").unwrap();
+                    write!(f, "  matches:")?;
                 } else {
-                    write!(f, "  alive:").unwrap();
+                    write!(f, "  alive:")?;
                 }
                 for (i, is_alive) in state.alive.iter().enumerate() {
                     if is_alive {
-                        write!(f, " pat{}", i).unwrap();
+                        write!(f, " pat{}", i)?;
                     }
                 }
             }
-            writeln!(f, "").unwrap();
+            writeln!(f)?;
         }
 
-        write!(f, "") // OK
+        Ok(())
     }
 }
 
@@ -437,7 +431,7 @@ impl NFABuilder {
             q.push_back(Step {
                 state_pointer: start_state,
                 pattern_index,
-                symbols:       &pattern.0[..],
+                symbols: &pattern.0[..],
             })
         }
 
@@ -456,7 +450,7 @@ impl NFABuilder {
             // mark the current pattern as "alive" at the given state.
             state.alive.set(step.pattern_index, true);
 
-            if step.symbols.len() == 0 {
+            if step.symbols.is_empty() {
                 // this is terminal.
                 continue;
             }
@@ -521,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_empty_build() {
-        NFA::new().build();
+        NFA::builder().build();
     }
 
     // patterns:
@@ -537,7 +531,7 @@ mod tests {
     //  4:                      matches: pat0
     #[test]
     fn test_add_one_pattern() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
 
         let nfa = b.build();
@@ -559,7 +553,7 @@ mod tests {
     //  5:                      matches: pat1
     #[test]
     fn test_add_two_patterns() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCCCC"));
 
@@ -581,7 +575,7 @@ mod tests {
     //    5:                      matches: pat1
     #[test]
     fn test_add_one_wildcard() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCC.."));
 
@@ -592,14 +586,14 @@ mod tests {
     // we don't match when we don't have any patterns.
     #[test]
     fn test_match_empty() {
-        let nfa = NFA::new().build();
+        let nfa = NFA::builder().build();
         assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 0);
     }
 
     // we match things we want to, and don't match other data.
     #[test]
     fn test_match_one() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         let nfa = b.build();
 
@@ -613,7 +607,7 @@ mod tests {
     // ignoring trailing bytes beyond the length of the pattern.
     #[test]
     fn test_match_long() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         let nfa = b.build();
 
@@ -625,7 +619,7 @@ mod tests {
     // and order of the pattern declarations should not matter.
     #[test]
     fn test_match_one_tail_wildcard() {
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCC.."));
         b.add_pattern(Pattern::from("AABBCCDD"));
         let nfa = b.build();
@@ -635,7 +629,7 @@ mod tests {
         assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
 
         // order of patterns should not matter
-        let mut b = NFA::new();
+        let mut b = NFA::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCC.."));
         let nfa = b.build();

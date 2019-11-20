@@ -25,12 +25,12 @@ pub enum SigError {
 
 bitflags! {
     struct Features: u16 {
-        const STARTUP = 0b00000001;
-        const CTYPE_CRC = 0b00000010;
-        const TWO_BYTE_CTYPE = 0b00000100;
-        const ALT_CTYPE_CRC = 0b00001000;
-        const COMPRESSED = 0b00010000;
-        const CTYPE_CRC_3V = 0b00100000;
+        const STARTUP        = 0b0000_0001;
+        const CTYPE_CRC      = 0b0000_0010;
+        const TWO_BYTE_CTYPE = 0b0000_0100;
+        const ALT_CTYPE_CRC  = 0b0000_1000;
+        const COMPRESSED     = 0b0001_0000;
+        const CTYPE_CRC_3V   = 0b0010_0000;
     }
 }
 
@@ -205,12 +205,14 @@ fn vint32(input: &[u8]) -> IResult<&[u8], u32> {
         let (input, mid) = be_u8(input)?;
         let (input, low) = be_u16(input)?;
         let (high, mid, low) = (b as u32, mid as u32, low as u32);
-        return Ok((input, ((((high & 0x3F) << 8) + mid) << 16) + low));
+
+        Ok((input, ((((high & 0x3F) << 8) + mid) << 16) + low))
     } else {
         let (input, high) = be_u16(input)?;
         let (input, low) = be_u16(input)?;
         let (high, low) = (high as u32, low as u32);
-        return Ok((input, (high << 16) + low));
+
+        Ok((input, (high << 16) + low))
     }
 }
 
@@ -279,21 +281,21 @@ fn wildcard_mask(input: &[u8], length: u16) -> IResult<&[u8], u64> {
 
 bitflags! {
     struct ParsingFlags: u8 {
-        const MORE_PUBLIC_NAMES = 0b00000001;
-        const TAIL_BYTES = 0b00000010;
-        const REFERENCED_FUNCTIONS = 0b00000100;
-        const MORE_MODULES_WITH_SAME_CRC = 0b00001000;
-        const MORE_MODULES = 0b00010000;
+        const MORE_PUBLIC_NAMES = 0b0000_0001;
+        const TAIL_BYTES = 0b0000_0010;
+        const REFERENCED_FUNCTIONS = 0b0000_0100;
+        const MORE_MODULES_WITH_SAME_CRC = 0b0000_1000;
+        const MORE_MODULES = 0b0001_0000;
     }
 }
 
 bitflags! {
     struct NameFlags: u8 {
-        const UNK1 = 0b00000001;
-        const LOCAL = 0b00000010;
-        const UNK2 = 0b00000100;
-        const UNRESOLVED_COLLISION = 0b00001000;
-        const NEGATIVE_OFFSET = 0b00010000;
+        const UNK1  = 0b0000_0001;
+        const LOCAL = 0b0000_0010;
+        const UNK2  = 0b0000_0100;
+        const UNRESOLVED_COLLISION = 0b0000_1000;
+        const NEGATIVE_OFFSET = 0b0001_0000;
     }
 }
 
@@ -586,7 +588,7 @@ fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
         //  [ prefix1 prefix2   C B A ]
         // and we need to reverse the current pattern to end up like:
         //  [ prefix1 prefix2   A B C ]
-        &pattern[prefix.len()..].reverse();
+        pattern[prefix.len()..].reverse();
 
         let (input_, sigs) = node(input, header, pattern)?;
         input = input_;
