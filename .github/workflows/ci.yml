@@ -3,6 +3,19 @@ on: [push, pull_request]
 name: CI
 
 jobs:
+  getpy:
+    name: getpy
+    runs-on: [ubuntu-latest]
+    steps:
+      - name: raw install python
+        run: apt-get install -y python3.7 python3.7-dev
+      - uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+      - name: python deps
+        run: |
+          python3.7 -m pip install -U pip setuptools
+          python3.7 -m pip install setuptools-rust pytest tox
   check:
     name: check
     runs-on: [ubuntu-latest]
