@@ -1,44 +1,43 @@
 // from: https://github.com/Maktm/FLIRTDB/blob/1f5763535e02d7cccf2f90a96a8ebaa36e9b2495/cmt/windows/libcmt_15_msvc_x86.pat#L355
 //
-//    3B0D........F27502F2C3F2E9...................................... 00 0000 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002 ___security_cookie ^000D ___report_gsfailure
-//    ^^^^        ^^^^^^^^^^^^^^   bytes
-//        ^^^^^^^^                 relocations
+//    3B0D........F27502F2C3F2E9...................................... 00 0000
+// 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002
+// ___security_cookie ^000D ___report_gsfailure    ^^^^        ^^^^^^^^^^^^^^
+// bytes        ^^^^^^^^                 relocations
 //
-//                                                                     00 0000 0011
-//                                                                     ^^ number of bytes crc16'd
-//                                                                        ^^^^ crc16
-//                                                                             ^^^^ size of fn
+//                                                                     00 0000
+// 0011                                                                     ^^
+// number of bytes crc16'd                                                      
+// ^^^^ crc16                                                                   
+// ^^^^ size of fn
 //
-//                                                                                  :0000 @__security_check_cookie@4
-//                                                                                  ^^^^^ offset of match
-//                                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^ name
+//                                                                              
+// :0000 @__security_check_cookie@4                                             
+// ^^^^^ offset of match                                                        
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^ name
 //
-//                                                                                                                   :000B@ $failure$4
-//                                                                                                                   ^^^^^^ local offset
-//                                                                                                                          ^^^^^^^^^^ local name
+//                                                                              
+// :000B@ $failure$4                                                            
+// ^^^^^^ local offset                                                          
+// ^^^^^^^^^^ local name
 //
-//                                                                                                                                     ^0002 ___security_cookie
-//                                                                                                                                     ^^^^^ reference offset
-//                                                                                                                                           ^^^^^^^^^^^^^^^^^^ reference name
+//                                                                              
+// ^0002 ___security_cookie                                                     
+// ^^^^^ reference offset                                                       
+// ^^^^^^^^^^^^^^^^^^ reference name
 
-use log::{trace};
-use nom::IResult;
-use nom::multi::many0;
-use nom::multi::many1;
-use nom::bytes::complete::tag;
-use nom::bytes::complete::take_till1;
-use nom::bytes::complete::take_while;
-use nom::bytes::complete::take_while_m_n;
-use nom::branch::alt;
-use nom::sequence::pair;
-use nom::combinator::map;
-use nom::combinator::map_res;
-use nom::combinator::peek;
-use nom::combinator::opt;
 use failure::{Error, Fail};
+use log::trace;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_till1, take_while, take_while_m_n},
+    combinator::{map, map_res, opt, peek},
+    multi::{many0, many1},
+    sequence::pair,
+    IResult,
+};
 
-use super::{SigElement, ByteSignature, Offset, Name, Symbol, FlirtSignature, TailByte};
-
+use super::{ByteSignature, FlirtSignature, Name, Offset, SigElement, Symbol, TailByte};
 
 #[derive(Debug, Fail)]
 pub enum PatError {
@@ -53,19 +52,16 @@ fn whitespace(input: &str) -> IResult<&str, &str> {
 }
 
 fn is_hex_digit(c: char) -> bool {
-  c.is_digit(16)
+    c.is_digit(16)
 }
 
 fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
-  u8::from_str_radix(input, 16)
+    u8::from_str_radix(input, 16)
 }
 
 /// parse a single hex byte, like `AB`
 fn hex(input: &str) -> IResult<&str, u8> {
-    map_res(
-        take_while_m_n(2, 2, is_hex_digit),
-        from_hex
-    )(input)
+    map_res(take_while_m_n(2, 2, is_hex_digit), from_hex)(input)
 }
 
 fn hex_byte(input: &str) -> IResult<&str, u8> {
@@ -80,11 +76,12 @@ fn hex_word(input: &str) -> IResult<&str, u16> {
     Ok((input, v))
 }
 
-/// parse a single byte signature element, which is either a hex byte or a wildcard.
+/// parse a single byte signature element, which is either a hex byte or a
+/// wildcard.
 fn sig_element(input: &str) -> IResult<&str, SigElement> {
     alt((
         map(hex, |v| SigElement::Byte(v)),
-        map(tag(".."), |_| SigElement::Wildcard)
+        map(tag(".."), |_| SigElement::Wildcard),
     ))(input)
 }
 
@@ -133,7 +130,7 @@ fn offset(input: &str) -> IResult<&str, Offset> {
         // otherwise, the same as public.
         map(local_offset, |v| Offset::Local(v)),
         map(public_offset, |v| Offset::Public(v)),
-        map(reference_offset, |v| Offset::Reference(v))
+        map(reference_offset, |v| Offset::Reference(v)),
     ))(input)
 }
 
@@ -143,22 +140,35 @@ fn symbol_name(input: &str) -> IResult<&str, &str> {
 
 /// parse a (offset, symbol) pair.
 ///
-/// note: this also consumes trailing spaces so that a sequence of these can be easily parsed.
+/// note: this also consumes trailing spaces so that a sequence of these can be
+/// easily parsed.
 fn symbol(input: &str) -> IResult<&str, Symbol> {
     let (input, offset) = offset(input)?;
     let (input, _) = whitespace(input)?;
     let (input, name) = symbol_name(input)?;
     let (input, _) = opt(whitespace)(input)?;
     match offset {
-        Offset::Public(v) => {
-            Ok((input, Symbol::Public(Name {name: name.to_string(), offset: v as i64})))
-        },
-        Offset::Local(v) => {
-            Ok((input, Symbol::Local(Name {name: name.to_string(), offset: v as i64})))
-        },
-        Offset::Reference(v) => {
-            Ok((input, Symbol::Reference(Name {name: name.to_string(), offset: v as i64})))
-        },
+        Offset::Public(v) => Ok((
+            input,
+            Symbol::Public(Name {
+                name:   name.to_string(),
+                offset: v as i64,
+            }),
+        )),
+        Offset::Local(v) => Ok((
+            input,
+            Symbol::Local(Name {
+                name:   name.to_string(),
+                offset: v as i64,
+            }),
+        )),
+        Offset::Reference(v) => Ok((
+            input,
+            Symbol::Reference(Name {
+                name:   name.to_string(),
+                offset: v as i64,
+            }),
+        )),
     }
 }
 
@@ -174,7 +184,13 @@ fn tail_byte(input: &str) -> IResult<&str, TailByte> {
     let (input, value) = hex_byte(input)?;
     let (input, _) = tag(")")(input)?;
 
-    Ok((input, TailByte { offset: offset as u64, value }))
+    Ok((
+        input,
+        TailByte {
+            offset: offset as u64,
+            value,
+        },
+    ))
 }
 
 fn tail_bytes(input: &str) -> IResult<&str, Vec<TailByte>> {
@@ -218,15 +234,18 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     let (input, tail_bytes) = tail_bytes(input)?;
     trace!("tail bytes: {:02x?}", tail_bytes);
 
-    Ok((input, FlirtSignature {
-        byte_sig,
-        size_of_bytes_crc16,
-        crc16,
-        size_of_function: size_of_function as u64,
-        names,
-        footer,
-        tail_bytes,
-    }))
+    Ok((
+        input,
+        FlirtSignature {
+            byte_sig,
+            size_of_bytes_crc16,
+            crc16,
+            size_of_function: size_of_function as u64,
+            names,
+            footer,
+            tail_bytes,
+        },
+    ))
 }
 
 /// parse a .pat file into FLIRT signatures.

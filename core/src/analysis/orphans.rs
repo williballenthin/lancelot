@@ -1,18 +1,18 @@
-/// search for instructions with no predecessors (code xrefs to or fallthrough to).
-/// assume these are the start of functions.
-/// example: RUNTIME_FUNCTION always references code, but not always the start of a function.
-/// catch that case here.
+/// search for instructions with no predecessors (code xrefs to or fallthrough
+/// to). assume these are the start of functions.
+/// example: RUNTIME_FUNCTION always references code, but not always the start
+/// of a function. catch that case here.
 ///
 /// this should be the final analyzer pass.
 use std::collections::HashSet;
 
-use log::{debug};
-use failure::{Error};
+use failure::Error;
+use log::debug;
 
-use super::super::arch::{RVA};
-use super::super::workspace::Workspace;
-use super::{Analyzer};
-
+use super::{
+    super::{arch::RVA, workspace::Workspace},
+    Analyzer,
+};
 
 pub struct OrphanFunctionAnalyzer {}
 
@@ -64,14 +64,15 @@ impl Analyzer for OrphanFunctionAnalyzer {
 
         for section in ws.module.sections.iter().filter(|section| section.is_executable()) {
             orphans.extend(
-            ws.get_metas(section.addr, section.size as usize)?
-                .iter()
-                .enumerate()
-                .filter(|(_, meta)| meta.is_insn())
-                .filter(|(_, meta)| !meta.has_xrefs_to())
-                .filter(|(_, meta)| !meta.does_other_fallthrough_to())
-                .map(|(j, _)| section.addr + RVA::from(j))
-                .filter(|rva| !existing_functions.contains(rva)))
+                ws.get_metas(section.addr, section.size as usize)?
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, meta)| meta.is_insn())
+                    .filter(|(_, meta)| !meta.has_xrefs_to())
+                    .filter(|(_, meta)| !meta.does_other_fallthrough_to())
+                    .map(|(j, _)| section.addr + RVA::from(j))
+                    .filter(|rva| !existing_functions.contains(rva)),
+            )
         }
 
         for rva in orphans.iter() {

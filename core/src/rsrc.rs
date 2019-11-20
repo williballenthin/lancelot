@@ -3,13 +3,13 @@ use std::path::PathBuf;
 
 use super::util;
 
-
 #[derive(Copy, Clone)]
 pub enum Rsrc {
     /// A defanged 64-bit version of kernel32.dll.
     K32,
     /// from: https://www.bigmessowires.com/2015/10/08/a-handmade-executable-file/
-    /// since it doesn't have any sections or optional header, good for testing corner cases.
+    /// since it doesn't have any sections or optional header, good for testing
+    /// corner cases.
     TINY,
     /// from: https://joenord.com/apps/nop/
     NOP,
@@ -25,18 +25,10 @@ pub enum Rsrc {
 /// ```
 pub fn get_name(rsrc: Rsrc) -> String {
     match rsrc {
-        Rsrc::K32 => {
-            String::from("k32.bin")
-        }
-        Rsrc::TINY => {
-            String::from("tiny.exe")
-        }
-        Rsrc::NOP => {
-            String::from("nop.exe")
-        }
-        Rsrc::MIMI => {
-            String::from("mimikatz.exe_")
-        }
+        Rsrc::K32 => String::from("k32.bin"),
+        Rsrc::TINY => String::from("tiny.exe"),
+        Rsrc::NOP => String::from("nop.exe"),
+        Rsrc::MIMI => String::from("mimikatz.exe_"),
     }
 }
 

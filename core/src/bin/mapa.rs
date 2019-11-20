@@ -11,27 +11,22 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use std::ops::Range;
-use std::path::PathBuf;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range, path::PathBuf};
 
-use log::{error, warn, info, debug};
-use fern;
-use regex::bytes::Regex;
-use goblin::Object;
-use failure::{Error, Fail};
 use better_panic;
-extern crate log;
-extern crate clap;
+use failure::{Error, Fail};
+use fern;
+use goblin::Object;
+use log::{debug, error, info, warn};
+use regex::bytes::Regex;
 extern crate chrono;
-#[macro_use] extern crate lazy_static;
+extern crate clap;
+extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate lancelot;
-use lancelot::arch::{RVA};
-use lancelot::workspace::Workspace;
-use lancelot::analysis::pe::imports;
-use lancelot::config::Config;
-
+use lancelot::{analysis::pe::imports, arch::RVA, config::Config, workspace::Workspace};
 
 #[derive(Debug, Fail)]
 pub enum MainError {
@@ -98,7 +93,7 @@ impl std::fmt::Display for Structure {
             Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {}", name),
             Structure::Section(_, name) => write!(f, "section {}", name),
             Structure::ImportTable => write!(f, "import table"),
-            Structure::ExportTable=> write!(f, "export table"),
+            Structure::ExportTable => write!(f, "export table"),
             Structure::ResourceTable => write!(f, "resource table"),
             Structure::ExceptionTable => write!(f, "exception table"),
             Structure::CertificateTable => write!(f, "certificate table"),
@@ -134,7 +129,8 @@ fn find_ascii_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
         static ref ASCII_RE: Regex = Regex::new("[ -~]{4,}").unwrap();
     }
 
-    ASCII_RE.captures_iter(buf)
+    ASCII_RE
+        .captures_iter(buf)
         .map(|cap| {
             // guaranteed to have at least one hit
             let mat = cap.get(0).unwrap();
@@ -142,10 +138,13 @@ fn find_ascii_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
             // this had better be ASCII, and therefore able to be decoded.
             let s = String::from_utf8(mat.as_bytes().to_vec()).unwrap();
 
-            (Range {
-                start: mat.start(),
-                end: mat.end(),
-            }, s)
+            (
+                Range {
+                    start: mat.start(),
+                    end:   mat.end(),
+                },
+                s,
+            )
         })
         .collect()
 }
@@ -155,7 +154,8 @@ fn find_unicode_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
         static ref UNICODE_RE: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
     }
 
-    UNICODE_RE.captures_iter(buf)
+    UNICODE_RE
+        .captures_iter(buf)
         .map(|cap| {
             // guaranteed to have at least one hit
             let mat = cap.get(0).unwrap();
@@ -170,10 +170,13 @@ fn find_unicode_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
             // danger: the unwrap here might feasibly fail
             let s = String::from_utf16(&words).unwrap();
 
-            (Range {
-                start: mat.start(),
-                end: mat.end(),
-            }, s)
+            (
+                Range {
+                    start: mat.start(),
+                    end:   mat.end(),
+                },
+                s,
+            )
         })
         .collect()
 }
@@ -192,9 +195,9 @@ fn find_strings(buf: &[u8]) -> Vec<(Range<usize>, String)> {
 }
 
 struct MapNode {
-    range: Range<u64>,
+    range:     Range<u64>,
     structure: Structure,
-    children: Vec<MapNode>,
+    children:  Vec<MapNode>,
 }
 
 impl MapNode {
@@ -207,12 +210,11 @@ impl MapNode {
     }
 
     fn contains(&self, other: &MapNode) -> bool {
-        self.range.start <= other.range.start
-          && self.range.end >= other.range.end
+        self.range.start <= other.range.start && self.range.end >= other.range.end
     }
 
     fn insert(&mut self, other: MapNode) {
-        if ! self.contains(&other) {
+        if !self.contains(&other) {
             panic!("this node does not contain the child")
         }
 
@@ -229,15 +231,20 @@ impl MapNode {
         let mut ret: Vec<String> = vec![];
         // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
         ret.push(format!(""));
-        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
+        ret.push(format!(
+            "┌── {:#08x} {} ────────",
+            self.range.start, self.structure
+        ));
         let region = &buf[self.range.start as usize..self.range.end as usize];
-        for line in lancelot::util::hexdump(region,
-                                            self.range.start as usize).split("\n") {
+        for line in lancelot::util::hexdump(region, self.range.start as usize).split("\n") {
             if line != "" {
                 ret.push(format!("│   {}", line))
             }
         }
-        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
+        ret.push(format!(
+            "└── {:#08x} ────────────────────────",
+            self.range.end
+        ));
         ret.push(format!(""));
         Ok(ret)
     }
@@ -246,13 +253,19 @@ impl MapNode {
         let mut ret: Vec<String> = vec![];
         // ref: https://www.fileformat.info/info/unicode/block/box_drawing/list.htm
         ret.push(format!(""));
-        ret.push(format!("┌── {:#08x} {} ────────", self.range.start, self.structure));
+        ret.push(format!(
+            "┌── {:#08x} {} ────────",
+            self.range.start, self.structure
+        ));
         for child in self.children.iter() {
             for line in child.render(buf)?.iter() {
                 ret.push(format!("│  {}", line))
             }
         }
-        ret.push(format!("└── {:#08x} ────────────────────────", self.range.end));
+        ret.push(format!(
+            "└── {:#08x} ────────────────────────",
+            self.range.end
+        ));
         ret.push(format!(""));
         Ok(ret)
     }
@@ -281,7 +294,7 @@ fn build_tree(map: &Map) -> Result<MapNode, Error> {
     let mut locations: Vec<Range<u64>> = map.locations.keys().cloned().collect();
     locations.sort_by(|a, b| cmp_ranges(a, b));
     locations.reverse();
-    let mut root_node = get_node(map, locations.pop().unwrap());  // warning
+    let mut root_node = get_node(map, locations.pop().unwrap()); // warning
 
     while !locations.is_empty() {
         root_node.insert(get_node(map, locations.pop().unwrap()));
@@ -305,7 +318,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     locations.insert(
         Range {
             start: 0,
-            end: ws.buf.len() as u64,
+            end:   ws.buf.len() as u64,
         },
         Structure::File,
     );
@@ -314,7 +327,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     locations.insert(
         Range {
             start: 0,
-            end: sizeof_IMAGE_DOS_HEADER,
+            end:   sizeof_IMAGE_DOS_HEADER,
         },
         Structure::IMAGE_DOS_HEADER,
     );
@@ -325,7 +338,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     locations.insert(
         Range {
             start: offset_IMAGE_NT_HEADERS,
-            end: offset_IMAGE_NT_HEADERS
+            end:   offset_IMAGE_NT_HEADERS
                 + sizeof_Signature
                 + sizeof_IMAGE_FILE_HEADER
                 + (pe.header.coff_header.size_of_optional_header as u64),
@@ -336,7 +349,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     locations.insert(
         Range {
             start: offset_IMAGE_NT_HEADERS,
-            end: offset_IMAGE_NT_HEADERS + sizeof_Signature,
+            end:   offset_IMAGE_NT_HEADERS + sizeof_Signature,
         },
         Structure::Signature,
     );
@@ -345,27 +358,25 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     locations.insert(
         Range {
             start: offset_IMAGE_FILE_HEADER,
-            end: offset_IMAGE_FILE_HEADER + sizeof_IMAGE_FILE_HEADER,
+            end:   offset_IMAGE_FILE_HEADER + sizeof_IMAGE_FILE_HEADER,
         },
         Structure::IMAGE_FILE_HEADER,
     );
 
     let end_of_headers = if pe.header.coff_header.size_of_optional_header > 0 {
         let offset_IMAGE_OPTIONAL_HEADER = offset_IMAGE_FILE_HEADER + sizeof_IMAGE_FILE_HEADER;
-        let end_of_headers = offset_IMAGE_OPTIONAL_HEADER
-                    + (pe.header.coff_header.size_of_optional_header as u64);
+        let end_of_headers = offset_IMAGE_OPTIONAL_HEADER + (pe.header.coff_header.size_of_optional_header as u64);
         locations.insert(
             Range {
                 start: offset_IMAGE_OPTIONAL_HEADER,
-                end: end_of_headers,
+                end:   end_of_headers,
             },
             Structure::IMAGE_OPTIONAL_HEADER,
         );
         locations.insert(
             Range {
                 start: 0x0,
-                end: offset_IMAGE_OPTIONAL_HEADER
-                    + (pe.header.coff_header.size_of_optional_header as u64),
+                end:   offset_IMAGE_OPTIONAL_HEADER + (pe.header.coff_header.size_of_optional_header as u64),
             },
             Structure::Header,
         );
@@ -375,7 +386,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         locations.insert(
             Range {
                 start: 0x0,
-                end: end_of_headers,
+                end:   end_of_headers,
             },
             Structure::Header,
         );
@@ -389,7 +400,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         locations.insert(
             Range {
                 start: section.pointer_to_raw_data as u64,
-                end: (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
+                end:   (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
             },
             Structure::Section(i, section.name().unwrap_or("").to_string()),
         );
@@ -397,7 +408,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         locations.insert(
             Range {
                 start: offset_IMAGE_SECTION_HEADER,
-                end: offset_IMAGE_SECTION_HEADER + sizeof_IMAGE_SECTION_HEADER,
+                end:   offset_IMAGE_SECTION_HEADER + sizeof_IMAGE_SECTION_HEADER,
             },
             Structure::IMAGE_SECTION_HEADER(i, section.name().unwrap_or("").to_string()),
         );
@@ -406,22 +417,58 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
     }
 
     if let Some(opt) = pe.header.optional_header {
-        let mut directories: Vec<(Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>, Structure)> = vec![];
-        directories.push((Box::new(|| *opt.data_directories.get_export_table()), Structure::ExportTable));
+        let mut directories: Vec<(
+            Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>,
+            Structure,
+        )> = vec![];
+        directories.push((
+            Box::new(|| *opt.data_directories.get_export_table()),
+            Structure::ExportTable,
+        ));
         // the import table is handled by find_import_data_range
-        // directories.push((Box::new(|| *opt.data_directories.get_import_table()), Structure::ImportTable));
-        directories.push((Box::new(|| *opt.data_directories.get_resource_table()), Structure::ResourceTable));
-        directories.push((Box::new(|| *opt.data_directories.get_exception_table()), Structure::ExceptionTable));
-        directories.push((Box::new(|| *opt.data_directories.get_certificate_table()), Structure::CertificateTable));
-        directories.push((Box::new(|| *opt.data_directories.get_base_relocation_table()), Structure::BaseRelocationTable));
-        directories.push((Box::new(|| *opt.data_directories.get_debug_table()), Structure::DebugData));
+        // directories.push((Box::new(|| *opt.data_directories.get_import_table()),
+        // Structure::ImportTable));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_resource_table()),
+            Structure::ResourceTable,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_exception_table()),
+            Structure::ExceptionTable,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_certificate_table()),
+            Structure::CertificateTable,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_base_relocation_table()),
+            Structure::BaseRelocationTable,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_debug_table()),
+            Structure::DebugData,
+        ));
         directories.push((Box::new(|| *opt.data_directories.get_tls_table()), Structure::TlsTable));
-        directories.push((Box::new(|| *opt.data_directories.get_load_config_table()), Structure::LoadConfigTable));
-        directories.push((Box::new(|| *opt.data_directories.get_bound_import_table()), Structure::BoundImportTable));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_load_config_table()),
+            Structure::LoadConfigTable,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_bound_import_table()),
+            Structure::BoundImportTable,
+        ));
         // the import table is handled by find_import_data_range
-        // directories.push((Box::new(|| *opt.data_directories.get_import_address_table()), Structure::ImportAddressTable));
-        directories.push((Box::new(|| *opt.data_directories.get_delay_import_descriptor()), Structure::DelayImportDescriptor));
-        directories.push((Box::new(|| *opt.data_directories.get_clr_runtime_header()), Structure::ClrRuntimeHeader));
+        // directories.push((Box::new(||
+        // *opt.data_directories.get_import_address_table()),
+        // Structure::ImportAddressTable));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_delay_import_descriptor()),
+            Structure::DelayImportDescriptor,
+        ));
+        directories.push((
+            Box::new(|| *opt.data_directories.get_clr_runtime_header()),
+            Structure::ClrRuntimeHeader,
+        ));
 
         for (f, structure) in directories.iter() {
             if let Some(dir) = f() {
@@ -429,7 +476,7 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
                     locations.insert(
                         Range {
                             start: pfile as u64,
-                            end: (pfile + dir.size as usize) as u64,
+                            end:   (pfile + dir.size as usize) as u64,
                         },
                         structure.clone(),
                     );
@@ -450,10 +497,13 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
             if code_filter.find(string_rva).is_none() {
                 // no overlap with recognized code.
                 // probably a real string.
-                locations.insert(Range {
-                    start: loc.start as u64,
-                    end: loc.end as u64,
-                }, Structure::String(string.clone()));
+                locations.insert(
+                    Range {
+                        start: loc.start as u64,
+                        end:   loc.end as u64,
+                    },
+                    Structure::String(string.clone()),
+                );
             }
         }
     }
@@ -478,26 +528,27 @@ fn compute_map(ws: &Workspace) -> Result<Map, Error> {
         //
         // in the meantime, consider a function a 1-sized region.
         let floc = rva2pfile(&pe, function.into())?;
-        locations.insert(Range {
-            start: floc as u64,
-            end: floc as u64,
-        }, Structure::Function(name.clone()));
+        locations.insert(
+            Range {
+                start: floc as u64,
+                end:   floc as u64,
+            },
+            Structure::Function(name.clone()),
+        );
     }
 
     if let Ok(Some(r)) = find_import_data_range(&ws) {
         locations.insert(r, Structure::ImportTable);
     }
 
-    Ok(Map {
-        locations
-    })
+    Ok(Map { locations })
 }
 
 /// basic block descriptor.
 struct FunctionEntry {
     start: RVA,
-    end: RVA,
-    func: RVA,
+    end:   RVA,
+    func:  RVA,
 }
 
 struct FunctionMap {
@@ -517,8 +568,8 @@ impl FunctionMap {
                 for bb in bbs.iter() {
                     basic_blocks.push(FunctionEntry {
                         start: bb.addr,
-                        end: bb.addr + (bb.length as u32),
-                        func: **rva,
+                        end:   bb.addr + (bb.length as u32),
+                        func:  **rva,
                     });
                 }
             }
@@ -526,33 +577,34 @@ impl FunctionMap {
         basic_blocks.sort_unstable_by(|a, b| a.start.cmp(&b.start));
         debug!("found {} basic blocks", basic_blocks.len());
 
-        FunctionMap {
-            basic_blocks
-        }
+        FunctionMap { basic_blocks }
     }
 
     /// is the given address found within a basic block?
     pub fn find(&self, rva: RVA) -> Option<RVA> {
-        self.basic_blocks.binary_search_by(|probe| {
-            if probe.start > rva{
-                std::cmp::Ordering::Greater
-            } else if probe.end < rva {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        }).and_then(|index| Ok(self.basic_blocks[index].func)).ok()
+        self.basic_blocks
+            .binary_search_by(|probe| {
+                if probe.start > rva {
+                    std::cmp::Ordering::Greater
+                } else if probe.end < rva {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .and_then(|index| Ok(self.basic_blocks[index].func))
+            .ok()
     }
 }
 
-
 // in typical binaries compiled by MSVC,
-// the import table and import address table immediately precede the ASCII strings
-// of the DLLs and exported names required by the program.
+// the import table and import address table immediately precede the ASCII
+// strings of the DLLs and exported names required by the program.
 //
 // here we search for that region of data by collecting the addresses
 //  of these elements (IAT, IT, DLL names, function names).
-// if they are all found close to one another, report the elements as a single range.
+// if they are all found close to one another, report the elements as a single
+// range.
 fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>, Error> {
     let mut addrs: Vec<RVA> = vec![];
 
@@ -600,8 +652,8 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
         for j in 0..std::usize::MAX {
             // for each function name entry...
 
-            // the Original First Thunk (OFT) remains constant, and points to the IMAGE_IMPORT_BY_NAME.
-            // FT and OFT are parallel arrays.
+            // the Original First Thunk (OFT) remains constant, and points to the
+            // IMAGE_IMPORT_BY_NAME. FT and OFT are parallel arrays.
             let original_first_thunk = import_descriptor.original_first_thunk + RVA::from(j * psize);
 
             // the First Thunk (FT) is the pointer that will be overwritten upon load.
@@ -632,9 +684,9 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
                         addrs.push(import_name_addr);
                     }
-                },
-                Ok(imports::ImageThunkData::Ordinal(_)) => { /* pass */ },
-                Err(_) => { break },
+                }
+                Ok(imports::ImageThunkData::Ordinal(_)) => { /* pass */ }
+                Err(_) => break,
             };
         }
     }
@@ -653,7 +705,7 @@ fn find_import_data_range(ws: &lancelot::Workspace) -> Result<Option<Range<u64>>
 
     Ok(Some(Range {
         start: rva2pfile(&pe, start_rva.into())? as u64,
-        end: rva2pfile(&pe,  end_rva.into())? as u64,
+        end:   rva2pfile(&pe, end_rva.into())? as u64,
     }))
 }
 
@@ -667,7 +719,7 @@ pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
     for section in pe.sections.iter() {
         if section.virtual_address <= rva && rva < section.virtual_address + section.virtual_size {
             let offset = rva - section.virtual_address;
-            return Ok((section.pointer_to_raw_data + offset) as usize)
+            return Ok((section.pointer_to_raw_data + offset) as usize);
         }
 
         if section.pointer_to_raw_data < min_section_addr {
@@ -681,7 +733,7 @@ pub fn rva2pfile(pe: &goblin::pe::PE, rva: u64) -> Result<usize, Error> {
         return Ok(rva as usize);
     }
 
-    return Err(MainError::UnmappedVA.into())
+    return Err(MainError::UnmappedVA.into());
 }
 
 pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
@@ -694,7 +746,7 @@ pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
     for section in pe.sections.iter() {
         if section.pointer_to_raw_data <= rva && rva < section.pointer_to_raw_data + section.size_of_raw_data {
             let offset = rva - section.pointer_to_raw_data;
-            return Ok(RVA::from(section.virtual_address + offset))
+            return Ok(RVA::from(section.virtual_address + offset));
         }
 
         if section.pointer_to_raw_data < min_section_addr {
@@ -708,7 +760,7 @@ pub fn pfile2rva(pe: &goblin::pe::PE, rva: usize) -> Result<RVA, Error> {
         return Ok(RVA::from(rva));
     }
 
-    return Err(MainError::UnmappedVA.into())
+    return Err(MainError::UnmappedVA.into());
 }
 
 fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
@@ -723,9 +775,7 @@ fn render_map(map: &Map, buf: &[u8]) -> Result<(), Error> {
 pub fn run(config: Config, path: &str) -> Result<(), Error> {
     info!("filename: {:?}", path);
 
-    let ws = Workspace::from_file(path)?
-        .with_config(config)
-        .load()?;
+    let ws = Workspace::from_file(path)?.with_config(config).load()?;
     let map = compute_map(&ws)?;
     render_map(&map, &ws.buf)?;
 
@@ -754,29 +804,34 @@ fn main() {
     let matches = clap::App::new("lancelot")
         .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
         .about("summarize an executable file's features")
-        .arg(clap::Arg::with_name("verbose")
-            .short("v")
-            .long("verbose")
-            .multiple(true)
-            .help("log verbose messages")
+        .arg(
+            clap::Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("log verbose messages"),
         )
-        .arg(clap::Arg::with_name("pat_dir")
-            .long("config.flirt.pat_dir")
-            .takes_value(true)
-            .default_value(&pat_default)
-            .help(&format!("directory containing FLIRT .pat signature files"))
+        .arg(
+            clap::Arg::with_name("pat_dir")
+                .long("config.flirt.pat_dir")
+                .takes_value(true)
+                .default_value(&pat_default)
+                .help(&format!("directory containing FLIRT .pat signature files")),
         )
-        .arg(clap::Arg::with_name("sig_dir")
-            .long("config.flirt.sig_dir")
-            .takes_value(true)
-            .default_value(&sig_default)
-            .help(&format!("directory containing FLIRT .sig signature files"))
+        .arg(
+            clap::Arg::with_name("sig_dir")
+                .long("config.flirt.sig_dir")
+                .takes_value(true)
+                .default_value(&sig_default)
+                .help(&format!("directory containing FLIRT .sig signature files")),
         )
-        .arg(clap::Arg::with_name("input")
-            .required(true)
-            .index(1)
-            .help("path to file to analyze")
-        ).get_matches();
+        .arg(
+            clap::Arg::with_name("input")
+                .required(true)
+                .index(1)
+                .help("path to file to analyze"),
+        )
+        .get_matches();
 
     let log_level = match matches.occurrences_of("verbose") {
         0 => log::LevelFilter::Info,
@@ -791,15 +846,17 @@ fn main() {
                 "{} [{:5}] {} {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
-                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                if log_level == log::LevelFilter::Trace {
+                    record.target()
+                } else {
+                    ""
+                },
                 message
             ))
         })
         .level(log_level)
         .chain(std::io::stderr())
-        .filter(|metadata| {
-            !metadata.target().starts_with("goblin::pe")
-        })
+        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         .apply()
         .expect("failed to configure logging");
 

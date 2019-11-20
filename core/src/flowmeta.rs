@@ -1,7 +1,6 @@
 use std::fmt;
 
-use failure::{Fail};
-
+use failure::Fail;
 
 #[derive(Debug, Fail)]
 pub enum Error {
@@ -15,7 +14,8 @@ pub enum Error {
 ///
 /// The metadata is packed into a single byte, with the expectation that,
 ///  there may be one `FlowMeta` instance for each (code) offset in a program.
-/// However, the you should not be worried about the representation, just the interface.
+/// However, the you should not be worried about the representation, just the
+/// interface.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FlowMeta(u8);
 
@@ -38,8 +38,8 @@ impl FlowMeta {
 
     /// Fetch the cached length of the instruction.
     ///
-    /// If longer than 14 bytes, then will return `Error::LongInstruction` and you'll have to decode
-    ///  the instruction yourself.
+    /// If longer than 14 bytes, then will return `Error::LongInstruction` and
+    /// you'll have to decode  the instruction yourself.
     ///
     /// Errors:
     ///   - NotAnInstruction
@@ -133,7 +133,6 @@ impl FlowMeta {
     pub fn set_other_fallthrough_to(&mut self) {
         self.0 |= 0b0010_0000;
     }
-
 
     /// Does the instruction have flow xrefs from it?
     /// This does not include the fallthrough flow.

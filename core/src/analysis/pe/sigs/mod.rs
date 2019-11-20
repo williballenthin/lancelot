@@ -4,25 +4,26 @@
 ///  - https://github.com/NationalSecurityAgency/ghidra/tree/79d8f164f8bb8b15cfb60c5d4faeb8e1c25d15ca/Ghidra/Processors/x86/data/patterns
 ///
 /// implementation notes:
-///   - this seems to be quite slow in debug mode (3s to process k32.dll), but fast enough in release (0.05s)
-
+///   - this seems to be quite slow in debug mode (3s to process k32.dll), but
+///     fast enough in release (0.05s)
 use std::cmp;
-use std::io::Write;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+};
 
+use failure::Error;
+use goblin::Object;
+use log::debug;
 use md5;
-use log::{debug};
 use regex::bytes::Regex;
-use goblin::{Object};
-use failure::{Error};
-use rust_embed::{RustEmbed};
-use xml::reader::{EventReader, XmlEvent, ParserConfig};
+use rust_embed::RustEmbed;
+use xml::reader::{EventReader, ParserConfig, XmlEvent};
 
-use super::super::{Analyzer};
-use super::super::super::loader::Permissions;
-use super::super::super::workspace::Workspace;
-
+use super::super::{
+    super::{loader::Permissions, workspace::Workspace},
+    Analyzer,
+};
 
 /// split the given string into chunks of the given length.
 ///
@@ -90,15 +91,13 @@ pub fn render_byte(term: &str) -> Result<String, Error> {
     //  we can pretty quickly enumerate all of them.
     // so, scan all the possible byte values and collect
     //  the unique values that match the wildcard mask.
-    let candidates: HashSet<u8> = (0..255)
-        .filter(|&b| (b & mask) == b)
-        .map(|b| b & mask)
-        .collect();
+    let candidates: HashSet<u8> = (0..255).filter(|&b| (b & mask) == b).map(|b| b & mask).collect();
 
     if candidates.len() > 1 {
         // now we can generate the possible values.
         // this is `v | $candidate-mask-values`
-        let mut out: Vec<String> = candidates.iter()
+        let mut out: Vec<String> = candidates
+            .iter()
             .map(|c| c | (v & (!mask)))
             .map(|c| format!("\\x{:02X}", c))
             .collect();
@@ -182,7 +181,6 @@ pub fn render_pattern_term(id: &str, term: &str) -> Result<String, Error> {
         } else {
             Ok(out.join("").to_string())
         }
-
     } else {
         panic!("unexpected pattern character: {}", term)
     }
@@ -200,33 +198,34 @@ pub fn render_pattern(id: &str, pattern: &str) -> Result<String, Error> {
     Ok(format!("{}", parts.join("")))
 }
 
-
-/// represents a pattern spec that can be rendered into a binary regular expression.
+/// represents a pattern spec that can be rendered into a binary regular
+/// expression.
 pub trait Pattern {
     /// compute an identifier for this rule.
-    /// unless there is an explicit name, derive the identifier from the contents of the patterns.
+    /// unless there is an explicit name, derive the identifier from the
+    /// contents of the patterns.
     fn id(&self) -> &str;
 
     /// render the pattern as a string containing a regular expression pattern.
     fn to_regex(&self) -> Result<String, Error>;
 
-    /// fetch the capturing group name that identifies the function start offset within a match.
+    /// fetch the capturing group name that identifies the function start offset
+    /// within a match.
     fn get_mark(&self) -> &str;
 }
-
 
 /// represents a single `pattern` from the ghidra descriptor xml.
 /// e.g. from:
 ///
 /// <pattern>
 ///   <data>0x558bec</data>  <!-- PUSH EBP : MOV EBP,ESP -->
-///   <funcstart after="data" /> <!-- must be something defined right before this, or no memory -->
-/// </pattern>
+///   <funcstart after="data" /> <!-- must be something defined right before
+/// this, or no memory --> </pattern>
 pub struct SinglePattern {
-    data: String,
+    data:      String,
     pub attrs: HashMap<String, String>,
-    id: String,
-    mark: String,
+    id:        String,
+    mark:      String,
 }
 
 impl SinglePattern {
@@ -242,17 +241,11 @@ impl SinglePattern {
             id.clone()
         };
 
-        SinglePattern {
-            data,
-            attrs,
-            id,
-            mark,
-        }
+        SinglePattern { data, attrs, id, mark }
     }
 }
 
 impl Pattern for SinglePattern {
-
     fn id(&self) -> &str {
         &self.id
     }
@@ -265,7 +258,11 @@ impl Pattern for SinglePattern {
     /// assert_eq!(p.to_regex().unwrap(), "(?P<pattern_37e0788a>\\xCC)");
     /// ```
     fn to_regex(&self) -> Result<String, Error> {
-        Ok(format!("(?P<{}>{})", self.id(), render_pattern(&self.id(), &self.data)?))
+        Ok(format!(
+            "(?P<{}>{})",
+            self.id(),
+            render_pattern(&self.id(), &self.data)?
+        ))
     }
 
     fn get_mark(&self) -> &str {
@@ -274,18 +271,15 @@ impl Pattern for SinglePattern {
 }
 
 pub struct PatternPairs {
-    prepatterns: Vec<String>,
+    prepatterns:  Vec<String>,
     postpatterns: Vec<String>,
-    pub attrs: HashMap<String, String>,
-    id: String,
-    mark: String,
+    pub attrs:    HashMap<String, String>,
+    id:           String,
+    mark:         String,
 }
 
 impl PatternPairs {
-    pub fn new(prepatterns: Vec<String>,
-               postpatterns: Vec<String>,
-               attrs: HashMap<String, String>) -> PatternPairs {
-
+    pub fn new(prepatterns: Vec<String>, postpatterns: Vec<String>, attrs: HashMap<String, String>) -> PatternPairs {
         let mut m = md5::Context::new();
         for pattern in prepatterns.iter() {
             m.write_all(pattern.as_bytes()).unwrap();
@@ -337,11 +331,13 @@ impl Pattern for PatternPairs {
 
         // don't tag the prepatterns with a named group,
         // as its just yet another thing that gets tracked, but we dont' use.
-        Ok(format!("(?P<{}>({})(?P<{}_postpatterns>({})))",
-                   self.id(),
-                   prepatterns.join("|"),
-                   self.id(),
-                   postpatterns.join("|")))
+        Ok(format!(
+            "(?P<{}>({})(?P<{}_postpatterns>({})))",
+            self.id(),
+            prepatterns.join("|"),
+            self.id(),
+            postpatterns.join("|")
+        ))
     }
 
     fn get_mark(&self) -> &str {
@@ -349,15 +345,14 @@ impl Pattern for PatternPairs {
     }
 }
 
-
 #[derive(RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/src/analysis/pe/sigs/patterns"]
 pub struct Assets;
 
 struct Node {
-    tag: String,
-    attrs: HashMap<String, String>,
-    text: String,
+    tag:      String,
+    attrs:    HashMap<String, String>,
+    text:     String,
     children: Vec<Node>,
 }
 
@@ -365,6 +360,7 @@ impl Node {
     fn get_children(&self, tag: &str) -> Vec<&Node> {
         self.children.iter().filter(|n| n.tag == tag).collect()
     }
+
     fn get_child(&self, tag: &str) -> Option<&Node> {
         self.children.iter().find(|n| n.tag == tag)
     }
@@ -373,21 +369,22 @@ impl Node {
 fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
     let mut path: Vec<Node> = vec![];
 
-    let parser = EventReader::new_with_config(doc, ParserConfig::new()
-        .trim_whitespace(true)
-        .whitespace_to_characters(true)
-        .ignore_comments(true));
+    let parser = EventReader::new_with_config(
+        doc,
+        ParserConfig::new()
+            .trim_whitespace(true)
+            .whitespace_to_characters(true)
+            .ignore_comments(true),
+    );
 
     for e in parser {
         match e {
-            Ok(XmlEvent::StartDocument { .. }) => {
-                path.push(Node{
-                    tag: "root".to_string(),
-                    attrs: HashMap::new(),
-                    text: "".to_string(),
-                    children: vec![],
-                })
-            },
+            Ok(XmlEvent::StartDocument { .. }) => path.push(Node {
+                tag:      "root".to_string(),
+                attrs:    HashMap::new(),
+                text:     "".to_string(),
+                children: vec![],
+            }),
             Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                 let mut attrs: HashMap<String, String> = HashMap::new();
                 for kv in attributes.iter() {
@@ -395,9 +392,9 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
                 }
 
                 let node = Node {
-                    tag: name.local_name.clone(),
-                    attrs: attrs,
-                    text: "".to_string(),
+                    tag:      name.local_name.clone(),
+                    attrs,
+                    text:     "".to_string(),
                     children: vec![],
                 };
 
@@ -405,13 +402,13 @@ fn parse_xml(doc: &[u8]) -> Result<Node, Error> {
             }
             Ok(XmlEvent::Characters(s)) => {
                 let l = path.len();
-                let node = &mut path[l-1];
+                let node = &mut path[l - 1];
                 node.text = s.clone();
             }
             Ok(XmlEvent::EndElement { .. }) => {
                 let node = path.pop().unwrap();
                 let l = path.len();
-                let parent = &mut path[l-1];
+                let parent = &mut path[l - 1];
                 parent.children.push(node);
             }
             Ok(XmlEvent::EndDocument { .. }) => {
@@ -438,7 +435,8 @@ impl Assets {
 
     /// fetch text nodes from the xml path:
     ///
-    ///   patternconstraints / language[id=$language] / compiler[id=$compiler] / patternfile
+    ///   patternconstraints / language[id=$language] / compiler[id=$compiler] /
+    /// patternfile
     ///
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
@@ -451,14 +449,22 @@ impl Assets {
         // well this is pretty ugly...
         // also, sorry for the extra allocations.
 
-        for constraints_node in Assets::get_patternconstraints()?.children.iter().filter(
-            |n| &n.tag == "patternconstraints") {
-            for language_node in constraints_node.children.iter().filter(
-                |n| &n.tag == "language" && n.attrs.get("id") == Some(&language.to_string())) {
-                for compiler_node in language_node.children.iter().filter(
-                    |n| &n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string())) {
-                    for patternfile_node in compiler_node.children.iter().filter(
-                        |n| &n.tag == "patternfile") {
+        for constraints_node in Assets::get_patternconstraints()?
+            .children
+            .iter()
+            .filter(|n| &n.tag == "patternconstraints")
+        {
+            for language_node in constraints_node
+                .children
+                .iter()
+                .filter(|n| &n.tag == "language" && n.attrs.get("id") == Some(&language.to_string()))
+            {
+                for compiler_node in language_node
+                    .children
+                    .iter()
+                    .filter(|n| &n.tag == "compiler" && n.attrs.get("id") == Some(&compiler.to_string()))
+                {
+                    for patternfile_node in compiler_node.children.iter().filter(|n| &n.tag == "patternfile") {
                         patternfiles.push(patternfile_node.text.clone());
                     }
                 }
@@ -477,12 +483,8 @@ impl Assets {
 
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
-            for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| &n.tag == "patternlist") {
-
-                for pattern_node in patternlist_node.children.iter().filter(
-                    |n| &n.tag == "pattern") {
-
+            for patternlist_node in parse_xml(&doc)?.children.iter().filter(|n| &n.tag == "patternlist") {
+                for pattern_node in patternlist_node.children.iter().filter(|n| &n.tag == "pattern") {
                     let data = pattern_node.get_child("data").unwrap().text.clone();
                     let fstart = pattern_node.get_child("funcstart").unwrap().attrs.clone();
 
@@ -504,12 +506,8 @@ impl Assets {
 
         for patternfile in Assets::get_patternfiles(language, compiler)?.iter() {
             let doc = Assets::get(patternfile).unwrap();
-            for patternlist_node in parse_xml(&doc)?.children.iter().filter(
-                |n| &n.tag == "patternlist") {
-
-                for pattern_node in patternlist_node.children.iter().filter(
-                    |n| &n.tag == "patternpairs") {
-
+            for patternlist_node in parse_xml(&doc)?.children.iter().filter(|n| &n.tag == "patternlist") {
+                for pattern_node in patternlist_node.children.iter().filter(|n| &n.tag == "patternpairs") {
                     let mut prepatterns = vec![];
                     let mut postpatterns = vec![];
 
@@ -542,7 +540,6 @@ impl Assets {
         Ok(ret)
     }
 
-
     /// ```
     /// use lancelot::analysis::pe::sigs::Assets;
     /// let patterns = Assets::get_patterns("x86:LE:32:default", "windows").unwrap();
@@ -560,11 +557,11 @@ impl Assets {
 
             if pattern.attrs.contains_key("after") {
                 // must be something defined right before this, or no memory
-                continue
+                continue;
             }
 
             if pattern.attrs.contains_key("validcode") {
-                continue
+                continue;
             }
 
             ret.push(Box::new(pattern));
@@ -579,11 +576,11 @@ impl Assets {
 
             if pattern.attrs.contains_key("after") {
                 // must be something defined right before this, or no memory
-                continue
+                continue;
             }
 
             if pattern.attrs.contains_key("validcode") {
-                continue
+                continue;
             }
 
             ret.push(Box::new(pattern));
@@ -600,7 +597,6 @@ impl ByteSigAnalyzer {
         ByteSigAnalyzer {}
     }
 }
-
 
 impl ByteSigAnalyzer {
     fn is_64(&self, ws: &Workspace) -> bool {
@@ -634,7 +630,7 @@ impl Analyzer for ByteSigAnalyzer {
         let mut patterns: HashMap<String, Box<dyn Pattern>> = HashMap::new();
 
         let language = match self.is_64(ws) {
-            true =>  "x86:LE:64:default",
+            true => "x86:LE:64:default",
             false => "x86:LE:32:default",
         };
 
@@ -642,21 +638,30 @@ impl Analyzer for ByteSigAnalyzer {
             patterns.insert(pattern.id().to_string(), pattern);
         }
 
-        // join each of the component regular expressions into a master case expression, like:
+        // join each of the component regular expressions into a master case expression,
+        // like:
         //
         //     (?-u)($one|$two|$three|...)
         //
         // the `(?-u)` disables unicode mode, which lets us match raw byte values.
-        let mega_pattern = format!("(?-u)({})",
-                patterns.values()
-                    .map(|pattern| pattern.to_regex())
-                    .collect::<Result<Vec<String>, Error>>()?
-                    .join("|"));
+        let mega_pattern = format!(
+            "(?-u)({})",
+            patterns
+                .values()
+                .map(|pattern| pattern.to_regex())
+                .collect::<Result<Vec<String>, Error>>()?
+                .join("|")
+        );
         let re = Regex::new(&mega_pattern).unwrap();
 
         let mut functions = vec![];
 
-        for section in ws.module.sections.iter().filter(|section| section.perms.intersects(Permissions::X)) {
+        for section in ws
+            .module
+            .sections
+            .iter()
+            .filter(|section| section.perms.intersects(Permissions::X))
+        {
             let buf = ws.read_bytes(section.addr, section.size as usize)?;
             for capture in re.captures_iter(&buf) {
                 for pattern in patterns.values() {

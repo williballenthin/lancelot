@@ -1,14 +1,15 @@
+use bitflags::bitflags;
 use failure::{Error, Fail};
+use log::info;
 use strum_macros::Display;
-use log::{info};
-use bitflags::{bitflags};
 
-use super::arch::{Arch, RVA, VA};
-use super::pagemap::{PageMap};
-use super::loaders::pe::PELoader;
-use super::loaders::sc::ShellcodeLoader;
-use super::analysis::{Analyzer};
-use super::config::Config;
+use super::{
+    analysis::Analyzer,
+    arch::{Arch, RVA, VA},
+    config::Config,
+    loaders::{pe::PELoader, sc::ShellcodeLoader},
+    pagemap::PageMap,
+};
 
 #[derive(Debug, Fail)]
 pub enum LoaderError {
@@ -43,10 +44,10 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct Section {
-    pub addr: RVA,
-    pub size: u32,
+    pub addr:  RVA,
+    pub size:  u32,
     pub perms: Permissions,
-    pub name: String,
+    pub name:  String,
 }
 
 impl Section {
@@ -55,7 +56,7 @@ impl Section {
             return false;
         }
 
-        let max = self.addr + self.size as i32;  // danger
+        let max = self.addr + self.size as i32; // danger
         if rva >= max {
             return false;
         }
@@ -73,18 +74,14 @@ impl Section {
 }
 
 pub struct LoadedModule {
-    pub base_address: VA,
-    pub sections: Vec<Section>,
+    pub base_address:  VA,
+    pub sections:      Vec<Section>,
     pub address_space: PageMap<u8>,
 }
 
 impl LoadedModule {
     pub fn max_address(&self) -> RVA {
-        self.sections
-            .iter()
-            .map(|sec| sec.end())
-            .max()
-            .unwrap()  // danger: assume there's at least one section.
+        self.sections.iter().map(|sec| sec.end()).max().unwrap() // danger: assume there's at least one section.
     }
 }
 
@@ -95,22 +92,19 @@ pub trait Loader {
     fn get_file_format(&self) -> FileFormat;
 
     fn get_name(&self) -> String {
-        return format!(
-            "{}/{}/{}",
-            self.get_plat(),
-            self.get_arch(),
-            self.get_file_format()
-        );
+        return format!("{}/{}/{}", self.get_plat(), self.get_arch(), self.get_file_format());
     }
 
     /// Returns True if this Loader knows how to load the given bytes.
     fn taste(&self, config: &Config, buf: &[u8]) -> bool;
 
-    /// Load the given bytes into a Module and suggest the appropriate Analyzers.
+    /// Load the given bytes into a Module and suggest the appropriate
+    /// Analyzers.
     ///
     /// While the loader is parsing a file, it should determine what
-    ///  the most appropriate analyzers are, e.g. a PE loader may inspect the headers
-    ///  to determine if there is Control Flow Guard metadata that can be analyzed.
+    ///  the most appropriate analyzers are, e.g. a PE loader may inspect the
+    /// headers  to determine if there is Control Flow Guard metadata that
+    /// can be analyzed.
     fn load(&self, config: &Config, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error>;
 }
 
@@ -156,7 +150,8 @@ pub fn taste<'a>(config: &'a Config, buf: &'a [u8]) -> impl Iterator<Item = Box<
         .filter(move |loader| loader.taste(config, buf))
 }
 
-/// Load the given sample using the first matching loader from `default_loaders`.
+/// Load the given sample using the first matching loader from
+/// `default_loaders`.
 ///
 /// Example:
 ///
@@ -177,8 +172,10 @@ pub fn load(config: &Config, buf: &[u8]) -> Result<(Box<dyn Loader>, LoadedModul
     match taste(config, buf).nth(0) {
         Some(loader) => {
             info!("auto-detected loader: {}", loader.get_name());
-            loader.load(config, buf).map(|(module, analyzers)| (loader, module, analyzers))
-        },
+            loader
+                .load(config, buf)
+                .map(|(module, analyzers)| (loader, module, analyzers))
+        }
         None => Err(LoaderError::NotSupported.into()),
     }
 }

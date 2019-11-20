@@ -1,10 +1,8 @@
-use failure::{Fail, Error};
+use failure::{Error, Fail};
 
-use super::util;
-use super::arch::RVA;
+use super::{arch::RVA, util};
 
 const PAGE_SIZE: usize = 0x1000;
-
 
 #[derive(Debug, Fail)]
 pub enum PageMapError {
@@ -46,30 +44,29 @@ impl<T: Default + Copy> Page<T> {
 impl<T: Default + Copy> Default for Page<T> {
     fn default() -> Self {
         Page {
-            elements: [Default::default(); PAGE_SIZE]
+            elements: [Default::default(); PAGE_SIZE],
         }
     }
 }
 
-/// PageMap is a map-like data structure that stores `Copy` elements in pages of 0x1000.
+/// PageMap is a map-like data structure that stores `Copy` elements in pages of
+/// 0x1000.
 ///
 /// Its a good choice when representing lots of small elements that are found at
 /// contiguous indices. At the moment, indices are `RVA`.
 ///
 /// Lookups should be quick, as they boil down to just a couple dereferences.
 pub struct PageMap<T: Default + Copy> {
-    pages: Vec<Option<Page<T>>>
+    pages: Vec<Option<Page<T>>>,
 }
 
 impl<T: Default + Copy> PageMap<T> {
-    pub fn with_capacity(capacity: RVA) -> PageMap<T>{
+    pub fn with_capacity(capacity: RVA) -> PageMap<T> {
         let page_count = page(capacity) + 1;
         let mut pages = Vec::with_capacity(page_count);
         pages.resize_with(page_count, || None);
 
-        PageMap {
-            pages
-        }
+        PageMap { pages }
     }
 
     /// error if rva is not in a valid page.
@@ -110,7 +107,8 @@ impl<T: Default + Copy> PageMap<T> {
         Ok(())
     }
 
-    /// map the default value (probably zero) at the given address for the given size.
+    /// map the default value (probably zero) at the given address for the given
+    /// size.
     ///
     /// same error conditions as `map`.
     /// see example under `probe`.
@@ -118,8 +116,8 @@ impl<T: Default + Copy> PageMap<T> {
         self.write(rva, &vec![Default::default(); size])
     }
 
-    /// map the given items at the given address, padding with the default value until the next page.
-    /// (map zero-extend).
+    /// map the given items at the given address, padding with the default value
+    /// until the next page. (map zero-extend).
     ///
     /// same error conditions as `map`.
     ///
@@ -163,7 +161,7 @@ impl<T: Default + Copy> PageMap<T> {
             return false;
         }
 
-        return self.pages[page(rva)].is_some()
+        return self.pages[page(rva)].is_some();
     }
 
     /// fetch one item from the given address.
@@ -234,9 +232,8 @@ impl<T: Default + Copy> PageMap<T> {
         Some(&mut page.elements[page_offset(rva)])
     }
 
-
-    /// handle the simple slice case: when start and end fall within the same page.
-    /// for example, reading a dword from address 0x10.
+    /// handle the simple slice case: when start and end fall within the same
+    /// page. for example, reading a dword from address 0x10.
     ///
     /// ```
     /// use lancelot::arch::RVA;
@@ -268,8 +265,8 @@ impl<T: Default + Copy> PageMap<T> {
         Ok(buf)
     }
 
-    /// handle the complex slice case: when start and end are on different pages.
-    /// for example, reading a dword from address 0xFFE.
+    /// handle the complex slice case: when start and end are on different
+    /// pages. for example, reading a dword from address 0xFFE.
     ///
     /// ```
     /// use lancelot::arch::RVA;
@@ -305,7 +302,11 @@ impl<T: Default + Copy> PageMap<T> {
     fn slice_into_split<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
         let end = start + buf.len();
         let start_page = page(start);
-        let end_page = if page_offset(end) == 0 { page(end) - 1} else { page(end) };
+        let end_page = if page_offset(end) == 0 {
+            page(end) - 1
+        } else {
+            page(end)
+        };
 
         if end_page > self.pages.len() - 1 {
             return Err(PageMapError::NotMapped.into());
@@ -313,7 +314,7 @@ impl<T: Default + Copy> PageMap<T> {
 
         // ensure each page within the requested region is mapped.
         for page in start_page..end_page + 1 {
-            if ! self.probe((page * PAGE_SIZE).into()) {
+            if !self.probe((page * PAGE_SIZE).into()) {
                 return Err(PageMapError::NotMapped.into());
             }
         }
@@ -329,7 +330,7 @@ impl<T: Default + Copy> PageMap<T> {
             let page = self.pages[page(start)].as_ref().expect("slice_into_split: one");
             let elements = &page.elements[page_offset(start)..];
             {
-                let dst = &mut buf[offset..offset+elements.len()];
+                let dst = &mut buf[offset..offset + elements.len()];
                 dst.copy_from_slice(elements);
                 offset += elements.len();
             }
@@ -343,7 +344,7 @@ impl<T: Default + Copy> PageMap<T> {
                 let page = self.pages[page_index].as_ref().expect("slice_into_split: two");
                 let elements = &page.elements[..];
                 {
-                    let dst = &mut buf[offset..offset+elements.len()];
+                    let dst = &mut buf[offset..offset + elements.len()];
                     dst.copy_from_slice(elements);
                     offset += elements.len();
                 }
@@ -355,7 +356,7 @@ impl<T: Default + Copy> PageMap<T> {
             let page = self.pages[page(end)].as_ref().expect("slice_into_split: three");
             let elements = &page.elements[..page_offset(end)];
             {
-                let dst = &mut buf[offset..offset+elements.len()];
+                let dst = &mut buf[offset..offset + elements.len()];
                 dst.copy_from_slice(elements);
             }
         }
@@ -363,8 +364,8 @@ impl<T: Default + Copy> PageMap<T> {
         Ok(buf)
     }
 
-    /// fetch the items found in the given range, placing them into the given slice.
-    /// compared with `slice`, this routine avoids an allocation.
+    /// fetch the items found in the given range, placing them into the given
+    /// slice. compared with `slice`, this routine avoids an allocation.
     ///
     /// errors:
     ///   - PageMapError::NotMapped: if any requested address is not mapped
@@ -416,17 +417,17 @@ impl<T: Default + Copy> std::fmt::Debug for PageMap<T> {
         for (i, page) in self.pages.iter().enumerate() {
             match page {
                 Some(_) => {
-                    if ! was_allocated {
+                    if !was_allocated {
                         write!(f, "  - {:#x}", i * PAGE_SIZE)?;
                     }
                     was_allocated = true;
-                },
+                }
                 None => {
                     if was_allocated {
                         write!(f, "-{:#x} mapped\n", i * PAGE_SIZE)?;
                     }
                     was_allocated = false;
-                },
+                }
             };
         }
 

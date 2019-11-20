@@ -1,13 +1,15 @@
 // from: https://github.com/Maktm/FLIRTDB/blob/1f5763535e02d7cccf2f90a96a8ebaa36e9b2495/cmt/windows/libcmt_15_msvc_x86.pat#L354
 //
-//     6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3 00 0000 0020 :0000 __EH_prolog
+//     6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3 00 0000
+// 0020 :0000 __EH_prolog
 //
 // take that first column and treat it as a byte signature:
 //
 //     rule __EH_prolog : flirt
 //     {
 //         strings:
-//             $bytes = {6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3}
+//             $bytes =
+// {6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3}
 //         condition:
 //             $bytes
 //     }
@@ -23,14 +25,15 @@
 // ```
 
 extern crate nom;
-#[macro_use] extern crate bitflags;
-use log::{trace};
+#[macro_use]
+extern crate bitflags;
+use log::trace;
 use regex::bytes::Regex;
 use std::collections::HashMap;
 
+pub mod nfa;
 pub mod pat;
 pub mod sig;
-pub mod nfa;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SigElement {
@@ -69,7 +72,7 @@ enum Offset {
 #[derive(Debug)]
 pub struct Name {
     offset: i64,
-    name: String,
+    name:   String,
 }
 
 #[derive(Debug)]
@@ -92,7 +95,7 @@ impl std::fmt::Display for Symbol {
 #[derive(Debug)]
 struct TailByte {
     offset: u64,
-    value: u8,
+    value:  u8,
 }
 
 impl std::fmt::Display for TailByte {
@@ -105,9 +108,9 @@ pub struct FlirtSignature {
     pub byte_sig: ByteSignature,
 
     /// number of bytes passed to the CRC16 checksum
-    pub size_of_bytes_crc16: u8,  // max: 0xFF
+    pub size_of_bytes_crc16: u8, // max: 0xFF
     crc16: u16,
-    pub size_of_function: u64,  // max: 0x8000
+    pub size_of_function: u64, // max: 0x8000
 
     names: Vec<Symbol>,
 
@@ -204,7 +207,7 @@ impl FlirtSignature {
             }
         }
 
-        crc = !crc;  // bitwise invert
+        crc = !crc; // bitwise invert
 
         // swap u16 byte order
         let h1: u16 = ((crc >> 0) & 0xFF) as u16;
@@ -215,34 +218,33 @@ impl FlirtSignature {
 
     pub fn match_crc16(&self, buf: &[u8]) -> bool {
         if self.size_of_bytes_crc16 > 0 {
-            let byte_sig_size= self.byte_sig.0.len();
+            let byte_sig_size = self.byte_sig.0.len();
             let start = byte_sig_size;
             let end = byte_sig_size + (self.size_of_bytes_crc16 as usize);
             if end > buf.len() {
                 trace!("flirt signature: buffer not large enough");
-                return false
+                return false;
             }
 
             let crc16 = FlirtSignature::crc16(&buf[start..end]);
 
             if crc16 != self.crc16 {
                 trace!("flirt signature: crc16 fails");
-                return false
+                return false;
             }
         }
 
-        return true
+        return true;
     }
 
     /// return true if all tail bytes match (if there are any).
     pub fn match_tail_bytes(&self, buf: &[u8]) -> bool {
-        ! self.tail_bytes
+        !self
+            .tail_bytes
             .iter()
-            .map(|tail_byte| {
-                match buf.get(tail_byte.offset as usize) {
-                    None => false,
-                    Some(&v) => v == tail_byte.value
-                }
+            .map(|tail_byte| match buf.get(tail_byte.offset as usize) {
+                None => false,
+                Some(&v) => v == tail_byte.value,
             })
             .find(|&b| !b)
             .is_some()
@@ -250,12 +252,13 @@ impl FlirtSignature {
 }
 
 pub struct FlirtSignatureMatcher<'a> {
-    re: Regex,
+    re:  Regex,
     sig: &'a FlirtSignature,
 }
 
-/// create a binary regular expression pattern for matching the given FLIRT byte signature.
-/// using this pattern still requires creating a Regex object with the appropriate options.
+/// create a binary regular expression pattern for matching the given FLIRT byte
+/// signature. using this pattern still requires creating a Regex object with
+/// the appropriate options.
 fn create_pattern(sig: &FlirtSignature) -> String {
     // the function may be shorter than the 0x20 byte pattern,
     // if so, only generate a pattern long enough to match the function.
@@ -277,18 +280,18 @@ fn create_pattern(sig: &FlirtSignature) -> String {
         .join("")
 }
 
-
 impl<'a> FlirtSignatureMatcher<'a> {
     pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher {
         FlirtSignatureMatcher {
-            re: FlirtSignatureMatcher::create_match_re(sig),
-            sig: sig,
+            re:  FlirtSignatureMatcher::create_match_re(sig),
+            sig,
         }
     }
 
     /// translate the given FLIRT byte signature into a binary regex.
     ///
-    /// it matches from the start of the input string, so its best for the `is_match` operation.
+    /// it matches from the start of the input string, so its best for the
+    /// `is_match` operation.
     fn create_match_re(sig: &'a FlirtSignature) -> Regex {
         // the `(?-u)` disables unicode mode, which lets us match raw byte values.
         let pattern = format!("(?-u)(^{})", create_pattern(sig));
@@ -334,12 +337,12 @@ impl<'a> FlirtSignatureMatcher<'a> {
     pub fn r#match(&self, buf: &[u8]) -> bool {
         if !self.re.is_match(buf) {
             trace!("flirt signature: pattern fails");
-            return false
+            return false;
         }
 
         if !self.sig.match_crc16(buf) {
             trace!("flirt signature: crc16 fails");
-            return false
+            return false;
         }
 
         trace!("flirt signature: match");
@@ -348,36 +351,36 @@ impl<'a> FlirtSignatureMatcher<'a> {
 }
 
 pub struct FlirtSignatureSet {
-    sigs: HashMap<nfa::Pattern, FlirtSignature>,
+    sigs:    HashMap<nfa::Pattern, FlirtSignature>,
     matcher: nfa::NFA,
 }
 
-// translate from the FLIRT signature format to NFA matcher format (already essentially the same).
+// translate from the FLIRT signature format to NFA matcher format (already
+// essentially the same).
 impl std::convert::Into<nfa::Pattern> for &FlirtSignature {
     fn into(self) -> nfa::Pattern {
         nfa::Pattern(
-            self.byte_sig.0.iter()
+            self.byte_sig
+                .0
+                .iter()
                 .map(|s| match s {
                     SigElement::Wildcard => nfa::WILDCARD,
                     SigElement::Byte(v) => nfa::Symbol(*v as u16),
                 })
-                .collect()
+                .collect(),
         )
     }
 }
 
 impl FlirtSignatureSet {
     pub fn with_signatures(sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
-        let sigs: HashMap<nfa::Pattern, FlirtSignature> = sigs
-            .into_iter()
-            .map(|sig| ((&sig).into(), sig))
-            .collect();
+        let sigs: HashMap<nfa::Pattern, FlirtSignature> = sigs.into_iter().map(|sig| ((&sig).into(), sig)).collect();
 
         let patterns = sigs.keys().cloned().collect();
 
         FlirtSignatureSet {
             sigs,
-            matcher: nfa::NFA::from_patterns(patterns)
+            matcher: nfa::NFA::from_patterns(patterns),
         }
     }
 
@@ -418,7 +421,8 @@ impl FlirtSignatureSet {
     /// assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
     /// ```
     pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
-        self.matcher.r#match(buf)
+        self.matcher
+            .r#match(buf)
             .iter()
             .map(|&pattern| self.sigs.get(pattern).unwrap())
             .filter(|&sig| sig.match_crc16(buf))

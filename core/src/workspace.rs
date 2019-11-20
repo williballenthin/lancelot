@@ -2,19 +2,18 @@ use std::collections::{HashMap, VecDeque};
 
 use byteorder::{ByteOrder, LittleEndian};
 use failure::{Error, Fail};
-use zydis;
-use zydis::Decoder;
 use log::{info, warn};
+use zydis::{self, Decoder};
 
-use super::analysis::Analysis;
-use super::arch::{Arch, VA, RVA};
-use super::basicblock::BasicBlock;
-use super::config::Config;
-use super::loader;
-use super::loader::{LoadedModule, Loader, Permissions};
-use super::xref::XrefType;
-use super::util;
-
+use super::{
+    analysis::Analysis,
+    arch::{Arch, RVA, VA},
+    basicblock::BasicBlock,
+    config::Config,
+    loader::{self, LoadedModule, Loader, Permissions},
+    util,
+    xref::XrefType,
+};
 
 #[derive(Debug, Fail)]
 pub enum WorkspaceError {
@@ -30,8 +29,8 @@ pub enum WorkspaceError {
 
 pub struct WorkspaceBuilder {
     filename: String,
-    buf: Vec<u8>,
-    config: Config,
+    buf:      Vec<u8>,
+    config:   Config,
 
     loader: Option<Box<dyn Loader>>,
 
@@ -43,10 +42,7 @@ pub struct WorkspaceBuilder {
 
 impl WorkspaceBuilder {
     /// Override the default loader picker with the given loader.
-    pub fn with_loader(
-        self: WorkspaceBuilder,
-        loader: Box<dyn Loader>,
-    ) -> WorkspaceBuilder {
+    pub fn with_loader(self: WorkspaceBuilder, loader: Box<dyn Loader>) -> WorkspaceBuilder {
         info!("using explicitly chosen loader: {}", loader.get_name());
         WorkspaceBuilder {
             loader: Some(loader),
@@ -70,14 +66,8 @@ impl WorkspaceBuilder {
         }
     }
 
-    pub fn with_config(
-        self: WorkspaceBuilder,
-        config: Config,
-    ) -> WorkspaceBuilder {
-        WorkspaceBuilder {
-            config: config,
-            ..self
-        }
+    pub fn with_config(self: WorkspaceBuilder, config: Config) -> WorkspaceBuilder {
+        WorkspaceBuilder { config, ..self }
     }
 
     /// Construct a workspace with the given builder configuration.
@@ -161,7 +151,7 @@ impl WorkspaceBuilder {
                 if let Err(e) = analyzer.analyze(&mut ws) {
                     warn!("analyzer failed: {}: {}", analyzer.get_name(), e);
                     if self.strict_mode {
-                        return Err(e)
+                        return Err(e);
                     }
                 }
             }
@@ -186,30 +176,29 @@ pub struct Workspace {
     pub analysis: Analysis,
 }
 
-
 impl Workspace {
     /// Create a workspace and load the given bytes.
     ///
     /// See example on `WorkspaceBuilder::load()`
     pub fn from_bytes(filename: &str, buf: &[u8]) -> WorkspaceBuilder {
         WorkspaceBuilder {
-            filename: filename.to_string(),
-            buf: buf.to_vec(),
-            config: Default::default(),
-            loader: None,
+            filename:       filename.to_string(),
+            buf:            buf.to_vec(),
+            config:         Default::default(),
+            loader:         None,
             should_analyze: true,
-            strict_mode: false,
+            strict_mode:    false,
         }
     }
 
     pub fn from_file(filename: &str) -> Result<WorkspaceBuilder, Error> {
         Ok(WorkspaceBuilder {
-            filename: filename.to_string(),
-            buf: util::read_file(filename)?,
-            config: Default::default(),
-            loader: None,
+            filename:       filename.to_string(),
+            buf:            util::read_file(filename)?,
+            config:         Default::default(),
+            loader:         None,
             should_analyze: true,
-            strict_mode: false,
+            strict_mode:    false,
         })
     }
 
@@ -218,7 +207,8 @@ impl Workspace {
     /// Errors:
     ///
     ///   - InvalidAddress - if the address is not mapped.
-    ///   - BufferOverrun - if the requested region runs beyond the matching section.
+    ///   - BufferOverrun - if the requested region runs beyond the matching
+    ///     section.
     ///
     /// Example:
     ///
@@ -236,13 +226,15 @@ impl Workspace {
     /// assert!(ws.read_bytes(RVA(0x1), 0x1000).is_err(), "read unaligned page");
     /// ```
     pub fn read_bytes(&self, rva: RVA, length: usize) -> Result<Vec<u8>, Error> {
-        self.module.address_space
-            .slice(rva, rva+length)
+        self.module
+            .address_space
+            .slice(rva, rva + length)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
     }
 
     pub fn read_bytes_into<'a>(&self, rva: RVA, buf: &'a mut [u8]) -> Result<&'a [u8], Error> {
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(buf))
@@ -269,13 +261,13 @@ impl Workspace {
     pub fn probe(&self, rva: RVA, length: usize, perms: Permissions) -> bool {
         if perms.intersects(Permissions::X) {
             // hack: flowmeta is only mapped for executable regions
-            if ! (self.get_meta(rva).is_some() && self.get_meta(rva + length).is_some()) {
+            if !(self.get_meta(rva).is_some() && self.get_meta(rva + length).is_some()) {
                 return false;
             }
         }
 
         if perms.intersects(Permissions::R) {
-            if ! (self.module.address_space.probe(rva) && self.module.address_space.probe(rva + length)) {
+            if !(self.module.address_space.probe(rva) && self.module.address_space.probe(rva + length)) {
                 return false;
             }
         }
@@ -305,7 +297,8 @@ impl Workspace {
     /// ```
     pub fn read_u8(&self, rva: RVA) -> Result<u8, Error> {
         let mut buf = [0u8; 1];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(buf[0]))
@@ -327,7 +320,8 @@ impl Workspace {
     /// ```
     pub fn read_u16(&self, rva: RVA) -> Result<u16, Error> {
         let mut buf = [0u8; 2];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u16(buf)))
@@ -336,7 +330,8 @@ impl Workspace {
     /// Read a dword from the given RVA.
     pub fn read_u32(&self, rva: RVA) -> Result<u32, Error> {
         let mut buf = [0u8; 4];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u32(buf)))
@@ -345,7 +340,8 @@ impl Workspace {
     /// Read a qword from the given RVA.
     pub fn read_u64(&self, rva: RVA) -> Result<u64, Error> {
         let mut buf = [0u8; 8];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_u64(buf)))
@@ -354,7 +350,8 @@ impl Workspace {
     /// Read a dword from the given RVA.
     pub fn read_i32(&self, rva: RVA) -> Result<i32, Error> {
         let mut buf = [0u8; 4];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_i32(buf)))
@@ -363,7 +360,8 @@ impl Workspace {
     /// Read a qword from the given RVA.
     pub fn read_i64(&self, rva: RVA) -> Result<i64, Error> {
         let mut buf = [0u8; 8];
-        self.module.address_space
+        self.module
+            .address_space
             .slice_into(rva, &mut buf)
             .map_err(|_| WorkspaceError::InvalidAddress.into())
             .and_then(|buf| Ok(LittleEndian::read_i64(buf)))
@@ -443,7 +441,7 @@ impl Workspace {
             // this will avoid 15 subsequent failed attempts to read
             // when the target is not mapped at all.
             if buflen == 0x10 {
-                if ! self.module.address_space.probe(rva) {
+                if !self.module.address_space.probe(rva) {
                     return Err(WorkspaceError::InvalidAddress.into());
                 }
             }
@@ -472,8 +470,8 @@ impl Workspace {
         let mut buf = [0u8; 0x1000];
 
         // ideally, we can just read 0x1000 bytes,
-        // but if this doesn't work, then we read up until the end of the current section.
-        // note: max read size is 0x1000 bytes.
+        // but if this doesn't work, then we read up until the end of the current
+        // section. note: max read size is 0x1000 bytes.
         if let Ok(_) = self.module.address_space.slice_into(rva, &mut buf) {
             // pass
         } else {
@@ -490,7 +488,7 @@ impl Workspace {
                 })?;
         }
 
-         // when we split, we're guaranteed at have at least one entry,
+        // when we split, we're guaranteed at have at least one entry,
         // so .next().unwrap() is safe.
         let sbuf = buf.split(|&b| b == 0x0).next().unwrap();
         Ok(std::str::from_utf8(sbuf)?.to_string())
@@ -498,7 +496,7 @@ impl Workspace {
 
     pub fn rva(&self, va: VA) -> Option<RVA> {
         if va < self.module.base_address {
-            return None
+            return None;
         }
         va.rva(self.module.base_address)
     }
@@ -527,15 +525,15 @@ impl Workspace {
 
         while let Some(first_insn) = queue.pop_front() {
             if bbs.contains_key(&first_insn) {
-                continue
+                continue;
             }
 
             let mut current_bb = BasicBlock {
-                addr: first_insn,
-                length: 0x0,
+                addr:         first_insn,
+                length:       0x0,
                 predecessors: vec![],
-                successors: vec![],
-                insns: vec![],
+                successors:   vec![],
+                insns:        vec![],
             };
 
             let mut current_insn = first_insn;
@@ -552,14 +550,12 @@ impl Workspace {
                 let mut has_flow_from = false;
                 for xref in self.get_xrefs_from(current_insn)?.iter() {
                     match xref.typ {
-                        XrefType::Fallthrough => {has_fallthrough = true},
-                        XrefType::UnconditionalJump
-                        | XrefType::ConditionalJump
-                        | XrefType::ConditionalMove => {
+                        XrefType::Fallthrough => has_fallthrough = true,
+                        XrefType::UnconditionalJump | XrefType::ConditionalJump | XrefType::ConditionalMove => {
                             has_flow_from = true;
                             current_bb.successors.push(xref.dst);
-                        },
-                        XrefType::Call => {},
+                        }
+                        XrefType::Call => {}
                     }
                 }
 
@@ -615,11 +611,11 @@ impl Workspace {
                     let mut has_flow_to = false;
                     for xref in self.get_xrefs_to(next_insn)?.iter() {
                         match xref.typ {
-                            XrefType::UnconditionalJump => { has_flow_to = true },
-                            XrefType::ConditionalJump => { has_flow_to = true },
-                            XrefType::ConditionalMove => { has_flow_to = true },
-                            XrefType::Fallthrough => {},
-                            XrefType::Call => {},
+                            XrefType::UnconditionalJump => has_flow_to = true,
+                            XrefType::ConditionalJump => has_flow_to = true,
+                            XrefType::ConditionalMove => has_flow_to = true,
+                            XrefType::Fallthrough => {}
+                            XrefType::Call => {}
                         }
                     }
 
@@ -678,10 +674,7 @@ impl Workspace {
         let mut predecessors: HashMap<RVA, Vec<RVA>> = HashMap::new();
         for bb in bbs.values() {
             for successor in bb.successors.iter() {
-                predecessors
-                    .entry(*successor)
-                    .or_insert_with(Vec::new)
-                    .push(bb.addr);
+                predecessors.entry(*successor).or_insert_with(Vec::new).push(bb.addr);
             }
         }
 

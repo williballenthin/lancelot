@@ -1,13 +1,12 @@
-use log::{debug};
-use goblin::{Object};
-use failure::{Error};
 use byteorder::{ByteOrder, LittleEndian};
+use failure::Error;
+use goblin::Object;
+use log::debug;
 
-use super::super::super::arch::{RVA};
-use super::super::super::loader::{Permissions};
-use super::super::super::workspace::Workspace;
-use super::super::{Analyzer};
-
+use super::super::{
+    super::{arch::RVA, loader::Permissions, workspace::Workspace},
+    Analyzer,
+};
 
 pub struct RuntimeFunctionAnalyzer {}
 
@@ -17,24 +16,21 @@ impl RuntimeFunctionAnalyzer {
     }
 }
 
-
 struct RuntimeFunction {
     begin_address: RVA,
-    end_address: RVA,
-    unwind_data: RVA,
+    end_address:   RVA,
+    unwind_data:   RVA,
 }
-
 
 impl std::fmt::Debug for RuntimeFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "RUNTIME_FUNCTION(begin: {:#x} end: {:#x} data: {:#x})",
-               self.begin_address,
-               self.end_address,
-               self.unwind_data
+        write!(
+            f,
+            "RUNTIME_FUNCTION(begin: {:#x} end: {:#x} data: {:#x})",
+            self.begin_address, self.end_address, self.unwind_data
         )
     }
 }
-
 
 impl Analyzer for RuntimeFunctionAnalyzer {
     fn get_name(&self) -> String {
@@ -80,7 +76,10 @@ impl Analyzer for RuntimeFunctionAnalyzer {
                 _ => return Ok(()),
             };
 
-            (RVA::from(exception_directory.virtual_address as i64), exception_directory.size)
+            (
+                RVA::from(exception_directory.virtual_address as i64),
+                exception_directory.size,
+            )
         };
 
         debug!("exception directory: {:#x}", exception_directory);
@@ -88,32 +87,30 @@ impl Analyzer for RuntimeFunctionAnalyzer {
         let buf = ws.read_bytes(exception_directory, directory_size as usize)?;
         let functions: Vec<RVA> = buf
             .chunks_exact(3 * 4)
-            .map(|b| RuntimeFunction{
+            .map(|b| RuntimeFunction {
                 begin_address: RVA::from(LittleEndian::read_i32(b)),
-                end_address: RVA::from(LittleEndian::read_i32(&b[4..])),
-                unwind_data: RVA::from(LittleEndian::read_i32(&b[8..])),
+                end_address:   RVA::from(LittleEndian::read_i32(&b[4..])),
+                unwind_data:   RVA::from(LittleEndian::read_i32(&b[8..])),
             })
             .filter(|rt| {
-                if ! ws.probe(rt.begin_address, 1, Permissions::X) {
+                if !ws.probe(rt.begin_address, 1, Permissions::X) {
                     return false;
                 }
-                if ! ws.probe(rt.end_address, 1, Permissions::X) {
+                if !ws.probe(rt.end_address, 1, Permissions::X) {
                     return false;
                 }
-                if ! ws.probe(rt.unwind_data, 1, Permissions::R) {
+                if !ws.probe(rt.unwind_data, 1, Permissions::R) {
                     return false;
                 }
                 return true;
             })
-            .map(|rt: RuntimeFunction| -> RVA {
-                rt.begin_address
-            })
+            .map(|rt: RuntimeFunction| -> RVA { rt.begin_address })
             .collect();
 
         for rva in functions.iter() {
             debug!("runtime function: {:#x}", rva);
-            // RUNTIME_FUNCTION.BeginAddress is often the start of a function, but not always.
-            // its the start of a __try block.
+            // RUNTIME_FUNCTION.BeginAddress is often the start of a function, but not
+            // always. its the start of a __try block.
             // ref: http://www.osronline.com/article.cfm%5earticle=469.htm
             //
             // so we can't blindly create a function here...

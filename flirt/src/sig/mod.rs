@@ -2,19 +2,16 @@ use bitflags;
 use failure::{Error, Fail};
 use inflate;
 use log::trace;
-use nom::branch::alt;
-use nom::bytes::complete::take;
-use nom::bytes::complete::{tag, take_while};
-use nom::combinator::peek;
-use nom::number::complete::be_u16;
-use nom::number::complete::be_u8;
-use nom::number::complete::le_u16;
-use nom::number::complete::le_u32;
-use nom::number::complete::le_u8;
-use nom::IResult;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take, take_while},
+    combinator::peek,
+    number::complete::{be_u16, be_u8, le_u16, le_u32, le_u8},
+    IResult,
+};
 
 use super::{FlirtSignature, TailByte};
-use crate::{SigElement, ByteSignature};
+use crate::{ByteSignature, SigElement};
 
 #[derive(Debug, Fail)]
 pub enum SigError {
@@ -45,12 +42,12 @@ enum HeaderExtra {
     },
     V8_9 {
         functions_count: u32,
-        pattern_size: u16,
+        pattern_size:    u16,
     },
     V10 {
         functions_count: u32,
-        pattern_size: u16,
-        unknown: u16,
+        pattern_size:    u16,
+        unknown:         u16,
     },
 }
 
@@ -84,7 +81,7 @@ struct Header {
     // offset: 0x23
     ctypes_crc16: u16,
     // offset 0x25
-    extra: HeaderExtra,
+    extra:        HeaderExtra,
     library_name: String,
 }
 
@@ -217,16 +214,18 @@ fn vint32(input: &[u8]) -> IResult<&[u8], u32> {
     }
 }
 
-/// unpack a variable-length integer with max range 16 bits into a 64 bit number.
-/// this is a utility routine for code that must parse into a common number type.
+/// unpack a variable-length integer with max range 16 bits into a 64 bit
+/// number. this is a utility routine for code that must parse into a common
+/// number type.
 fn vint16_64(input: &[u8]) -> IResult<&[u8], u64> {
     let (input, v) = vint16(input)?;
     let v = v as u64;
     Ok((input, v))
 }
 
-/// unpack a variable-length integer with max range 16 bits into a 64 bit number.
-/// this is a utility routine for code that must parse into a common number type.
+/// unpack a variable-length integer with max range 16 bits into a 64 bit
+/// number. this is a utility routine for code that must parse into a common
+/// number type.
 fn vint32_64(input: &[u8]) -> IResult<&[u8], u64> {
     let (input, v) = vint32(input)?;
     let v = v as u64;
@@ -300,10 +299,7 @@ bitflags! {
 
 fn parsing_flags(input: &[u8]) -> IResult<&[u8], ParsingFlags> {
     let (input, b) = be_u8(input)?;
-    Ok((
-        input,
-        ParsingFlags::from_bits(b).expect("invalid parsing flags"),
-    ))
+    Ok((input, ParsingFlags::from_bits(b).expect("invalid parsing flags")))
 }
 
 /// parse a tail byte definition.
@@ -336,21 +332,19 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
 #[derive(Debug)]
 struct ReferencedName {
     offset: u64,
-    name: String,
+    name:   String,
 }
 
 /// parse a referenced name definition.
 ///
-/// a referenced name is a pointer within the function body to another named function.
-/// i'm not yet sure if this is used to match the current function, to differentiate it,
-/// or propagate the referenced name to the other function.
+/// a referenced name is a pointer within the function body to another named
+/// function. i'm not yet sure if this is used to match the current function, to
+/// differentiate it, or propagate the referenced name to the other function.
 /// i think its probably the former.
 ///
-/// note: i'm not yet sure how the pointer itself will be encoded. is it always a global offset?
-fn referenced_names<'a>(
-    input: &'a [u8],
-    header: &Header,
-) -> IResult<&'a [u8], Vec<ReferencedName>> {
+/// note: i'm not yet sure how the pointer itself will be encoded. is it always
+/// a global offset?
+fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<ReferencedName>> {
     let (input, count) = if header.version < 8 {
         (input, 1)
     } else {
@@ -386,8 +380,8 @@ fn referenced_names<'a>(
 #[derive(Debug)]
 struct Name {
     offset: i64,
-    flags: NameFlags,
-    name: String,
+    flags:  NameFlags,
+    name:   String,
 }
 
 /// parse a name definition.
@@ -395,12 +389,9 @@ struct Name {
 /// this is a name that can be set for functions that match the current rule.
 /// usually, they are found at relative offset 0x0 from the rule match,
 /// but its possible for this offset to be non-zero.
-/// apparently its possible to specify a negative offset, but that's not supported here.
-fn name<'a>(
-    input: &'a [u8],
-    header: &Header,
-    base_offset: i64,
-) -> IResult<&'a [u8], (Name, ParsingFlags)> {
+/// apparently its possible to specify a negative offset, but that's not
+/// supported here.
+fn name<'a>(input: &'a [u8], header: &Header, base_offset: i64) -> IResult<&'a [u8], (Name, ParsingFlags)> {
     let (input, relative_offset) = vword(input, header)?;
 
     // note: this field is only optionally present.
@@ -438,11 +429,7 @@ fn name<'a>(
     ))
 }
 
-fn leaf<'a>(
-    input: &'a [u8],
-    header: &Header,
-    prefix: Vec<SigElement>
-) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResult<&'a [u8], Vec<FlirtSignature>> {
     let mut flags: ParsingFlags;
     let mut input = input;
     let mut ret = vec![];
@@ -479,12 +466,12 @@ fn leaf<'a>(
                 if name.flags.intersects(NameFlags::LOCAL) {
                     names.push(super::Symbol::Local(super::Name {
                         offset: name.offset,
-                        name: name.name,
+                        name:   name.name,
                     }));
                 } else {
                     names.push(super::Symbol::Public(super::Name {
                         offset: name.offset,
-                        name: name.name,
+                        name:   name.name,
                     }));
                 }
 
@@ -511,12 +498,12 @@ fn leaf<'a>(
                 for ref_name in ref_names.into_iter() {
                     names.push(super::Symbol::Reference(super::Name {
                         offset: ref_name.offset as i64,
-                        name: ref_name.name,
+                        name:   ref_name.name,
                     }));
                 }
             }
 
-            ret.push(FlirtSignature{
+            ret.push(FlirtSignature {
                 byte_sig: ByteSignature(prefix.clone()),
                 size_of_bytes_crc16: crc_len,
                 crc16: crc,
@@ -540,11 +527,7 @@ fn leaf<'a>(
 }
 
 /// prefix_length: number of pattern bytes covered by parent nodes.
-fn node<'a>(
-    input: &'a [u8],
-    header: &Header,
-    prefix: Vec<SigElement>
-) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResult<&'a [u8], Vec<FlirtSignature>> {
     let (input, child_count) = vint16(input)?;
     let mut input = input;
     let mut ret = vec![];

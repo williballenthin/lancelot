@@ -1,11 +1,11 @@
-use log::{debug};
-use goblin::{Object};
-use failure::{Error};
+use failure::Error;
+use goblin::Object;
+use log::debug;
 
-use super::super::{Analyzer};
-use super::super::super::arch::RVA;
-use super::super::super::workspace::Workspace;
-
+use super::super::{
+    super::{arch::RVA, workspace::Workspace},
+    Analyzer,
+};
 
 pub struct EntryPointAnalyzer {}
 

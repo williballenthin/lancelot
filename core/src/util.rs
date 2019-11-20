@@ -1,6 +1,5 @@
 use log::{debug, error};
-use std::fs;
-use std::io::prelude::*;
+use std::{fs, io::prelude::*};
 
 use failure::{Error, Fail};
 
@@ -87,12 +86,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     let ascii_col_size = 1;
     let prefix_size = 8 + 1;
     let newline_size = 1;
-    let line_size = prefix_size
-        + padding_size
-        + 16 * hex_col_size
-        + padding_size
-        + 16 * ascii_col_size
-        + newline_size;
+    let line_size = prefix_size + padding_size + 16 * hex_col_size + padding_size + 16 * ascii_col_size + newline_size;
     let line_count = align(buf.len(), 0x10) / 0x10;
 
     let mut ret = String::with_capacity(line_count * line_size);

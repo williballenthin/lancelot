@@ -1,8 +1,9 @@
+use std::collections::HashSet;
 /// ## purpose
 /// to match multiple byte patterns against a byte slice in parallel.
 /// we should get all valid matches at the end.
-/// does not have to support scanning across the byte slice, only anchored at the start.
-/// need support for single character wild cards (`.`).
+/// does not have to support scanning across the byte slice, only anchored at
+/// the start. need support for single character wild cards (`.`).
 /// all patterns are the same length
 /// (if this needs to change, maybe pad shorter patterns with wildcards).
 ///
@@ -11,8 +12,8 @@
 ///   - all valid byte values (0-255), and
 ///   - a wildcard
 ///
-/// a transition table will have 257 columns, one for each of the above symbols, including wildcard.
-/// the transition table has a row for each state.
+/// a transition table will have 257 columns, one for each of the above symbols,
+/// including wildcard. the transition table has a row for each state.
 /// entries in each column indicate valid transitions.
 /// an entry of `0` indicates "invalid".
 /// if a row contains only invalid entries, then its a "terminal state".
@@ -37,18 +38,16 @@
 ///   4 |     5    alive: p1
 ///   5 |          terminal, alive: p1
 use std::collections::VecDeque;
-use std::collections::HashSet;
 
-use nom::IResult;
-use nom::multi::many1;
-use nom::bytes::complete::tag;
-use nom::bytes::complete::take_while_m_n;
-use nom::branch::alt;
-use nom::combinator::map;
-use nom::combinator::map_res;
 use bitvec::prelude::*;
-use log::{trace};
-
+use log::trace;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_while_m_n},
+    combinator::{map, map_res},
+    multi::many1,
+    IResult,
+};
 
 // u16 because we need 257 possible values, all unsigned.
 #[derive(Copy, Clone, Hash, Eq)]
@@ -59,12 +58,16 @@ pub const WILDCARD: Symbol = Symbol(0x100);
 
 // byte values map directly into their Symbol indices.
 impl std::convert::From<u8> for Symbol {
-    fn from(v: u8) -> Self {Symbol(v as u16)}
+    fn from(v: u8) -> Self {
+        Symbol(v as u16)
+    }
 }
 
 // convert to usize so we can index into `State.transitions`.
 impl std::convert::Into<usize> for Symbol {
-    fn into(self) -> usize {self.0 as usize}
+    fn into(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl std::cmp::PartialEq for Symbol {
@@ -101,27 +104,22 @@ impl std::fmt::Display for Pattern {
 }
 
 fn is_hex_digit(c: char) -> bool {
-  c.is_digit(16)
+    c.is_digit(16)
 }
 
 fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
-  u8::from_str_radix(input, 16)
+    u8::from_str_radix(input, 16)
 }
 
 /// parse a single hex byte, like `AB`
 fn hex(input: &str) -> IResult<&str, u8> {
-    map_res(
-        take_while_m_n(2, 2, is_hex_digit),
-        from_hex
-    )(input)
+    map_res(take_while_m_n(2, 2, is_hex_digit), from_hex)(input)
 }
 
-/// parse a single byte signature element, which is either a hex byte or a wildcard.
+/// parse a single byte signature element, which is either a hex byte or a
+/// wildcard.
 fn sig_element(input: &str) -> IResult<&str, Symbol> {
-    alt((
-        map(hex, |v| Symbol::from(v)),
-        map(tag(".."), |_| WILDCARD),
-    ))(input)
+    alt((map(hex, |v| Symbol::from(v)), map(tag(".."), |_| WILDCARD)))(input)
 }
 
 /// parse byte signature elements, hex or wildcard.
@@ -137,14 +135,17 @@ impl std::convert::From<&str> for Pattern {
     }
 }
 
-// u32 because we need a fairly large range: these transition tables can have many rows.
-// positive values are indexes to a transition table row.
-// the zero value indicates an invalid transition, and rows are initially filled with this.
+// u32 because we need a fairly large range: these transition tables can have
+// many rows. positive values are indexes to a transition table row.
+// the zero value indicates an invalid transition, and rows are initially filled
+// with this.
 #[derive(Copy, Clone)]
 struct Transition(u32);
 
 impl Default for Transition {
-    fn default() -> Self {Transition(0)}
+    fn default() -> Self {
+        Transition(0)
+    }
 }
 
 impl std::fmt::Display for Transition {
@@ -161,7 +162,9 @@ impl std::fmt::Debug for Transition {
 
 // convert to usize so we can index into `StateTable.states`.
 impl std::convert::Into<usize> for Transition {
-    fn into(self) -> usize {self.0 as usize}
+    fn into(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl Transition {
@@ -181,7 +184,7 @@ impl State {
     fn new(capacity: u32) -> State {
         State {
             transitions: [Default::default(); 257],
-            alive: bitvec![0; capacity as usize],
+            alive:       bitvec![0; capacity as usize],
         }
     }
 
@@ -200,14 +203,14 @@ struct StateTable {
     // we have to know this before we start constructing the table,
     // that's why we use the Builder pattern.
     capacity: u32,
-    states: Vec<State>,
+    states:   Vec<State>,
 }
 
 impl StateTable {
     /// add a new state to the end of the existing table.
     /// return the index of the state as a `Transition`.
     fn add_state(&mut self) -> Transition {
-        let index = self.states.len() as u32;  // TODO: danger
+        let index = self.states.len() as u32; // TODO: danger
         self.states.push(State::new(self.capacity));
         Transition(index)
     }
@@ -218,7 +221,7 @@ impl StateTable {
 }
 
 pub struct NFA {
-    table: StateTable,
+    table:    StateTable,
     patterns: Vec<Pattern>,
 }
 
@@ -260,7 +263,7 @@ impl NFA {
             /// the index to the state that we need to match next.
             state_pointer: Transition,
             /// the remaining bytes that need to be matched.
-            buf: &'a[u8],
+            buf: &'a [u8],
         };
 
         // the set of pattern indices that have been matched.
@@ -270,7 +273,7 @@ impl NFA {
 
         q.push_front(Step {
             state_pointer: self.table.initial_state(),
-            buf: buf,
+            buf,
         });
 
         while let Some(step) = q.pop_front() {
@@ -283,7 +286,8 @@ impl NFA {
                 // any patterns that were still alive at this state are matches.
                 trace!("match: found terminal state: {}", step.state_pointer);
 
-                let match_indices = state.alive
+                let match_indices = state
+                    .alive
                     .iter()
                     .enumerate()
                     .filter(|(_, is_alive)| *is_alive)
@@ -294,14 +298,14 @@ impl NFA {
                     matches.insert(i);
                 }
 
-                continue
+                continue;
             }
 
             if step.buf.len() == 0 {
                 // there are no remaining input bytes, yet we're at a non-terminal state.
                 // therefore, the input buffer is shorter than the pattern,
                 // so it can't match.
-                continue
+                continue;
             }
 
             // two paths to attempt to follow:
@@ -314,7 +318,7 @@ impl NFA {
                     trace!("match: found transition to {} for input {:02x}", transition, input_byte);
                     q.push_front(Step {
                         state_pointer: transition,
-                        buf: &step.buf[1..],
+                        buf:           &step.buf[1..],
                     })
                 }
             }
@@ -322,25 +326,17 @@ impl NFA {
 
         trace!("match: matching against state:\n{:?}", self);
 
-        matches
-            .iter()
-            .map(|&i| &self.patterns[i])
-            .collect()
+        matches.iter().map(|&i| &self.patterns[i]).collect()
     }
 
     pub fn new() -> NFABuilder {
-        NFABuilder {
-            patterns: vec![],
-        }
+        NFABuilder { patterns: vec![] }
     }
 
     pub fn from_patterns(patterns: Vec<Pattern>) -> NFA {
-        NFABuilder {
-            patterns
-        }.build()
+        NFABuilder { patterns }.build()
     }
 }
-
 
 // output looks something like:
 //
@@ -402,12 +398,12 @@ impl std::fmt::Debug for NFA {
             writeln!(f, "").unwrap();
         }
 
-        write!(f, "")  // OK
+        write!(f, "") // OK
     }
 }
 
 pub struct NFABuilder {
-    patterns: Vec<Pattern>
+    patterns: Vec<Pattern>,
 }
 
 impl NFABuilder {
@@ -417,9 +413,9 @@ impl NFABuilder {
 
     pub fn build(self) -> NFA {
         let mut nfa = NFA {
-            table: StateTable {
-                capacity: self.patterns.len() as u32,  // TODO: danger.
-                states: vec![],
+            table:    StateTable {
+                capacity: self.patterns.len() as u32, // TODO: danger.
+                states:   vec![],
             },
             patterns: self.patterns,
         };
@@ -433,15 +429,15 @@ impl NFABuilder {
             /// the index of the pattern we're currently processing.
             pattern_index: usize,
             /// the remaining symbols that need to be added.
-            symbols: &'a[Symbol],
+            symbols: &'a [Symbol],
         };
 
         let mut q: VecDeque<Step> = VecDeque::new();
         for (pattern_index, pattern) in nfa.patterns.iter().enumerate() {
             q.push_back(Step {
                 state_pointer: start_state,
-                pattern_index: pattern_index,
-                symbols: &pattern.0[..]
+                pattern_index,
+                symbols:       &pattern.0[..],
             })
         }
 
@@ -454,7 +450,7 @@ impl NFABuilder {
 
             // this state is already explored by this pattern.
             if state.alive.get(step.pattern_index).unwrap() {
-                continue
+                continue;
             }
 
             // mark the current pattern as "alive" at the given state.
@@ -462,7 +458,7 @@ impl NFABuilder {
 
             if step.symbols.len() == 0 {
                 // this is terminal.
-                continue
+                continue;
             }
 
             // fetch the symbol to insert, like AA
@@ -494,7 +490,7 @@ impl NFABuilder {
             q.push_back(Step {
                 state_pointer: next_state,
                 pattern_index: step.pattern_index,
-                symbols: &step.symbols[1..]
+                symbols:       &step.symbols[1..],
             });
 
             // if its a wildcard, then must follow any existing literal transitions, too
@@ -506,7 +502,7 @@ impl NFABuilder {
                         q.push_back(Step {
                             state_pointer: literal_transition,
                             pattern_index: step.pattern_index,
-                            symbols: &step.symbols[1..],
+                            symbols:       &step.symbols[1..],
                         })
                     }
                 }
@@ -518,7 +514,6 @@ impl NFABuilder {
         nfa
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -653,20 +648,14 @@ mod tests {
     // wildcards can be found in the middle of patterns, too.
     #[test]
     fn test_match_one_middle_wildcard() {
-        let nfa = NFA::from_patterns(vec![
-            Pattern::from("AABB..DD"),
-            Pattern::from("AABBCCDD"),
-        ]);
+        let nfa = NFA::from_patterns(vec![Pattern::from("AABB..DD"), Pattern::from("AABBCCDD")]);
 
         assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
         assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
         assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
 
         // order of patterns should not matter
-        let nfa = NFA::from_patterns(vec![
-            Pattern::from("AABBCCDD"),
-            Pattern::from("AABB..DD"),
-        ]);
+        let nfa = NFA::from_patterns(vec![Pattern::from("AABBCCDD"), Pattern::from("AABB..DD")]);
 
         assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
         assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);

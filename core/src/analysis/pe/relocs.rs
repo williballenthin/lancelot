@@ -1,15 +1,14 @@
 use byteorder::{ByteOrder, LittleEndian};
-use log::{debug, trace, warn};
-use goblin::{Object};
 use failure::{Error, Fail};
+use goblin::Object;
+use log::{debug, trace, warn};
 use std::ops::Range;
 
-use super::super::super::arch::{RVA};
-use super::super::super::loader::Permissions;
-use super::super::super::workspace::Workspace;
-use super::super::{Analyzer};
-use std::collections::{HashSet};
-
+use super::super::{
+    super::{arch::RVA, loader::Permissions, workspace::Workspace},
+    Analyzer,
+};
+use std::collections::HashSet;
 
 #[derive(Debug, Fail)]
 pub enum RelocAnalyzerError {
@@ -92,13 +91,13 @@ pub enum RelocationType {
 }
 
 pub struct Reloc {
-    pub typ: RelocationType,
+    pub typ:    RelocationType,
     pub offset: RVA,
 }
 
 fn parse_reloc(base: RVA, entry: u16) -> Result<Reloc, Error> {
-    let reloc_type   = (entry & 0b1111000000000000) >> 12;
-    let reloc_offset =  entry & 0b0000111111111111;
+    let reloc_type = (entry & 0b1111000000000000) >> 12;
+    let reloc_offset = entry & 0b0000111111111111;
 
     // TODO: this should probably be on `RelocationType` as a `From` trait.
     let reloc_type = match reloc_type {
@@ -117,17 +116,16 @@ fn parse_reloc(base: RVA, entry: u16) -> Result<Reloc, Error> {
     };
 
     Ok(Reloc {
-        typ: reloc_type,
+        typ:    reloc_type,
         offset: base + RVA::from(reloc_offset as i64),
     })
 }
 
 fn split_u32(e: u32) -> (u16, u16) {
-    let m = ((e & 0x0000FFFF) >>  0) as u16;
+    let m = ((e & 0x0000FFFF) >> 0) as u16;
     let n = ((e & 0xFFFF0000) >> 16) as u16;
     (m, n)
 }
-
 
 /// ```
 /// use lancelot::rsrc::*;
@@ -161,10 +159,7 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
     let dir_start = RVA::from(reloc_directory.virtual_address as i64);
     let buf = ws.read_bytes(dir_start, reloc_directory.size as usize)?;
 
-    let entries: Vec<u32> = buf
-        .chunks_exact(0x4)
-        .map(|b| LittleEndian::read_u32(b))
-        .collect();
+    let entries: Vec<u32> = buf.chunks_exact(0x4).map(|b| LittleEndian::read_u32(b)).collect();
 
     let mut ret = vec![];
     let mut index = 0;
@@ -173,10 +168,10 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
         // until there's no data left
 
         let page_rva = entries.get(index);
-        let block_size = entries.get(index+1);
+        let block_size = entries.get(index + 1);
         let (page_rva, block_size) = match (page_rva, block_size) {
-            (Some(0),        _               ) => break,
-            (_,              Some(0)         ) => break,
+            (Some(0), _) => break,
+            (_, Some(0)) => break,
             (Some(page_rva), Some(block_size)) => (RVA::from(*page_rva as i64), *block_size),
             _ => break,
         };
@@ -190,19 +185,19 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
 
                 let reloc1 = parse_reloc(page_rva, m)?;
                 if !ws.probe(reloc1.offset, 4, Permissions::R) {
-                    break
+                    break;
                 }
                 ret.push(reloc1);
 
                 let reloc2 = parse_reloc(page_rva, n)?;
                 if !ws.probe(reloc2.offset, 4, Permissions::R) {
-                    break
+                    break;
                 }
                 ret.push(reloc2);
             } else {
-                break
+                break;
             }
-        };
+        }
 
         index += chunk_entries_count;
     }
@@ -211,9 +206,7 @@ pub fn get_relocs(ws: &Workspace) -> Result<Vec<Reloc>, Error> {
 }
 
 fn sections_contain(sections: &[Range<RVA>], rva: RVA) -> bool {
-    sections.iter()
-        .find(|section| section.contains(&rva))
-        .is_some()
+    sections.iter().find(|section| section.contains(&rva)).is_some()
 }
 
 impl Analyzer for RelocAnalyzer {
@@ -238,12 +231,15 @@ impl Analyzer for RelocAnalyzer {
     ///
     /// assert!(ws.get_meta(RVA(0xC7F0)).unwrap().is_insn());
     /// ```
-    fn analyze(&self, ws: &mut Workspace)-> Result<(), Error> {
-        let x_sections: Vec<Range<RVA>> = ws.module.sections.iter()
+    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
+        let x_sections: Vec<Range<RVA>> = ws
+            .module
+            .sections
+            .iter()
             .filter(|section| section.perms.intersects(Permissions::X))
             .map(|section| Range {
                 start: section.addr,
-                end: section.end(),
+                end:   section.end(),
             })
             .collect();
 
@@ -256,7 +252,7 @@ impl Analyzer for RelocAnalyzer {
                     // all other reloc types are currently unsupported (uncommon)
                     warn!("ignoring relocation with unsupported type: {:?}", reloc_type);
                     false
-                },
+                }
             })
             .collect();
         debug!("found {} total relocs", relocs.len());
@@ -265,9 +261,10 @@ impl Analyzer for RelocAnalyzer {
             // a relocation fixes up an existing pointer (hardcoded virtual address).
             // so we'll validate that the pointer actually points to something in the image.
             //
-            // we might want to simply assume an invalid pointer means the reloc table is invalid;
-            // however,
-            // legit `Windows.Media.Protection.PlayReady.dll` has some invalid relocs (not sure way).
+            // we might want to simply assume an invalid pointer means the reloc table is
+            // invalid; however,
+            // legit `Windows.Media.Protection.PlayReady.dll` has some invalid relocs (not
+            // sure way).
             let ptr = match ws.read_va(reloc.offset) {
                 Ok(ptr) => ptr,
                 Err(_) => {
@@ -280,26 +277,31 @@ impl Analyzer for RelocAnalyzer {
                 Some(target) => target,
                 None => {
                     warn!("reloc fixes up a pointer to unmapped data: {} {}", reloc.offset, ptr);
-                    continue
+                    continue;
                 }
             };
 
-            trace!("found reloc {} -> {} {}",
-                   reloc.offset,
-                   target,
-                if sections_contain(&x_sections, target) {"(code)"} else {""}
+            trace!(
+                "found reloc {} -> {} {}",
+                reloc.offset,
+                target,
+                if sections_contain(&x_sections, target) {
+                    "(code)"
+                } else {
+                    ""
+                }
             );
         }
 
         // scan for relocations to code.
         //
-        // a relocation is a hardcoded offset that must be fixed up if the desired base address
-        //  cannot be used.
-        // for example, the function pointer passed to CreateThread will be a hardcoded address
-        //  of the start of the function.
+        // a relocation is a hardcoded offset that must be fixed up if the desired base
+        // address  cannot be used.
+        // for example, the function pointer passed to CreateThread will be a hardcoded
+        // address  of the start of the function.
         //
-        // relocated pointers may point to the .data section, e.g. strings or other constants.
-        // we want to ignore these.
+        // relocated pointers may point to the .data section, e.g. strings or other
+        // constants. we want to ignore these.
         // we are only interested in targets in executable sections.
         // we assume these are pointers to instructions/code.
         //
@@ -310,16 +312,18 @@ impl Analyzer for RelocAnalyzer {
         // and assume this is code.
 
         let mut unique_targets: HashSet<RVA> = HashSet::new();
-        unique_targets.extend(relocs
-            .iter()
-            .map(|reloc| reloc.offset)
-            .map(|rva| ws.read_va(rva))
-            .filter_map(Result::ok)
-            .filter_map(|va| ws.rva(va)));
+        unique_targets.extend(
+            relocs
+                .iter()
+                .map(|reloc| reloc.offset)
+                .map(|rva| ws.read_va(rva))
+                .filter_map(Result::ok)
+                .filter_map(|va| ws.rva(va)),
+        );
 
         debug!("reduced to {} unique reloc targets", unique_targets.len());
 
-       let o: Vec<RVA> = unique_targets
+        let o: Vec<RVA> = unique_targets
             .iter()
             .filter(|&&rva| sections_contain(&x_sections, rva))
             .filter(|&&rva| !is_in_insn(ws, rva))
@@ -332,7 +336,10 @@ impl Analyzer for RelocAnalyzer {
         debug!("found {} relocs that point to instructions", o.len());
 
         o.iter().for_each(|&rva| {
-            debug!("found pointer via relocations from executable section to {} (code)", rva);
+            debug!(
+                "found pointer via relocations from executable section to {} (code)",
+                rva
+            );
 
             // TODO: consume result
             ws.make_insn(rva).unwrap();

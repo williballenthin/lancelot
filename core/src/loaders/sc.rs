@@ -1,10 +1,12 @@
-use failure::{Error};
+use failure::Error;
 
-use super::super::arch::{Arch, VA, RVA};
-use super::super::config::Config;
-use super::super::pagemap::{PageMap};
-use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, Permissions};
-use super::super::analysis::{Analyzer};
+use super::super::{
+    analysis::Analyzer,
+    arch::{Arch, RVA, VA},
+    config::Config,
+    loader::{FileFormat, LoadedModule, Loader, Permissions, Platform, Section},
+    pagemap::PageMap,
+};
 
 pub struct ShellcodeLoader {
     plat: Platform,
@@ -13,10 +15,7 @@ pub struct ShellcodeLoader {
 
 impl ShellcodeLoader {
     pub fn new(plat: Platform, arch: Arch) -> ShellcodeLoader {
-        ShellcodeLoader {
-            plat,
-            arch,
-        }
+        ShellcodeLoader { plat, arch }
     }
 }
 
@@ -55,16 +54,18 @@ impl Loader for ShellcodeLoader {
         let mut address_space = PageMap::with_capacity(buf.len().into());
         address_space.writezx(0x0.into(), &buf)?;
 
-        Ok((LoadedModule {
-            base_address: VA(0x0),
-            sections: vec![Section {
-                addr: RVA(0x0),
-                size: buf.len() as u32, // danger
-                perms: Permissions::RWX,
-                name: "raw".to_string(),
-            }],
-            address_space,
-        },
-        vec![]))
+        Ok((
+            LoadedModule {
+                base_address: VA(0x0),
+                sections: vec![Section {
+                    addr:  RVA(0x0),
+                    size:  buf.len() as u32, // danger
+                    perms: Permissions::RWX,
+                    name:  "raw".to_string(),
+                }],
+                address_space,
+            },
+            vec![],
+        ))
     }
 }

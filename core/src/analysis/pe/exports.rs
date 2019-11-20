@@ -1,17 +1,17 @@
-use log::{debug};
-use goblin::{Object};
-use failure::{Error};
+use failure::Error;
+use goblin::Object;
+use log::debug;
 
-use super::super::super::arch::{RVA};
-use super::super::super::workspace::Workspace;
-use super::super::{Analyzer};
-
+use super::super::{
+    super::{arch::RVA, workspace::Workspace},
+    Analyzer,
+};
 
 pub struct ExportsAnalyzer {}
 
 impl ExportsAnalyzer {
     pub fn new() -> ExportsAnalyzer {
-        ExportsAnalyzer{}
+        ExportsAnalyzer {}
     }
 }
 
@@ -28,7 +28,9 @@ impl Analyzer for ExportsAnalyzer {
 
         let entry = RVA::from(pe.entry);
 
-        let exports: Vec<RVA> = pe.exports.iter()
+        let exports: Vec<RVA> = pe
+            .exports
+            .iter()
             // re-exports are simply strings that point to a `DLL.export_name` ASCII string.
             // therefore, they're not functions/code.
             .filter(|exp| exp.reexport.is_none())
@@ -36,7 +38,9 @@ impl Analyzer for ExportsAnalyzer {
             .map(|rva| RVA::from(rva))
             .collect();
 
-        let symbols: Vec<(RVA, String)> = pe.exports.iter()
+        let symbols: Vec<(RVA, String)> = pe
+            .exports
+            .iter()
             .filter(|exp| exp.name.is_some())
             .map(|exp| (RVA::from(exp.rva), exp.name.unwrap().to_string()))
             .collect();

@@ -1,16 +1,15 @@
-use log::{debug};
-use failure::{Error};
-use goblin::{Object};
-use goblin::pe::section_table::SectionTable;
+use failure::Error;
+use goblin::{pe::section_table::SectionTable, Object};
+use log::debug;
 
-use super::super::util;
-use super::super::config::Config;
-use super::super::arch::{Arch, VA, RVA};
-use super::super::pagemap::{PageMap};
-use super::super::loader::{FileFormat, LoadedModule, Loader, Platform, Section, LoaderError, Permissions};
-use super::super::analysis::{Analyzer, OrphanFunctionAnalyzer};
-use super::super::analysis::pe;
-
+use super::super::{
+    analysis::{pe, Analyzer, OrphanFunctionAnalyzer},
+    arch::{Arch, RVA, VA},
+    config::Config,
+    loader::{FileFormat, LoadedModule, Loader, LoaderError, Permissions, Platform, Section},
+    pagemap::PageMap,
+    util,
+};
 
 /// The section can be executed as code.
 const IMAGE_SCN_MEM_EXECUTE: u32 = 0x20000000;
@@ -21,16 +20,13 @@ const IMAGE_SCN_MEM_READ: u32 = 0x40000000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x80000000;
 
-
 pub struct PELoader {
     arch: Arch,
 }
 
 impl PELoader {
     pub fn new(arch: Arch) -> PELoader {
-        PELoader {
-            arch
-        }
+        PELoader { arch }
     }
 
     fn load_header(&self, buf: &[u8], pe: &goblin::pe::PE) -> Result<Section, Error> {
@@ -66,10 +62,10 @@ impl PELoader {
         }
 
         Ok(Section {
-            addr: RVA(0x0),
-            size: hdr_virt_size as u32,  // danger
+            addr:  RVA(0x0),
+            size:  hdr_virt_size as u32, // danger
             perms: Permissions::R,
-            name: String::from("header"),
+            name:  String::from("header"),
         })
     }
 
@@ -97,9 +93,9 @@ impl PELoader {
             perms.insert(Permissions::X);
         }
 
-        Ok(Section{
+        Ok(Section {
             addr: RVA::from(section.virtual_address as i64), // ok: u32 -> i64
-            size: virtual_size as u32,  // danger
+            size: virtual_size as u32,                       // danger
             perms,
             name,
         })
@@ -134,7 +130,7 @@ impl Loader for PELoader {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
             match self.arch {
                 Arch::X32 => !pe.is_64,
-                Arch::X64 =>  pe.is_64,
+                Arch::X64 => pe.is_64,
             }
         } else {
             false
@@ -158,8 +154,16 @@ impl Loader for PELoader {
     fn load(&self, config: &Config, buf: &[u8]) -> Result<(LoadedModule, Vec<Box<dyn Analyzer>>), Error> {
         if let Ok(Object::PE(pe)) = Object::parse(buf) {
             match self.arch {
-                Arch::X32 => if  pe.is_64 { return Err(LoaderError::MismatchedBitness.into());},
-                Arch::X64 => if !pe.is_64 { return Err(LoaderError::MismatchedBitness.into());},
+                Arch::X32 => {
+                    if pe.is_64 {
+                        return Err(LoaderError::MismatchedBitness.into());
+                    }
+                }
+                Arch::X64 => {
+                    if !pe.is_64 {
+                        return Err(LoaderError::MismatchedBitness.into());
+                    }
+                }
             }
 
             let base_address = match pe.header.optional_header {
@@ -177,12 +181,13 @@ impl Loader for PELoader {
                 sections.push(self.load_section(section)?);
             }
 
-            let max_address = pe.sections
+            let max_address = pe
+                .sections
                 .iter()
                 .map(|sec| sec.virtual_address + sec.virtual_size)
                 .max()
-                .unwrap();  // danger
-            let max_page_address: RVA = util::align(max_address as usize, 0x1000).into();  // danger
+                .unwrap(); // danger
+            let max_page_address: RVA = util::align(max_address as usize, 0x1000).into(); // danger
             debug!("data address space capacity: {}", max_page_address);
             let mut address_space: PageMap<u8> = PageMap::with_capacity(max_page_address);
 
@@ -194,18 +199,21 @@ impl Loader for PELoader {
                 //
                 // TODO: do we pick align(virtualsize, 0x200) or just virtualsize?
 
-
                 // given a section,
                 // for section size, use align(max(psize, vsize), 0x1000)
                 // copy align(psize, 0x200) into section
 
                 let vsize = std::cmp::max(section.virtual_size, section.size_of_raw_data);
                 let vsize = util::align(vsize as usize, 0x1000);
-                debug!("data address space mapping {:#x} {:#x}", section.virtual_address, section.virtual_address as usize + vsize);
+                debug!(
+                    "data address space mapping {:#x} {:#x}",
+                    section.virtual_address,
+                    section.virtual_address as usize + vsize
+                );
                 address_space.map_empty(RVA::from(section.virtual_address as i32), vsize)?;
 
                 let psize = std::cmp::min(section.virtual_size, section.size_of_raw_data);
-                let psize = util::align(psize as usize, 0x200);  // sector alignment
+                let psize = util::align(psize as usize, 0x200); // sector alignment
 
                 let pstart = section.pointer_to_raw_data as usize;
                 let pend = pstart + psize as usize;
@@ -230,11 +238,14 @@ impl Loader for PELoader {
             // this always needs to go last
             analyzers.push(Box::new(OrphanFunctionAnalyzer::new()));
 
-            Ok((LoadedModule {
-                base_address,
-                sections,
-                address_space,
-            }, analyzers))
+            Ok((
+                LoadedModule {
+                    base_address,
+                    sections,
+                    address_space,
+                },
+                analyzers,
+            ))
         } else {
             Err(LoaderError::NotSupported.into())
         }

@@ -1,9 +1,9 @@
-use fern;
-use failure::{Error};
 use better_panic;
-extern crate log;
-extern crate clap;
+use failure::Error;
+use fern;
 extern crate chrono;
+extern crate clap;
+extern crate log;
 
 fn run(sig_path: &str, output_path: &str) -> Result<(), Error> {
     let buf = std::fs::read(sig_path)?;
@@ -23,21 +23,24 @@ fn main() {
     let matches = clap::App::new("sig2pat")
         .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
         .about("translate a FLIRT .sig file into a .pat file")
-        .arg(clap::Arg::with_name("verbose")
-            .short("v")
-            .long("verbose")
-            .multiple(true)
-            .help("log verbose messages")
+        .arg(
+            clap::Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("log verbose messages"),
         )
-        .arg(clap::Arg::with_name("sig")
-            .required(true)
-            .index(1)
-            .help("path to .sig file")
+        .arg(
+            clap::Arg::with_name("sig")
+                .required(true)
+                .index(1)
+                .help("path to .sig file"),
         )
-        .arg(clap::Arg::with_name("output")
-            .required(true)
-            .index(2)
-            .help("path to output file")
+        .arg(
+            clap::Arg::with_name("output")
+                .required(true)
+                .index(2)
+                .help("path to output file"),
         )
         .get_matches();
 
@@ -54,7 +57,11 @@ fn main() {
                 "{} [{:5}] {} {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
-                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                if log_level == log::LevelFilter::Trace {
+                    record.target()
+                } else {
+                    ""
+                },
                 message
             ))
         })
@@ -63,10 +70,7 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(
-        matches.value_of("sig").unwrap(),
-        matches.value_of("output").unwrap()
-    ) {
+    if let Err(e) = run(matches.value_of("sig").unwrap(), matches.value_of("output").unwrap()) {
         println!("error: {:}", e);
     }
 }

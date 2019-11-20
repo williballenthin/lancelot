@@ -1,9 +1,6 @@
-use std::fmt;
-use std::hash;
+use std::{fmt, hash};
 
-use num::{FromPrimitive};
-
-
+use num::FromPrimitive;
 
 /// please don't access VA.0 directly.
 /// its provided so you can construct VA like:
@@ -46,7 +43,7 @@ impl VA {
         } else {
             let v = match self.0.checked_sub(other.0) {
                 None => return None,
-                Some(v) => v
+                Some(v) => v,
             };
             if v > std::i64::MAX as u64 {
                 return None;
@@ -130,8 +127,6 @@ impl std::convert::Into<u64> for VA {
         self.0
     }
 }
-
-
 
 /// please don't access RVA.0 directly.
 /// /// its provided so you can construct RVA like:
@@ -305,11 +300,10 @@ impl std::ops::Sub<RVA> for RVA {
     }
 }
 
-
 #[derive(Copy, Clone)]
 pub enum Arch {
     X32,
-    X64
+    X64,
 }
 
 impl Arch {
@@ -332,10 +326,9 @@ impl fmt::Display for Arch {
 
 impl fmt::Debug for Arch {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self{
+        match self {
             Arch::X32 => write!(f, "x32"),
             Arch::X64 => write!(f, "x64"),
         }
     }
 }
-

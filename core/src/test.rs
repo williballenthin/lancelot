@@ -1,10 +1,6 @@
 //< Helpers that are useful for tests and doctests.
 
-use super::rsrc::*;
-use super::loader;
-use super::arch::Arch;
-use super::loaders::sc::ShellcodeLoader;
-use super::workspace::Workspace;
+use super::{arch::Arch, loader, loaders::sc::ShellcodeLoader, rsrc::*, workspace::Workspace};
 
 /// Helper to construct a 32-bit Windows shellcode workspace from raw bytes.
 ///
@@ -20,30 +16,21 @@ use super::workspace::Workspace;
 /// ```
 pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace {
     Workspace::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::new(
-            loader::Platform::Windows,
-            Arch::X32
-        )))
+        .with_loader(Box::new(ShellcodeLoader::new(loader::Platform::Windows, Arch::X32)))
         .load()
         .unwrap()
 }
 
 pub fn get_shellcode64_workspace(buf: &[u8]) -> Workspace {
     Workspace::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::new(
-            loader::Platform::Windows,
-            Arch::X64
-        )))
+        .with_loader(Box::new(ShellcodeLoader::new(loader::Platform::Windows, Arch::X64)))
         .load()
         .unwrap()
 }
 
 pub fn get_rsrc_workspace(rsrc: Rsrc) -> Workspace {
-    Workspace::from_bytes("foo.bin", &get_buf(rsrc))
-        .load()
-        .unwrap()
+    Workspace::from_bytes("foo.bin", &get_buf(rsrc)).load().unwrap()
 }
-
 
 /// configure a global logger at level==DEBUG.
 pub fn init_logging() {
@@ -54,15 +41,17 @@ pub fn init_logging() {
                 "{} [{:5}] {} {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
-                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                if log_level == log::LevelFilter::Trace {
+                    record.target()
+                } else {
+                    ""
+                },
                 message
             ))
         })
         .level(log_level)
         .chain(std::io::stderr())
-        .filter(|metadata| {
-            !metadata.target().starts_with("goblin::pe")
-        })
+        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         .apply()
         .expect("failed to configure logging");
 }

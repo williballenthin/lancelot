@@ -1,22 +1,22 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::collections::VecDeque;
-use std::fmt::Display;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    fmt::Display,
+};
 
+use failure::{bail, Error, Fail};
+use log::{debug, trace, warn};
 use serde_json;
-use failure::{Error, Fail, bail};
-use log::{trace, debug, warn};
 use zydis;
 
-use super::arch::{RVA, VA};
-use super::pagemap;
-use super::pagemap::{PageMap};
-use super::flowmeta;
-use super::flowmeta::FlowMeta;
-use super::loader::{LoadedModule, Permissions};
-use super::workspace::Workspace;
-use super::xref::{Xref, XrefType};
-use super::util;
+use super::{
+    arch::{RVA, VA},
+    flowmeta::{self, FlowMeta},
+    loader::{LoadedModule, Permissions},
+    pagemap::{self, PageMap},
+    util,
+    workspace::Workspace,
+    xref::{Xref, XrefType},
+};
 
 pub mod config;
 pub mod orphans;
@@ -38,10 +38,7 @@ pub enum AnalysisError {
 pub enum AnalysisCommand {
     MakeInsn(RVA),
     MakeXref(Xref),
-    MakeSymbol {
-        rva: RVA,
-        name: String
-    },
+    MakeSymbol { rva: RVA, name: String },
     MakeFunction(RVA),
 }
 
@@ -50,7 +47,7 @@ impl Display for AnalysisCommand {
         match self {
             AnalysisCommand::MakeInsn(rva) => write!(f, "MakeInsn({})", rva),
             AnalysisCommand::MakeXref(x) => write!(f, "MakeXref({:?})", x),
-            AnalysisCommand::MakeSymbol{rva, name} => write!(f, "MakeSymbol({}, {})", rva, name),
+            AnalysisCommand::MakeSymbol { rva, name } => write!(f, "MakeSymbol({}, {})", rva, name),
             AnalysisCommand::MakeFunction(rva) => write!(f, "MakeFunction({})", rva),
         }
     }
@@ -107,7 +104,7 @@ pub struct XrefAnalysis {
 }
 
 pub struct FlowAnalysis {
-    meta: PageMap<FlowMeta>,
+    meta:      PageMap<FlowMeta>,
     pub xrefs: XrefAnalysis,
 }
 
@@ -121,9 +118,9 @@ pub struct Analysis {
     pub symbols: HashMap<RVA, String>,
 
     pub flow: FlowAnalysis,
-    // datameta
-    // symbols
-    // functions
+    /* datameta
+     * symbols
+     * functions */
 }
 
 impl Analysis {
@@ -134,17 +131,18 @@ impl Analysis {
 
         for section in module.sections.iter().filter(|section| section.is_executable()) {
             let v = pagemap::page_align(RVA::from(section.size));
-            meta.map_empty(section.addr, v.into()).expect("failed to map section flowmeta");
+            meta.map_empty(section.addr, v.into())
+                .expect("failed to map section flowmeta");
         }
 
         Analysis {
-            queue: VecDeque::new(),
+            queue:     VecDeque::new(),
             functions: HashSet::new(),
-            symbols: HashMap::new(),
-            flow: FlowAnalysis {
-                meta: meta,
+            symbols:   HashMap::new(),
+            flow:      FlowAnalysis {
+                meta,
                 xrefs: XrefAnalysis {
-                    to: HashMap::new(),
+                    to:   HashMap::new(),
                     from: HashMap::new(),
                 },
             },
@@ -170,9 +168,7 @@ impl Workspace {
     /// assert!(!ws.get_meta(RVA(0x2)).unwrap().is_insn());
     /// ```
     pub fn make_insn(&mut self, rva: RVA) -> Result<(), Error> {
-        self.analysis
-            .queue
-            .push_back(AnalysisCommand::MakeInsn(rva));
+        self.analysis.queue.push_back(AnalysisCommand::MakeInsn(rva));
         Ok(())
     }
 
@@ -188,13 +184,14 @@ impl Workspace {
     /// assert_eq!(ws.get_symbol(RVA(0x0)).unwrap(), "entry");
     /// ```
     pub fn make_symbol(&mut self, rva: RVA, name: &str) -> Result<(), Error> {
-        self.analysis
-            .queue
-            .push_back(AnalysisCommand::MakeSymbol{rva: rva, name: name.to_string()});
+        self.analysis.queue.push_back(AnalysisCommand::MakeSymbol {
+            rva,
+            name: name.to_string(),
+        });
         Ok(())
     }
 
-    pub fn get_functions(&self ) -> impl Iterator<Item=&RVA> {
+    pub fn get_functions(&self) -> impl Iterator<Item = &RVA> {
         self.analysis.functions.iter()
     }
 
@@ -212,13 +209,11 @@ impl Workspace {
     /// assert_eq!(ws.get_functions().collect::<Vec<_>>().len(), 1);
     /// ```
     pub fn make_function(&mut self, rva: RVA) -> Result<(), Error> {
-        self.analysis
-            .queue
-            .push_back(AnalysisCommand::MakeFunction(rva));
+        self.analysis.queue.push_back(AnalysisCommand::MakeFunction(rva));
         Ok(())
     }
 
-    pub fn get_symbol(&self,  rva: RVA) -> Option<&String> {
+    pub fn get_symbol(&self, rva: RVA) -> Option<&String> {
         self.analysis.symbols.get(&rva)
     }
 
@@ -231,7 +226,7 @@ impl Workspace {
     }
 
     pub fn get_metas(&self, rva: RVA, length: usize) -> Result<Vec<FlowMeta>, Error> {
-        self.analysis.flow.meta.slice(rva, rva+length)
+        self.analysis.flow.meta.slice(rva, rva + length)
     }
 
     /// Does the given instruction have a fallthrough flow?
@@ -266,21 +261,17 @@ impl Workspace {
     pub fn get_insn_length(&self, rva: RVA) -> Result<u8, Error> {
         match self.get_meta(rva) {
             None => Err(flowmeta::Error::NotAnInstruction.into()),
-            Some(meta) => {
-                match meta.is_insn() {
-                    false => Err(flowmeta::Error::NotAnInstruction.into()),
-                    true => match meta.get_insn_length() {
-                        Ok(length) => Ok(length),
-                        Err(flowmeta::Error::LongInstruction) => {
-                            match self.read_insn(rva) {
-                                Ok(insn) => Ok(insn.length),
-                                Err(e) => Err(e),
-                            }
-                        },
-                        Err(e) => Err(e.into()),
-                    }
-                }
-            }
+            Some(meta) => match meta.is_insn() {
+                false => Err(flowmeta::Error::NotAnInstruction.into()),
+                true => match meta.get_insn_length() {
+                    Ok(length) => Ok(length),
+                    Err(flowmeta::Error::LongInstruction) => match self.read_insn(rva) {
+                        Ok(insn) => Ok(insn.length),
+                        Err(e) => Err(e),
+                    },
+                    Err(e) => Err(e.into()),
+                },
+            },
         }
     }
 
@@ -317,14 +308,14 @@ impl Workspace {
                 // have to scan backwards for instructions that fallthrough to here.
 
                 let r: usize = rva.into();
-                for i in r-0x10..r-1 {
+                for i in r - 0x10..r - 1 {
                     if let Some(imeta) = self.get_meta(RVA::from(i)) {
                         if !imeta.is_insn() {
-                            continue
+                            continue;
                         }
 
                         if !imeta.does_fallthrough() {
-                            continue
+                            continue;
                         }
 
                         let length = match imeta.get_insn_length() {
@@ -404,7 +395,7 @@ impl Workspace {
             // see doctest: [test simple memory ptr operand]()
 
             if op.mem.disp.displacement < 0 {
-                return Ok(None)
+                return Ok(None);
             }
             let ptr = VA::from(op.mem.disp.displacement as u64);
 
@@ -433,48 +424,47 @@ impl Workspace {
             // only valid on x64
             && op.mem.index == zydis::Register::NONE
             && op.mem.scale == 0
-            && op.mem.disp.has_displacement {
+            && op.mem.disp.has_displacement
+        {
+            // this is RIP-relative addressing.
+            // it works like a relative immediate,
+            // that is: dst = *(rva + displacement + instruction len)
 
-                // this is RIP-relative addressing.
-                // it works like a relative immediate,
-                // that is: dst = *(rva + displacement + instruction len)
+            let disp = RVA::from(op.mem.disp.displacement);
+            let len = insn.length;
 
-                let disp = RVA::from(op.mem.disp.displacement);
-                let len = insn.length;
+            let ptr = rva + disp + len;
 
-                let ptr = rva + disp + len;
+            let dst = match self.read_va(ptr) {
+                Ok(dst) => dst,
+                Err(_) => return Ok(None),
+            };
 
-                let dst = match self.read_va(ptr) {
-                    Ok(dst) => dst,
-                    Err(_) => return Ok(None),
-                };
+            let dst = match self.rva(dst) {
+                Some(dst) => dst,
+                None => return Ok(None),
+            };
 
-                let dst = match self.rva(dst) {
-                    Some(dst) => dst,
-                    None => return Ok(None),
-                };
+            if !self.probe(dst, 1, Permissions::X) {
+                return Ok(None);
+            };
 
-                if !self.probe(dst, 1, Permissions::X) {
-                    return Ok(None);
-                };
-
-                // this is the happy path!
-                return Ok(Some(dst));
+            // this is the happy path!
+            return Ok(Some(dst));
         } else if op.mem.base != zydis::Register::NONE {
             // this is something like `CALL [eax+4]`
             // can't resolve without emulation
             // TODO: add test
-            return Ok(None)
+            return Ok(None);
         } else if op.mem.scale == 0x4 {
             // this is something like `JMP [0x1000+eax*4]` (32-bit)
-            return Ok(None)
+            return Ok(None);
         } else {
             println!("{:#x}: get mem op xref", rva);
             print_op(op);
             panic!("not supported");
         }
     }
-
 
     /// ```
     /// use lancelot::test;
@@ -503,10 +493,11 @@ impl Workspace {
         //
         // > Far Jumps in Real-Address or Virtual-8086 Mode.
         // > When executing a far jump in realaddress or virtual-8086 mode,
-        // > the processor jumps to the code segment and offset specified with the target operand.
-        // > Here the target operand specifies an absolute far address either directly with a
-        // > pointer (ptr16:16 or ptr16:32) or indirectly with a memory location (m16:16 or m16:32).
-        // > With the pointer method, the segment and address of the called procedure is encoded
+        // > the processor jumps to the code segment and offset specified with the
+        // target operand. > Here the target operand specifies an absolute far
+        // address either directly with a > pointer (ptr16:16 or ptr16:32) or
+        // indirectly with a memory location (m16:16 or m16:32). > With the
+        // pointer method, the segment and address of the called procedure is encoded
         // > in the instruction, using a 4-byte (16-bit operand size) or
         // > 6-byte (32-bit operand size) far address immediate.
         // TODO: do something intelligent with the segment.
@@ -614,11 +605,7 @@ impl Workspace {
     /// let xrefs = ws.get_call_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs[0].dst, RVA(0x5));
     /// ```
-    pub fn get_call_insn_flow(
-        &self,
-        rva: RVA,
-        insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    pub fn get_call_insn_flow(&self, rva: RVA, insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         // if this is not a CALL, then its a programming error. panic!
         // all CALLs should have an operand.
         let op = get_first_operand(insn).expect("CALL has no operand");
@@ -626,7 +613,7 @@ impl Workspace {
         match self.get_operand_xref(rva, insn, op)? {
             Some(dst) => Ok(vec![Xref {
                 src: rva,
-                dst: dst,
+                dst,
                 typ: XrefType::Call,
             }]),
             None => Ok(vec![]),
@@ -648,8 +635,8 @@ impl Workspace {
                 None => break,
             };
 
-            if ! self.probe(ptr_rva, 1, Permissions::R) {
-                break
+            if !self.probe(ptr_rva, 1, Permissions::R) {
+                break;
             }
 
             ret.push(ptr_rva);
@@ -711,11 +698,7 @@ impl Workspace {
     /// assert!(ws.get_meta(RVA(0x715F7)).unwrap().is_insn());
     /// assert!(ws.get_meta(RVA(0x71744)).unwrap().is_insn());
     /// ```
-    pub fn get_jmp_insn_flow(
-        &self,
-        rva: RVA,
-        insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    pub fn get_jmp_insn_flow(&self, rva: RVA, insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         // if this is not a JMP, then its a programming error. panic!
         // all JMPs should have an operand.
         let op = get_first_operand(insn).expect("JMP has no target");
@@ -723,7 +706,8 @@ impl Workspace {
         if op.ty == zydis::OperandType::MEMORY
             && op.mem.scale == 0x4
             && op.mem.base == zydis::Register::NONE
-            && op.mem.disp.has_displacement {
+            && op.mem.disp.has_displacement
+        {
             // this looks like a switch table, e.g. `JMP [0x1000+ecx*4]`
             // so, probe for a pointer table.
             // otherwise, this should probably be solved via emulation.
@@ -741,18 +725,19 @@ impl Workspace {
                 Err(_) => return Ok(vec![]),
             };
 
-            Ok(table.iter()
-                   .map(|&dst| Xref {
-                       src: rva,
-                       dst: dst,
-                       typ: XrefType::UnconditionalJump,
-                   })
-                   .collect())
+            Ok(table
+                .iter()
+                .map(|&dst| Xref {
+                    src: rva,
+                    dst,
+                    typ: XrefType::UnconditionalJump,
+                })
+                .collect())
         } else {
             match self.get_operand_xref(rva, insn, op)? {
                 Some(dst) => Ok(vec![Xref {
                     src: rva,
-                    dst: dst,
+                    dst,
                     typ: XrefType::UnconditionalJump,
                 }]),
                 None => Ok(vec![]),
@@ -770,11 +755,7 @@ impl Workspace {
     /// let xrefs = ws.get_ret_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs.len(), 0);
     /// ```
-    pub fn get_ret_insn_flow(
-        &self,
-        _rva: RVA,
-        _insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    pub fn get_ret_insn_flow(&self, _rva: RVA, _insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         Ok(vec![])
     }
 
@@ -790,11 +771,7 @@ impl Workspace {
     /// let xrefs = ws.get_cjmp_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
-    pub fn get_cjmp_insn_flow(
-        &self,
-        rva: RVA,
-        insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    pub fn get_cjmp_insn_flow(&self, rva: RVA, insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         // if this is not a CJMP, then its a programming error. panic!
         // all conditional jumps should have an operand.
         let op = get_first_operand(insn).expect("CJMP has no target");
@@ -802,7 +779,7 @@ impl Workspace {
         match self.get_operand_xref(rva, insn, op)? {
             Some(dst) => Ok(vec![Xref {
                 src: rva,
-                dst: dst,
+                dst,
                 typ: XrefType::ConditionalJump,
             }]),
             None => Ok(vec![]),
@@ -820,41 +797,47 @@ impl Workspace {
     /// let xrefs = ws.get_cmov_insn_flow(RVA(0x0), &insn).unwrap();
     /// assert_eq!(xrefs[0].dst, RVA(0x3));
     /// ```
-    pub fn get_cmov_insn_flow(
-        &self,
-        rva: RVA,
-        insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    pub fn get_cmov_insn_flow(&self, rva: RVA, insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         let dst = rva + insn.length;
 
         Ok(vec![Xref {
             src: rva,
-            dst: dst,
+            dst,
             typ: XrefType::ConditionalMove,
         }])
     }
 
-    fn get_insn_flow(
-        &self,
-        rva: RVA,
-        insn: &zydis::DecodedInstruction,
-    ) -> Result<Vec<Xref>, Error> {
+    fn get_insn_flow(&self, rva: RVA, insn: &zydis::DecodedInstruction) -> Result<Vec<Xref>, Error> {
         match insn.mnemonic {
             zydis::Mnemonic::CALL => self.get_call_insn_flow(rva, insn),
 
             zydis::Mnemonic::JMP => self.get_jmp_insn_flow(rva, insn),
 
-            zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD
-            | zydis::Mnemonic::IRETQ => self.get_ret_insn_flow(rva, insn),
-
-            zydis::Mnemonic::JB | zydis::Mnemonic::JBE | zydis::Mnemonic::JCXZ | zydis::Mnemonic::JECXZ
-            | zydis::Mnemonic::JKNZD | zydis::Mnemonic::JKZD | zydis::Mnemonic::JL
-            | zydis::Mnemonic::JLE | zydis::Mnemonic::JNB | zydis::Mnemonic::JNBE
-            | zydis::Mnemonic::JNL | zydis::Mnemonic::JNLE | zydis::Mnemonic::JNO
-            | zydis::Mnemonic::JNP | zydis::Mnemonic::JNS | zydis::Mnemonic::JNZ | zydis::Mnemonic::JO
-            | zydis::Mnemonic::JP | zydis::Mnemonic::JRCXZ | zydis::Mnemonic::JS | zydis::Mnemonic::JZ => {
-                self.get_cjmp_insn_flow(rva, insn)
+            zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD | zydis::Mnemonic::IRETQ => {
+                self.get_ret_insn_flow(rva, insn)
             }
+
+            zydis::Mnemonic::JB
+            | zydis::Mnemonic::JBE
+            | zydis::Mnemonic::JCXZ
+            | zydis::Mnemonic::JECXZ
+            | zydis::Mnemonic::JKNZD
+            | zydis::Mnemonic::JKZD
+            | zydis::Mnemonic::JL
+            | zydis::Mnemonic::JLE
+            | zydis::Mnemonic::JNB
+            | zydis::Mnemonic::JNBE
+            | zydis::Mnemonic::JNL
+            | zydis::Mnemonic::JNLE
+            | zydis::Mnemonic::JNO
+            | zydis::Mnemonic::JNP
+            | zydis::Mnemonic::JNS
+            | zydis::Mnemonic::JNZ
+            | zydis::Mnemonic::JO
+            | zydis::Mnemonic::JP
+            | zydis::Mnemonic::JRCXZ
+            | zydis::Mnemonic::JS
+            | zydis::Mnemonic::JZ => self.get_cjmp_insn_flow(rva, insn),
 
             zydis::Mnemonic::CMOVB
             | zydis::Mnemonic::CMOVBE
@@ -888,9 +871,10 @@ impl Workspace {
         // if we get a result here, then there's not yet an instruction at the rva.
         // otherwise, we will have returned early, and there's no work to be done.
         //
-        // now, we might worry about lots of extra allocations for the Vec if the insn already exists.
-        //  but, its not a problem: Vec only allocates when there's a non-zero element in it!
-        // so, its mostly ok to spam `make_insn`.
+        // now, we might worry about lots of extra allocations for the Vec if the insn
+        // already exists.  but, its not a problem: Vec only allocates when
+        // there's a non-zero element in it! so, its mostly ok to spam
+        // `make_insn`.
         let meta = match self.get_meta(rva) {
             None => {
                 // this might happen if:
@@ -1031,13 +1015,7 @@ impl Workspace {
             }
 
             {
-                let xrefs = self
-                    .analysis
-                    .flow
-                    .xrefs
-                    .to
-                    .entry(xref.dst)
-                    .or_insert_with(HashSet::new);
+                let xrefs = self.analysis.flow.xrefs.to.entry(xref.dst).or_insert_with(HashSet::new);
                 xrefs.insert(xref);
             }
         }
@@ -1091,7 +1069,7 @@ impl Workspace {
             let cmds = match cmd {
                 AnalysisCommand::MakeInsn(rva) => self.handle_make_insn(rva)?,
                 AnalysisCommand::MakeXref(xref) => self.handle_make_xref(xref)?,
-                AnalysisCommand::MakeSymbol{rva, name} => self.handle_make_symbol(rva, &name)?,
+                AnalysisCommand::MakeSymbol { rva, name } => self.handle_make_symbol(rva, &name)?,
                 AnalysisCommand::MakeFunction(rva) => self.handle_make_function(rva)?,
             };
             self.analysis.queue.extend(cmds);
@@ -1101,10 +1079,7 @@ impl Workspace {
     }
 }
 
-
 pub trait Analyzer {
     fn get_name(&self) -> String;
     fn analyze(&self, ws: &mut Workspace) -> Result<(), Error>;
 }
-
-

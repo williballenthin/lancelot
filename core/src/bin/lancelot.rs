@@ -1,15 +1,15 @@
+extern crate chrono;
 extern crate lancelot;
 extern crate log;
-extern crate chrono;
-#[macro_use] extern crate clap;
+#[macro_use]
+extern crate clap;
 
-use fern;
-use log::{error, info, debug};
-use failure::{Error};
 use better_panic;
+use failure::Error;
+use fern;
+use log::{debug, error, info};
 
 use lancelot::workspace::Workspace;
-
 
 fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     let mut functions = ws.get_functions().collect::<Vec<_>>();
@@ -41,7 +41,8 @@ fn main() {
         (@subcommand smoketest =>
             (about: "analyze file and exit on analysis failure")
             (@arg input: +required "path to file to analyze"))
-    ).get_matches();
+    )
+    .get_matches();
 
     // --quiet overrides --verbose
     let log_level = if matches.is_present("quiet") {
@@ -61,15 +62,17 @@ fn main() {
                 "{} [{:5}] {} {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
-                if log_level == log::LevelFilter::Trace {record.target()} else {""},
+                if log_level == log::LevelFilter::Trace {
+                    record.target()
+                } else {
+                    ""
+                },
                 message
             ))
         })
         .level(log_level)
         .chain(std::io::stderr())
-        .filter(|metadata| {
-            !metadata.target().starts_with("goblin::pe")
-        })
+        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         .apply()
         .expect("failed to configure logging");
 
@@ -79,11 +82,9 @@ fn main() {
         let filename = matches.value_of("input").unwrap();
         debug!("input: {}", filename);
 
-        let ws = Workspace::from_file(filename)
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+        let ws = Workspace::from_file(filename).unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
 
-        let ws = ws.load()
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+        let ws = ws.load().unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
 
         if let Err(e) = handle_functions(&ws) {
             error!("error: {}", e)
@@ -97,11 +98,12 @@ fn main() {
         match Workspace::from_file(filename)
             .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
             .enable_strict_mode()
-            .load() {
+            .load()
+        {
             Err(e) => {
                 println!("error");
                 eprintln!("{:?}", e);
-            },
+            }
             Ok(_) => println!("ok"),
         }
     };
