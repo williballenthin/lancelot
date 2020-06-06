@@ -4,12 +4,14 @@ extern crate log;
 #[macro_use]
 extern crate clap;
 
+use std::path::PathBuf;
+
 use better_panic;
 use failure::Error;
 use fern;
 use log::{debug, error, info};
 
-use lancelot::workspace::Workspace;
+use lancelot::{config::Config, workspace::Workspace};
 
 fn handle_functions(ws: &Workspace) -> Result<(), Error> {
     let mut functions = ws.get_functions().collect::<Vec<_>>();
@@ -29,6 +31,8 @@ fn handle_functions(ws: &Workspace) -> Result<(), Error> {
 
 fn main() {
     better_panic::install();
+
+    let mut config: Config = Default::default();
 
     let matches = clap_app!(lancelot =>
         (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
@@ -76,13 +80,21 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
+    let pat_dir = config.analysis.flirt.pat_dir.to_str().unwrap().to_string();
+    let sig_dir = config.analysis.flirt.sig_dir.to_str().unwrap().to_string();
+    config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&pat_dir).into_owned());
+    config.analysis.flirt.sig_dir = PathBuf::from(shellexpand::tilde(&sig_dir).into_owned());
+    debug!("config:\n{:#?}", config);
+
     if let Some(matches) = matches.subcommand_matches("functions") {
         debug!("mode: find functions");
 
         let filename = matches.value_of("input").unwrap();
         debug!("input: {}", filename);
 
-        let ws = Workspace::from_file(filename).unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
+        let ws = Workspace::from_file(filename)
+            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
+            .with_config(config);
 
         let ws = ws.load().unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
 
@@ -97,6 +109,7 @@ fn main() {
 
         match Workspace::from_file(filename)
             .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
+            .with_config(config)
             .enable_strict_mode()
             .load()
         {
