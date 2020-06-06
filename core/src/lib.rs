@@ -5,6 +5,7 @@ pub mod aspace;
 pub mod basicblock;
 pub mod config;
 pub mod insn;
+pub mod module;
 pub mod pagemap;
 pub mod util;
 
