@@ -26,8 +26,8 @@
 use anyhow::Result;
 use byteorder::ByteOrder;
 
-use crate::VA;
 use crate::loader::pe::PE;
+use crate::VA;
 
 pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> Result<Vec<VA>> {
     let executable_sections = pe.get_pe_executable_sections()?;
@@ -79,26 +79,29 @@ pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> 
     //     8B 44 24 08             mov     eax, [esp+arg_4]
     //     8B 00                   mov     eax, [eax]
 
-
     // TODO: within code, global pointers may not be pointer-aligned?
 
     if pe.pe.header.coff_header.machine == goblin::pe::header::COFF_MACHINE_X86_64 {
-        Ok(buf.chunks_exact(8)
+        Ok(buf
+            .chunks_exact(8)
             .map(|b| byteorder::LittleEndian::read_u64(b) as VA)
-            .filter(|&va| executable_sections
-                .iter()
-                .find(|&section| section.start <= va && section.end > va)
-                .is_some()
-            )
+            .filter(|&va| {
+                executable_sections
+                    .iter()
+                    .find(|&section| section.start <= va && section.end > va)
+                    .is_some()
+            })
             .collect())
     } else {
-        Ok(buf.chunks_exact(4)
+        Ok(buf
+            .chunks_exact(4)
             .map(|b| byteorder::LittleEndian::read_u32(b) as VA)
-            .filter(|&va| executable_sections
-                .iter()
-                .find(|&section| section.start <= va && section.end > va)
-                .is_some()
-            )
+            .filter(|&va| {
+                executable_sections
+                    .iter()
+                    .find(|&section| section.start <= va && section.end > va)
+                    .is_some()
+            })
             .collect())
     }
 }

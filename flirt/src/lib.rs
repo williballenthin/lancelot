@@ -72,7 +72,7 @@ enum Offset {
 #[derive(Debug)]
 pub struct Name {
     offset: i64,
-    name:   String,
+    name: String,
 }
 
 #[derive(Debug)]
@@ -95,7 +95,7 @@ impl std::fmt::Display for Symbol {
 #[derive(Debug)]
 struct TailByte {
     offset: u64,
-    value:  u8,
+    value: u8,
 }
 
 impl std::fmt::Display for TailByte {
@@ -251,7 +251,7 @@ impl FlirtSignature {
 }
 
 pub struct FlirtSignatureMatcher<'a> {
-    re:  Regex,
+    re: Regex,
     sig: &'a FlirtSignature,
 }
 
@@ -350,7 +350,7 @@ impl<'a> FlirtSignatureMatcher<'a> {
 }
 
 pub struct FlirtSignatureSet {
-    sigs:    HashMap<nfa::Pattern, FlirtSignature>,
+    sigs: HashMap<nfa::Pattern, FlirtSignature>,
     matcher: nfa::NFA,
 }
 
