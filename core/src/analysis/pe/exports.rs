@@ -3,17 +3,15 @@
 //! PEs may export data, which we'll assume isn't in an executable section.
 use anyhow::Result;
 
-use crate::VA;
 use crate::loader::pe::PE;
+use crate::VA;
 
 pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
     let executable_sections = pe.get_pe_executable_sections()?;
 
     let base_address = match pe.pe.header.optional_header {
         Some(opt) => opt.windows_fields.image_base,
-        _ => {
-            0x40_000
-        }
+        _ => 0x40_000,
     };
 
     let exports: Vec<VA> = pe
@@ -26,12 +24,60 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
         .map(|exp| base_address + exp.rva as u64)
         .filter(|&va| {
             // PE may export data, so ensure the exports we track are executable (functions).
-            executable_sections
-                .iter()
-                .find(|&sec| sec.contains(&va))
-                .is_some()
+            executable_sections.iter().find(|&sec| sec.contains(&va)).is_some()
         })
         .collect();
 
     Ok(exports)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::aspace::AddressSpace;
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(1445, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        // no optional header
+        assert!(crate::analysis::pe::exports::find_pe_exports(&pe).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
 }

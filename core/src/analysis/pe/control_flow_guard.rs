@@ -189,3 +189,54 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
 
     Ok(ret)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::aspace::AddressSpace;
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?;
+        assert_eq!(1502, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        // no optional header
+        assert!(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
+}

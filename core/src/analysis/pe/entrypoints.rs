@@ -3,8 +3,8 @@
 //! All PEs should have an entry point, unless they don't have any code.
 use anyhow::Result;
 
-use crate::VA;
 use crate::loader::pe::PE;
+use crate::VA;
 
 pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
     if let Some(optional_header) = pe.pe.header.optional_header {
@@ -15,5 +15,56 @@ pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
         Ok(vec![optional_header.windows_fields.image_base + entry_point])
     } else {
         Ok(vec![])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::aspace::AddressSpace;
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
+        assert_eq!(1, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
+        assert_eq!(1, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
+        assert_eq!(1, fns.len());
+
+        Ok(())
     }
 }

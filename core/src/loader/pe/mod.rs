@@ -218,4 +218,48 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
 }

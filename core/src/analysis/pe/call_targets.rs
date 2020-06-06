@@ -191,3 +191,54 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
     Ok(ret)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::aspace::AddressSpace;
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
+        assert_eq!(3610, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        // no optional header
+        assert!(crate::analysis::pe::call_targets::find_pe_call_targets(&pe).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
+        assert_eq!(250, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
+        assert_eq!(10907, fns.len());
+
+        Ok(())
+    }
+}
