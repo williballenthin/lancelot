@@ -178,7 +178,7 @@ impl State {
     fn new(capacity: u32) -> State {
         State {
             transitions: [Default::default(); 257],
-            alive:       bitvec![0; capacity as usize],
+            alive: bitvec![0; capacity as usize],
         }
     }
 
@@ -197,7 +197,7 @@ struct StateTable {
     // we have to know this before we start constructing the table,
     // that's why we use the Builder pattern.
     capacity: u32,
-    states:   Vec<State>,
+    states: Vec<State>,
 }
 
 impl StateTable {
@@ -215,7 +215,7 @@ impl StateTable {
 }
 
 pub struct NFA {
-    table:    StateTable,
+    table: StateTable,
     patterns: Vec<Pattern>,
 }
 
@@ -284,7 +284,7 @@ impl NFA {
                     .alive
                     .iter()
                     .enumerate()
-                    .filter(|(_, is_alive)| *is_alive)
+                    .filter(|(_, &is_alive)| is_alive)
                     .map(|(i, _)| i);
 
                 for i in match_indices {
@@ -312,7 +312,7 @@ impl NFA {
                     trace!("match: found transition to {} for input {:02x}", transition, input_byte);
                     q.push_front(Step {
                         state_pointer: transition,
-                        buf:           &step.buf[1..],
+                        buf: &step.buf[1..],
                     })
                 }
             }
@@ -377,13 +377,13 @@ impl std::fmt::Debug for NFA {
                 }
             }
 
-            if state.alive.iter().any(|b| b) {
+            if state.alive.iter().any(|&b| b) {
                 if state.is_terminal() {
                     write!(f, "  matches:")?;
                 } else {
                     write!(f, "  alive:")?;
                 }
-                for (i, is_alive) in state.alive.iter().enumerate() {
+                for (i, &is_alive) in state.alive.iter().enumerate() {
                     if is_alive {
                         write!(f, " pat{}", i)?;
                     }
@@ -407,9 +407,9 @@ impl NFABuilder {
 
     pub fn build(self) -> NFA {
         let mut nfa = NFA {
-            table:    StateTable {
+            table: StateTable {
                 capacity: self.patterns.len() as u32, // TODO: danger.
-                states:   vec![],
+                states: vec![],
             },
             patterns: self.patterns,
         };
@@ -443,7 +443,7 @@ impl NFABuilder {
             let state = &mut nfa.table.states[Into::<usize>::into(step.state_pointer)];
 
             // this state is already explored by this pattern.
-            if state.alive.get(step.pattern_index).unwrap() {
+            if *state.alive.get(step.pattern_index).unwrap() {
                 continue;
             }
 
@@ -484,7 +484,7 @@ impl NFABuilder {
             q.push_back(Step {
                 state_pointer: next_state,
                 pattern_index: step.pattern_index,
-                symbols:       &step.symbols[1..],
+                symbols: &step.symbols[1..],
             });
 
             // if its a wildcard, then must follow any existing literal transitions, too
@@ -496,7 +496,7 @@ impl NFABuilder {
                         q.push_back(Step {
                             state_pointer: literal_transition,
                             pattern_index: step.pattern_index,
-                            symbols:       &step.symbols[1..],
+                            symbols: &step.symbols[1..],
                         })
                     }
                 }
