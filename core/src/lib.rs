@@ -1,6 +1,7 @@
 extern crate bitflags;
 extern crate log;
 
+pub mod analysis;
 pub mod aspace;
 pub mod basicblock;
 pub mod config;
