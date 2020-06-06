@@ -47,7 +47,7 @@ pub trait AddressSpace<T> {
 /// Note that this implements `AddressSpace<RVA>` and not `AddressSpace<VA>`.
 /// Use `AbsoluteAddressSpace` when you're dealing with absolute addresses (`VA`).
 pub struct RelativeAddressSpace {
-    map: PageMap<u8>,
+    pub(crate) map: PageMap<u8>,
 }
 
 impl RelativeAddressSpace {
@@ -56,6 +56,12 @@ impl RelativeAddressSpace {
             base_address,
             relative: self,
         })
+    }
+
+    pub fn with_capacity(size: u64) -> RelativeAddressSpace {
+        RelativeAddressSpace {
+            map: PageMap::with_capacity(size),
+        }
     }
 }
 

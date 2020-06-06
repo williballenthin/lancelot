@@ -7,6 +7,7 @@ pub mod config;
 pub mod insn;
 pub mod module;
 pub mod pagemap;
+pub mod pe;
 pub mod util;
 
 // helpers that are useful during doctests, tests.
