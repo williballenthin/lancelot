@@ -31,6 +31,7 @@ pub trait AddressSpace<T> {
         Ok(LittleEndian::read_u64(&buf))
     }
 
+    // TODO: rename read_bytes
     fn read_buf(&self, offset: T, length: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; length];
         self.read_into(offset, &mut buf)?;
