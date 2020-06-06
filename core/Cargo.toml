@@ -1,41 +1,28 @@
 [package]
 name = "lancelot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
 [badges]
-travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "master" }
+travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "v0.2.0-line" }
 
 [dependencies]
 log = "0.4"
-goblin = "0.0.24"
-# zydis==0.0.3 requires rust-bindgen, which requires clang 3.9
-# zydis = "0.0.3"
-zydis = { git = "https://github.com/zyantific/zydis-rs", rev="c4474211863004ce87464a2ea397341b7e1a6b6f", features=["serialization"]}
-serde = "1"
-serde_json = "1.0"
-matches = "0.1.8"
-byteorder = "1.2.7"
-num = "0.2"
-num-traits = "0.2"
-strum = "0.15"
-strum_macros = "0.15"
-failure = "0.1.5"
-bitflags = "1.0.4"
-# upgrade to 0.4.5 once available
-# see: https://github.com/pyros2097/rust-embed/pull/67
-rust-embed = { git="https://github.com/pyros2097/rust-embed", rev="7ea8ef21b14951ca3c7f60f9b6d7cc223923c5ba", features=["debug-embed", "interpolate-folder-path"] }
-lazy_static = "1.3.0"
-clap = "2.33"
-fern = "0.5"
+goblin = "0.2"
+zydis = "3"
+byteorder = "1"
+bitflags = "1"
+lazy_static = "1"
+clap = "2"
+fern = "0.6"
 chrono = "0.4"
-shellexpand = "1"
+anyhow = "1"
+thiserror = "1"
 
-xml-rs = "0.8"
 better-panic = "0.2"
-md5 = "0.6.1"
-regex = "1.1.7"
+md5 = "0.6"
+regex = "1"
 
 flirt = { path = "../flirt" }
 

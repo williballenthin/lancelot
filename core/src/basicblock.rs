@@ -1,4 +1,4 @@
-use super::arch::RVA;
+use crate::RVA;
 
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
@@ -12,6 +12,7 @@ pub struct BasicBlock {
     pub predecessors: Vec<RVA>,
 
     /// RVAs of start addresses of basic blocks that flow from here.
+    // TODO: use smallvec
     pub successors: Vec<RVA>,
 
     /// RVAs of instructions found in this basic block.

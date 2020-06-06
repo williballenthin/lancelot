@@ -1,13 +1,14 @@
-use log::{debug, error};
 use std::{fs, io::prelude::*};
 
-use failure::{Error, Fail};
+use anyhow::Result;
+use log::{debug, error};
+use thiserror::Error;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum UtilError {
-    #[fail(display = "insufficient file access")]
+    #[error("insufficient file access")]
     FileAccess,
-    #[fail(display = "invalid file format")]
+    #[error("invalid file format")]
     FileFormat,
 }
 
@@ -55,7 +56,7 @@ pub fn u64_i64(i: u64) -> i64 {
 /// assert_eq!(align(3, 2), 4);
 /// assert_eq!(align(4, 2), 4);
 /// ```
-pub fn align(i: usize, b: usize) -> usize {
+pub fn align(i: u64, b: u64) -> u64 {
     if b < 2 {
         panic!("base `b` must be at least: 2");
     }
@@ -86,8 +87,9 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     let ascii_col_size = 1;
     let prefix_size = 8 + 1;
     let newline_size = 1;
-    let line_size = prefix_size + padding_size + 16 * hex_col_size + padding_size + 16 * ascii_col_size + newline_size;
-    let line_count = align(buf.len(), 0x10) / 0x10;
+    let line_size =
+        (prefix_size + padding_size + 16 * hex_col_size + padding_size + 16 * ascii_col_size + newline_size) as usize;
+    let line_count = (align(buf.len() as u64, 0x10) / 0x10) as usize;
 
     let mut ret = String::with_capacity(line_count * line_size);
 
@@ -140,7 +142,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
     ret
 }
 
-pub fn read_file(filename: &str) -> Result<Vec<u8>, Error> {
+pub fn read_file(filename: &str) -> Result<Vec<u8>> {
     debug!("read_file: {:?}", filename);
 
     let mut buf = Vec::new();
