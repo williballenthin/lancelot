@@ -11,7 +11,7 @@ pub mod pe;
 pub mod util;
 
 // helpers that are useful during doctests, tests.
-//#[cfg(feature="test")]
+// TODO: restrict this to tests only
 pub mod rsrc;
 pub mod test;
 
