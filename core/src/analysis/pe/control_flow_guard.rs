@@ -1,13 +1,15 @@
 //! Parse the PE Control Flow Guard function table.
-//! This table contains an entry for each function that may be invoked dynamically.
-//! When present, it tends to cover a large percentage of the functions in a module.
+//! This table contains an entry for each function that may be invoked
+//! dynamically. When present, it tends to cover a large percentage of the
+//! functions in a module.
 //!
 //! This table referenced by the Load Config directory.
 //! The reference consists of: (flags: u32, offset: VA, count: u32/u64).
 //! The table is an array of entries that consist of:
 //!   u32       RVA (both x32 and x64)
 //!   variable  data
-//! The flags in the table reference describe how big the entry data is (the "stride").
+//! The flags in the table reference describe how big the entry data is (the
+//! "stride").
 //!
 //! The Load Config Control Flow Guard metadata also references:
 //!   - function pointer to indirect call check routine (supported)
@@ -23,10 +25,7 @@ use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use log::debug;
 
-use crate::aspace::AddressSpace;
-use crate::loader::pe::PE;
-use crate::module::Arch;
-use crate::{RVA, VA};
+use crate::{aspace::AddressSpace, loader::pe::PE, module::Arch, RVA, VA};
 
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK: u32 = 0xF000_0000;
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT: u32 = 28;
@@ -124,9 +123,10 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
         };
         debug!("CF Guard table count: {:#x}", cfg_table_count);
 
-        // read the table buffer once up front, then iterate slices over it with windows.
-        // this is at the expense of one allocation for the table.
-        // it be faster than doing pe.module.with_va().read_i32() on each offset, on large tables.
+        // read the table buffer once up front, then iterate slices over it with
+        // windows. this is at the expense of one allocation for the table.
+        // it be faster than doing pe.module.with_va().read_i32() on each offset, on
+        // large tables.
         //
         // 4 == sizeof(i32) RVA to function start, both x32 and x64
         let cfg_table_entry_size: usize = 4 + stride;
@@ -191,8 +191,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

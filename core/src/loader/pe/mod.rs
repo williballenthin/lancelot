@@ -2,10 +2,11 @@ use anyhow::Result;
 use log::debug;
 use thiserror::Error;
 
-use crate::aspace::RelativeAddressSpace;
-use crate::module::{Arch, Module, Permissions, Section};
-use crate::util;
-use crate::VA;
+use crate::{
+    aspace::RelativeAddressSpace,
+    module::{Arch, Module, Permissions, Section},
+    util, VA,
+};
 
 #[derive(Error, Debug)]
 pub enum PEError {
@@ -20,9 +21,10 @@ pub enum PEError {
 /// The `pe` field contains the parsed data, courtesy of goblin.
 /// The `module` field contains an address space as the PE would be loaded.
 ///
-/// The struct has a reference to the lifetime of the underlying data that's parsed into the PE.
+/// The struct has a reference to the lifetime of the underlying data that's
+/// parsed into the PE.
 pub struct PE<'a> {
-    pub pe: goblin::pe::PE<'a>,
+    pub pe:     goblin::pe::PE<'a>,
     pub module: Module,
 }
 
@@ -43,7 +45,7 @@ impl<'a> PE<'a> {
             .filter(|section| section.characteristics & goblin::pe::section_table::IMAGE_SCN_MEM_EXECUTE > 0)
             .map(|section| std::ops::Range {
                 start: (image_base + section.virtual_address as u64) as VA,
-                end: (image_base + section.virtual_address as u64 + section.virtual_size as u64) as VA,
+                end:   (image_base + section.virtual_address as u64 + section.virtual_size as u64) as VA,
             })
             .collect())
     }
@@ -89,14 +91,14 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE) -> Result<Section> {
     Ok(Section {
         physical_range: std::ops::Range {
             start: 0x0,
-            end: hdr_raw_size as u64,
+            end:   hdr_raw_size as u64,
         },
-        virtual_range: std::ops::Range {
+        virtual_range:  std::ops::Range {
             start: 0x0,
-            end: hdr_virt_size,
+            end:   hdr_virt_size,
         },
-        perms: Permissions::R,
-        name: "header".to_string(),
+        perms:          Permissions::R,
+        name:           "header".to_string(),
     })
 }
 
@@ -135,11 +137,11 @@ fn load_pe_section(section: &goblin::pe::section_table::SectionTable) -> Result<
     Ok(Section {
         physical_range: std::ops::Range {
             start: section.pointer_to_raw_data as u64,
-            end: (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
+            end:   (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
         },
         virtual_range: std::ops::Range {
             start: section.virtual_address as u64,
-            end: section.virtual_address as u64 + virtual_size,
+            end:   section.virtual_address as u64 + virtual_size,
         },
         perms,
         name,
@@ -189,8 +191,7 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

@@ -3,8 +3,7 @@
 //! All PEs should have an entry point, unless they don't have any code.
 use anyhow::Result;
 
-use crate::loader::pe::PE;
-use crate::VA;
+use crate::{loader::pe::PE, VA};
 
 pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
     if let Some(optional_header) = pe.pe.header.optional_header {
@@ -20,8 +19,7 @@ pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

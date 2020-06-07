@@ -1,8 +1,10 @@
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 
-use crate::pagemap::{PageMap, PageMapError};
-use crate::{RVA, VA};
+use crate::{
+    pagemap::{PageMap, PageMapError},
+    RVA, VA,
+};
 
 pub trait AddressSpace<T> {
     fn read_into(&self, offset: T, buf: &mut [u8]) -> Result<()>;
@@ -46,7 +48,8 @@ pub trait AddressSpace<T> {
 /// pointers relative to the preferred base address. Here, OEP might be 0x1000.
 ///
 /// Note that this implements `AddressSpace<RVA>` and not `AddressSpace<VA>`.
-/// Use `AbsoluteAddressSpace` when you're dealing with absolute addresses (`VA`).
+/// Use `AbsoluteAddressSpace` when you're dealing with absolute addresses
+/// (`VA`).
 pub struct RelativeAddressSpace {
     pub(crate) map: PageMap<u8>,
 }
@@ -73,24 +76,27 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
     }
 }
 
-/// An AddressSpace in which (mostly) contiguous data is mapped at a base address,
-/// is addressed using absolute pointers (relative to 0x0).
+/// An AddressSpace in which (mostly) contiguous data is mapped at a base
+/// address, is addressed using absolute pointers (relative to 0x0).
 ///
-/// For example, this is appropriate for a PE file loaded into memory at its preferred
-/// base address, using pointers relative to 0x0. Here, OEP might be 0x401000.
+/// For example, this is appropriate for a PE file loaded into memory at its
+/// preferred base address, using pointers relative to 0x0. Here, OEP might be
+/// 0x401000.
 ///
 /// Internally, this is a `RelativeAddressSpace` + a base address.
-/// So, its not a good fit for multiple modules that may be mapped different places.
-/// Probably want to implement `SparseAddressSpace` (collection of `AbsoluteAddressSpace`s)
-///  for this.
+/// So, its not a good fit for multiple modules that may be mapped different
+/// places. Probably want to implement `SparseAddressSpace` (collection of
+/// `AbsoluteAddressSpace`s)  for this.
 ///
 /// Note that this implements `AddressSpace<VA>` and not `AddressSpace<RVA>`.
-/// Use `RelativeAddressSpace` when you're dealing with relative addresses (`RVA`).
+/// Use `RelativeAddressSpace` when you're dealing with relative addresses
+/// (`RVA`).
 pub struct AbsoluteAddressSpace {
     pub base_address: VA,
 
     /// The inner relative address space with data mapped at `base_address`.
-    /// Its ok to reach into this address space if you've got RVAs relative to `base_address`.
+    /// Its ok to reach into this address space if you've got RVAs relative to
+    /// `base_address`.
     pub relative: RelativeAddressSpace,
 }
 

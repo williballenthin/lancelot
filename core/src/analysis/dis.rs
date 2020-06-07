@@ -3,7 +3,7 @@ use log::debug;
 
 use crate::loader::pe::PE;
 
-pub fn get_disassember(pe: &PE) -> Result<zydis::Decoder> {
+pub fn get_disassembler(pe: &PE) -> Result<zydis::Decoder> {
     let mut decoder = match pe.pe.is_64 {
         true => zydis::Decoder::new(zydis::MachineMode::LONG_64, zydis::AddressWidth::_64)?,
         false => zydis::Decoder::new(zydis::MachineMode::LEGACY_32, zydis::AddressWidth::_32)?,
@@ -44,8 +44,9 @@ pub fn linear_disassemble<'a>(
         let insn = decoder.decode(insn_buf);
 
         if let Ok(Some(insn)) = &insn {
-            // see discussion of linear vs thorough disassemble in this module doc for call_targets.
-            // thorough is 4x more expensive, with limited results.
+            // see discussion of linear vs thorough disassemble in this module doc for
+            // call_targets. thorough is 4x more expensive, with limited
+            // results.
 
             // linear disassembly:
             offset += insn.length as usize;

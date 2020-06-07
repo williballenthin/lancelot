@@ -1,10 +1,10 @@
-//! Parse the PE export table (if present) to find entries in find exports in executable sections.
+//! Parse the PE export table (if present) to find entries in find exports in
+//! executable sections.
 //!
 //! PEs may export data, which we'll assume isn't in an executable section.
 use anyhow::Result;
 
-use crate::loader::pe::PE;
-use crate::VA;
+use crate::{loader::pe::PE, VA};
 
 pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
     let executable_sections = pe.get_pe_executable_sections()?;
@@ -23,7 +23,8 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
         .filter(|&exp| exp.reexport.is_none())
         .map(|exp| base_address + exp.rva as u64)
         .filter(|&va| {
-            // PE may export data, so ensure the exports we track are executable (functions).
+            // PE may export data, so ensure the exports we track are executable
+            // (functions).
             executable_sections.iter().any(|sec| sec.contains(&va))
         })
         .collect();
@@ -33,8 +34,7 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

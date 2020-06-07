@@ -1,10 +1,12 @@
-//! Parse the PE SafeSEH table for references to valid exception handler functions.
+//! Parse the PE SafeSEH table for references to valid exception handler
+//! functions.
 //!
 //! This table referenced by the Load Config directory.
 //! The reference consists of: (offset: VA, count: u32/u64).
 //! The table is simply an array of RVAs to function start addresses.
 //!
-//! Therefore, we can follow the table reference and walk the array, pulling out functions.
+//! Therefore, we can follow the table reference and walk the array, pulling out
+//! functions.
 //!
 //! Bail if the table reference, table, or any of its entries don't make sense.
 //!
@@ -15,10 +17,7 @@
 use anyhow::Result;
 use log::debug;
 
-use crate::aspace::AddressSpace;
-use crate::loader::pe::PE;
-use crate::module::Arch;
-use crate::{RVA, VA};
+use crate::{aspace::AddressSpace, loader::pe::PE, module::Arch, RVA, VA};
 
 pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
@@ -106,8 +105,7 @@ pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

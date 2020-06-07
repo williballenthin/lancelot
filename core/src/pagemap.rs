@@ -3,8 +3,9 @@ use thiserror::Error;
 
 use super::RVA;
 
-// these are usize so that they're easy to work with for indexing within this module.
-// generally, this module should work with RVA/u64 as its public interface.
+// these are usize so that they're easy to work with for indexing within this
+// module. generally, this module should work with RVA/u64 as its public
+// interface.
 const PAGE_SIZE: usize = 0x1000;
 const PAGE_SHIFT: usize = 12;
 const PAGE_MASK: usize = 0xFFF;
@@ -43,7 +44,8 @@ impl<T: Default + Copy> Default for Page<T> {
     }
 }
 
-/// PageMap is a map-like data structure that stores `Copy` elements in pages of 0x1000.
+/// PageMap is a map-like data structure that stores `Copy` elements in pages of
+/// 0x1000.
 ///
 /// Its a good choice when representing lots of small elements that are found at
 /// contiguous indices. At the moment, indices are `RVA`.

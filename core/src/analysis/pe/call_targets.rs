@@ -1,11 +1,13 @@
-//! Search for functions by disassembling executable regions and finding `call` instructions.
+//! Search for functions by disassembling executable regions and finding `call`
+//! instructions.
 //!
 //! For each executable region, do a linear disassembly.
 //! For each instruction,
-//!  if the mnemonic is a `CALL`, then extract the first operand and try to follow it.
-//! When this target falls within an executable region,
+//!  if the mnemonic is a `CALL`, then extract the first operand and try to
+//! follow it. When this target falls within an executable region,
 //!  then consider the target a potential function.
-//! Rely on the caller to validate that the function looks reasonable, if necessary.
+//! Rely on the caller to validate that the function looks reasonable, if
+//! necessary.
 //!
 //! Instead of a linear disassembly, we could do a thorough disassembly -
 //! that is, attempt to disassemble *every* offset.
@@ -25,8 +27,9 @@
 //!   - no validation of the found functions (e.g. sane disassembly)
 //!
 //! Conclusion: thorough disassembly takes a lot more cycles at minimal gain.
-//! I've heard that Intel x86 is "self-synchronizing", though I don't have a reference.
-//! In any case, the effect is that linear disassembly should work well *most* of the time.
+//! I've heard that Intel x86 is "self-synchronizing", though I don't have a
+//! reference. In any case, the effect is that linear disassembly should work
+//! well *most* of the time.
 
 // TODO: detect thunks (call to unconditional jmp).
 
@@ -34,16 +37,12 @@ use log::debug;
 
 use anyhow::Result;
 
-use crate::analysis::dis;
-use crate::aspace::AddressSpace;
-use crate::loader::pe::PE;
-use crate::util;
-use crate::VA;
+use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, VA};
 
 pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
     let executable_sections = pe.get_pe_executable_sections()?;
-    let decoder = dis::get_disassember(pe)?;
+    let decoder = dis::get_disassembler(pe)?;
 
     let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
@@ -68,8 +67,8 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
                         // its located within a switch table in the .text section,
                         // so linear disassembly confuses it.
                         //
-                        //     mimi.exe:.text:0042A00D 9A 42 00 9D 9B 42 00  call    far ptr 42h:9B9D0042h
-                        //       ty: POINTER,
+                        //     mimi.exe:.text:0042A00D 9A 42 00 9D 9B 42 00  call    far ptr
+                        // 42h:9B9D0042h       ty: POINTER,
                         //       ptr: PointerInfo {
                         //         segment: 66,
                         //         offset: 2610757698,
@@ -82,10 +81,12 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
                         //
                         // > Far Jumps in Real-Address or Virtual-8086 Mode.
                         // > When executing a far jump in realaddress or virtual-8086 mode,
-                        // > the processor jumps to the code segment and offset specified with the target operand.
-                        // > Here the target operand specifies an absolute far address either directly with a
-                        // > pointer (ptr16:16 or ptr16:32) or indirectly with a memory location (m16:16 or m16:32).
-                        // > With the pointer method, the segment and address of the called procedure is encoded
+                        // > the processor jumps to the code segment and offset specified with the
+                        // target operand. > Here the target operand specifies
+                        // an absolute far address either directly with a
+                        // > pointer (ptr16:16 or ptr16:32) or indirectly with a memory location (m16:16
+                        // or m16:32). > With the pointer method, the segment
+                        // and address of the called procedure is encoded
                         // > in the instruction, using a 4-byte (16-bit operand size) or
                         // > 6-byte (32-bit operand size) far address immediate.
 
@@ -133,8 +134,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::aspace::AddressSpace;
-    use crate::rsrc::*;
+    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
 
     #[test]

@@ -2,8 +2,10 @@ use anyhow::Result;
 use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::aspace::AddressSpace;
-use crate::{aspace::AbsoluteAddressSpace, RVA, VA};
+use crate::{
+    aspace::{AbsoluteAddressSpace, AddressSpace},
+    RVA, VA,
+};
 
 #[derive(Error, Debug)]
 pub enum ModuleError {
@@ -43,9 +45,9 @@ pub struct Section {
     // source data, from the PE file, relative to file start.
     pub physical_range: std::ops::Range<RVA>,
     // as mapped into memory, relative to load address.
-    pub virtual_range: std::ops::Range<RVA>,
-    pub perms: Permissions,
-    pub name: String,
+    pub virtual_range:  std::ops::Range<RVA>,
+    pub perms:          Permissions,
+    pub name:           String,
 }
 
 /// An address space, as a file would be loaded into memory.
@@ -53,8 +55,8 @@ pub struct Section {
 /// base address, and collection of sections.
 /// This is the information that we'd expect to be common across formats.
 pub struct Module {
-    pub arch: Arch,
-    pub sections: Vec<Section>,
+    pub arch:          Arch,
+    pub sections:      Vec<Section>,
     pub address_space: AbsoluteAddressSpace,
 }
 

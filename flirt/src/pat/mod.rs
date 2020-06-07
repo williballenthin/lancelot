@@ -148,21 +148,21 @@ fn symbol(input: &str) -> IResult<&str, Symbol> {
         Offset::Public(v) => Ok((
             input,
             Symbol::Public(Name {
-                name: name.to_string(),
+                name:   name.to_string(),
                 offset: v as i64,
             }),
         )),
         Offset::Local(v) => Ok((
             input,
             Symbol::Local(Name {
-                name: name.to_string(),
+                name:   name.to_string(),
                 offset: v as i64,
             }),
         )),
         Offset::Reference(v) => Ok((
             input,
             Symbol::Reference(Name {
-                name: name.to_string(),
+                name:   name.to_string(),
                 offset: v as i64,
             }),
         )),
