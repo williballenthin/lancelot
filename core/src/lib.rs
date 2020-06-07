@@ -3,7 +3,6 @@ extern crate log;
 
 pub mod analysis;
 pub mod aspace;
-pub mod basicblock;
 pub mod config;
 pub mod loader;
 pub mod module;
