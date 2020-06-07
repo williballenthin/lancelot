@@ -2,9 +2,11 @@
 
 use anyhow::Result;
 
-use crate::aspace::RelativeAddressSpace;
-use crate::module::{Arch, Module, Permissions, Section};
-use crate::RVA;
+use crate::{
+    aspace::RelativeAddressSpace,
+    module::{Arch, Module, Permissions, Section},
+    RVA,
+};
 
 /// configure a global logger at level==DEBUG.
 pub fn init_logging() {
@@ -37,15 +39,15 @@ pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Result<Module> {
     Ok(Module {
         arch,
         sections: vec![Section {
-            name: "shellcode".to_string(),
-            perms: Permissions::RWX,
+            name:           "shellcode".to_string(),
+            perms:          Permissions::RWX,
             physical_range: std::ops::Range {
                 start: 0x0,
-                end: buf.len() as RVA,
+                end:   buf.len() as RVA,
             },
-            virtual_range: std::ops::Range {
+            virtual_range:  std::ops::Range {
                 start: 0x0,
-                end: buf.len() as RVA,
+                end:   buf.len() as RVA,
             },
         }],
         address_space: address_space.into_absolute(0x0)?,
