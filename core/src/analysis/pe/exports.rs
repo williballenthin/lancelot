@@ -24,7 +24,7 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
         .map(|exp| base_address + exp.rva as u64)
         .filter(|&va| {
             // PE may export data, so ensure the exports we track are executable (functions).
-            executable_sections.iter().find(|&sec| sec.contains(&va)).is_some()
+            executable_sections.iter().any(|sec| sec.contains(&va))
         })
         .collect();
 

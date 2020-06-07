@@ -1,6 +1,4 @@
-use bitflags;
 use failure::{Error, Fail};
-use inflate;
 use log::trace;
 use nom::{
     branch::alt,

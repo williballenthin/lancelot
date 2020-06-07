@@ -97,7 +97,7 @@ fn linear_disassemble<'a>(
         Some((insn_offset, insn))
     });
 
-    return Box::new(iter);
+    Box::new(iter)
 }
 
 pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
@@ -105,8 +105,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
     let executable_sections = pe.get_pe_executable_sections()?;
     let decoder = get_disassember(pe)?;
 
-    let is_valid_target =
-        |target: VA| -> bool { executable_sections.iter().find(|&sec| sec.contains(&target)).is_some() };
+    let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
     let mut call_count = 0usize;
     for section in executable_sections.iter() {

@@ -51,11 +51,11 @@ impl<'a> PE<'a> {
 
 fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
     match goblin::Object::parse(buf)? {
-        goblin::Object::PE(pe) => return Ok(pe),
-        goblin::Object::Elf(_) => return Err(PEError::FormatNotSupported("elf".to_string()).into()),
-        goblin::Object::Archive(_) => return Err(PEError::FormatNotSupported("archive".to_string()).into()),
-        goblin::Object::Mach(_) => return Err(PEError::FormatNotSupported("macho".to_string()).into()),
-        goblin::Object::Unknown(_) => return Err(PEError::FormatNotSupported("unknown".to_string()).into()),
+        goblin::Object::PE(pe) => Ok(pe),
+        goblin::Object::Elf(_) => Err(PEError::FormatNotSupported("elf".to_string()).into()),
+        goblin::Object::Archive(_) => Err(PEError::FormatNotSupported("archive".to_string()).into()),
+        goblin::Object::Mach(_) => Err(PEError::FormatNotSupported("macho".to_string()).into()),
+        goblin::Object::Unknown(_) => Err(PEError::FormatNotSupported("unknown".to_string()).into()),
     }
 }
 

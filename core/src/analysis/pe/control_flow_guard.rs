@@ -36,8 +36,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
     let executable_sections = pe.get_pe_executable_sections()?;
-    let is_valid_target =
-        |target: VA| -> bool { executable_sections.iter().find(|&sec| sec.contains(&target)).is_some() };
+    let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
     let load_config_directory_rva: RVA = {
         let opt_header = match pe.pe.header.optional_header {

@@ -88,8 +88,7 @@ pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> 
             .filter(|&va| {
                 executable_sections
                     .iter()
-                    .find(|&section| section.start <= va && section.end > va)
-                    .is_some()
+                    .any(|section| section.start <= va && section.end > va)
             })
             .collect())
     } else {
@@ -99,8 +98,7 @@ pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> 
             .filter(|&va| {
                 executable_sections
                     .iter()
-                    .find(|&section| section.start <= va && section.end > va)
-                    .is_some()
+                    .any(|section| section.start <= va && section.end > va)
             })
             .collect())
     }
