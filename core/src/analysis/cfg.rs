@@ -1,7 +1,9 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use anyhow::Result;
+use fnv::FnvHashMap;
 use log::debug;
+use smallvec::SmallVec;
 
 use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, VA};
 
@@ -14,17 +16,15 @@ pub struct BasicBlock {
     pub length: u64,
 
     /// VAs of start addresses of basic blocks that flow here.
-    // TODO: use SmallVec::<[VA; 1]>
-    pub predecessors: Vec<VA>,
+    pub predecessors: SmallVec<[VA; 1]>,
 
     /// VAs of start addresses of basic blocks that flow from here.
-    // TODO: use SmallVec::<[VA; 2]>
-    pub successors: Vec<VA>,
+    pub successors: SmallVec<[VA; 2]>,
 }
 
 pub struct CFG {
-    // TODO: use FNV because the keys are small.
-    basic_blocks: HashMap<VA, BasicBlock>,
+    // using FNV because the keys are small
+    basic_blocks: FnvHashMap<VA, BasicBlock>,
 }
 
 /// Does the given instruction have a fallthrough flow?
@@ -40,6 +40,13 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
         zydis::Mnemonic::CALL => true,
         _ => true,
     }
+}
+
+struct InstructionDescriptor {
+    addr: VA,
+    length: u64,
+    does_fallthrough: bool,
+    successors: SmallVec<[VA; 2]>,
 }
 
 pub fn build_cfg(pe: &PE, va: VA) -> Result<CFG> {

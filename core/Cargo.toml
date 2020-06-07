@@ -19,10 +19,11 @@ fern = "0.6"
 chrono = "0.4"
 anyhow = "1"
 thiserror = "1"
-
 better-panic = "0.2"
 md5 = "0.6"
 regex = "1"
+smallvec = "1"
+fnv = "1"
 
 flirt = { path = "../flirt" }
 
