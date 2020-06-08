@@ -88,4 +88,17 @@ impl Module {
             Arch::X64 => Ok(self.address_space.read_u64(offset)? as RVA),
         }
     }
+
+    pub fn probe_rva(&self, offset: RVA, perm: Permissions) -> bool {
+        self.sections
+            .iter()
+            .any(|section| section.virtual_range.contains(&offset) && section.perms.intersects(perm))
+    }
+
+    pub fn probe_va(&self, offset: VA, perm: Permissions) -> bool {
+        if offset < self.address_space.base_address {
+            return false;
+        }
+        self.probe_rva(offset - self.address_space.base_address, perm)
+    }
 }
