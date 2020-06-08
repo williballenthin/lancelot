@@ -1,7 +1,7 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use anyhow::Result;
-use fnv::FnvHashMap;
+use log::debug;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -10,6 +10,63 @@ use crate::{
     module::{Module, Permissions},
     util, VA,
 };
+
+/// The type and destination of a control flow.
+#[derive(Debug, Clone, Copy)]
+pub enum Flow {
+    // mov eax, eax
+    // push ebp
+    Fallthrough(VA),
+
+    // call [0x401000]
+    Call(VA),
+
+    // call [eax]
+    //IndirectCall { src: Rva },
+
+    // jmp 0x401000
+    UnconditionalJump(VA),
+
+    // jmp eax
+    //UnconditionalIndirectJump { src: Rva, dst: Rva },
+
+    // jnz 0x401000
+    ConditionalJump(VA),
+
+    // jnz eax
+    //ConditionalIndirectJump { src: Rva },
+
+    // cmov 0x1
+    ConditionalMove(VA),
+}
+
+impl Flow {
+    pub fn va(&self) -> VA {
+        match *self {
+            Flow::Fallthrough(va) => va,
+            Flow::Call(va) => va,
+            Flow::UnconditionalJump(va) => va,
+            Flow::ConditionalJump(va) => va,
+            Flow::ConditionalMove(va) => va,
+        }
+    }
+
+    /// create a new Flow with the va swapped out for the given va.
+    /// useful when you have a flow edge that you want to reverse
+    /// (e.g. from successor to predecessor).
+    pub fn swap(&self, va: VA) -> Flow {
+        match *self {
+            Flow::Fallthrough(_) => Flow::Fallthrough(va),
+            Flow::Call(_) => Flow::Call(va),
+            Flow::UnconditionalJump(_) => Flow::UnconditionalJump(va),
+            Flow::ConditionalJump(_) => Flow::ConditionalJump(va),
+            Flow::ConditionalMove(_) => Flow::ConditionalMove(va),
+        }
+    }
+}
+
+/// most instructions have 1-2 flows, so attempt to store the inline.
+type Flows = SmallVec<[Flow; 2]>;
 
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
@@ -20,15 +77,15 @@ pub struct BasicBlock {
     pub length: u64,
 
     /// VAs of start addresses of basic blocks that flow here.
-    pub predecessors: SmallVec<[VA; 1]>,
+    pub predecessors: Flows,
 
     /// VAs of start addresses of basic blocks that flow from here.
-    pub successors: SmallVec<[VA; 2]>,
+    pub successors: Flows,
 }
 
 pub struct CFG {
     // using FNV because the keys are small
-    basic_blocks: FnvHashMap<VA, BasicBlock>,
+    basic_blocks: BTreeMap<VA, BasicBlock>,
 }
 
 /// Does the given instruction have a fallthrough flow?
@@ -77,49 +134,6 @@ pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::Dec
         .iter()
         .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
 }
-
-/// The type and destination of a control flow.
-pub enum Flow {
-    // mov eax, eax
-    // push ebp
-    Fallthrough(VA),
-
-    // call [0x401000]
-    Call(VA),
-
-    // call [eax]
-    //IndirectCall { src: Rva },
-
-    // jmp 0x401000
-    UnconditionalJump(VA),
-
-    // jmp eax
-    //UnconditionalIndirectJump { src: Rva, dst: Rva },
-
-    // jnz 0x401000
-    ConditionalJump(VA),
-
-    // jnz eax
-    //ConditionalIndirectJump { src: Rva },
-
-    // cmov 0x1
-    ConditionalMove(VA),
-}
-
-impl Flow {
-    pub fn va(&self) -> VA {
-        match *self {
-            Flow::Fallthrough(va) => va,
-            Flow::Call(va) => va,
-            Flow::UnconditionalJump(va) => va,
-            Flow::ConditionalJump(va) => va,
-            Flow::ConditionalMove(va) => va,
-        }
-    }
-}
-
-/// most instructions have 1-2 flows, so attempt to store the inline.
-type Flows = SmallVec<[Flow; 2]>;
 
 /// ## test simple memory ptr operand
 ///
@@ -517,18 +531,42 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
 }
 
 struct InstructionDescriptor {
-    addr:             VA,
-    length:           u64,
-    does_fallthrough: bool,
-    successors:       SmallVec<[Flow; 2]>,
+    addr: VA,
+    length: u64,
+    successors: Flows,
 }
 
-pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
+impl InstructionDescriptor {
+    fn does_fallthrough(&self) -> bool {
+        self.successors.iter().any(|succ| match succ {
+            Flow::Fallthrough(_) => true,
+            _ => false,
+        })
+    }
+}
+
+fn fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
+    Box::new(flows.iter().filter(|flow| match flow {
+        Flow::Fallthrough(_) => true,
+        _ => false,
+    }))
+}
+
+fn non_fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
+    Box::new(flows.iter().filter(|flow| match flow {
+        Flow::Fallthrough(_) => false,
+        _ => true,
+    }))
+}
+
+fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, InstructionDescriptor>> {
     let decoder = dis::get_disassembler(module)?;
     let mut insn_buf = [0u8; 16];
 
     let mut queue: VecDeque<VA> = Default::default();
     queue.push_back(va);
+
+    let mut insns: BTreeMap<VA, InstructionDescriptor> = Default::default();
 
     loop {
         let va = match queue.pop_back() {
@@ -536,18 +574,215 @@ pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
             Some(va) => va,
         };
 
+        if insns.contains_key(&va) {
+            continue;
+        }
+
         // TODO: better error handling.
+        // TODO: can optimize here by re-using buffers.
         module.address_space.read_into(va, &mut insn_buf)?;
 
         // TODO: better error handling.
         if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
-            for target in get_insn_flow(module, va, &insn)?.iter() {
+            let successors: Flows = get_insn_flow(module, va, &insn)?
+                // remove CALL instructions for cfg reconstruction.
+                .into_iter()
+                .filter(|succ| match succ {
+                    Flow::Call(_) => false,
+                    _ => true,
+                })
+                .collect();
+
+            for target in successors.iter() {
                 queue.push_back(target.va());
             }
+
+            let desc = InstructionDescriptor {
+                addr: va,
+                length: insn.length as u64,
+                successors,
+            };
+
+            insns.insert(va, desc);
         }
+    }
+
+    Ok(insns)
+}
+
+// compute successors for an instruction (specified by VA).
+/// this function should not fail.
+fn compute_successors(insns: &BTreeMap<VA, InstructionDescriptor>) -> BTreeMap<VA, Flows> {
+    let mut successors: BTreeMap<VA, Flows> = Default::default();
+
+    for &va in insns.keys() {
+        successors.insert(va, smallvec![]);
+    }
+
+    for (&va, desc) in insns.iter() {
+        successors
+            .entry(va)
+            .and_modify(|l: &mut Flows| l.extend(desc.successors.clone()));
+    }
+
+    successors
+}
+
+// compute predecessors for an instruction (specified by VA).
+/// this function should not fail.
+fn compute_predecessors(insns: &BTreeMap<VA, InstructionDescriptor>) -> BTreeMap<VA, Flows> {
+    let mut predecessors: BTreeMap<VA, Flows> = Default::default();
+
+    for &va in insns.keys() {
+        predecessors.insert(va, smallvec![]);
+    }
+
+    for (&va, desc) in insns.iter() {
+        for succ in desc.successors.iter() {
+            let flow = succ.swap(va);
+            predecessors.entry(succ.va()).and_modify(|l: &mut Flows| l.push(flow));
+        }
+    }
+
+    predecessors
+}
+
+/// this function should not fail.
+fn compute_basic_blocks(
+    insns: &BTreeMap<VA, InstructionDescriptor>,
+    predecessors: &BTreeMap<VA, Flows>,
+    successors: &BTreeMap<VA, Flows>,
+) -> BTreeMap<VA, BasicBlock> {
+    let starts: Vec<VA> = insns
+        .keys()
+        .filter(|&va| {
+            let preds = &predecessors[va];
+
+            // its a root, because nothing flows here.
+            if preds.len() == 0 {
+                return true;
+            }
+
+            // its a bb start, because there's a branch here.
+            if non_fallthrough_flows(preds).next().is_some() {
+                return true;
+            }
+
+            // its a bb start, because the instruction that fallthrough here
+            // also branched somewhere else.
+            for pred in fallthrough_flows(preds) {
+                if non_fallthrough_flows(&successors[&pred.va()]).next().is_some() {
+                    return true;
+                }
+            }
+
+            return false;
+        })
+        .cloned()
+        .collect();
+
+    let mut basic_blocks: BTreeMap<VA, BasicBlock> = Default::default();
+    let mut basic_blocks_by_last_insn: BTreeMap<VA, VA> = Default::default();
+    for &start in starts.iter() {
+        let mut va = start;
+        let mut insn = &insns[&va];
+
+        let mut bb = BasicBlock {
+            addr: va,
+            length: insn.length,
+            predecessors: Default::default(),
+            successors: Default::default(),
+        };
+
+        loop {
+            let flows = &successors[&va];
+
+            if fallthrough_flows(flows).next().is_none() {
+                // end of bb.
+                // for example: ret has no fallthrough, and is end of basic block.
+                break;
+            }
+
+            if non_fallthrough_flows(flows).next().is_some() {
+                // end of bb.
+                // for example: jnz has a non-fallthrough flow from it.
+                break;
+            }
+
+            let next_va = va + insn.length;
+            if non_fallthrough_flows(&predecessors[&next_va]).next().is_some() {
+                // end of bb.
+                // the next instruction is not part of this bb.
+                // for example, the target of a fallthrough AND a jump from elsewhere.
+                break;
+            }
+
+            bb.length += insn.length;
+
+            va = next_va;
+            insn = &insns[&next_va];
+        }
+        // insn is the last instruction of the current basic block.
+        // va is the address of the last instruction of the current basic block.
+
+        bb.successors = successors[&va].clone();
+
+        basic_blocks.insert(start, bb);
+        basic_blocks_by_last_insn.insert(va, start);
+    }
+
+    for (va, bb) in basic_blocks.iter_mut() {
+        bb.predecessors.extend(
+            predecessors[va]
+                .iter()
+                .map(|pred| pred.swap(basic_blocks_by_last_insn[&pred.va()])),
+        )
+    }
+
+    basic_blocks
+}
+
+pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
+    let insns = read_insn_descriptors(module, va)?;
+    let successors = compute_successors(&insns);
+    let predecessors = compute_predecessors(&insns);
+
+    let mut vas: Vec<VA> = insns.keys().cloned().collect();
+    vas.sort();
+    for va in vas.iter() {
+        debug!("{:#x}", va)
+    }
+
+    let bbs = compute_basic_blocks(&insns, &predecessors, &successors);
+    for bb in bbs.values() {
+        debug!("bb: {:#x}", bb.addr);
     }
 
     Ok(CFG {
         basic_blocks: Default::default(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::cfg::build_cfg;
+    use crate::test::init_logging;
+    use crate::{aspace::AddressSpace, rsrc::*};
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        init_logging();
+
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        // this function has:
+        //   - api call at 0x1800527F8
+        //   - cmovns at 0x180052841
+        //   - conditional branches at 0x180052829
+        let cfg = build_cfg(&pe.module, 0x1800527B0)?;
+
+        Ok(())
+    }
 }
