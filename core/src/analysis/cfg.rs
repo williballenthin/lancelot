@@ -7,7 +7,6 @@ use smallvec::{smallvec, SmallVec};
 use crate::{
     analysis::dis,
     aspace::AddressSpace,
-    loader::pe::PE,
     module::{Module, Permissions},
     util, VA,
 };
@@ -70,30 +69,53 @@ fn print_op(_op: &zydis::DecodedOperand) {
     */
 }
 
+/// zydis supports implicit operands,
+/// which we don't currently use in our analysis.
+/// so, fetch the first explicit operand to an instruction.
 pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::DecodedOperand> {
     insn.operands
         .iter()
         .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
 }
 
+/// The type and destination of a control flow.
 pub enum Flow {
     // mov eax, eax
     // push ebp
     Fallthrough(VA),
+
     // call [0x401000]
     Call(VA),
+
     // call [eax]
     //IndirectCall { src: Rva },
+
     // jmp 0x401000
     UnconditionalJump(VA),
+
     // jmp eax
     //UnconditionalIndirectJump { src: Rva, dst: Rva },
+
     // jnz 0x401000
     ConditionalJump(VA),
+
     // jnz eax
     //ConditionalIndirectJump { src: Rva },
+
     // cmov 0x1
     ConditionalMove(VA),
+}
+
+impl Flow {
+    fn va(&self) -> VA {
+        match *self {
+            Flow::Fallthrough(va) => va,
+            Flow::Call(va) => va,
+            Flow::UnconditionalJump(va) => va,
+            Flow::ConditionalJump(va) => va,
+            Flow::ConditionalMove(va) => va,
+        }
+    }
 }
 
 /// most instructions have 1-2 flows, so attempt to store the inline.
@@ -433,14 +455,12 @@ pub fn get_cmov_insn_flow(va: VA, insn: &zydis::DecodedInstruction) -> Result<Fl
 }
 
 pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
-    match insn.mnemonic {
-        zydis::Mnemonic::CALL => get_call_insn_flow(module, va, insn),
+    let mut flows = match insn.mnemonic {
+        zydis::Mnemonic::CALL => get_call_insn_flow(module, va, insn)?,
 
-        zydis::Mnemonic::JMP => get_jmp_insn_flow(module, va, insn),
+        zydis::Mnemonic::JMP => get_jmp_insn_flow(module, va, insn)?,
 
-        zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD | zydis::Mnemonic::IRETQ => {
-            Ok(smallvec![])
-        }
+        zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD | zydis::Mnemonic::IRETQ => smallvec![],
 
         zydis::Mnemonic::JB
         | zydis::Mnemonic::JBE
@@ -462,7 +482,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
         | zydis::Mnemonic::JP
         | zydis::Mnemonic::JRCXZ
         | zydis::Mnemonic::JS
-        | zydis::Mnemonic::JZ => get_cjmp_insn_flow(module, va, insn),
+        | zydis::Mnemonic::JZ => get_cjmp_insn_flow(module, va, insn)?,
 
         zydis::Mnemonic::CMOVB
         | zydis::Mnemonic::CMOVBE
@@ -479,11 +499,17 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
         | zydis::Mnemonic::CMOVO
         | zydis::Mnemonic::CMOVP
         | zydis::Mnemonic::CMOVS
-        | zydis::Mnemonic::CMOVZ => get_cmov_insn_flow(va, insn),
+        | zydis::Mnemonic::CMOVZ => get_cmov_insn_flow(va, insn)?,
 
         // TODO: syscall, sysexit, sysret, vmcall, vmmcall
-        _ => Ok(Default::default()),
+        _ => smallvec![],
+    };
+
+    if does_insn_fallthrough(&insn) {
+        flows.push(Flow::Fallthrough(va + insn.length as u64))
     }
+
+    Ok(flows)
 }
 
 struct InstructionDescriptor {
@@ -493,8 +519,8 @@ struct InstructionDescriptor {
     successors:       SmallVec<[Flow; 2]>,
 }
 
-pub fn build_cfg(pe: &PE, va: VA) -> Result<CFG> {
-    let decoder = dis::get_disassembler(pe)?;
+pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
+    let decoder = dis::get_disassembler(module)?;
     let mut insn_buf = [0u8; 16];
 
     let mut queue: VecDeque<VA> = Default::default();
@@ -507,17 +533,13 @@ pub fn build_cfg(pe: &PE, va: VA) -> Result<CFG> {
         };
 
         // TODO: better error handling.
-        pe.module.address_space.read_into(va, &mut insn_buf)?;
+        module.address_space.read_into(va, &mut insn_buf)?;
 
         // TODO: better error handling.
         if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
-            let does_fallthrough = does_insn_fallthrough(&insn);
-
-            if does_fallthrough {
-                queue.push_back(va + insn.length as u64);
+            for target in get_insn_flow(module, va, &insn)?.iter() {
+                queue.push_back(target.va());
             }
-
-            for target in get_insn_flow(&pe.module, va, &insn)?.iter() {}
         }
     }
 

@@ -42,7 +42,7 @@ use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, VA};
 pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
     let executable_sections = pe.get_pe_executable_sections()?;
-    let decoder = dis::get_disassembler(pe)?;
+    let decoder = dis::get_disassembler(&pe.module)?;
 
     let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
