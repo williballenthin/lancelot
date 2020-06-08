@@ -758,9 +758,7 @@ pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
         debug!("bb: {:#x}", bb.addr);
     }
 
-    Ok(CFG {
-        basic_blocks: Default::default(),
-    })
+    Ok(CFG { basic_blocks: bbs })
 }
 
 #[cfg(test)]
@@ -772,7 +770,7 @@ mod tests {
 
     #[test]
     fn k32() -> Result<()> {
-        init_logging();
+        //init_logging();
 
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::load_pe(&buf)?;
@@ -782,6 +780,7 @@ mod tests {
         //   - cmovns at 0x180052841
         //   - conditional branches at 0x180052829
         let cfg = build_cfg(&pe.module, 0x1800527B0)?;
+        assert_eq!(cfg.basic_blocks.len(), 4);
 
         Ok(())
     }
