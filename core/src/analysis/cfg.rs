@@ -108,15 +108,13 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
 fn va_add_signed(va: VA, rva: i64) -> Option<VA> {
     if rva >= 0 {
         va.checked_add(rva as u64)
+    } else if i64::abs(rva) as u64 > va {
+        // this would overflow, which:
+        //  1. we don't expect, and
+        //  2. we can't handle
+        None
     } else {
-        if i64::abs(rva) as u64 > va {
-            // this would overflow, which:
-            //  1. we don't expect, and
-            //  2. we can't handle
-            None
-        } else {
-            Some(va - i64::abs(rva) as u64)
-        }
+        Some(va - i64::abs(rva) as u64)
     }
 }
 
@@ -648,7 +646,7 @@ fn compute_basic_blocks(
             let preds = &predecessors[va];
 
             // its a root, because nothing flows here.
-            if preds.len() == 0 {
+            if preds.is_empty() {
                 return true;
             }
 
@@ -665,7 +663,7 @@ fn compute_basic_blocks(
                 }
             }
 
-            return false;
+            false
         })
         .cloned()
         .collect();

@@ -1,7 +1,4 @@
 use anyhow::Result;
-use better_panic;
-use chrono;
-use fern;
 use log::{debug, error, info};
 #[macro_use]
 extern crate clap;
