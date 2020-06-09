@@ -84,7 +84,9 @@ pub struct BasicBlock {
 }
 
 pub struct CFG {
-    // using FNV because the keys are small
+    // we use a btree so that we can conveniently iterate in order.
+    // alternative choice would be an FNV hash map,
+    // because the keys are small.
     basic_blocks: BTreeMap<VA, BasicBlock>,
 }
 
@@ -578,11 +580,9 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
             continue;
         }
 
-        // TODO: better error handling.
-        // TODO: can optimize here by re-using buffers.
+        // TODO: optimize here by re-using buffers.
         module.address_space.read_into(va, &mut insn_buf)?;
 
-        // TODO: better error handling.
         if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
             let successors: Flows = get_insn_flow(module, va, &insn)?
                 // remove CALL instructions for cfg reconstruction.
