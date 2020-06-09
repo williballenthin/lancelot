@@ -14,5 +14,5 @@ pub mod util;
 pub mod rsrc;
 pub mod test;
 
-type VA = u64;
-type RVA = u64;
+pub type VA = u64;
+pub type RVA = u64;

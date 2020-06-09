@@ -87,7 +87,7 @@ pub struct CFG {
     // we use a btree so that we can conveniently iterate in order.
     // alternative choice would be an FNV hash map,
     // because the keys are small.
-    basic_blocks: BTreeMap<VA, BasicBlock>,
+    pub basic_blocks: BTreeMap<VA, BasicBlock>,
 }
 
 /// Does the given instruction have a fallthrough flow?
@@ -533,18 +533,8 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
 }
 
 struct InstructionDescriptor {
-    addr: VA,
     length: u64,
     successors: Flows,
-}
-
-impl InstructionDescriptor {
-    fn does_fallthrough(&self) -> bool {
-        self.successors.iter().any(|succ| match succ {
-            Flow::Fallthrough(_) => true,
-            _ => false,
-        })
-    }
 }
 
 fn fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
@@ -598,7 +588,6 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
             }
 
             let desc = InstructionDescriptor {
-                addr: va,
                 length: insn.length as u64,
                 successors,
             };
