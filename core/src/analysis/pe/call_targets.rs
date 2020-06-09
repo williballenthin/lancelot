@@ -130,7 +130,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*, test::init_logging};
+    use crate::rsrc::*;
     use anyhow::Result;
 
     #[test]

@@ -193,7 +193,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::rsrc::*;
     use anyhow::Result;
 
     #[test]

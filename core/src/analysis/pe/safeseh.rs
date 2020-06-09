@@ -107,7 +107,7 @@ pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::rsrc::*;
     use anyhow::Result;
 
     #[test]

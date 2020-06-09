@@ -756,7 +756,7 @@ pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{analysis::cfg::build_cfg, aspace::AddressSpace, rsrc::*, test::init_logging};
+    use crate::{analysis::cfg::build_cfg, rsrc::*};
     use anyhow::Result;
 
     #[test]

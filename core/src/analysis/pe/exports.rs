@@ -32,7 +32,7 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::rsrc::*;
     use anyhow::Result;
 
     #[test]
