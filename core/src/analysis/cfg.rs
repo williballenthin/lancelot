@@ -532,7 +532,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
 }
 
 struct InstructionDescriptor {
-    length: u64,
+    length:     u64,
     successors: Flows,
 }
 
@@ -680,10 +680,10 @@ fn compute_basic_blocks(
         let mut insn = &insns[&va];
 
         let mut bb = BasicBlock {
-            addr: va,
-            length: 0,
+            addr:         va,
+            length:       0,
             predecessors: Default::default(),
-            successors: Default::default(),
+            successors:   Default::default(),
         };
 
         loop {

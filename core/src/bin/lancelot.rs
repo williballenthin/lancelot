@@ -33,7 +33,7 @@ fn render_insn_buf(buf: &[u8], width: usize) -> String {
         }
     }
 
-    let out = out.trim_end_matches(" ").to_string();
+    let out = out.trim_end_matches(' ').to_string();
     if out.len() > width {
         out[..width].to_string()
     } else {
