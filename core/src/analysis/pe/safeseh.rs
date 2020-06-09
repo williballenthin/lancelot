@@ -17,13 +17,15 @@
 use anyhow::Result;
 use log::debug;
 
-use crate::{aspace::AddressSpace, loader::pe::PE, module::Arch, RVA, VA};
+use crate::{
+    aspace::AddressSpace,
+    loader::pe::PE,
+    module::{Arch, Permissions},
+    RVA, VA,
+};
 
 pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
-
-    let executable_sections = pe.get_pe_executable_sections()?;
-    let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
     let load_config_directory_rva: RVA = {
         let opt_header = match pe.pe.header.optional_header {
@@ -91,7 +93,7 @@ pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
         let target = pe.module.read_rva_at_va(offset)?;
         let target = target as u64 + pe.module.address_space.base_address;
 
-        if is_valid_target(target) {
+        if pe.module.probe_va(target, Permissions::X) {
             ret.push(target);
         } else {
             debug!("unexpected non-executable SafeSEH target: {:#x}", target);
@@ -124,8 +126,8 @@ mod tests {
         let buf = get_buf(Rsrc::TINY);
         let pe = crate::loader::pe::load_pe(&buf)?;
 
-        // no optional header
-        assert!(crate::analysis::pe::call_targets::find_pe_call_targets(&pe).is_err());
+        let fns = crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }

@@ -25,7 +25,12 @@ use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 use log::debug;
 
-use crate::{aspace::AddressSpace, loader::pe::PE, module::Arch, RVA, VA};
+use crate::{
+    aspace::AddressSpace,
+    loader::pe::PE,
+    module::{Arch, Permissions},
+    RVA, VA,
+};
 
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK: u32 = 0xF000_0000;
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT: u32 = 28;
@@ -33,9 +38,6 @@ const IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT: u32 = 0x400;
 
 pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
-
-    let executable_sections = pe.get_pe_executable_sections()?;
-    let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
 
     let load_config_directory_rva: RVA = {
         let opt_header = match pe.pe.header.optional_header {
@@ -137,7 +139,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
         for entry_buf in cfg_table.chunks_exact(cfg_table_entry_size) {
             let target = pe.module.address_space.base_address + LittleEndian::read_i32(entry_buf) as u64;
 
-            if is_valid_target(target) {
+            if pe.module.probe_va(target, Permissions::X) {
                 ret.push(target);
             } else {
                 debug!("unexpected non-executable CFG target: {:#x}", target);
@@ -157,7 +159,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             );
 
             if let Ok(guard_check_icall) = pe.module.read_va_at_va(guard_check_icall_fptr) {
-                if is_valid_target(guard_check_icall) {
+                if pe.module.probe_va(guard_check_icall, Permissions::X) {
                     debug!("CF Guard check icall: {:#x}", guard_check_icall);
                     ret.push(guard_check_icall);
                 }
@@ -178,7 +180,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             );
 
             if let Ok(guard_dispatch_icall) = pe.module.read_va_at_va(guard_dispatch_icall_fptr) {
-                if is_valid_target(guard_dispatch_icall) {
+                if pe.module.probe_va(guard_dispatch_icall, Permissions::X) {
                     debug!("CF Guard dispatch icall: {:#x}", guard_dispatch_icall);
                     ret.push(guard_dispatch_icall);
                 }
@@ -210,8 +212,8 @@ mod tests {
         let buf = get_buf(Rsrc::TINY);
         let pe = crate::loader::pe::load_pe(&buf)?;
 
-        // no optional header
-        assert!(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe).is_err());
+        let fns = crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }

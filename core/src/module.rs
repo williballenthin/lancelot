@@ -13,7 +13,7 @@ pub enum ModuleError {
     InvalidAddress(u64),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Arch {
     X32,
     X64,
@@ -44,8 +44,8 @@ bitflags! {
 pub struct Section {
     // source data, from the PE file, relative to file start.
     pub physical_range: std::ops::Range<RVA>,
-    // as mapped into memory, relative to load address.
-    pub virtual_range:  std::ops::Range<RVA>,
+    // as mapped into memory with absolute addresses.
+    pub virtual_range:  std::ops::Range<VA>,
     pub perms:          Permissions,
     pub name:           String,
 }
@@ -89,16 +89,14 @@ impl Module {
         }
     }
 
-    pub fn probe_rva(&self, offset: RVA, perm: Permissions) -> bool {
+    pub fn probe_va(&self, offset: VA, perm: Permissions) -> bool {
         self.sections
             .iter()
             .any(|section| section.virtual_range.contains(&offset) && section.perms.intersects(perm))
     }
 
-    pub fn probe_va(&self, offset: VA, perm: Permissions) -> bool {
-        if offset < self.address_space.base_address {
-            return false;
-        }
-        self.probe_rva(offset - self.address_space.base_address, perm)
+    pub fn probe_rva(&self, offset: RVA, perm: Permissions) -> bool {
+        let va = self.address_space.base_address + offset;
+        self.probe_va(va, perm)
     }
 }

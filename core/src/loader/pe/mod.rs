@@ -24,30 +24,18 @@ pub enum PEError {
 /// The struct has a reference to the lifetime of the underlying data that's
 /// parsed into the PE.
 pub struct PE<'a> {
-    pub pe:     goblin::pe::PE<'a>,
+    pub pe: goblin::pe::PE<'a>,
     pub module: Module,
 }
 
 impl<'a> PE<'a> {
-    pub fn get_pe_executable_sections(&self) -> Result<Vec<std::ops::Range<VA>>> {
-        let image_base = self
-            .pe
-            .header
-            .optional_header
-            .ok_or_else(|| PEError::MalformedPEFile("no optional header".to_string()))?
-            .windows_fields
-            .image_base;
-
-        Ok(self
-            .pe
-            .sections
-            .iter()
-            .filter(|section| section.characteristics & goblin::pe::section_table::IMAGE_SCN_MEM_EXECUTE > 0)
-            .map(|section| std::ops::Range {
-                start: (image_base + section.virtual_address as u64) as VA,
-                end:   (image_base + section.virtual_address as u64 + section.virtual_size as u64) as VA,
-            })
-            .collect())
+    pub fn executable_sections<'b>(self: &'b PE<'a>) -> Box<dyn Iterator<Item = &Section> + 'b> {
+        Box::new(
+            self.module
+                .sections
+                .iter()
+                .filter(|section| section.perms.intersects(Permissions::X)),
+        )
     }
 }
 
@@ -61,7 +49,7 @@ fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
     }
 }
 
-fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE) -> Result<Section> {
+fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<Section> {
     let hdr_raw_size = match pe.header.optional_header {
         Some(opt) => opt.windows_fields.size_of_headers,
         // assumption: header is at most 0x200 bytes.
@@ -91,14 +79,14 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE) -> Result<Section> {
     Ok(Section {
         physical_range: std::ops::Range {
             start: 0x0,
-            end:   hdr_raw_size as u64,
+            end: hdr_raw_size as u64,
         },
-        virtual_range:  std::ops::Range {
-            start: 0x0,
-            end:   hdr_virt_size,
+        virtual_range: std::ops::Range {
+            start: base_address,
+            end: base_address + hdr_virt_size,
         },
-        perms:          Permissions::R,
-        name:           "header".to_string(),
+        perms: Permissions::R,
+        name: "header".to_string(),
     })
 }
 
@@ -111,7 +99,7 @@ const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
-fn load_pe_section(section: &goblin::pe::section_table::SectionTable) -> Result<Section> {
+fn load_pe_section(base_address: VA, section: &goblin::pe::section_table::SectionTable) -> Result<Section> {
     let name = String::from_utf8_lossy(&section.name[..])
         .into_owned()
         .trim_end_matches('\u{0}')
@@ -134,14 +122,20 @@ fn load_pe_section(section: &goblin::pe::section_table::SectionTable) -> Result<
         perms.insert(Permissions::X);
     }
 
+    debug!(
+        "pe: section: {} at {:#x}",
+        name,
+        base_address + section.virtual_address as u64
+    );
+
     Ok(Section {
         physical_range: std::ops::Range {
             start: section.pointer_to_raw_data as u64,
-            end:   (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
+            end: (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
         },
         virtual_range: std::ops::Range {
-            start: section.virtual_address as u64,
-            end:   section.virtual_address as u64 + virtual_size,
+            start: base_address + section.virtual_address as u64,
+            end: base_address + section.virtual_address as u64 + virtual_size,
         },
         perms,
         name,
@@ -155,29 +149,47 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
         false => Arch::X32,
         true => Arch::X64,
     };
+    debug!("pe: arch: {:?}", arch);
 
     let base_address = match pe.header.optional_header {
         Some(opt) => opt.windows_fields.image_base,
         _ => {
-            debug!("using default base address: 0x40:000");
+            debug!("pe: base address: using default: 0x40:000");
             0x40_000
         }
     };
+    debug!("pe: base address: {:#x}", base_address);
 
-    let mut sections = vec![load_pe_header(buf, &pe)?];
+    let mut sections = vec![load_pe_header(buf, &pe, base_address)?];
     for section in pe.sections.iter() {
-        sections.push(load_pe_section(section)?);
+        sections.push(load_pe_section(base_address, section)?);
     }
 
     let max_address = sections.iter().map(|sec| sec.virtual_range.end).max().unwrap();
+    let max_page_address = util::align(max_address as u64, 0x1000) - base_address;
+    debug!("pe: address space: capacity: {:#x}", max_page_address);
 
-    let max_page_address = util::align(max_address as u64, 0x1000);
-    debug!("data address space capacity: {:#x}", max_page_address);
     let mut address_space = RelativeAddressSpace::with_capacity(max_page_address);
 
     for section in sections.iter() {
-        let secbuf = &buf[section.physical_range.start as usize..section.physical_range.end as usize];
-        address_space.map.writezx(section.virtual_range.start, secbuf)?;
+        let pstart = section.physical_range.start as usize;
+        let pend = section.physical_range.end as usize;
+        let pbuf = &buf[pstart..pend];
+
+        // the section range contains VAs,
+        // while we're writing to the RelativeAddressSpace.
+        // so shift down by `base_address`.
+        let vstart = section.virtual_range.start;
+        let rstart = vstart - base_address;
+        let vsize = util::align(pbuf.len() as u64, 0x1000);
+        let vend = vstart + vsize;
+
+        address_space.map.writezx(rstart, pbuf)?;
+
+        debug!(
+            "pe: address space: mapped {:#x} - {:#x} {:?}",
+            vstart, vend, section.perms
+        );
     }
 
     let module = Module {
@@ -186,13 +198,15 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
         address_space: address_space.into_absolute(base_address)?,
     };
 
+    debug!("pe: loaded");
     Ok(PE { pe, module })
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*};
     use anyhow::Result;
+
+    use crate::{aspace::AddressSpace, rsrc::*};
 
     #[test]
     fn base_address() -> Result<()> {

@@ -31,11 +31,9 @@
 use anyhow::Result;
 use byteorder::ByteOrder;
 
-use crate::{loader::pe::PE, VA};
+use crate::{loader::pe::PE, module::Permissions, VA};
 
 pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> Result<Vec<VA>> {
-    let executable_sections = pe.get_pe_executable_sections()?;
-
     // TODO: this may find jump table entries, such as 0x401B74 in nop.exe.
     //
     //     .text:00401B74 jpt_40141F      dd offset loc_4015B6    ; DATA XREF:
@@ -94,21 +92,13 @@ pub fn _find_pe_nonrelocated_executable_pointers<'a>(buf: &'a [u8], pe: &PE) -> 
         Ok(buf
             .chunks_exact(8)
             .map(|b| byteorder::LittleEndian::read_u64(b) as VA)
-            .filter(|&va| {
-                executable_sections
-                    .iter()
-                    .any(|section| section.start <= va && section.end > va)
-            })
+            .filter(|&va| pe.module.probe_va(va, Permissions::X))
             .collect())
     } else {
         Ok(buf
             .chunks_exact(4)
             .map(|b| byteorder::LittleEndian::read_u32(b) as VA)
-            .filter(|&va| {
-                executable_sections
-                    .iter()
-                    .any(|section| section.start <= va && section.end > va)
-            })
+            .filter(|&va| pe.module.probe_va(va, Permissions::X))
             .collect())
     }
 }

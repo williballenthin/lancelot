@@ -755,8 +755,6 @@ mod tests {
 
     #[test]
     fn k32() -> Result<()> {
-        //init_logging();
-
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::load_pe(&buf)?;
 

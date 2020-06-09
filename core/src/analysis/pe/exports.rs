@@ -4,11 +4,9 @@
 //! PEs may export data, which we'll assume isn't in an executable section.
 use anyhow::Result;
 
-use crate::{loader::pe::PE, VA};
+use crate::{loader::pe::PE, module::Permissions, VA};
 
 pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
-    let executable_sections = pe.get_pe_executable_sections()?;
-
     let base_address = match pe.pe.header.optional_header {
         Some(opt) => opt.windows_fields.image_base,
         _ => 0x40_000,
@@ -25,7 +23,7 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
         .filter(|&va| {
             // PE may export data, so ensure the exports we track are executable
             // (functions).
-            executable_sections.iter().any(|sec| sec.contains(&va))
+            pe.module.probe_va(va, Permissions::X)
         })
         .collect();
 
@@ -53,8 +51,8 @@ mod tests {
         let buf = get_buf(Rsrc::TINY);
         let pe = crate::loader::pe::load_pe(&buf)?;
 
-        // no optional header
-        assert!(crate::analysis::pe::exports::find_pe_exports(&pe).is_err());
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }

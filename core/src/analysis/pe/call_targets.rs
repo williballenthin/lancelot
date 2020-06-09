@@ -37,28 +37,24 @@ use log::debug;
 
 use anyhow::Result;
 
-use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, VA};
+use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, module::Permissions, util, VA};
 
 pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
-    let executable_sections = pe.get_pe_executable_sections()?;
     let decoder = dis::get_disassembler(&pe.module)?;
 
-    let is_valid_target = |target: VA| -> bool { executable_sections.iter().any(|sec| sec.contains(&target)) };
-
     let mut call_count = 0usize;
-    for section in executable_sections.iter() {
-        let sec_buf = pe.module.address_space.relative.read_buf(
-            section.start - pe.module.address_space.base_address,
-            (section.end - pe.module.address_space.base_address) as usize,
-        )?;
+    for section in pe.executable_sections() {
+        let vstart: VA = section.virtual_range.start;
+        let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
+        let sec_buf = pe.module.address_space.read_buf(vstart, vsize)?;
         for (insn_offset, insn) in dis::linear_disassemble(&decoder, &sec_buf) {
             if let Ok(Some(insn)) = insn {
                 if insn.meta.category != zydis::InstructionCategory::CALL {
                     continue;
                 }
 
-                let insn_va = section.start + insn_offset as u64;
+                let insn_va: VA = vstart + insn_offset as u64;
                 let op0 = &insn.operands[0];
 
                 match op0.ty {
@@ -91,7 +87,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
                         // > 6-byte (32-bit operand size) far address immediate.
 
                         let target = op0.ptr.offset as u64;
-                        if is_valid_target(target) {
+                        if pe.module.probe_va(target, Permissions::X) {
                             ret.push(target);
                         }
                     }
@@ -111,7 +107,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
                             };
 
                             let target = ((insn_va + insn.length as u64) as i64 + imm) as u64;
-                            if is_valid_target(target) {
+                            if pe.module.probe_va(target, Permissions::X) {
                                 ret.push(target);
                             }
                         } else {
@@ -134,7 +130,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::{aspace::AddressSpace, rsrc::*, test::init_logging};
     use anyhow::Result;
 
     #[test]
@@ -153,8 +149,8 @@ mod tests {
         let buf = get_buf(Rsrc::TINY);
         let pe = crate::loader::pe::load_pe(&buf)?;
 
-        // no optional header
-        assert!(crate::analysis::pe::call_targets::find_pe_call_targets(&pe).is_err());
+        let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }
