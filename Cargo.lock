@@ -263,6 +263,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "indoc"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -330,6 +335,7 @@ dependencies = [
  "flirt 0.1.0",
  "fnv 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "goblin 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hex 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "md5 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -863,6 +869,7 @@ dependencies = [
 "checksum fnv 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 "checksum ghost 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "5297b71943dc9fea26a3241b178c140ee215798b7f79f7773fd61683e25bca74"
 "checksum goblin 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "d20fd25aa456527ce4f544271ae4fea65d2eda4a6561ea56f39fb3ee4f7e3884"
+"checksum hex 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
 "checksum indoc 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "3f9553c1e16c114b8b77ebeb329e5f2876eed62a8d51178c8bc6bff0d65f98f8"
 "checksum indoc-impl 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "b714fc08d0961716390977cdff1536234415ac37b509e34e5a983def8340fb75"
 "checksum inflate 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "1cdb29978cc5797bd8dcc8e5bf7de604891df2a8dc576973d71a281e916db2ff"

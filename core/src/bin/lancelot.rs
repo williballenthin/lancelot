@@ -6,8 +6,10 @@ extern crate clap;
 extern crate anyhow;
 
 use lancelot::{
+    analysis::dis,
+    aspace::AddressSpace,
     loader::pe::{load_pe, PE},
-    util, VA,
+    util, RVA, VA,
 };
 
 fn handle_functions(pe: &PE) -> Result<()> {
@@ -21,12 +23,75 @@ fn handle_functions(pe: &PE) -> Result<()> {
     Ok(())
 }
 
+fn render_insn_buf(buf: &[u8], width: usize) -> String {
+    let mut out = String::new();
+    for (i, c) in hex::encode(buf).chars().enumerate() {
+        out.push(c);
+
+        if i % 2 == 1 {
+            out.push(' ');
+        }
+    }
+
+    let out = out.trim_end_matches(" ").to_string();
+    if out.len() > width {
+        out[..width].to_string()
+    } else {
+        out
+    }
+}
+
+fn render_insn(insn: &zydis::ffi::DecodedInstruction, va: VA) -> String {
+    let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("formatter");
+    let mut buffer = [0u8; 200];
+    let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+    formatter
+        .format_instruction(&insn, &mut buffer, Some(va), None)
+        .expect("format");
+    format!("{}", buffer)
+}
+
 fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
     let cfg = lancelot::analysis::cfg::build_cfg(&pe.module, va)?;
+    let decoder = dis::get_disassembler(&pe.module)?;
 
     info!("found {} basic blocks", cfg.basic_blocks.len());
     for bb in cfg.basic_blocks.values() {
         println!("{:#x}", bb.addr);
+
+        // need to over-read the bb buffer, to account for the final instructions.
+        let buf = pe.module.address_space.read_buf(bb.addr, bb.length as usize + 0x10)?;
+        for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
+            // because we over-read the bb buffer,
+            // discard the instructions found after it.
+            if offset >= (bb.length - 1) as usize {
+                break;
+            }
+
+            let va = bb.addr + offset as RVA;
+
+            let name = &pe
+                .module
+                .sections
+                .iter()
+                .find(|sec| sec.virtual_range.contains(&va))
+                .unwrap()
+                .name;
+
+            if let Ok(Some(insn)) = insn {
+                let insn_buf = &buf[offset..offset + insn.length as usize];
+                println!(
+                    "  {}:{:#x}  {:15}  {}",
+                    name,
+                    va,
+                    render_insn_buf(insn_buf, 15),
+                    render_insn(&insn, va)
+                );
+            } else {
+                println!("  {}:{:#x}: INVALID", name, va);
+            }
+        }
     }
 
     Ok(())
