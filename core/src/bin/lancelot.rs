@@ -65,7 +65,7 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
         for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
             // because we over-read the bb buffer,
             // discard the instructions found after it.
-            if offset >= (bb.length - 1) as usize {
+            if offset >= bb.length as usize {
                 break;
             }
 

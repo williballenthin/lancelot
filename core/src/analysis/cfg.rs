@@ -469,7 +469,8 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
 /// assert_eq!(flows[0].va(), 0x3);
 /// ```
 pub fn get_cmov_insn_flow(va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
-    Ok(smallvec![Flow::ConditionalMove(va + insn.length as u64)])
+    let next = va + insn.length as u64;
+    Ok(smallvec![Flow::ConditionalMove(next)])
 }
 
 pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
@@ -680,7 +681,7 @@ fn compute_basic_blocks(
 
         let mut bb = BasicBlock {
             addr: va,
-            length: insn.length,
+            length: 0,
             predecessors: Default::default(),
             successors: Default::default(),
         };
@@ -716,6 +717,7 @@ fn compute_basic_blocks(
         // insn is the last instruction of the current basic block.
         // va is the address of the last instruction of the current basic block.
 
+        bb.length += insn.length;
         bb.successors = successors[&va].clone();
 
         basic_blocks.insert(start, bb);
