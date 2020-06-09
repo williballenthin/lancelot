@@ -531,7 +531,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
 }
 
 struct InstructionDescriptor {
-    length:     u64,
+    length: u64,
     successors: Flows,
 }
 
@@ -547,6 +547,10 @@ fn non_fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Fl
         Flow::Fallthrough(_) => false,
         _ => true,
     }))
+}
+
+fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
+    i.next().is_none()
 }
 
 fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, InstructionDescriptor>> {
@@ -651,14 +655,14 @@ fn compute_basic_blocks(
             }
 
             // its a bb start, because there's a branch here.
-            if non_fallthrough_flows(preds).next().is_some() {
+            if !empty(non_fallthrough_flows(preds)) {
                 return true;
             }
 
             // its a bb start, because the instruction that fallthrough here
             // also branched somewhere else.
             for pred in fallthrough_flows(preds) {
-                if non_fallthrough_flows(&successors[&pred.va()]).next().is_some() {
+                if !empty(non_fallthrough_flows(&successors[&pred.va()])) {
                     return true;
                 }
             }
@@ -675,29 +679,29 @@ fn compute_basic_blocks(
         let mut insn = &insns[&va];
 
         let mut bb = BasicBlock {
-            addr:         va,
-            length:       insn.length,
+            addr: va,
+            length: insn.length,
             predecessors: Default::default(),
-            successors:   Default::default(),
+            successors: Default::default(),
         };
 
         loop {
             let flows = &successors[&va];
 
-            if fallthrough_flows(flows).next().is_none() {
+            if empty(fallthrough_flows(flows)) {
                 // end of bb.
                 // for example: ret has no fallthrough, and is end of basic block.
                 break;
             }
 
-            if non_fallthrough_flows(flows).next().is_some() {
+            if !empty(non_fallthrough_flows(flows)) {
                 // end of bb.
                 // for example: jnz has a non-fallthrough flow from it.
                 break;
             }
 
             let next_va = va + insn.length;
-            if non_fallthrough_flows(&predecessors[&next_va]).next().is_some() {
+            if !empty(non_fallthrough_flows(&predecessors[&next_va])) {
                 // end of bb.
                 // the next instruction is not part of this bb.
                 // for example, the target of a fallthrough AND a jump from elsewhere.
