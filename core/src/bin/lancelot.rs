@@ -8,9 +8,10 @@ extern crate clap;
 #[macro_use]
 extern crate anyhow;
 
-use lancelot::loader::pe::{load_pe, PE};
-use lancelot::util;
-use lancelot::VA;
+use lancelot::{
+    loader::pe::{load_pe, PE},
+    util, VA,
+};
 
 fn handle_functions(pe: &PE) -> Result<()> {
     let functions = lancelot::analysis::pe::find_function_starts(pe)?;

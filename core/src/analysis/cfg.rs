@@ -533,7 +533,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
 }
 
 struct InstructionDescriptor {
-    length: u64,
+    length:     u64,
     successors: Flows,
 }
 
@@ -677,10 +677,10 @@ fn compute_basic_blocks(
         let mut insn = &insns[&va];
 
         let mut bb = BasicBlock {
-            addr: va,
-            length: insn.length,
+            addr:         va,
+            length:       insn.length,
             predecessors: Default::default(),
-            successors: Default::default(),
+            successors:   Default::default(),
         };
 
         loop {
@@ -752,9 +752,7 @@ pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::cfg::build_cfg;
-    use crate::test::init_logging;
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::{analysis::cfg::build_cfg, aspace::AddressSpace, rsrc::*, test::init_logging};
     use anyhow::Result;
 
     #[test]

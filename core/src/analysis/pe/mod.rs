@@ -2,8 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 
-use crate::loader::pe::PE;
-use crate::VA;
+use crate::{loader::pe::PE, VA};
 
 pub mod call_targets;
 pub mod control_flow_guard;
@@ -21,7 +20,8 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     //  - jump table entries
     //
     // so, we'll disable this for now.
-    //function_starts.extend(crate::analysis::pe::pointers::find_pe_nonrelocated_executable_pointers(buf, &pe)?);
+    //function_starts.extend(crate::analysis::pe::pointers::
+    // find_pe_nonrelocated_executable_pointers(buf, &pe)?);
 
     function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?);
     function_starts.extend(crate::analysis::pe::exports::find_pe_exports(&pe)?);
