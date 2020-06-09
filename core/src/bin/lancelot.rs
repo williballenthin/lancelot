@@ -58,8 +58,6 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
 
     info!("found {} basic blocks", cfg.basic_blocks.len());
     for bb in cfg.basic_blocks.values() {
-        println!("{:#x}", bb.addr);
-
         // need to over-read the bb buffer, to account for the final instructions.
         let buf = pe.module.address_space.read_buf(bb.addr, bb.length as usize + 0x10)?;
         for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
@@ -82,7 +80,7 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
             if let Ok(Some(insn)) = insn {
                 let insn_buf = &buf[offset..offset + insn.length as usize];
                 println!(
-                    "  {}:{:#x}  {:15}  {}",
+                    "{}:{:016x}  {:15}  {}",
                     name,
                     va,
                     render_insn_buf(insn_buf, 15),
@@ -90,8 +88,10 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
                 );
             } else {
                 println!("  {}:{:#x}: INVALID", name, va);
+                break;
             }
         }
+        println!();
     }
 
     Ok(())
