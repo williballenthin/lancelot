@@ -107,6 +107,24 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
         //
         // see aadtb.dll:0x180001940 for an example.
         zydis::Mnemonic::INT3 => false,
+        zydis::Mnemonic::INT => {
+            match insn.operands[0].imm.value {
+                // handled by nt!KiFastFailDispatch on Win8+
+                // see: https://doar-e.github.io/blog/2013/10/12/having-a-look-at-the-windows-userkernel-exceptions-dispatcher/
+                0x29 => false,
+
+                // handled by nt!KiRaiseAssertion
+                // see: http://www.osronline.com/article.cfm%5Earticle=474.htm
+                0x2C => false,
+
+                // probably indicates bad code,
+                // but this hasn't be thoroughly vetted yet.
+                _ => {
+                    debug!("{:#x?}", insn);
+                    true
+                }
+            }
+        }
         // TODO: call may not fallthrough if function is noret.
         // will need another pass to clean this up.
         zydis::Mnemonic::CALL => true,
