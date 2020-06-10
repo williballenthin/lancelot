@@ -745,20 +745,16 @@ fn compute_basic_blocks(
 }
 
 pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
+    debug!("cfg: {:#x}", va);
+
     let insns = read_insn_descriptors(module, va)?;
+    debug!("cfg: {:#x}: {} instructions", va, insns.len());
+
     let successors = compute_successors(&insns);
     let predecessors = compute_predecessors(&insns);
 
-    let mut vas: Vec<VA> = insns.keys().cloned().collect();
-    vas.sort();
-    for va in vas.iter() {
-        debug!("{:#x}", va)
-    }
-
     let bbs = compute_basic_blocks(&insns, &predecessors, &successors);
-    for bb in bbs.values() {
-        debug!("bb: {:#x}", bb.addr);
-    }
+    debug!("cfg: {:#x}: {} basic blocks", va, bbs.len());
 
     Ok(CFG { basic_blocks: bbs })
 }
