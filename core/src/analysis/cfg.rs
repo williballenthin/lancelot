@@ -98,6 +98,15 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
         zydis::Mnemonic::IRET => false,
         zydis::Mnemonic::IRETD => false,
         zydis::Mnemonic::IRETQ => false,
+        // we consider an INT3 (breakpoint) to not flow through.
+        // we rely on this to deal with non-ret functions, as some
+        // compilers may insert a CC byte following the call.
+        //
+        // really, we'd want to do a real non-ret analysis.
+        // but thats still a TODO.
+        //
+        // see aadtb.dll:0x180001940 for an example.
+        zydis::Mnemonic::INT3 => false,
         // TODO: call may not fallthrough if function is noret.
         // will need another pass to clean this up.
         zydis::Mnemonic::CALL => true,
