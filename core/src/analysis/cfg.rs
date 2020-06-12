@@ -729,6 +729,11 @@ fn compute_basic_blocks(
             }
 
             let next_va = va + insn.length;
+
+            if !predecessors.contains_key(&next_va) {
+                log::warn!("cfg: {:#x}: missing key: {:#x}", va, next_va);
+            }
+
             if !empty(non_fallthrough_flows(&predecessors[&next_va])) {
                 // end of bb.
                 // the next instruction is not part of this bb.
