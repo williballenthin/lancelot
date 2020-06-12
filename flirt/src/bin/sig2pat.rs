@@ -1,6 +1,4 @@
-use better_panic;
 use failure::Error;
-use fern;
 extern crate chrono;
 extern crate clap;
 extern crate log;

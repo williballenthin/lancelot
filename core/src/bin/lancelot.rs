@@ -1,51 +1,126 @@
-extern crate chrono;
-extern crate lancelot;
-extern crate log;
+use anyhow::Result;
+use log::{debug, error, info};
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate anyhow;
 
-use std::path::PathBuf;
+use lancelot::{
+    analysis::dis,
+    aspace::AddressSpace,
+    loader::pe::{load_pe, PE},
+    util, RVA, VA,
+};
 
-use better_panic;
-use failure::Error;
-use fern;
-use log::{debug, error, info};
-
-use lancelot::{config::Config, workspace::Workspace};
-
-fn handle_functions(ws: &Workspace) -> Result<(), Error> {
-    let mut functions = ws.get_functions().collect::<Vec<_>>();
-    functions.sort();
+fn handle_functions(pe: &PE) -> Result<()> {
+    let functions = lancelot::analysis::pe::find_function_starts(pe)?;
 
     info!("found {} functions", functions.len());
-    for rva in functions.iter() {
-        if let Ok(basic_blocks) = ws.get_basic_blocks(**rva) {
-            println!("{} with {} basic blocks", ws.va(**rva).unwrap(), basic_blocks.len());
-        } else {
-            println!("{}", rva);
-        }
+    for va in functions.iter() {
+        println!("{:#x}", va);
     }
 
     Ok(())
 }
 
-fn main() {
+fn render_insn_buf(buf: &[u8], width: usize) -> String {
+    let mut out = String::new();
+    for (i, c) in hex::encode(buf).chars().enumerate() {
+        out.push(c);
+
+        if i % 2 == 1 {
+            out.push(' ');
+        }
+    }
+
+    let out = out.trim_end_matches(' ').to_string();
+    if out.len() > width {
+        out[..width].to_string()
+    } else {
+        out
+    }
+}
+
+fn render_insn(insn: &zydis::ffi::DecodedInstruction, va: VA) -> String {
+    let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("formatter");
+    let mut buffer = [0u8; 200];
+    let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+    formatter
+        .format_instruction(&insn, &mut buffer, Some(va), None)
+        .expect("format");
+    format!("{}", buffer)
+}
+
+fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
+    let cfg = lancelot::analysis::cfg::build_cfg(&pe.module, va)?;
+    let decoder = dis::get_disassembler(&pe.module)?;
+
+    info!("found {} basic blocks", cfg.basic_blocks.len());
+    for bb in cfg.basic_blocks.values() {
+        // need to over-read the bb buffer, to account for the final instructions.
+        let buf = pe.module.address_space.read_buf(bb.addr, bb.length as usize + 0x10)?;
+        for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
+            // because we over-read the bb buffer,
+            // discard the instructions found after it.
+            if offset >= bb.length as usize {
+                break;
+            }
+
+            let va = bb.addr + offset as RVA;
+
+            let name = &pe
+                .module
+                .sections
+                .iter()
+                .find(|sec| sec.virtual_range.contains(&va))
+                .unwrap()
+                .name;
+
+            if let Ok(Some(insn)) = insn {
+                let insn_buf = &buf[offset..offset + insn.length as usize];
+                println!(
+                    "{}:{:016x}  {:15}  {}",
+                    name,
+                    va,
+                    render_insn_buf(insn_buf, 15),
+                    render_insn(&insn, va)
+                );
+            } else {
+                println!("  {}:{:#x}: INVALID", name, va);
+                break;
+            }
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn parse_va(s: &str) -> Result<VA> {
+    if s.starts_with("0x") {
+        let without_prefix = s.trim_start_matches("0x");
+        Ok(u64::from_str_radix(without_prefix, 16)?)
+    } else {
+        Ok(s.parse()?)
+    }
+}
+
+fn _main() -> Result<()> {
     better_panic::install();
 
-    let mut config: Config = Default::default();
-
-    let matches = clap_app!(lancelot =>
-        (author: "Willi Ballenthin <willi.ballenthin@gmail.com>")
+    let matches = clap::clap_app!(lancelot =>
+        (author: "Willi Ballenthin <william.ballenthin@mandiant.com>")
         (about: "Binary analysis framework")
         (@arg verbose: -v --verbose +multiple "log verbose messages")
         (@arg quiet: -q --quiet "disable informational messages")
         (@subcommand functions =>
             (about: "find functions")
             (@arg input: +required "path to file to analyze"))
-        (@subcommand smoketest =>
-            (about: "analyze file and exit on analysis failure")
-            (@arg input: +required "path to file to analyze"))
-    )
+        (@subcommand disassemble =>
+            (about: "disassemble function")
+            (@arg input: +required "path to file to analyze")
+            (@arg va: +required "VA of function")))
     .get_matches();
 
     // --quiet overrides --verbose
@@ -80,44 +155,38 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    let pat_dir = config.analysis.flirt.pat_dir.to_str().unwrap().to_string();
-    let sig_dir = config.analysis.flirt.sig_dir.to_str().unwrap().to_string();
-    config.analysis.flirt.pat_dir = PathBuf::from(shellexpand::tilde(&pat_dir).into_owned());
-    config.analysis.flirt.sig_dir = PathBuf::from(shellexpand::tilde(&sig_dir).into_owned());
-    debug!("config:\n{:#?}", config);
-
     if let Some(matches) = matches.subcommand_matches("functions") {
         debug!("mode: find functions");
 
         let filename = matches.value_of("input").unwrap();
         debug!("input: {}", filename);
 
-        let ws = Workspace::from_file(filename)
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
-            .with_config(config);
+        let buf = util::read_file(filename)?;
+        let pe = load_pe(&buf)?;
 
-        let ws = ws.load().unwrap_or_else(|e| panic!("failed to load workspace: {}", e));
-
-        if let Err(e) = handle_functions(&ws) {
-            error!("error: {}", e)
-        }
-    } else if let Some(matches) = matches.subcommand_matches("smoketest") {
-        debug!("mode: smoketest");
+        handle_functions(&pe)
+    } else if let Some(matches) = matches.subcommand_matches("disassemble") {
+        debug!("mode: disassemble");
 
         let filename = matches.value_of("input").unwrap();
         debug!("input: {}", filename);
 
-        match Workspace::from_file(filename)
-            .unwrap_or_else(|e| panic!("failed to load workspace: {}", e))
-            .with_config(config)
-            .enable_strict_mode()
-            .load()
-        {
-            Err(e) => {
-                println!("error");
-                eprintln!("{:?}", e);
-            }
-            Ok(_) => println!("ok"),
-        }
-    };
+        let va = parse_va(matches.value_of("va").unwrap())?;
+
+        let buf = util::read_file(filename)?;
+        let pe = load_pe(&buf)?;
+
+        handle_disassemble(&pe, va)
+    } else {
+        Err(anyhow!("SUBCOMMAND required"))
+    }
+}
+
+fn main() {
+    if let Err(e) = _main() {
+        #[cfg(debug_assertions)]
+        error!("{:?}", e);
+        #[cfg(not(debug_assertions))]
+        error!("{:}", e);
+    }
 }

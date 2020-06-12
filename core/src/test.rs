@@ -1,36 +1,10 @@
 //< Helpers that are useful for tests and doctests.
-
-use super::{arch::Arch, loader, loaders::sc::ShellcodeLoader, rsrc::*, workspace::Workspace};
-
-/// Helper to construct a 32-bit Windows shellcode workspace from raw bytes.
-///
-/// It may panic when the workspace cannot be created/loaded.
-/// Therefore, this is best used for tests.
-///
-/// ```
-/// use lancelot::test;
-/// use lancelot::arch::*;
-///
-/// let ws = test::get_shellcode32_workspace(b"\xEB\xFE");
-/// assert_eq!(ws.read_u8(RVA(0x0)).unwrap(), 0xEB);
-/// ```
-pub fn get_shellcode32_workspace(buf: &[u8]) -> Workspace {
-    Workspace::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::new(loader::Platform::Windows, Arch::X32)))
-        .load()
-        .unwrap()
-}
-
-pub fn get_shellcode64_workspace(buf: &[u8]) -> Workspace {
-    Workspace::from_bytes("foo.bin", buf)
-        .with_loader(Box::new(ShellcodeLoader::new(loader::Platform::Windows, Arch::X64)))
-        .load()
-        .unwrap()
-}
-
-pub fn get_rsrc_workspace(rsrc: Rsrc) -> Workspace {
-    Workspace::from_bytes("foo.bin", &get_buf(rsrc)).load().unwrap()
-}
+use crate::{
+    analysis::dis,
+    aspace::{AddressSpace, RelativeAddressSpace},
+    module::{Arch, Module, Permissions, Section},
+    RVA, VA,
+};
 
 /// configure a global logger at level==DEBUG.
 pub fn init_logging() {
@@ -54,4 +28,45 @@ pub fn init_logging() {
         .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         .apply()
         .expect("failed to configure logging");
+}
+
+/// this is for testing, so will panic on error.
+pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Module {
+    let mut address_space = RelativeAddressSpace::with_capacity(buf.len() as u64);
+    address_space.map.writezx(0x0, buf).unwrap();
+
+    Module {
+        arch,
+        sections: vec![Section {
+            name:           "shellcode".to_string(),
+            perms:          Permissions::RWX,
+            physical_range: std::ops::Range {
+                start: 0x0,
+                end:   buf.len() as RVA,
+            },
+            virtual_range:  std::ops::Range {
+                start: 0x0,
+                end:   buf.len() as RVA,
+            },
+        }],
+        address_space: address_space.into_absolute(0x0).unwrap(),
+    }
+}
+
+/// this is for testing, so will panic on error.
+pub fn load_shellcode32(buf: &[u8]) -> Module {
+    load_shellcode(Arch::X32, buf)
+}
+
+/// this is for testing, so will panic on error.
+pub fn load_shellcode64(buf: &[u8]) -> Module {
+    load_shellcode(Arch::X64, buf)
+}
+
+/// this is for testing, so will panic on error.
+pub fn read_insn(module: &Module, va: VA) -> zydis::DecodedInstruction {
+    let decoder = dis::get_disassembler(module).unwrap();
+    let mut insn_buf = [0u8; 16];
+    module.address_space.read_into(va, &mut insn_buf).unwrap();
+    decoder.decode(&insn_buf).unwrap().unwrap()
 }

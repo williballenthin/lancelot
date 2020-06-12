@@ -1,32 +1,27 @@
-use failure::{Error, Fail};
+use anyhow::Result;
+use thiserror::Error;
 
-use super::{arch::RVA, util};
+use super::RVA;
 
+// these are usize so that they're easy to work with for indexing within this
+// module. generally, this module should work with RVA/u64 as its public
+// interface.
 const PAGE_SIZE: usize = 0x1000;
+const PAGE_SHIFT: usize = 12;
+const PAGE_MASK: usize = 0xFFF;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum PageMapError {
-    #[fail(display = "address not mapped")]
+    #[error("address not mapped")]
     NotMapped,
 }
 
 fn page(rva: RVA) -> usize {
-    // depends on PAGE_SIZE
-    let v: u64 = rva.into();
-    // #yolo
-    (v as usize) >> 12
+    (rva as usize) >> PAGE_SHIFT
 }
 
 fn page_offset(rva: RVA) -> usize {
-    // depends on PAGE_SIZE
-    let v: u64 = rva.into();
-    // #yolo
-    (v as usize) & 0xFFF
-}
-
-pub fn page_align(i: RVA) -> RVA {
-    let v: i64 = i.into();
-    RVA::from(util::align(v as usize, PAGE_SIZE))
+    (rva as usize) & PAGE_MASK
 }
 
 struct Page<T: Default + Copy> {
@@ -73,7 +68,7 @@ impl<T: Default + Copy> PageMap<T> {
     /// panic due to:
     ///   - rva must be page aligned.
     ///   - must be PAGE_SIZE number of items.
-    fn write_page(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+    fn write_page(&mut self, rva: RVA, items: &[T]) -> Result<()> {
         if page_offset(rva) != 0 {
             panic!("invalid map address");
         }
@@ -97,12 +92,12 @@ impl<T: Default + Copy> PageMap<T> {
     ///   - must be multiple of PAGE_SIZE number of items.
     ///
     /// see example under `get`.
-    pub fn write(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
+    pub fn write(&mut self, rva: RVA, items: &[T]) -> Result<()> {
         if items.len() % PAGE_SIZE != 0 {
             panic!("items must be page aligned");
         }
         for (i, chunk) in items.chunks_exact(PAGE_SIZE).enumerate() {
-            self.write_page(rva + i * PAGE_SIZE, chunk)?;
+            self.write_page(rva + (i * PAGE_SIZE) as u64, chunk)?;
         }
         Ok(())
     }
@@ -112,7 +107,7 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// same error conditions as `map`.
     /// see example under `probe`.
-    pub fn map_empty(&mut self, rva: RVA, size: usize) -> Result<(), Error> {
+    pub fn map_empty(&mut self, rva: RVA, size: usize) -> Result<()> {
         self.write(rva, &vec![Default::default(); size])
     }
 
@@ -122,20 +117,18 @@ impl<T: Default + Copy> PageMap<T> {
     /// same error conditions as `map`.
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// assert_eq!(d.get(0x0.into()), None);
-    /// assert_eq!(d.get(0x1.into()), None);
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// assert_eq!(d.get(0x0), None);
+    /// assert_eq!(d.get(0x1), None);
     ///
-    /// d.writezx(0x0.into(), &[0x1, ]).expect("failed to write");
-    /// assert_eq!(d.get(0x0.into()), Some(0x1));
-    /// assert_eq!(d.get(0x1.into()), Some(0x0));
+    /// d.writezx(0x0, &[0x1, ]).expect("failed to write");
+    /// assert_eq!(d.get(0x0), Some(0x1));
+    /// assert_eq!(d.get(0x1), Some(0x0));
     /// ```
-    pub fn writezx(&mut self, rva: RVA, items: &[T]) -> Result<(), Error> {
-        // TODO: use lancelot::util::align
-        let empty_count = PAGE_SIZE - page_offset(items.len().into());
+    pub fn writezx(&mut self, rva: RVA, items: &[T]) -> Result<()> {
+        let empty_count = PAGE_SIZE - page_offset(items.len() as u64);
         let mut padded_items = Vec::with_capacity(items.len() + empty_count);
         padded_items.extend(items);
         padded_items.extend(&vec![Default::default(); empty_count]);
@@ -145,16 +138,15 @@ impl<T: Default + Copy> PageMap<T> {
     /// is the given address mapped?
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// assert_eq!(d.probe(0x0.into()), false);
-    /// assert_eq!(d.probe(0x1000.into()), false);
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// assert_eq!(d.probe(0x0), false);
+    /// assert_eq!(d.probe(0x1000), false);
     ///
-    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
-    /// assert_eq!(d.probe(0x0.into()), true);
-    /// assert_eq!(d.probe(0x1000.into()), false);
+    /// d.map_empty(0x0, 0x1000).expect("failed to map");
+    /// assert_eq!(d.probe(0x0), true);
+    /// assert_eq!(d.probe(0x1000), false);
     /// ```
     pub fn probe(&self, rva: RVA) -> bool {
         if page(rva) > self.pages.len() - 1 {
@@ -168,20 +160,19 @@ impl<T: Default + Copy> PageMap<T> {
     /// if the address is not mapped, then the result is `None`.
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// assert_eq!(d.get(0x0.into()), None);
-    /// assert_eq!(d.get(0x1000.into()), None);
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// assert_eq!(d.get(0x0), None);
+    /// assert_eq!(d.get(0x1000), None);
     ///
-    /// d.write(0x1000.into(), &[0x1; 0x1000]).expect("failed to map");
-    /// assert_eq!(d.get(0x0.into()), None);
-    /// assert_eq!(d.get(0x1000.into()), Some(0x1));
+    /// d.write(0x1000, &[0x1; 0x1000]).expect("failed to map");
+    /// assert_eq!(d.get(0x0), None);
+    /// assert_eq!(d.get(0x1000), Some(0x1));
     ///
-    /// d.write(0x0.into(), &[0x2; 0x2000]).expect("failed to map");
-    ///  assert_eq!(d.get(0x0.into()), Some(0x2));
-    ///  assert_eq!(d.get(0x1000.into()), Some(0x2));
+    /// d.write(0x0, &[0x2; 0x2000]).expect("failed to map");
+    ///  assert_eq!(d.get(0x0), Some(0x2));
+    ///  assert_eq!(d.get(0x1000), Some(0x2));
     /// ```
     pub fn get(&self, rva: RVA) -> Option<T> {
         if page(rva) > self.pages.len() - 1 {
@@ -201,21 +192,20 @@ impl<T: Default + Copy> PageMap<T> {
     /// fetch one mutable item from the given address.
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// d.map_empty(0x0, 0x1000).expect("failed to map");
     ///
     /// // address 0x0 starts at 0
-    /// assert_eq!(d.get(0x0.into()), Some(0x0));
+    /// assert_eq!(d.get(0x0), Some(0x0));
     ///
     /// // set address 0x0 to 1
-    /// let v = d.get_mut(0x0.into()).expect("should be mapped");
+    /// let v = d.get_mut(0x0).expect("should be mapped");
     /// *v = 1;
     ///
     /// // address 0x0 is 1
-    /// assert_eq!(d.get(0x0.into()), Some(0x1));
+    /// assert_eq!(d.get(0x0), Some(0x1));
     /// ```
     pub fn get_mut(&mut self, rva: RVA) -> Option<&mut T> {
         if page(rva) > self.pages.len() - 1 {
@@ -236,15 +226,14 @@ impl<T: Default + Copy> PageMap<T> {
     /// page. for example, reading a dword from address 0x10.
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
-    /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
-    /// assert_eq!(d.slice(0x1000.into(), 0x1002.into()).is_err(), true);
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// d.map_empty(0x0, 0x1000).expect("failed to map");
+    /// assert_eq!(d.slice(0x0, 0x2).unwrap(), [0x0, 0x0]);
+    /// assert_eq!(d.slice(0x1000, 0x1002).is_err(), true);
     /// ```
-    fn slice_into_simple<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
+    fn slice_into_simple<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T]> {
         // precondition: page(start) == page(start + buf.len())
 
         if page(start) > self.pages.len() - 1 {
@@ -258,7 +247,7 @@ impl<T: Default + Copy> PageMap<T> {
             Some(page) => page,
         };
 
-        let end = start + buf.len();
+        let end = start + buf.len() as u64;
         let elements = &page.elements[page_offset(start)..page_offset(end)];
         buf.copy_from_slice(elements);
 
@@ -269,11 +258,10 @@ impl<T: Default + Copy> PageMap<T> {
     /// pages. for example, reading a dword from address 0xFFE.
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x5000.into());
-    /// d.map_empty(0x1000.into(), 0x3000).expect("failed to map");
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x5000);
+    /// d.map_empty(0x1000, 0x3000).expect("failed to map");
     ///
     /// // 0     unmapped
     /// //       unmapped
@@ -287,20 +275,20 @@ impl<T: Default + Copy> PageMap<T> {
     /// //       unmapped
     /// // 5000  unmapped
     ///
-    /// assert_eq!(d.slice(0x1FFC.into(), 0x2000.into()).unwrap(), [0x0, 0x0, 0x0, 0x0], "no overlap");
-    /// assert_eq!(d.slice(0x1FFD.into(), 0x2001.into()).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 1");
-    /// assert_eq!(d.slice(0x1FFE.into(), 0x2002.into()).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 2");
-    /// assert_eq!(d.slice(0x1FFF.into(), 0x2003.into()).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 3");
-    /// assert_eq!(d.slice(0x2000.into(), 0x2004.into()).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 4");
+    /// assert_eq!(d.slice(0x1FFC, 0x2000).unwrap(), [0x0, 0x0, 0x0, 0x0], "no overlap");
+    /// assert_eq!(d.slice(0x1FFD, 0x2001).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 1");
+    /// assert_eq!(d.slice(0x1FFE, 0x2002).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 2");
+    /// assert_eq!(d.slice(0x1FFF, 0x2003).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 3");
+    /// assert_eq!(d.slice(0x2000, 0x2004).unwrap(), [0x0, 0x0, 0x0, 0x0], "overlap 4");
     ///
-    /// assert_eq!(d.slice(0x1FFC.into(), 0x3004.into()).unwrap().len(), 0x1008, "4, page, 4");
+    /// assert_eq!(d.slice(0x1FFC, 0x3004).unwrap().len(), 0x1008, "4, page, 4");
     ///
-    /// assert_eq!(d.slice(0x1FFC.into(), 0x3000.into()).unwrap().len(), 0x1004, "4, page");
+    /// assert_eq!(d.slice(0x1FFC, 0x3000).unwrap().len(), 0x1004, "4, page");
     ///
-    /// assert_eq!(d.slice(0x2000.into(), 0x3004.into()).unwrap().len(), 0x1004, "page, 4");
+    /// assert_eq!(d.slice(0x2000, 0x3004).unwrap().len(), 0x1004, "page, 4");
     /// ```
-    fn slice_into_split<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
-        let end = start + buf.len();
+    fn slice_into_split<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T]> {
+        let end = start + buf.len() as u64;
         let start_page = page(start);
         let end_page = if page_offset(end) == 0 {
             page(end) - 1
@@ -314,7 +302,7 @@ impl<T: Default + Copy> PageMap<T> {
 
         // ensure each page within the requested region is mapped.
         for page in start_page..=end_page {
-            if !self.probe((page * PAGE_SIZE).into()) {
+            if !self.probe((page * PAGE_SIZE) as RVA) {
                 return Err(PageMapError::NotMapped.into());
             }
         }
@@ -369,8 +357,8 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// errors:
     ///   - PageMapError::NotMapped: if any requested address is not mapped
-    pub fn slice_into<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T], Error> {
-        let end = start + buf.len();
+    pub fn slice_into<'a>(&self, start: RVA, buf: &'a mut [T]) -> Result<&'a [T]> {
+        let end = start + buf.len() as u64;
         if page(start) == page(end) {
             self.slice_into_simple(start, buf)
         } else {
@@ -387,22 +375,25 @@ impl<T: Default + Copy> PageMap<T> {
     ///   - start > end
     ///
     /// ```
-    /// use lancelot::arch::RVA;
     /// use lancelot::pagemap::PageMap;
     ///
-    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000.into());
-    /// d.map_empty(0x0.into(), 0x1000).expect("failed to map");
+    /// let mut d: PageMap<u32> = PageMap::with_capacity(0x2000);
+    /// d.map_empty(0x0, 0x1000).expect("failed to map");
     ///
-    /// assert_eq!(d.slice(0x0.into(), 0x2.into()).unwrap(), [0x0, 0x0]);
-    /// assert!(d.slice(0x0.into(), 0x1000.into()).is_ok(), "read page");
-    /// assert!(d.slice(0x0.into(), 0x1001.into()).is_err(), "read more than a page");
+    /// assert_eq!(d.slice(0x0, 0x2).unwrap(), [0x0, 0x0]);
+    /// assert!(d.slice(0x0, 0x1000).is_ok(), "read page");
+    /// assert!(d.slice(0x0, 0x1001).is_err(), "read more than a page");
     /// ```
-    pub fn slice(&self, start: RVA, end: RVA) -> Result<Vec<T>, Error> {
+    pub fn slice(&self, start: RVA, end: RVA) -> Result<Vec<T>> {
         if start > end {
             panic!("start > end");
         }
 
-        let mut ret = vec![Default::default(); (end - start).into()];
+        if end - start > std::usize::MAX as u64 {
+            panic!("slice too large")
+        }
+
+        let mut ret = vec![Default::default(); (end - start) as usize];
         self.slice_into(start, &mut ret)?;
 
         Ok(ret)

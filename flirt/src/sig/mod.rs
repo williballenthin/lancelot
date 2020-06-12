@@ -1,6 +1,4 @@
-use bitflags;
 use failure::{Error, Fail};
-use inflate;
 use log::trace;
 use nom::{
     branch::alt,
@@ -65,19 +63,19 @@ impl HeaderExtra {
 #[derive(Debug)]
 struct Header {
     // offset 6
-    version: u8,
+    version:      u8,
     // offset 7
-    arch: u8,
+    arch:         u8,
     // offset 8
-    file_types: u32,
+    file_types:   u32,
     // offset 0xC
-    os_types: u16,
+    os_types:     u16,
     // offset 0xE
-    app_types: u16,
+    app_types:    u16,
     // offset: 0x10
-    features: Features,
+    features:     Features,
     // offset: 0x14
-    crc16: u16,
+    crc16:        u16,
     // offset: 0x23
     ctypes_crc16: u16,
     // offset 0x25

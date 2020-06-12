@@ -109,8 +109,8 @@ pub struct FlirtSignature {
 
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
-    crc16: u16,
-    pub size_of_function: u64, // max: 0x8000
+    crc16:                   u16,
+    pub size_of_function:    u64, // max: 0x8000
 
     names: Vec<Symbol>,
 

@@ -1,43 +1,38 @@
-pub mod entrypoint;
-pub use entrypoint::EntryPointAnalyzer;
+use std::collections::HashSet;
 
+use anyhow::Result;
+
+use crate::{loader::pe::PE, VA};
+
+pub mod call_targets;
+pub mod control_flow_guard;
+pub mod entrypoints;
 pub mod exports;
-pub use exports::ExportsAnalyzer;
+pub mod pointers;
+pub mod safeseh;
+//pub mod patterns;
 
-pub mod imports;
-pub use imports::ImportsAnalyzer;
+pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
+    let mut function_starts: HashSet<VA> = Default::default();
 
-pub mod relocs;
-pub use relocs::RelocAnalyzer;
+    // pointer analysis creates a good number of FPs, due to:
+    //  - exception handle
+    //  - jump table entries
+    //
+    // so, we'll disable this for now.
+    //function_starts.extend(crate::analysis::pe::pointers::
+    // find_pe_nonrelocated_executable_pointers(buf, &pe)?);
 
-pub mod runtimefunctions;
-pub use runtimefunctions::RuntimeFunctionAnalyzer;
+    function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?);
+    function_starts.extend(crate::analysis::pe::exports::find_pe_exports(&pe)?);
+    function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?);
+    function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?);
+    function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?);
 
-pub mod cfguardtable;
-pub use cfguardtable::CFGuardTableAnalyzer;
+    // TODO: validate that the code looks ok
 
-pub mod sigs;
-pub use sigs::ByteSigAnalyzer;
+    let mut function_starts: Vec<_> = function_starts.into_iter().collect();
+    function_starts.sort();
 
-pub mod flirt;
-pub use self::flirt::FlirtAnalyzer;
-
-// TODO: analyzer for global ctors, initializers (__initterm_e, __initterm)
-// TODO: analyzer for import thunks
-// TODO: analyzer for TLS callbacks
-// TODO: analyzer for switch tables (e.g.
-// 748aa5fcfa2af451c76039faf6a8684d:10001AD8) TODO: analyzer for non-returning
-// functions TODO: analyzer for code referenced from LoadConfig:
-//   - ULONGLONG  SEHandlerTable;                 // VA
-//   - ULONGLONG  SEHandlerCount;
-
-// heuristic:
-// TODO: analyzer to inspect operands for pointers into the text section, e.g.
-// argument to CreateThread TODO: analyzer for jump-tables, ptr tables, see
-// vivisect/pointertables.py TODO: analyzer for RTTI
-// TODO: analyzer for VEH
-// TODO: analyzer for SEH
-
-// TODO: anomaly analyzer for non-contiguous functions
-//   e.g. __security_init_cookie in
-// 07FB252D2E853A9B1B32F30EDE411F2EFBB9F01E4A7782DB5EACF3F55CF34902
+    Ok(function_starts)
+}

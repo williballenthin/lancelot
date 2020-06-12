@@ -171,14 +171,14 @@ struct State {
     // 257 to cover the max range of a symbol.
     transitions: [Transition; 257],
     // indices with the bit set indicates the corresponding index in `NFA.patterns` is alive.
-    alive: BitVec,
+    alive:       BitVec,
 }
 
 impl State {
     fn new(capacity: u32) -> State {
         State {
             transitions: [Default::default(); 257],
-            alive: bitvec![0; capacity as usize],
+            alive:       bitvec![0; capacity as usize],
         }
     }
 
@@ -197,7 +197,7 @@ struct StateTable {
     // we have to know this before we start constructing the table,
     // that's why we use the Builder pattern.
     capacity: u32,
-    states: Vec<State>,
+    states:   Vec<State>,
 }
 
 impl StateTable {
@@ -215,7 +215,7 @@ impl StateTable {
 }
 
 pub struct NFA {
-    table: StateTable,
+    table:    StateTable,
     patterns: Vec<Pattern>,
 }
 
@@ -257,7 +257,7 @@ impl NFA {
             /// the index to the state that we need to match next.
             state_pointer: Transition,
             /// the remaining bytes that need to be matched.
-            buf: &'a [u8],
+            buf:           &'a [u8],
         };
 
         // the set of pattern indices that have been matched.
@@ -312,7 +312,7 @@ impl NFA {
                     trace!("match: found transition to {} for input {:02x}", transition, input_byte);
                     q.push_front(Step {
                         state_pointer: transition,
-                        buf: &step.buf[1..],
+                        buf:           &step.buf[1..],
                     })
                 }
             }
@@ -407,9 +407,9 @@ impl NFABuilder {
 
     pub fn build(self) -> NFA {
         let mut nfa = NFA {
-            table: StateTable {
+            table:    StateTable {
                 capacity: self.patterns.len() as u32, // TODO: danger.
-                states: vec![],
+                states:   vec![],
             },
             patterns: self.patterns,
         };
@@ -423,7 +423,7 @@ impl NFABuilder {
             /// the index of the pattern we're currently processing.
             pattern_index: usize,
             /// the remaining symbols that need to be added.
-            symbols: &'a [Symbol],
+            symbols:       &'a [Symbol],
         };
 
         let mut q: VecDeque<Step> = VecDeque::new();
@@ -484,7 +484,7 @@ impl NFABuilder {
             q.push_back(Step {
                 state_pointer: next_state,
                 pattern_index: step.pattern_index,
-                symbols: &step.symbols[1..],
+                symbols:       &step.symbols[1..],
             });
 
             // if its a wildcard, then must follow any existing literal transitions, too
@@ -496,7 +496,7 @@ impl NFABuilder {
                         q.push_back(Step {
                             state_pointer: literal_transition,
                             pattern_index: step.pattern_index,
-                            symbols: &step.symbols[1..],
+                            symbols:       &step.symbols[1..],
                         })
                     }
                 }

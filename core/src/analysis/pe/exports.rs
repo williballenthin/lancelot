@@ -1,65 +1,80 @@
-use failure::Error;
-use goblin::Object;
-use log::debug;
+//! Parse the PE export table (if present) to find entries in find exports in
+//! executable sections.
+//!
+//! PEs may export data, which we'll assume isn't in an executable section.
+use anyhow::Result;
 
-use super::super::{
-    super::{arch::RVA, workspace::Workspace},
-    Analyzer,
-};
+use crate::{loader::pe::PE, module::Permissions, VA};
 
-pub struct ExportsAnalyzer {}
+pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
+    let base_address = match pe.pe.header.optional_header {
+        Some(opt) => opt.windows_fields.image_base,
+        _ => 0x40_000,
+    };
 
-impl ExportsAnalyzer {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> ExportsAnalyzer {
-        ExportsAnalyzer {}
-    }
+    let exports: Vec<VA> = pe
+        .pe
+        .exports
+        .iter()
+        // re-exports are simply strings that point to a `DLL.export_name` ASCII string.
+        // therefore, they're not functions/code.
+        .filter(|&exp| exp.reexport.is_none())
+        .map(|exp| base_address + exp.rva as u64)
+        .filter(|&va| {
+            // PE may export data, so ensure the exports we track are executable
+            // (functions).
+            pe.module.probe_va(va, Permissions::X)
+        })
+        .collect();
+
+    Ok(exports)
 }
 
-impl Analyzer for ExportsAnalyzer {
-    fn get_name(&self) -> String {
-        "PE exports analyzer".to_string()
+#[cfg(test)]
+mod tests {
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn k32() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(1445, fns.len());
+
+        Ok(())
     }
 
-    fn analyze(&self, ws: &mut Workspace) -> Result<(), Error> {
-        let pe = match Object::parse(&ws.buf) {
-            Ok(Object::PE(pe)) => pe,
-            _ => panic!("can't analyze unexpected format"),
-        };
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::load_pe(&buf)?;
 
-        let entry = RVA::from(pe.entry);
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
 
-        let exports: Vec<RVA> = pe
-            .exports
-            .iter()
-            // re-exports are simply strings that point to a `DLL.export_name` ASCII string.
-            // therefore, they're not functions/code.
-            .filter(|exp| exp.reexport.is_none())
-            .map(|exp| exp.rva)
-            .map(RVA::from)
-            .collect();
+        Ok(())
+    }
 
-        let symbols: Vec<(RVA, String)> = pe
-            .exports
-            .iter()
-            .filter(|exp| exp.name.is_some())
-            .map(|exp| (RVA::from(exp.rva), exp.name.unwrap().to_string()))
-            .collect();
+    #[test]
+    fn nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::load_pe(&buf)?;
 
-        for (rva, name) in symbols.into_iter() {
-            debug!("export: {}: {}", rva, name);
-            ws.make_symbol(rva, &name)?;
-            ws.analyze()?;
-        }
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
 
-        for rva in exports.into_iter() {
-            ws.make_function(rva)?;
-            ws.analyze()?;
-        }
+        Ok(())
+    }
 
-        ws.make_function(entry)?;
-        ws.make_symbol(entry, "entry")?;
-        ws.analyze()?;
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }
