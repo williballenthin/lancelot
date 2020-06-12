@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 nom = "5"
-regex = "1.1"
+regex = "1.3"
 failure = "0.1.5"
 bitvec = "0.17"
 clap = "2.33"
