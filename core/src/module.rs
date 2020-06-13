@@ -40,23 +40,24 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Section {
     // source data, from the PE file, relative to file start.
     pub physical_range: std::ops::Range<RVA>,
     // as mapped into memory with absolute addresses.
-    pub virtual_range:  std::ops::Range<VA>,
-    pub perms:          Permissions,
-    pub name:           String,
+    pub virtual_range: std::ops::Range<VA>,
+    pub perms: Permissions,
+    pub name: String,
 }
 
 /// An address space, as a file would be loaded into memory.
 /// This has an associated architecture (e.g. x32 or x64),
 /// base address, and collection of sections.
 /// This is the information that we'd expect to be common across formats.
+#[derive(Clone)]
 pub struct Module {
-    pub arch:          Arch,
-    pub sections:      Vec<Section>,
+    pub arch: Arch,
+    pub sections: Vec<Section>,
     pub address_space: AbsoluteAddressSpace,
 }
 

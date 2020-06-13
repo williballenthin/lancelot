@@ -50,6 +50,7 @@ pub trait AddressSpace<T> {
 /// Note that this implements `AddressSpace<RVA>` and not `AddressSpace<VA>`.
 /// Use `AbsoluteAddressSpace` when you're dealing with absolute addresses
 /// (`VA`).
+#[derive(Clone)]
 pub struct RelativeAddressSpace {
     pub(crate) map: PageMap<u8>,
 }
@@ -91,6 +92,7 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
 /// Note that this implements `AddressSpace<VA>` and not `AddressSpace<RVA>`.
 /// Use `RelativeAddressSpace` when you're dealing with relative addresses
 /// (`RVA`).
+#[derive(Clone)]
 pub struct AbsoluteAddressSpace {
     pub base_address: VA,
 

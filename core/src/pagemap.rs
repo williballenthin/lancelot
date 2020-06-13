@@ -24,6 +24,7 @@ fn page_offset(rva: RVA) -> usize {
     (rva as usize) & PAGE_MASK
 }
 
+#[derive(Clone)]
 struct Page<T: Default + Copy> {
     elements: [T; PAGE_SIZE],
 }
@@ -51,6 +52,7 @@ impl<T: Default + Copy> Default for Page<T> {
 /// contiguous indices. At the moment, indices are `RVA`.
 ///
 /// Lookups should be quick, as they boil down to just a couple dereferences.
+#[derive(Clone)]
 pub struct PageMap<T: Default + Copy> {
     pages: Vec<Option<Page<T>>>,
 }

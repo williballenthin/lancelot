@@ -5,12 +5,12 @@ authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
 [badges]
-travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "v0.2.0-line" }
+travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "master" }
 
 [dependencies]
 log = "0.4"
-goblin = "0.2"
-zydis = "3"
+goblin = {version = "0.2", optional = true}
+zydis = {version = "3", optional = true}
 byteorder = "1"
 bitflags = "1"
 lazy_static = "1"
@@ -26,9 +26,20 @@ smallvec = "1"
 fnv = "1"
 hex = "0.4"
 
-flirt = { path = "../flirt" }
+flirt = { path = "../flirt" , optional = true}
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 test = []
+
+
+# TODO: document what these mean.
+pe = ["goblin"]
+dis = ["zydis"]
+analysis-pe = ["dis", "pe", "flirt"]
+
+# TODO: figure out how to limit compilation of the binaries
+clitools = ["pe", "dis", "analysis-pe"]
+
+default = ["pe", "dis", "analysis-pe", "clitools"]

@@ -1,7 +1,10 @@
+use std::ops::Range;
 use std::{fs, io::prelude::*};
 
 use anyhow::Result;
+use lazy_static;
 use log::{debug, error};
+use regex::bytes::Regex;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -170,4 +173,55 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>> {
     }
 
     Ok(buf)
+}
+
+pub fn find_ascii_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<usize>, String)> + 'a> {
+    lazy_static! {
+        static ref ASCII_RE: Regex = Regex::new("[ -~]{4,}").unwrap();
+    }
+
+    Box::new(ASCII_RE.captures_iter(buf).map(|cap| {
+        // guaranteed to have at least one hit
+        let mat = cap.get(0).unwrap();
+
+        // this had better be ASCII, and therefore able to be decoded.
+        let s = String::from_utf8(mat.as_bytes().to_vec()).unwrap();
+
+        (
+            Range {
+                start: mat.start(),
+                end: mat.end(),
+            },
+            s,
+        )
+    }))
+}
+
+pub fn find_unicode_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<usize>, String)> + 'a> {
+    lazy_static! {
+        static ref UNICODE_RE: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
+    }
+
+    Box::new(UNICODE_RE.captures_iter(buf).map(|cap| {
+        // guaranteed to have at least one hit
+        let mat = cap.get(0).unwrap();
+
+        // this had better be ASCII, and therefore able to be decoded.
+        let bytes = mat.as_bytes();
+        let words: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|w| u16::from(w[1]) << 8 | u16::from(w[0]))
+            .collect();
+
+        // danger: the unwrap here might feasibly fail
+        let s = String::from_utf16(&words).unwrap();
+
+        (
+            Range {
+                start: mat.start(),
+                end: mat.end(),
+            },
+            s,
+        )
+    }))
 }

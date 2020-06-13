@@ -1,4 +1,6 @@
 extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
 extern crate log;
 
 pub mod analysis;
@@ -12,6 +14,7 @@ pub mod util;
 // helpers that are useful during doctests, tests.
 // TODO: restrict this to tests only
 pub mod rsrc;
+
 pub mod test;
 
 pub type VA = u64;

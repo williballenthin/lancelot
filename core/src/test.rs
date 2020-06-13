@@ -1,6 +1,5 @@
 //< Helpers that are useful for tests and doctests.
 use crate::{
-    analysis::dis,
     aspace::{AddressSpace, RelativeAddressSpace},
     module::{Arch, Module, Permissions, Section},
     RVA, VA,
@@ -38,15 +37,15 @@ pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Module {
     Module {
         arch,
         sections: vec![Section {
-            name:           "shellcode".to_string(),
-            perms:          Permissions::RWX,
+            name: "shellcode".to_string(),
+            perms: Permissions::RWX,
             physical_range: std::ops::Range {
                 start: 0x0,
-                end:   buf.len() as RVA,
+                end: buf.len() as RVA,
             },
-            virtual_range:  std::ops::Range {
+            virtual_range: std::ops::Range {
                 start: 0x0,
-                end:   buf.len() as RVA,
+                end: buf.len() as RVA,
             },
         }],
         address_space: address_space.into_absolute(0x0).unwrap(),
@@ -64,7 +63,10 @@ pub fn load_shellcode64(buf: &[u8]) -> Module {
 }
 
 /// this is for testing, so will panic on error.
+#[cfg(feature = "dis")]
 pub fn read_insn(module: &Module, va: VA) -> zydis::DecodedInstruction {
+    use crate::analysis::dis;
+
     let decoder = dis::get_disassembler(module).unwrap();
     let mut insn_buf = [0u8; 16];
     module.address_space.read_into(va, &mut insn_buf).unwrap();
