@@ -39,6 +39,15 @@ pub trait AddressSpace<T> {
         self.read_into(offset, &mut buf)?;
         Ok(buf)
     }
+
+    /// Read a NULL-terminated, ASCII-encoded string at the given offset.
+    ///
+    /// Errors:
+    ///
+    ///   - PageMapError - if the address is not mapped.
+    ///   - std::str::from_utf8 errors - if the data is not valid utf8
+    ///
+    fn read_ascii(&self, offset: T) -> Result<String>;
 }
 
 /// An AddressSpace in which data is mapped at or near after a base address,
@@ -75,6 +84,17 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
         self.map.slice_into(offset, buf)?;
         Ok(())
     }
+
+    fn read_ascii(&self, offset: RVA) -> Result<String> {
+        let buf: Vec<u8> = (offset..std::u64::MAX)
+            .map(|offset| self.map.get(offset))
+            .take_while(|c| c.is_some())
+            .map(|c| c.unwrap())
+            .take_while(|&c| c != 0)
+            .collect();
+
+        Ok(String::from_utf8(buf)?)
+    }
 }
 
 /// An AddressSpace in which (mostly) contiguous data is mapped at a base
@@ -109,5 +129,13 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
         }
 
         self.relative.read_into((offset - self.base_address) as RVA, buf)
+    }
+
+    fn read_ascii(&self, offset: VA) -> Result<String> {
+        if offset < self.base_address {
+            return Err(PageMapError::NotMapped.into());
+        }
+
+        self.relative.read_ascii((offset - self.base_address) as RVA)
     }
 }
