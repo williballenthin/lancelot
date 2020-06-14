@@ -22,10 +22,12 @@ extern crate clap;
 #[macro_use]
 extern crate anyhow;
 
-use lancelot::loader::pe::imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA};
 use lancelot::{
     aspace::AddressSpace,
-    loader::pe::{load_pe, PE},
+    loader::pe::{
+        imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA},
+        load_pe, PE,
+    },
     util, RVA, VA,
 };
 
@@ -61,8 +63,8 @@ enum Structure {
 
 #[derive(Debug)]
 struct Range {
-    start: VA,
-    end: VA,
+    start:     VA,
+    end:       VA,
     structure: Structure,
 }
 

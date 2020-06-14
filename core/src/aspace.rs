@@ -46,7 +46,6 @@ pub trait AddressSpace<T> {
     ///
     ///   - PageMapError - if the address is not mapped.
     ///   - std::str::from_utf8 errors - if the data is not valid utf8
-    ///
     fn read_ascii(&self, offset: T) -> Result<String>;
 }
 

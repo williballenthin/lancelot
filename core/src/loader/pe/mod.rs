@@ -26,7 +26,7 @@ pub enum PEError {
 /// The struct has a reference to the lifetime of the underlying data that's
 /// parsed into the PE.
 pub struct PE<'a> {
-    pub pe: goblin::pe::PE<'a>,
+    pub pe:     goblin::pe::PE<'a>,
     pub module: Module,
 }
 
@@ -88,14 +88,14 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<S
     Ok(Section {
         physical_range: std::ops::Range {
             start: 0x0,
-            end: hdr_raw_size as u64,
+            end:   hdr_raw_size as u64,
         },
-        virtual_range: std::ops::Range {
+        virtual_range:  std::ops::Range {
             start: base_address,
-            end: base_address + hdr_virt_size,
+            end:   base_address + hdr_virt_size,
         },
-        perms: Permissions::R,
-        name: "header".to_string(),
+        perms:          Permissions::R,
+        name:           "header".to_string(),
     })
 }
 
@@ -144,11 +144,11 @@ fn load_pe_section(
     Ok(Section {
         physical_range: std::ops::Range {
             start: section.pointer_to_raw_data as u64,
-            end: (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
+            end:   (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
         },
         virtual_range: std::ops::Range {
             start: base_address + section.virtual_address as u64,
-            end: base_address + section.virtual_address as u64 + virtual_size,
+            end:   base_address + section.virtual_address as u64 + virtual_size,
         },
         perms,
         name,

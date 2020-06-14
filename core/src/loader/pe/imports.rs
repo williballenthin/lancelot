@@ -9,10 +9,7 @@
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
 
-use crate::aspace::AddressSpace;
-use crate::loader::pe::PE;
-use crate::module::Permissions;
-use crate::{RVA, VA};
+use crate::{aspace::AddressSpace, loader::pe::PE, module::Permissions, RVA, VA};
 
 const sizeof_IMAGE_IMPORT_DESCRIPTOR: usize = 0x14;
 
@@ -32,10 +29,10 @@ const sizeof_IMAGE_IMPORT_DESCRIPTOR: usize = 0x14;
 #[derive(Clone)]
 pub struct IMAGE_IMPORT_DESCRIPTOR {
     pub original_first_thunk: RVA,
-    pub time_date_stamp: u32,
-    pub forwarder_chain: u32,
-    pub name: RVA,
-    pub first_thunk: RVA,
+    pub time_date_stamp:      u32,
+    pub forwarder_chain:      u32,
+    pub name:                 RVA,
+    pub first_thunk:          RVA,
 }
 
 impl IMAGE_IMPORT_DESCRIPTOR {
@@ -102,10 +99,10 @@ pub fn read_image_import_descriptor(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_DESC
 
     Ok(IMAGE_IMPORT_DESCRIPTOR {
         original_first_thunk: entries[0] as RVA,
-        time_date_stamp: entries[1],
-        forwarder_chain: entries[2],
-        name: entries[3] as RVA,
-        first_thunk: entries[4] as RVA,
+        time_date_stamp:      entries[1],
+        forwarder_chain:      entries[2],
+        name:                 entries[3] as RVA,
+        first_thunk:          entries[4] as RVA,
     })
 }
 
