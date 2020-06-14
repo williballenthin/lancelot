@@ -4,21 +4,25 @@
 // don't show compiler warnings when encountering these names.
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
+#![allow(non_upper_case_globals)]
 
 // TODO: imports
 // TODO: resources
+// TODO: overlay
+// TODO: stack strings
+// TODO: function names
+// TODO: flirt function names
 
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use log::{debug, error, info};
+use log::{debug, error};
 #[macro_use]
 extern crate clap;
 #[macro_use]
 extern crate anyhow;
 
 use lancelot::{
-    analysis::dis,
     aspace::AddressSpace,
     loader::pe::{load_pe, PE},
     util, RVA, VA,
@@ -56,8 +60,8 @@ enum Structure {
 
 #[derive(Debug)]
 struct Range {
-    start: VA,
-    end: VA,
+    start:     VA,
+    end:       VA,
     structure: Structure,
 }
 
@@ -329,8 +333,8 @@ fn insert_data_directory_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 }
 
 /// add a range for each basic block. these won't be rendered, though.
-/// add a range for each function, from its start through all contiguous basic blocks.
-/// only the function start address will be rendered.
+/// add a range for each function, from its start through all contiguous basic
+/// blocks. only the function start address will be rendered.
 fn insert_function_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let functions = lancelot::analysis::pe::find_function_starts(pe)?;
 
@@ -361,7 +365,6 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         .map(|section| {
             let start = section.virtual_range.start;
             let size = section.virtual_range.end - section.virtual_range.start;
-            debug!("section: {:#x} {:#x}", start, size);
             pe.module.address_space.read_buf(start, size as usize).unwrap()
         })
         .collect();
@@ -376,7 +379,7 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
                 .sections
                 .iter()
                 .enumerate()
-                .find(|(i, section)| section.virtual_range.contains(&bb.addr))
+                .find(|(_, section)| section.virtual_range.contains(&bb.addr))
                 .unwrap();
 
             let buf = &mut section_bufs[i];

@@ -1,5 +1,4 @@
-use std::ops::Range;
-use std::{fs, io::prelude::*};
+use std::{fs, io::prelude::*, ops::Range};
 
 use anyhow::Result;
 use lazy_static;
@@ -190,7 +189,7 @@ pub fn find_ascii_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<u
         (
             Range {
                 start: mat.start(),
-                end: mat.end(),
+                end:   mat.end(),
             },
             s,
         )
@@ -219,7 +218,7 @@ pub fn find_unicode_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range
         (
             Range {
                 start: mat.start(),
-                end: mat.end(),
+                end:   mat.end(),
             },
             s,
         )

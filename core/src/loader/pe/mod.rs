@@ -106,7 +106,11 @@ const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
-fn load_pe_section(base_address: VA, section: &goblin::pe::section_table::SectionTable) -> Result<Section> {
+fn load_pe_section(
+    base_address: VA,
+    section_alignment: u64,
+    section: &goblin::pe::section_table::SectionTable,
+) -> Result<Section> {
     let name = String::from_utf8_lossy(&section.name[..])
         .into_owned()
         .trim_end_matches('\u{0}')
@@ -116,7 +120,7 @@ fn load_pe_section(base_address: VA, section: &goblin::pe::section_table::Sectio
         .unwrap()
         .to_string();
 
-    let virtual_size = util::align(section.virtual_size as u64, 0x200);
+    let virtual_size = util::align(section.virtual_size as u64, section_alignment);
 
     let mut perms = Permissions::empty();
     if section.characteristics & IMAGE_SCN_MEM_READ > 0 {
@@ -149,6 +153,7 @@ fn load_pe_section(base_address: VA, section: &goblin::pe::section_table::Sectio
     })
 }
 
+// lots of further detail here: https://github.com/corkami/docs/blob/master/PE/PE.md
 pub fn load_pe(buf: &[u8]) -> Result<PE> {
     let pe = get_pe(buf)?;
 
@@ -158,22 +163,25 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
     };
     debug!("pe: arch: {:?}", arch);
 
-    let base_address = match pe.header.optional_header {
-        Some(opt) => opt.windows_fields.image_base,
+    let (base_address, section_alignment) = match pe.header.optional_header {
+        Some(opt) => (
+            opt.windows_fields.image_base,
+            opt.windows_fields.section_alignment as u64,
+        ),
         _ => {
             debug!("pe: base address: using default: 0x40:000");
-            0x40_000
+            (0x40_000, 0x1000)
         }
     };
     debug!("pe: base address: {:#x}", base_address);
 
     let mut sections = vec![load_pe_header(buf, &pe, base_address)?];
     for section in pe.sections.iter() {
-        sections.push(load_pe_section(base_address, section)?);
+        sections.push(load_pe_section(base_address, section_alignment as u64, section)?);
     }
 
     let max_address = sections.iter().map(|sec| sec.virtual_range.end).max().unwrap();
-    let max_page_address = util::align(max_address as u64, 0x1000) - base_address;
+    let max_page_address = util::align(max_address, 0x1000) - base_address;
     debug!("pe: address space: capacity: {:#x}", max_page_address);
 
     let mut address_space = RelativeAddressSpace::with_capacity(max_page_address);
@@ -181,6 +189,7 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
     for section in sections.iter() {
         let pstart = section.physical_range.start as usize;
         let pend = section.physical_range.end as usize;
+        let psize = pend - pstart;
         let pbuf = &buf[pstart..pend];
 
         // the section range contains VAs,
@@ -188,10 +197,24 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
         // so shift down by `base_address`.
         let vstart = section.virtual_range.start;
         let rstart = vstart - base_address;
-        let vsize = util::align(pbuf.len() as u64, 0x1000);
+        let vsize = util::align(
+            section.virtual_range.end - section.virtual_range.start,
+            section_alignment,
+        );
         let vend = vstart + vsize;
+        let mut vbuf = vec![0u8; vsize as usize];
 
-        address_space.map.writezx(rstart, pbuf)?;
+        if vsize as usize >= psize {
+            // vsize > psize, so there will be NULL bytes padding the physical data.
+            let dest = &mut vbuf[0..psize as usize];
+            dest.copy_from_slice(pbuf);
+        } else {
+            // psize > vsize, but vsize wins, so we only read a subset of physical data.
+            let src = &pbuf[0..vsize as usize];
+            vbuf.copy_from_slice(src);
+        }
+
+        address_space.map.writezx(rstart, &vbuf)?;
 
         debug!(
             "pe: address space: mapped {:#x} - {:#x} {:?}",
@@ -213,7 +236,7 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
 mod tests {
     use anyhow::Result;
 
-    use crate::{aspace::AddressSpace, rsrc::*};
+    use crate::{aspace::AddressSpace, rsrc::*, test::init_logging};
 
     #[test]
     fn base_address() -> Result<()> {
@@ -281,6 +304,25 @@ mod tests {
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
+
+    // this demonstrates that the PE will be loaded and sections padded out to their
+    // virtual range.
+    #[test]
+    fn read_each_section() -> Result<()> {
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::load_pe(&buf)?;
+
+        for section in pe.module.sections.iter() {
+            let start = section.virtual_range.start;
+            let size = section.virtual_range.end - section.virtual_range.start;
+            pe.module
+                .address_space
+                .read_buf(start, size as usize)
+                .expect(&format!("read section {} {:#x} {:#x}", section.name, start, size));
+        }
 
         Ok(())
     }
