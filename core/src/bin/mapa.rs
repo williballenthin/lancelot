@@ -22,6 +22,7 @@ extern crate clap;
 #[macro_use]
 extern crate anyhow;
 
+use lancelot::loader::pe::imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA};
 use lancelot::{
     aspace::AddressSpace,
     loader::pe::{load_pe, PE},
@@ -60,8 +61,8 @@ enum Structure {
 
 #[derive(Debug)]
 struct Range {
-    start:     VA,
-    end:       VA,
+    start: VA,
+    end: VA,
     structure: Structure,
 }
 
@@ -73,7 +74,7 @@ struct Ranges {
 impl Ranges {
     fn insert(&mut self, start: VA, end: VA, structure: Structure) -> Result<()> {
         if end > i64::MAX as u64 {
-            return Err(anyhow!("address too large (>= i64::MAX)").into());
+            return Err(anyhow!("address too large (>= i64::MAX)"));
         }
 
         let key = (start, -(end as i64));
@@ -188,7 +189,16 @@ fn insert_dos_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     )
 }
 
+fn insert_signature_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
+    let base_address = pe.module.address_space.base_address;
+    let start = base_address + offset_IMAGE_NT_HEADERS(pe);
+    let end = start + sizeof_Signature;
+    ranges.insert(start, end, Structure::Signature)
+}
+
 fn insert_image_nt_headers_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
+    insert_signature_range(ranges, pe)?;
+
     let base_address = pe.module.address_space.base_address;
     let start = base_address + offset_IMAGE_NT_HEADERS(pe);
     let end =
@@ -249,14 +259,12 @@ fn insert_section_header_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 }
 
 fn insert_section_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
-    let base_address = pe.module.address_space.base_address;
-    for i in 0..pe.pe.header.coff_header.number_of_sections {
-        let section = &pe.pe.sections[i as usize];
-
-        let start = base_address + section.pointer_to_raw_data as RVA;
-        let end = start + section.size_of_raw_data as RVA;
-        let name = section.name().unwrap_or("").to_string();
-        ranges.insert(start, end, Structure::Section(i, name))?;
+    for (i, sec) in pe.module.sections.iter().enumerate() {
+        ranges.insert(
+            sec.virtual_range.start,
+            sec.virtual_range.end,
+            Structure::Section(i as u16, sec.name.to_string()),
+        )?;
     }
     Ok(())
 }
@@ -329,6 +337,45 @@ fn insert_data_directory_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+/// in typical binaries compiled by MSVC,
+/// the import table and import address table immediately precede the ASCII
+/// strings of the DLLs and exported names required by the program.
+//
+/// here we search for that region of data by collecting the addresses
+///  of these elements (IAT, IT, DLL names, function names).
+/// if they are all found close to one another, report the elements as a single
+/// range.
+fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
+    let base_address = pe.module.address_space.base_address;
+    let mut addrs: Vec<RVA> = vec![];
+
+    if let Some(import_directory) = get_import_directory(pe)? {
+        for import_descriptor in read_import_descriptors(pe, import_directory) {
+            addrs.push(base_address + import_descriptor.name);
+
+            for thunk in read_thunks(pe, &import_descriptor) {
+                if let IMAGE_THUNK_DATA::Function(va) = thunk {
+                    addrs.push(base_address + va + 2 as RVA);
+                }
+            }
+        }
+    }
+
+    if addrs.len() > 1 {
+        addrs.sort();
+
+        // TODO: ensure these all show up near one another.
+
+        let last_addr = addrs[addrs.len() - 1];
+        let start = addrs[0];
+        let end = last_addr + pe.module.address_space.read_ascii(last_addr)?.len() as RVA;
+
+        ranges.insert(start, end, Structure::ImportTable)?;
+    }
+
     Ok(())
 }
 
@@ -424,6 +471,7 @@ fn compute_ranges(pe: &PE) -> Result<Ranges> {
     insert_section_header_ranges(&mut ranges, pe)?;
     insert_section_ranges(&mut ranges, pe)?;
     insert_data_directory_ranges(&mut ranges, pe)?;
+    insert_imports_range(&mut ranges, pe)?;
     insert_function_ranges(&mut ranges, pe)?;
     insert_string_ranges(&mut ranges, pe)?;
 
@@ -439,7 +487,7 @@ fn prefix(depth: usize) {
 fn render_range<'a>(ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
     let children = ranges.get_children(range)?;
 
-    if children.len() == 0 {
+    if children.is_empty() {
         prefix(depth);
         println!("{:#x}: {:x?}", range.start, range.structure);
     } else {
