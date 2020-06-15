@@ -6,8 +6,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
 
-// TODO: imports
-// TODO: resources
+// TODO: resource data section
 // TODO: overlay
 // TODO: stack strings
 // TODO: function names
@@ -26,7 +25,9 @@ use lancelot::{
     aspace::AddressSpace,
     loader::pe::{
         imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA},
-        load_pe, PE,
+        load_pe,
+        rsrc::{NodeChild, NodeIdentifier, ResourceDataType, ResourceSectionData},
+        PE,
     },
     util, RVA, VA,
 };
@@ -57,6 +58,7 @@ enum Structure {
     BoundImportTable,
     DelayImportDescriptor,
     ClrRuntimeHeader,
+    Resource(String),
     String(String),
     Function(String),
 }
@@ -381,6 +383,63 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     Ok(())
 }
 
+fn insert_resource_ranges_inner(
+    ranges: &mut Ranges,
+    pe: &PE,
+    rsrc: &ResourceSectionData,
+    prefix: String,
+    node: NodeChild,
+) -> Result<()> {
+    match node {
+        NodeChild::Data(d) => {
+            let base_address = pe.module.address_space.base_address;
+            let start = base_address + d.rva as RVA;
+            let end = start + d.size as RVA;
+            ranges.insert(start, end, Structure::Resource(prefix))?;
+        }
+        NodeChild::Node(child) => {
+            for (entry, child) in child.children(&rsrc)?.into_iter() {
+                // when the first element is recognized, render it like `RT_VERSION`,
+                // otherwise, like `0x0`.
+                let prefix = match entry.id(&rsrc)? {
+                    NodeIdentifier::ID(id) => {
+                        if prefix.is_empty() {
+                            match ResourceDataType::from_u32(id) {
+                                Some(dt) => format!("{:?}", dt),
+                                None => format!("{:#x}", id),
+                            }
+                        } else {
+                            format!("{}/{:#x}", prefix, id)
+                        }
+                    }
+                    NodeIdentifier::Name(s) => {
+                        if prefix.is_empty() {
+                            s.clone()
+                        } else {
+                            format!("{}/{}", prefix, s)
+                        }
+                    }
+                };
+
+                // TODO: rsrc data is not typically mapped into memory.
+                // so these ranges refer beyond the range the of the loaded file.
+                insert_resource_ranges_inner(ranges, pe, rsrc, prefix, child)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn insert_resource_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
+    if let Some(rsrc) = ResourceSectionData::from_pe(pe)? {
+        let root = rsrc.root()?;
+        insert_resource_ranges_inner(ranges, pe, &rsrc, "".to_string(), NodeChild::Node(root))?;
+    }
+
+    Ok(())
+}
+
 /// add a range for each basic block. these won't be rendered, though.
 /// add a range for each function, from its start through all contiguous basic
 /// blocks. only the function start address will be rendered.
@@ -474,6 +533,7 @@ fn compute_ranges(pe: &PE) -> Result<Ranges> {
     insert_section_ranges(&mut ranges, pe)?;
     insert_data_directory_ranges(&mut ranges, pe)?;
     insert_imports_range(&mut ranges, pe)?;
+    insert_resource_ranges(&mut ranges, pe)?;
     insert_function_ranges(&mut ranges, pe)?;
     insert_string_ranges(&mut ranges, pe)?;
 

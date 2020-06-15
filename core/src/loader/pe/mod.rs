@@ -3,6 +3,7 @@ use log::debug;
 use thiserror::Error;
 
 pub mod imports;
+pub mod rsrc;
 
 use crate::{
     aspace::RelativeAddressSpace,

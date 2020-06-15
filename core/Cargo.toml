@@ -25,6 +25,7 @@ regex = "1"
 smallvec = "1"
 fnv = "1"
 hex = "0.4"
+widestring = "0.4"
 
 flirt = { path = "../flirt" , optional = true}
 
