@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::{
     aspace::{AbsoluteAddressSpace, AddressSpace},
+    pagemap::PageMapError::NotMapped,
     RVA, VA,
 };
 
@@ -99,5 +100,14 @@ impl Module {
     pub fn probe_rva(&self, offset: RVA, perm: Permissions) -> bool {
         let va = self.address_space.base_address + offset;
         self.probe_va(va, perm)
+    }
+
+    pub fn file_offset(&self, va: VA) -> Result<usize> {
+        if let Some(sec) = self.sections.iter().find(|&sec| sec.virtual_range.contains(&va)) {
+            let offset = va - sec.virtual_range.start;
+            return Ok((offset + sec.physical_range.start) as usize);
+        } else {
+            return Err(NotMapped.into());
+        }
     }
 }
