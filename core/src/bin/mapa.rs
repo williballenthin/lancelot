@@ -64,6 +64,38 @@ enum Structure {
     Overlay,
 }
 
+impl std::fmt::Display for Structure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Structure::File => write!(f, "file"),
+            Structure::Header => write!(f, "headers"),
+            Structure::IMAGE_DOS_HEADER => write!(f, "IMAGE_DOS_HEADER"),
+            Structure::IMAGE_NT_HEADERS => write!(f, "IMAGE_NT_HEADERS"),
+            Structure::Signature => write!(f, "signature"),
+            Structure::IMAGE_FILE_HEADER => write!(f, "IMAGE_FILE_HEADER"),
+            Structure::IMAGE_OPTIONAL_HEADER => write!(f, "IMAGE_OPTIONAL_HEADER"),
+            Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {}", name),
+            Structure::Section(_, name) => write!(f, "section {}", name),
+            Structure::ImportTable => write!(f, "import table"),
+            Structure::ExportTable => write!(f, "export table"),
+            Structure::ResourceTable => write!(f, "resource table"),
+            Structure::ExceptionTable => write!(f, "exception table"),
+            Structure::CertificateTable => write!(f, "certificate table"),
+            Structure::BaseRelocationTable => write!(f, "base relocation table"),
+            Structure::DebugData => write!(f, "debug data"),
+            Structure::TlsTable => write!(f, "TLS table"),
+            Structure::LoadConfigTable => write!(f, "load config table"),
+            Structure::BoundImportTable => write!(f, "bound import table"),
+            Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
+            Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
+            Structure::String(s) => write!(f, "string: {}", s),
+            Structure::Function(name) => write!(f, "function: {}", name),
+            Structure::Resource(name) => write!(f, "resource: {}", name),
+            Structure::Overlay => write!(f, "overlay"),
+        }
+    }
+}
+
 type FileOffset = usize;
 
 #[derive(Debug)]
@@ -586,23 +618,37 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
 
 fn prefix(depth: usize) {
     for _ in 0..depth {
-        print!("  ");
+        print!("│  ");
     }
 }
 
 fn render_range<'a>(ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
     let children = ranges.get_children(range)?;
+    let has_children = !children.is_empty();
 
-    if children.is_empty() {
+    if !has_children {
         prefix(depth);
-        println!("{:#x}: {:x?}", range.start, range.structure);
+
+        match &range.structure {
+            Structure::Function(s) => println!("{:#x}: {}", range.start, s),
+            Structure::String(s) => println!("{:#x}: \"{}\"", range.start, s),
+            _ => println!("{:#x}: {:x?}", range.start, range.structure),
+        }
     } else {
         prefix(depth);
-        println!("[{:#x}: {:x?}]", range.start, range.structure)
+        println!("┌── {:#08x} {} ────────", range.start, range.structure);
     }
 
     for child in children.into_iter() {
         render_range(ranges, child, depth + 1)?;
+    }
+
+    if has_children {
+        prefix(depth);
+        println!("└── {:#08x} ────────────────────────", range.end);
+
+        prefix(depth);
+        println!("");
     }
 
     Ok(())
