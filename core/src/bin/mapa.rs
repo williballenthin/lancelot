@@ -61,23 +61,27 @@ enum Structure {
     Resource(String),
     String(String),
     Function(String),
+    Overlay,
 }
+
+type FileOffset = usize;
 
 #[derive(Debug)]
 struct Range {
-    start:     VA,
-    end:       VA,
+    start:     FileOffset,
+    end:       FileOffset,
     structure: Structure,
 }
 
 #[derive(Default)]
 struct Ranges {
-    map: BTreeMap<(VA, i64), Range>,
+    // key: (start, -end)
+    map: BTreeMap<(FileOffset, i64), Range>,
 }
 
 impl Ranges {
-    fn insert(&mut self, start: VA, end: VA, structure: Structure) -> Result<()> {
-        if end > i64::MAX as u64 {
+    fn insert(&mut self, start: FileOffset, end: FileOffset, structure: Structure) -> Result<()> {
+        if end > i64::MAX as FileOffset {
             return Err(anyhow!("address too large (>= i64::MAX)"));
         }
 
@@ -89,6 +93,13 @@ impl Ranges {
         Ok(())
     }
 
+    fn va_insert(&mut self, pe: &PE, start: VA, end: VA, structure: Structure) -> Result<()> {
+        let pstart = pe.module.file_offset(start)?;
+        let plen = (end - start) as RVA;
+        let pend = pstart + plen as FileOffset;
+        self.insert(pstart, pend, structure)
+    }
+
     fn root(&self) -> Result<&Range> {
         Ok(self.map.values().next().unwrap())
     }
@@ -97,16 +108,11 @@ impl Ranges {
     /// only collect the ranges that are direct children of the range.
     fn get_children<'a>(&self, range: &'a Range) -> Result<Vec<&Range>> {
         let key = (range.start, -(range.end as i64));
-        let max = (u64::MAX, i64::MIN);
+        let max = (usize::MAX, i64::MIN);
 
-        // assume the PE is not mapped at 0x0
-        // otherwise, we'll miss the first range.
-        if range.start == 0x0 {
-            panic!("module cannot be mapped at 0x0, yet");
-        }
         // covered is the last address yielded so far.
         // once we yield a direct child, we don't want to yield its children.
-        let mut covered = 0x0;
+        let mut covered = -1i64;
 
         let mut children = vec![];
         for (_, child) in self
@@ -116,14 +122,14 @@ impl Ranges {
             // this child is inside the covered range,
             // which means its a descendent of a child that's already been yielded.
             // so, we don't want to collect it here.
-            if child.start < covered {
+            if (child.start as i64) < covered {
                 continue;
             }
 
             // completely inside the parent range.
             if child.end <= range.end {
                 children.push(child);
-                covered = child.end;
+                covered = child.end as i64;
             }
 
             // the child overflows the parent range.
@@ -138,17 +144,48 @@ impl Ranges {
     }
 }
 
-// the complete file span
-fn insert_file_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
-    let base_address = pe.module.address_space.base_address;
-    let max_address = pe
+fn get_overlay_range(buf: &[u8], pe: &PE) -> Result<(FileOffset, FileOffset)> {
+    let start = pe
         .module
         .sections
         .iter()
-        .map(|sec| sec.virtual_range.end)
+        .map(|sec| sec.physical_range.end)
         .max()
         .unwrap();
-    ranges.insert(base_address, max_address, Structure::File)
+
+    let end = buf.len();
+
+    Ok((start as FileOffset, end as FileOffset))
+}
+
+fn insert_overlay_ranges(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()> {
+    let (start, end) = get_overlay_range(buf, pe)?;
+    ranges.insert(start, end, Structure::Overlay)?;
+
+    let buf = &buf[start..end];
+
+    for (range, s) in util::find_ascii_strings(buf) {
+        let rstart = start + range.start as FileOffset;
+        let rend = start + range.end as FileOffset;
+        ranges.insert(rstart, rend, Structure::String(s))?;
+    }
+
+    for (range, s) in util::find_unicode_strings(buf) {
+        let rstart = start + range.start as FileOffset;
+        let rend = start + range.end as FileOffset;
+        ranges.insert(rstart, rend, Structure::String(s))?;
+    }
+
+    Ok(())
+}
+
+// the complete file span
+fn insert_file_range(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()> {
+    ranges.insert(0, buf.len(), Structure::File)?;
+
+    insert_overlay_ranges(ranges, buf, pe)?;
+
+    Ok(())
 }
 
 const sizeof_IMAGE_DOS_HEADER: RVA = 0x40;
@@ -186,7 +223,8 @@ fn offset_IMAGE_SECTION_HEADER(pe: &PE) -> RVA {
 
 fn insert_dos_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let base_address = pe.module.address_space.base_address;
-    ranges.insert(
+    ranges.va_insert(
+        pe,
         base_address,
         base_address + sizeof_IMAGE_DOS_HEADER,
         Structure::IMAGE_DOS_HEADER,
@@ -197,7 +235,7 @@ fn insert_signature_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let base_address = pe.module.address_space.base_address;
     let start = base_address + offset_IMAGE_NT_HEADERS(pe);
     let end = start + sizeof_Signature;
-    ranges.insert(start, end, Structure::Signature)
+    ranges.va_insert(pe, start, end, Structure::Signature)
 }
 
 fn insert_image_nt_headers_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
@@ -207,14 +245,14 @@ fn insert_image_nt_headers_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let start = base_address + offset_IMAGE_NT_HEADERS(pe);
     let end =
         start + sizeof_Signature + sizeof_IMAGE_FILE_HEADER + (pe.pe.header.coff_header.size_of_optional_header as RVA);
-    ranges.insert(start, end, Structure::IMAGE_NT_HEADERS)
+    ranges.va_insert(pe, start, end, Structure::IMAGE_NT_HEADERS)
 }
 
 fn insert_image_file_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let base_address = pe.module.address_space.base_address;
     let start = base_address + offset_IMAGE_FILE_HEADER(pe);
     let end = start + sizeof_IMAGE_FILE_HEADER;
-    ranges.insert(start, end, Structure::IMAGE_FILE_HEADER)
+    ranges.va_insert(pe, start, end, Structure::IMAGE_FILE_HEADER)
 }
 
 fn insert_image_optional_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
@@ -222,7 +260,7 @@ fn insert_image_optional_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()
         let base_address = pe.module.address_space.base_address;
         let start = base_address + offset_IMAGE_OPTIONAL_HEADER(pe);
         let end = start + sizeof_IMAGE_OPTIONAL_HEADER(pe);
-        ranges.insert(start, end, Structure::IMAGE_OPTIONAL_HEADER)?;
+        ranges.va_insert(pe, start, end, Structure::IMAGE_OPTIONAL_HEADER)?;
     }
     Ok(())
 }
@@ -236,7 +274,12 @@ fn insert_file_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         .find(|section| section.virtual_range.start == base_address)
         .unwrap();
 
-    ranges.insert(header.virtual_range.start, header.virtual_range.end, Structure::Header)?;
+    ranges.va_insert(
+        pe,
+        header.virtual_range.start,
+        header.virtual_range.end,
+        Structure::Header,
+    )?;
     insert_dos_header_range(ranges, pe)?;
     insert_image_nt_headers_range(ranges, pe)?;
     insert_image_file_header_range(ranges, pe)?;
@@ -255,7 +298,7 @@ fn insert_section_header_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         let end = start + sizeof_IMAGE_SECTION_HEADER;
         let name = section.name().unwrap_or("").to_string();
 
-        ranges.insert(start, end, Structure::IMAGE_SECTION_HEADER(i, name))?;
+        ranges.va_insert(pe, start, end, Structure::IMAGE_SECTION_HEADER(i, name))?;
 
         offset += sizeof_IMAGE_SECTION_HEADER;
     }
@@ -265,8 +308,8 @@ fn insert_section_header_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 fn insert_section_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     for (i, sec) in pe.module.sections.iter().enumerate() {
         ranges.insert(
-            sec.virtual_range.start,
-            sec.virtual_range.end,
+            sec.physical_range.start as FileOffset,
+            sec.physical_range.end as FileOffset,
             Structure::Section(i as u16, sec.name.to_string()),
         )?;
     }
@@ -337,7 +380,7 @@ fn insert_data_directory_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
             if let Some(dir) = f() {
                 let start = base_address + dir.virtual_address as RVA;
                 let end = start + dir.size as RVA;
-                ranges.insert(start, end, structure)?;
+                ranges.va_insert(pe, start, end, structure)?;
             }
         }
     }
@@ -377,7 +420,7 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         let start = addrs[0];
         let end = last_addr + pe.module.address_space.read_ascii(last_addr)?.len() as RVA;
 
-        ranges.insert(start, end, Structure::ImportTable)?;
+        ranges.va_insert(pe, start, end, Structure::ImportTable)?;
     }
 
     Ok(())
@@ -392,10 +435,12 @@ fn insert_resource_ranges_inner(
 ) -> Result<()> {
     match node {
         NodeChild::Data(d) => {
-            let base_address = pe.module.address_space.base_address;
-            let start = base_address + d.rva as RVA;
-            let end = start + d.size as RVA;
-            ranges.insert(start, end, Structure::Resource(prefix))?;
+            // rsrc RVAs are file offsets?
+            ranges.insert(
+                d.rva as FileOffset,
+                (d.rva + d.size) as FileOffset,
+                Structure::Resource(prefix),
+            )?;
         }
         NodeChild::Node(child) => {
             for (entry, child) in child.children(&rsrc)?.into_iter() {
@@ -421,8 +466,6 @@ fn insert_resource_ranges_inner(
                     }
                 };
 
-                // TODO: rsrc data is not typically mapped into memory.
-                // so these ranges refer beyond the range the of the loaded file.
                 insert_resource_ranges_inner(ranges, pe, rsrc, prefix, child)?;
             }
         }
@@ -460,7 +503,7 @@ fn insert_function_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 
         // TODO get function name
 
-        ranges.insert(function, end, Structure::Function(format!("sub_{:x}", function)))?;
+        ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
     }
     Ok(())
 }
@@ -511,23 +554,24 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         for (range, s) in util::find_ascii_strings(buf) {
             let start = sec.virtual_range.start + range.start as RVA;
             let end = sec.virtual_range.start + range.end as RVA;
-            ranges.insert(start, end, Structure::String(s))?;
+            ranges.va_insert(pe, start, end, Structure::String(s))?;
         }
 
-        for (range, s) in util::find_ascii_strings(buf) {
+        for (range, s) in util::find_unicode_strings(buf) {
             let start = sec.virtual_range.start + range.start as RVA;
             let end = sec.virtual_range.start + range.end as RVA;
-            ranges.insert(start, end, Structure::String(s))?;
+            ranges.va_insert(pe, start, end, Structure::String(s))?;
         }
     }
 
     Ok(())
 }
 
-fn compute_ranges(pe: &PE) -> Result<Ranges> {
+fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
     let mut ranges = Default::default();
 
-    insert_file_range(&mut ranges, pe)?;
+    insert_file_range(&mut ranges, buf, pe)?;
+    insert_overlay_ranges(&mut ranges, buf, pe)?;
     insert_file_header_range(&mut ranges, pe)?;
     insert_section_header_ranges(&mut ranges, pe)?;
     insert_section_ranges(&mut ranges, pe)?;
@@ -621,7 +665,7 @@ fn _main() -> Result<()> {
     let buf = util::read_file(filename)?;
     let pe = load_pe(&buf)?;
 
-    let ranges = compute_ranges(&pe)?;
+    let ranges = compute_ranges(&buf, &pe)?;
     render(&ranges)?;
 
     Ok(())
