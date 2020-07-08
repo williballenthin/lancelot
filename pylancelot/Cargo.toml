@@ -10,9 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lancelot = { path = "../core" }
-pyo3 = { version = "0.8.1"}
-failure = "0.1.8"
-zydis = { git = "https://github.com/zyantific/zydis-rs", rev="c4474211863004ce87464a2ea397341b7e1a6b6f", features=["serialization"]}
+pyo3 = { version = "0.11"}
 
 [features]
 # see: https://github.com/PyO3/pyo3/issues/340
