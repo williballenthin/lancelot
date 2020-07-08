@@ -105,9 +105,9 @@ impl Module {
     pub fn file_offset(&self, va: VA) -> Result<usize> {
         if let Some(sec) = self.sections.iter().find(|&sec| sec.virtual_range.contains(&va)) {
             let offset = va - sec.virtual_range.start;
-            return Ok((offset + sec.physical_range.start) as usize);
+            Ok((offset + sec.physical_range.start) as usize)
         } else {
-            return Err(NotMapped.into());
+            Err(NotMapped.into())
         }
     }
 }
