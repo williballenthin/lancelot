@@ -347,7 +347,7 @@ dependencies = [
  "smallvec 1.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "widestring 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "zydis 3.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zydis 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -793,7 +793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "zydis"
-version = "3.0.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -896,4 +896,4 @@ dependencies = [
 "checksum winapi 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)" = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
 "checksum winapi-i686-pc-windows-gnu 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
 "checksum winapi-x86_64-pc-windows-gnu 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-"checksum zydis 3.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "68c35ff0072e680eeddb3d760ff5f662ff176ca55b6a012a7c22d3d6ea44739f"
+"checksum zydis 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "2cae82593755d76e8aa27c10281724173717a29b48ae523cb9c5980bc4b4d0a1"
