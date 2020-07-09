@@ -616,49 +616,78 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
     Ok(ranges)
 }
 
-fn prefix(depth: usize) {
-    for _ in 0..depth {
-        print!("│  ");
+/// prefix the given (potentially multi-line) string
+/// with the repeated prefix (here: `|  `).
+fn prefix(depth: usize, s: &str) -> String {
+    let mut ret: Vec<String> = Default::default();
+    for line in s.split("\n") {
+        for _ in 0..depth {
+            ret.push(String::from("│  "));
+        }
+        ret.push(String::from(line));
+        ret.push(String::from("\n"));
     }
+    String::from(ret.join("").trim_end())
 }
 
-fn render_range<'a>(ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
-    let children = ranges.get_children(range)?;
-    let has_children = !children.is_empty();
+/// print the given (potentially multi-line) string
+/// with the repeated prefix (here: `|  `).
+fn prefixln(depth: usize, s: &str) {
+    println!("{}", prefix(depth, s));
+}
 
-    if !has_children {
-        prefix(depth);
+fn format_block_start(range: &Range) -> String {
+    format!("┌── {:#08x} {} ────────", range.start, range.structure)
+}
 
-        match &range.structure {
-            Structure::Function(s) => println!("{:#x}: {}", range.start, s),
-            Structure::String(s) => println!("{:#x}: \"{}\"", range.start, s),
-            _ => println!("{:#x}: {:x?}", range.start, range.structure),
+fn format_block_end(range: &Range) -> String {
+    format!("└── {:#08x} ────────────────────────", range.end)
+}
+
+fn format_range_hex(buf: &[u8], range: &Range) -> String {
+    let hex = lancelot::util::hexdump(&buf[range.start as usize..range.end as usize], range.start);
+    format!(
+        "{}\n{}\n{}\n",
+        format_block_start(range),
+        prefix(1, hex.trim_end()),
+        format_block_end(range)
+    )
+}
+
+fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
+    match &range.structure {
+        Structure::Function(s) => prefixln(depth, &format!("{:#x}: {}", range.start, s)),
+        Structure::String(s) => prefixln(depth, &format!("{:#x}: \"{}\"", range.start, s)),
+        Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(buf, range)),
+        Structure::Signature => prefixln(depth, &format_range_hex(buf, range)),
+        Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(buf, range)),
+        Structure::IMAGE_OPTIONAL_HEADER => prefixln(depth, &format_range_hex(buf, range)),
+        Structure::IMAGE_SECTION_HEADER(_, _) => prefixln(depth, &format_range_hex(buf, range)),
+        _ => {
+            let children = ranges.get_children(range)?;
+            let has_children = !children.is_empty();
+
+            if !has_children {
+                prefixln(depth, &format!("{:#x}: [{}]", range.start, range.structure))
+            } else {
+                prefixln(depth, &format_block_start(range));
+
+                for child in children.into_iter() {
+                    render_range(buf, ranges, child, depth + 1)?;
+                }
+
+                prefixln(depth, &format_block_end(range));
+                prefixln(depth, "");
+            }
         }
-    } else {
-        prefix(depth);
-        println!("┌── {:#08x} {} ────────", range.start, range.structure);
-    }
-
-    for child in children.into_iter() {
-        render_range(ranges, child, depth + 1)?;
-    }
-
-    if has_children {
-        prefix(depth);
-        println!("└── {:#08x} ────────────────────────", range.end);
-
-        prefix(depth);
-        println!("");
     }
 
     Ok(())
 }
 
-fn render(ranges: &Ranges) -> Result<()> {
+fn render(buf: &[u8], ranges: &Ranges) -> Result<()> {
     let root = ranges.root()?;
-    render_range(ranges, root, 0)?;
-
-    println!("ok");
+    render_range(buf, ranges, root, 0)?;
     Ok(())
 }
 
@@ -712,7 +741,7 @@ fn _main() -> Result<()> {
     let pe = load_pe(&buf)?;
 
     let ranges = compute_ranges(&buf, &pe)?;
-    render(&ranges)?;
+    render(&buf, &ranges)?;
 
     Ok(())
 }
