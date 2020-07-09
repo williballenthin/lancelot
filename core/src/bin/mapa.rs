@@ -620,7 +620,7 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
 /// with the repeated prefix (here: `|  `).
 fn prefix(depth: usize, s: &str) -> String {
     let mut ret: Vec<String> = Default::default();
-    for line in s.split("\n") {
+    for line in s.split('\n') {
         for _ in 0..depth {
             ret.push(String::from("│  "));
         }
