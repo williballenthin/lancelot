@@ -136,6 +136,20 @@ impl Ranges {
         Ok(self.map.values().next().unwrap())
     }
 
+    fn has_children<'a>(&self, range: &'a Range) -> bool {
+        let key = (range.start, -(range.end as i64));
+        let max = (usize::MAX, i64::MIN);
+
+        if let Some((_, child)) = self
+            .map
+            .range((std::ops::Bound::Excluded(key), std::ops::Bound::Included(max)))
+            .next()
+        {
+            return child.end <= range.end;
+        }
+        return false;
+    }
+
     /// find ranges that fall within the given range.
     /// only collect the ranges that are direct children of the range.
     fn get_children<'a>(&self, range: &'a Range) -> Result<Vec<&Range>> {
@@ -636,24 +650,67 @@ fn prefixln(depth: usize, s: &str) {
     println!("{}", prefix(depth, s));
 }
 
+/// width of a "block".
+/// 80 matches the width of a hex dump nicely.
+const WIDTH: usize = 80;
+
+/// render the range block start separator like:
+///
+///   ┌── 0x000290 IMAGE_SECTION_HEADER .rsrc
+/// ────────────────────────────────────────
+///
+/// pads the line with `WIDTH` (80) characters,
+/// which matches the hex dump width nicely.
 fn format_block_start(range: &Range) -> String {
-    format!("┌── {:#08x} {} ────────", range.start, range.structure)
+    // TODO: color
+
+    let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
+    chars.extend("┌──".chars());
+    chars.extend(format!(" {:#08x} {} ", range.start, range.structure).chars());
+    while chars.len() < WIDTH {
+        chars.push('─');
+    }
+    chars.iter().collect()
 }
 
+/// render the range block end separator like:
+///
+///     └── 0x000290
+/// ───────────────────────────────────────────────────────────────────
 fn format_block_end(range: &Range) -> String {
-    format!("└── {:#08x} ────────────────────────", range.end)
+    let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
+    chars.extend("└──".chars());
+    chars.extend(format!(" {:#08x} ", range.end).chars());
+    while chars.len() < WIDTH {
+        chars.push('─');
+    }
+    chars.iter().collect()
 }
 
 fn format_range_hex(buf: &[u8], range: &Range) -> String {
     let hex = lancelot::util::hexdump(&buf[range.start as usize..range.end as usize], range.start);
     format!(
-        "{}\n{}\n{}\n",
+        "{}\n{}\n{}",
         format_block_start(range),
         prefix(1, hex.trim_end()),
         format_block_end(range)
     )
 }
 
+fn will_render_as_block<'a>(ranges: &'a Ranges, range: &'a Range) -> bool {
+    match &range.structure {
+        Structure::Function(_) => false,
+        Structure::String(_) => false,
+        Structure::IMAGE_DOS_HEADER => true,
+        Structure::Signature => true,
+        Structure::IMAGE_FILE_HEADER => true,
+        Structure::IMAGE_OPTIONAL_HEADER => true,
+        Structure::IMAGE_SECTION_HEADER(_, _) => true,
+        _ => ranges.has_children(range),
+    }
+}
+
+/// write the given range to output
 fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
     match &range.structure {
         Structure::Function(s) => prefixln(depth, &format!("{:#x}: {}", range.start, s)),
@@ -672,12 +729,26 @@ fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usi
             } else {
                 prefixln(depth, &format_block_start(range));
 
-                for child in children.into_iter() {
-                    render_range(buf, ranges, child, depth + 1)?;
+                // iterate over pairs of children.
+                // always render the first.
+                // then check and see if they're inline entryes (e.g. both strings).
+                // if not, then render a line between them.
+                // after this loop, we'll render the very final child.
+                for siblings in children.windows(2) {
+                    let c1 = siblings[0];
+                    let c2 = siblings[1];
+
+                    render_range(buf, ranges, c1, depth + 1)?;
+
+                    if !(will_render_as_block(ranges, c1) == false && will_render_as_block(ranges, c2) == false) {
+                        prefixln(depth + 1, "");
+                    }
                 }
 
+                let last_child = children[children.len() - 1];
+                render_range(buf, ranges, last_child, depth + 1)?;
+
                 prefixln(depth, &format_block_end(range));
-                prefixln(depth, "");
             }
         }
     }
@@ -685,6 +756,7 @@ fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usi
     Ok(())
 }
 
+/// write the output
 fn render(buf: &[u8], ranges: &Ranges) -> Result<()> {
     let root = ranges.root()?;
     render_range(buf, ranges, root, 0)?;
