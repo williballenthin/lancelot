@@ -20,6 +20,7 @@ use log::{debug, error};
 extern crate clap;
 #[macro_use]
 extern crate anyhow;
+use ansi_term::Colour as Color;
 
 use lancelot::{
     aspace::AddressSpace,
@@ -630,13 +631,18 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
     Ok(ranges)
 }
 
+/// width of a "block".
+/// 80 matches the width of a hex dump nicely.
+const WIDTH: usize = 80;
+const MUTED: Color = Color::Fixed(8);
+
 /// prefix the given (potentially multi-line) string
 /// with the repeated prefix (here: `|  `).
 fn prefix(depth: usize, s: &str) -> String {
     let mut ret: Vec<String> = Default::default();
     for line in s.split('\n') {
         for _ in 0..depth {
-            ret.push(String::from("│  "));
+            ret.push(MUTED.paint("│  ").to_string());
         }
         ret.push(String::from(line));
         ret.push(String::from("\n"));
@@ -650,10 +656,6 @@ fn prefixln(depth: usize, s: &str) {
     println!("{}", prefix(depth, s));
 }
 
-/// width of a "block".
-/// 80 matches the width of a hex dump nicely.
-const WIDTH: usize = 80;
-
 /// render the range block start separator like:
 ///
 ///   ┌── 0x000290 IMAGE_SECTION_HEADER .rsrc ────
@@ -661,14 +663,17 @@ const WIDTH: usize = 80;
 /// pads the line with `WIDTH` (80) characters,
 /// which matches the hex dump width nicely.
 fn format_block_start(range: &Range) -> String {
-    // TODO: color
+    let label = format!(" {:#08x} {} ", range.start, range.structure);
 
     let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
-    chars.extend("┌──".chars());
-    chars.extend(format!(" {:#08x} {} ", range.start, range.structure).chars());
-    while chars.len() < WIDTH {
-        chars.push('─');
+    chars.extend(MUTED.paint("┌─").to_string().chars());
+    chars.extend(label.chars());
+
+    let dash = MUTED.paint("─").to_string();
+    for _ in 0..WIDTH - (label.len() + 2) {
+        chars.extend(dash.chars());
     }
+
     chars.iter().collect()
 }
 
@@ -676,12 +681,17 @@ fn format_block_start(range: &Range) -> String {
 ///
 ///     └── 0x000290  ────────────────────────────
 fn format_block_end(range: &Range) -> String {
+    let label = format!(" {:#08x} ", range.end);
+
     let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
-    chars.extend("└──".chars());
-    chars.extend(format!(" {:#08x} ", range.end).chars());
-    while chars.len() < WIDTH {
-        chars.push('─');
+    chars.extend(MUTED.paint("└─").to_string().chars());
+    chars.extend(label.chars());
+
+    let dash = MUTED.paint("─").to_string();
+    for _ in 0..WIDTH - (label.len() + 2) {
+        chars.extend(dash.chars());
     }
+
     chars.iter().collect()
 }
 
@@ -715,8 +725,8 @@ fn will_render_as_block<'a>(ranges: &'a Ranges, range: &'a Range) -> bool {
 /// write the given range to output
 fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
     match &range.structure {
-        Structure::Function(s) => prefixln(depth, &format!("{:#x}: {}", range.start, s)),
-        Structure::String(s) => prefixln(depth, &format!("{:#x}: \"{}\"", range.start, s)),
+        Structure::Function(s) => prefixln(depth, &format!("{:#08x}: {}", range.start, s)),
+        Structure::String(s) => prefixln(depth, &format!("{:#08x}: \"{}\"", range.start, s)),
         Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(buf, range)),
         Structure::Signature => prefixln(depth, &format_range_hex(buf, range)),
         Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(buf, range)),
