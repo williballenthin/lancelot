@@ -656,8 +656,7 @@ const WIDTH: usize = 80;
 
 /// render the range block start separator like:
 ///
-///   ┌── 0x000290 IMAGE_SECTION_HEADER .rsrc
-/// ────────────────────────────────────────
+///   ┌── 0x000290 IMAGE_SECTION_HEADER .rsrc ────
 ///
 /// pads the line with `WIDTH` (80) characters,
 /// which matches the hex dump width nicely.
@@ -675,8 +674,7 @@ fn format_block_start(range: &Range) -> String {
 
 /// render the range block end separator like:
 ///
-///     └── 0x000290
-/// ───────────────────────────────────────────────────────────────────
+///     └── 0x000290  ────────────────────────────
 fn format_block_end(range: &Range) -> String {
     let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
     chars.extend("└──".chars());
@@ -699,13 +697,17 @@ fn format_range_hex(buf: &[u8], range: &Range) -> String {
 
 fn will_render_as_block<'a>(ranges: &'a Ranges, range: &'a Range) -> bool {
     match &range.structure {
+        // these are always rendered inline
         Structure::Function(_) => false,
         Structure::String(_) => false,
+        // these are always rendered as a hex dump
         Structure::IMAGE_DOS_HEADER => true,
         Structure::Signature => true,
         Structure::IMAGE_FILE_HEADER => true,
         Structure::IMAGE_OPTIONAL_HEADER => true,
         Structure::IMAGE_SECTION_HEADER(_, _) => true,
+        // anything else is rendered inline if it has no children.
+        // otherwise, as a block.
         _ => ranges.has_children(range),
     }
 }
