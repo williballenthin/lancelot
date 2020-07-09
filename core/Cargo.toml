@@ -27,6 +27,7 @@ fnv = "1"
 hex = "0.4"
 widestring = "0.4"
 ansi_term = "0.12"
+hexyl = "0.8"
 
 flirt = { path = "../flirt" , optional = true}
 

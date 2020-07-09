@@ -632,8 +632,8 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
 }
 
 /// width of a "block".
-/// 80 matches the width of a hex dump nicely.
-const WIDTH: usize = 80;
+/// try to match the width of a hex dump nicely.
+const WIDTH: usize = 88;
 const MUTED: Color = Color::Fixed(8);
 
 /// prefix the given (potentially multi-line) string
@@ -660,17 +660,17 @@ fn prefixln(depth: usize, s: &str) {
 ///
 ///   ┌── 0x000290 IMAGE_SECTION_HEADER .rsrc ────
 ///
-/// pads the line with `WIDTH` (80) characters,
-/// which matches the hex dump width nicely.
+/// pads the line with `WIDTH` characters,
 fn format_block_start(range: &Range) -> String {
     let label = format!(" {:#08x} {} ", range.start, range.structure);
+    let prefix = "┌──";
 
     let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
-    chars.extend(MUTED.paint("┌─").to_string().chars());
+    chars.extend(MUTED.paint(prefix).to_string().chars());
     chars.extend(label.chars());
 
     let dash = MUTED.paint("─").to_string();
-    for _ in 0..WIDTH - (label.len() + 2) {
+    for _ in 0..WIDTH - (label.len() + prefix.len()) {
         chars.extend(dash.chars());
     }
 
@@ -682,13 +682,14 @@ fn format_block_start(range: &Range) -> String {
 ///     └── 0x000290  ────────────────────────────
 fn format_block_end(range: &Range) -> String {
     let label = format!(" {:#08x} ", range.end);
+    let prefix = "└──";
 
     let mut chars: Vec<char> = Vec::with_capacity(WIDTH);
-    chars.extend(MUTED.paint("└─").to_string().chars());
+    chars.extend(MUTED.paint(prefix).to_string().chars());
     chars.extend(label.chars());
 
     let dash = MUTED.paint("─").to_string();
-    for _ in 0..WIDTH - (label.len() + 2) {
+    for _ in 0..WIDTH - (label.len() + prefix.len()) {
         chars.extend(dash.chars());
     }
 
@@ -696,7 +697,14 @@ fn format_block_end(range: &Range) -> String {
 }
 
 fn format_range_hex(buf: &[u8], range: &Range) -> String {
-    let hex = lancelot::util::hexdump(&buf[range.start as usize..range.end as usize], range.start);
+    let mut ostream: Vec<u8> = Default::default();
+    let b = &buf[range.start as usize..range.end as usize];
+    let mut h = hexyl::Printer::new(&mut ostream, true, hexyl::BorderStyle::None, true);
+    h.display_offset(range.start as u64);
+    h.print_all(b).unwrap();
+    let hex = String::from_utf8(ostream).unwrap();
+    //let hex = lancelot::util::hexdump(&buf[range.start as usize..range.end as
+    // usize], range.start);
     format!(
         "{}\n{}\n{}",
         format_block_start(range),
