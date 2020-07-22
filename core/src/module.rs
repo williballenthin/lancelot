@@ -110,4 +110,15 @@ impl Module {
             Err(NotMapped.into())
         }
     }
+
+    pub fn virtual_address(&self, file_offset: u64) -> Result<VA> {
+        self.sections
+            .iter()
+            .find(|&sec| sec.physical_range.contains(&(file_offset as u64)))
+            .map(|sec| {
+                let section_offset = file_offset as u64 - sec.physical_range.start;
+                sec.virtual_range.start + section_offset
+            })
+            .ok_or(NotMapped.into())
+    }
 }
