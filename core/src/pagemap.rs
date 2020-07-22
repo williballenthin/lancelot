@@ -66,6 +66,13 @@ impl<T: Default + Copy> PageMap<T> {
         PageMap { pages }
     }
 
+    pub fn from_items(items: &[T]) -> PageMap<T> {
+        let capacity = crate::util::align(items.len() as u64, PAGE_SIZE as u64);
+        let mut map = PageMap::with_capacity(capacity);
+        map.writezx(0x0, items).unwrap();
+        map
+    }
+
     /// error if rva is not in a valid page.
     /// panic due to:
     ///   - rva must be page aligned.
