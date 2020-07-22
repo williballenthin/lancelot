@@ -76,6 +76,12 @@ impl RelativeAddressSpace {
             map: PageMap::with_capacity(size),
         }
     }
+
+    pub fn from_buf(buf: &[u8]) -> RelativeAddressSpace {
+        RelativeAddressSpace {
+            map: PageMap::from_items(buf),
+        }
+    }
 }
 
 impl AddressSpace<RVA> for RelativeAddressSpace {
