@@ -23,7 +23,7 @@ extern crate anyhow;
 use ansi_term::Colour as Color;
 
 use lancelot::{
-    aspace::AddressSpace,
+    aspace::{AbsoluteAddressSpace, AddressSpace},
     loader::pe::{
         imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA},
         load_pe,
@@ -97,7 +97,7 @@ impl std::fmt::Display for Structure {
     }
 }
 
-type FileOffset = usize;
+type FileOffset = u64;
 
 #[derive(Debug)]
 struct Range {
@@ -127,7 +127,7 @@ impl Ranges {
     }
 
     fn va_insert(&mut self, pe: &PE, start: VA, end: VA, structure: Structure) -> Result<()> {
-        let pstart = pe.module.file_offset(start)?;
+        let pstart = pe.module.file_offset(start)? as FileOffset;
         let plen = (end - start) as RVA;
         let pend = pstart + plen as FileOffset;
         self.insert(pstart, pend, structure)
@@ -139,7 +139,7 @@ impl Ranges {
 
     fn has_children<'a>(&self, range: &'a Range) -> bool {
         let key = (range.start, -(range.end as i64));
-        let max = (usize::MAX, i64::MIN);
+        let max = (u64::MAX, i64::MIN);
 
         if let Some((_, child)) = self
             .map
@@ -155,7 +155,7 @@ impl Ranges {
     /// only collect the ranges that are direct children of the range.
     fn get_children<'a>(&self, range: &'a Range) -> Result<Vec<&Range>> {
         let key = (range.start, -(range.end as i64));
-        let max = (usize::MAX, i64::MIN);
+        let max = (u64::MAX, i64::MIN);
 
         // covered is the last address yielded so far.
         // once we yield a direct child, we don't want to yield its children.
@@ -191,6 +191,30 @@ impl Ranges {
     }
 }
 
+/// convert a Ranges<FileOffset> to Ranges<VA> using a PE
+fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
+    let mut dst: Ranges = Ranges {
+        map: Default::default(),
+    };
+
+    for ((file_offset, end), v) in src.map.into_iter() {
+        if let Ok(va) = pe.module.virtual_address(file_offset as u64) {
+            let delta = va - file_offset;
+            let end = end - delta as i64;
+            let key = (va, end);
+            let value = Range {
+                start:     va,
+                end:       v.end + delta,
+                structure: v.structure,
+            };
+
+            dst.map.insert(key, value);
+        }
+    }
+
+    dst
+}
+
 fn get_overlay_range(buf: &[u8], pe: &PE) -> Result<(FileOffset, FileOffset)> {
     let start = pe
         .module
@@ -209,7 +233,7 @@ fn insert_overlay_ranges(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()>
     let (start, end) = get_overlay_range(buf, pe)?;
     ranges.insert(start, end, Structure::Overlay)?;
 
-    let buf = &buf[start..end];
+    let buf = &buf[start as usize..end as usize];
 
     for (range, s) in util::find_ascii_strings(buf) {
         let rstart = start + range.start as FileOffset;
@@ -228,7 +252,7 @@ fn insert_overlay_ranges(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()>
 
 // the complete file span
 fn insert_file_range(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()> {
-    ranges.insert(0, buf.len(), Structure::File)?;
+    ranges.insert(0, buf.len() as FileOffset, Structure::File)?;
 
     insert_overlay_ranges(ranges, buf, pe)?;
 
@@ -696,9 +720,12 @@ fn format_block_end(range: &Range) -> String {
     chars.iter().collect()
 }
 
-fn format_range_hex(buf: &[u8], range: &Range) -> String {
+fn format_range_hex(address_space: &AbsoluteAddressSpace, range: &Range) -> String {
     let mut ostream: Vec<u8> = Default::default();
-    let b = &buf[range.start as usize..range.end as usize];
+    let buf = address_space
+        .read_buf(range.start, (range.end - range.start) as usize)
+        .unwrap();
+    let b = &buf[..];
     let mut h = hexyl::Printer::new(&mut ostream, true, hexyl::BorderStyle::None, true);
     h.display_offset(range.start as u64);
     h.print_all(b).unwrap();
@@ -731,15 +758,20 @@ fn will_render_as_block<'a>(ranges: &'a Ranges, range: &'a Range) -> bool {
 }
 
 /// write the given range to output
-fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usize) -> Result<()> {
+fn render_range<'a>(
+    address_space: &AbsoluteAddressSpace,
+    ranges: &'a Ranges,
+    range: &'a Range,
+    depth: usize,
+) -> Result<()> {
     match &range.structure {
         Structure::Function(s) => prefixln(depth, &format!("{:#08x}: {}", range.start, s)),
         Structure::String(s) => prefixln(depth, &format!("{:#08x}: \"{}\"", range.start, s)),
-        Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(buf, range)),
-        Structure::Signature => prefixln(depth, &format_range_hex(buf, range)),
-        Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(buf, range)),
-        Structure::IMAGE_OPTIONAL_HEADER => prefixln(depth, &format_range_hex(buf, range)),
-        Structure::IMAGE_SECTION_HEADER(_, _) => prefixln(depth, &format_range_hex(buf, range)),
+        Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
+        Structure::Signature => prefixln(depth, &format_range_hex(address_space, range)),
+        Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
+        Structure::IMAGE_OPTIONAL_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
+        Structure::IMAGE_SECTION_HEADER(_, _) => prefixln(depth, &format_range_hex(address_space, range)),
         _ => {
             let children = ranges.get_children(range)?;
             let has_children = !children.is_empty();
@@ -758,7 +790,7 @@ fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usi
                     let c1 = siblings[0];
                     let c2 = siblings[1];
 
-                    render_range(buf, ranges, c1, depth + 1)?;
+                    render_range(address_space, ranges, c1, depth + 1)?;
 
                     if !(will_render_as_block(ranges, c1) == false && will_render_as_block(ranges, c2) == false) {
                         prefixln(depth + 1, "");
@@ -766,7 +798,7 @@ fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usi
                 }
 
                 let last_child = children[children.len() - 1];
-                render_range(buf, ranges, last_child, depth + 1)?;
+                render_range(address_space, ranges, last_child, depth + 1)?;
 
                 prefixln(depth, &format_block_end(range));
             }
@@ -777,9 +809,9 @@ fn render_range<'a>(buf: &[u8], ranges: &'a Ranges, range: &'a Range, depth: usi
 }
 
 /// write the output
-fn render(buf: &[u8], ranges: &Ranges) -> Result<()> {
+fn render(address_space: &AbsoluteAddressSpace, ranges: &Ranges) -> Result<()> {
     let root = ranges.root()?;
-    render_range(buf, ranges, root, 0)?;
+    render_range(address_space, ranges, root, 0)?;
     Ok(())
 }
 
@@ -791,6 +823,7 @@ fn _main() -> Result<()> {
         (about: "Somewhere between strings.exe and PEView")
         (@arg verbose: -v --verbose +multiple "log verbose messages")
         (@arg quiet: -q --quiet "disable informational messages")
+        (@arg va: --va "output addresses as mapped into memory")
         (@arg input: +required "path to file to analyze"))
     .get_matches();
 
@@ -832,8 +865,25 @@ fn _main() -> Result<()> {
     let buf = util::read_file(filename)?;
     let pe = load_pe(&buf)?;
 
+    // returns a Ranges containing FileOffsets
     let ranges = compute_ranges(&buf, &pe)?;
-    render(&buf, &ranges)?;
+
+    if matches.is_present("va") {
+        // user wants to display output as VAs
+        // so convert the Ranges<FileOffset> to Ranges<VA>
+        // and use the loaded PE as the source data.
+        let ranges = fo_to_va_ranges(&pe, ranges);
+        render(&pe.module.address_space, &ranges)?;
+    } else {
+        // user wants to display the output as file offsets.
+        // ranges is already a Ranges<FileOffset>,
+        // so construct an aspace with the file content at 0x0.
+        let address_space = lancelot::aspace::AbsoluteAddressSpace {
+            base_address: 0x0,
+            relative:     lancelot::aspace::RelativeAddressSpace::from_buf(&buf),
+        };
+        render(&address_space, &ranges)?;
+    };
 
     Ok(())
 }
