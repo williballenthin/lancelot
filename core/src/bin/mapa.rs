@@ -765,8 +765,8 @@ fn render_range<'a>(
     depth: usize,
 ) -> Result<()> {
     match &range.structure {
-        Structure::Function(s) => prefixln(depth, &format!("{:#08x}: {}", range.start, s)),
-        Structure::String(s) => prefixln(depth, &format!("{:#08x}: \"{}\"", range.start, s)),
+        Structure::Function(s) => prefixln(depth, &format!(" {:#08x}: {}", range.start, s)),
+        Structure::String(s) => prefixln(depth, &format!(" {:#08x}: \"{}\"", range.start, s)),
         Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
         Structure::Signature => prefixln(depth, &format_range_hex(address_space, range)),
         Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
@@ -777,7 +777,7 @@ fn render_range<'a>(
             let has_children = !children.is_empty();
 
             if !has_children {
-                prefixln(depth, &format!("{:#x}: [{}]", range.start, range.structure))
+                prefixln(depth, &format!(" {:#08x}: [{}]", range.start, range.structure))
             } else {
                 prefixln(depth, &format_block_start(range));
 
