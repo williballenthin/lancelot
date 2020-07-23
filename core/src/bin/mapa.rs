@@ -199,16 +199,31 @@ fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
 
     for ((file_offset, end), v) in src.map.into_iter() {
         if let Ok(va) = pe.module.virtual_address(file_offset as u64) {
-            let delta = va - file_offset;
-            let end = end - delta as i64;
-            let key = (va, end);
+            // need to fixup the file structure, to encompass the complete module range,
+            // not just file sizes.
+            let end = if let Structure::File = v.structure {
+                pe.module
+                    .sections
+                    .iter()
+                    .map(|sec| sec.virtual_range.end)
+                    .max()
+                    .unwrap()
+            } else {
+                let delta = va - file_offset;
+                let end = (-end) as u64 + delta;
+                end
+            };
+
+            let key = (va, -(end as i64));
             let value = Range {
-                start:     va,
-                end:       v.end + delta,
+                start: va,
+                end,
                 structure: v.structure,
             };
 
             dst.map.insert(key, value);
+        } else {
+            debug!("file offset not found in loaded module: {:#08x}", file_offset);
         }
     }
 
