@@ -8,9 +8,9 @@ pub mod call_targets;
 pub mod control_flow_guard;
 pub mod entrypoints;
 pub mod exports;
+pub mod patterns;
 pub mod pointers;
 pub mod safeseh;
-//pub mod patterns;
 
 pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     let mut function_starts: HashSet<VA> = Default::default();
@@ -28,6 +28,7 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?);
     function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?);
     function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?);
+    function_starts.extend(crate::analysis::pe::patterns::find_function_prologues(&pe)?);
 
     // TODO: validate that the code looks ok
 
