@@ -1,4 +1,4 @@
-use failure::{Error, Fail};
+use anyhow::Result;
 use log::trace;
 use nom::{
     branch::alt,
@@ -7,17 +7,18 @@ use nom::{
     number::complete::{be_u16, be_u8, le_u16, le_u32, le_u8},
     IResult,
 };
+use thiserror::Error;
 
 use super::{FlirtSignature, TailByte};
 use crate::{ByteSignature, SigElement};
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum SigError {
-    #[fail(display = "The sig file is not supported")]
+    #[error("The sig file is not supported")]
     NotSupported,
-    #[fail(display = "The sig file compression method is not support: {}", _0)]
+    #[error("The sig file compression method is not supported: {0}")]
     CompressionNotSupported(String),
-    #[fail(display = "The .sig file is corrupt (or unsupported)")]
+    #[error("The .sig file is corrupt (or unsupported)")]
     CorruptSigFile,
 }
 
@@ -599,7 +600,7 @@ fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
 /// parse an (unpacked) .sig file into FLIRT signatures.
 ///
 /// see `unpack_sig`.
-fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
+fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>> {
     //nom::util::dbg_dmp(...);
     let (input, header) = match header(input) {
         Err(_) => return Err(SigError::CorruptSigFile.into()),
@@ -616,7 +617,7 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
     Ok(sigs)
 }
 
-pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>> {
     match header(input) {
         Ok((compressed, header)) => {
             /*
@@ -650,6 +651,6 @@ pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>, Error> {
     }
 }
 
-pub fn parse(buf: &[u8]) -> Result<Vec<FlirtSignature>, Error> {
+pub fn parse(buf: &[u8]) -> Result<Vec<FlirtSignature>> {
     sig(&unpack_sig(buf)?)
 }

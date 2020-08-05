@@ -26,7 +26,7 @@
 // ^^^^^ reference offset
 // ^^^^^^^^^^^^^^^^^^ reference name
 
-use failure::{Error, Fail};
+use anyhow::Result;
 use log::trace;
 use nom::{
     branch::alt,
@@ -36,14 +36,15 @@ use nom::{
     sequence::pair,
     IResult,
 };
+use thiserror::Error;
 
 use super::{ByteSignature, FlirtSignature, Name, Offset, SigElement, Symbol, TailByte};
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum PatError {
-    #[fail(display = "The pattern is not supported")]
+    #[error("The pattern is not supported")]
     NotSupported,
-    #[fail(display = "The .pat file is corrupt (or unsupported)")]
+    #[error("The .pat file is corrupt (or unsupported)")]
     CorruptPatFile,
 }
 
@@ -265,7 +266,7 @@ fn pat(input: &str) -> IResult<&str, Vec<FlirtSignature>> {
 /// let pat_buf = "3B0D........F27502F2C3F2E9...................................... 00 0000 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002 ___security_cookie ^000D ___report_gsfailure\n---";
 /// assert_eq!(pat::parse(pat_buf).unwrap().len(), 1);
 /// ```
-pub fn parse(buf: &str) -> Result<Vec<FlirtSignature>, Error> {
+pub fn parse(buf: &str) -> Result<Vec<FlirtSignature>> {
     if let Ok((_, sigs)) = pat(buf) {
         Ok(sigs)
     } else {

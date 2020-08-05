@@ -27,7 +27,9 @@
 //     __EH_prolog /mnt/c/Windows/SysWOW64//vcruntime140d.dll
 // ```
 
+extern crate anyhow;
 extern crate nom;
+extern crate thiserror;
 #[macro_use]
 extern crate bitflags;
 use log::trace;
