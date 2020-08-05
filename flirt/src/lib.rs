@@ -315,6 +315,7 @@ impl<'a> FlirtSignatureMatcher<'a> {
     /// ---";
     ///
     /// let sigs = pat::parse(pat_buf).unwrap();
+    /// #[allow(non_snake_case)]
     /// let __EH_prolog3_catch_align = &sigs[3];
     /// let m = __EH_prolog3_catch_align.create_matcher();
     /// assert!(m.r#match(&[
