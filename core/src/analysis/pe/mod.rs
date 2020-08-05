@@ -15,20 +15,15 @@ pub mod safeseh;
 pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     let mut function_starts: HashSet<VA> = Default::default();
 
-    // pointer analysis creates a good number of FPs, due to:
-    //  - exception handle
-    //  - jump table entries
-    //
-    // so, we'll disable this for now.
-    //function_starts.extend(crate::analysis::pe::pointers::
-    // find_pe_nonrelocated_executable_pointers(buf, &pe)?);
-
     function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?);
     function_starts.extend(crate::analysis::pe::exports::find_pe_exports(&pe)?);
     function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?);
     function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?);
     function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?);
     function_starts.extend(crate::analysis::pe::patterns::find_function_prologues(&pe)?);
+    function_starts.extend(crate::analysis::pe::pointers::find_pe_nonrelocated_executable_pointers(
+        &pe,
+    )?);
 
     // TODO: validate that the code looks ok
 
