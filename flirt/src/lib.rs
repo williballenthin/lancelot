@@ -36,8 +36,8 @@ use log::trace;
 use regex::bytes::Regex;
 use std::collections::HashMap;
 
-pub mod nfa;
 pub mod pat;
+pub mod pattern_set;
 pub mod sig;
 
 #[derive(Debug, Clone, Copy)]
@@ -356,21 +356,21 @@ impl<'a> FlirtSignatureMatcher<'a> {
 }
 
 pub struct FlirtSignatureSet {
-    sigs:    HashMap<nfa::Pattern, FlirtSignature>,
-    matcher: nfa::NFA,
+    sigs:    HashMap<pattern_set::Pattern, FlirtSignature>,
+    matcher: pattern_set::PatternSet,
 }
 
 // translate from the FLIRT signature format to NFA matcher format (already
 // essentially the same).
-impl std::convert::Into<nfa::Pattern> for &FlirtSignature {
-    fn into(self) -> nfa::Pattern {
-        nfa::Pattern(
+impl std::convert::Into<pattern_set::Pattern> for &FlirtSignature {
+    fn into(self) -> pattern_set::Pattern {
+        pattern_set::Pattern(
             self.byte_sig
                 .0
                 .iter()
                 .map(|s| match s {
-                    SigElement::Wildcard => nfa::WILDCARD,
-                    SigElement::Byte(v) => nfa::Symbol(*v as u16),
+                    SigElement::Wildcard => pattern_set::WILDCARD,
+                    SigElement::Byte(v) => pattern_set::Symbol(*v as u16),
                 })
                 .collect(),
         )
@@ -379,13 +379,14 @@ impl std::convert::Into<nfa::Pattern> for &FlirtSignature {
 
 impl FlirtSignatureSet {
     pub fn with_signatures(sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
-        let sigs: HashMap<nfa::Pattern, FlirtSignature> = sigs.into_iter().map(|sig| ((&sig).into(), sig)).collect();
+        let sigs: HashMap<pattern_set::Pattern, FlirtSignature> =
+            sigs.into_iter().map(|sig| ((&sig).into(), sig)).collect();
 
         let patterns = sigs.keys().cloned().collect();
 
         FlirtSignatureSet {
             sigs,
-            matcher: nfa::NFA::from_patterns(patterns),
+            matcher: pattern_set::PatternSet::from_patterns(patterns),
         }
     }
 

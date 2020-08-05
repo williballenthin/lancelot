@@ -99,12 +99,12 @@ impl std::convert::From<&str> for Pattern {
     }
 }
 
-pub struct NFA {
+pub struct PatternSet {
     patterns: Vec<Pattern>,
     re:       regex::bytes::RegexSet,
 }
 
-impl std::fmt::Debug for NFA {
+impl std::fmt::Debug for PatternSet {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for pattern in self.patterns.iter() {
             writeln!(f, "  - {}", pattern)?;
@@ -113,30 +113,30 @@ impl std::fmt::Debug for NFA {
     }
 }
 
-impl NFA {
+impl PatternSet {
     pub fn r#match(&self, buf: &[u8]) -> Vec<&Pattern> {
         self.re.matches(buf).into_iter().map(|i| &self.patterns[i]).collect()
     }
 
-    pub fn builder() -> NFABuilder {
-        NFABuilder { patterns: vec![] }
+    pub fn builder() -> PatternSetBuilder {
+        PatternSetBuilder { patterns: vec![] }
     }
 
-    pub fn from_patterns(patterns: Vec<Pattern>) -> NFA {
-        NFABuilder { patterns }.build()
+    pub fn from_patterns(patterns: Vec<Pattern>) -> PatternSet {
+        PatternSetBuilder { patterns }.build()
     }
 }
 
-pub struct NFABuilder {
+pub struct PatternSetBuilder {
     patterns: Vec<Pattern>,
 }
 
-impl NFABuilder {
+impl PatternSetBuilder {
     pub fn add_pattern(&mut self, pattern: Pattern) {
         self.patterns.push(pattern)
     }
 
-    pub fn build(self) -> NFA {
+    pub fn build(self) -> PatternSet {
         // should not be possible to generate invalid regex from a pattern
         // otherwise, programming error.
         // must reject invalid patterns when deserializing from pat/sig.
@@ -148,7 +148,7 @@ impl NFABuilder {
 
         let re = regex::bytes::RegexSet::new(patterns).expect("invalid regex");
 
-        NFA {
+        PatternSet {
             patterns: self.patterns,
             re,
         }
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_empty_build() {
-        NFA::builder().build();
+        PatternSet::builder().build();
     }
 
     // patterns:
@@ -177,7 +177,7 @@ mod tests {
     //  4:                      matches: pat0
     #[test]
     fn test_add_one_pattern() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
 
         println!("{:?}", b.build());
@@ -198,7 +198,7 @@ mod tests {
     //  5:                      matches: pat1
     #[test]
     fn test_add_two_patterns() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCCCC"));
 
@@ -219,7 +219,7 @@ mod tests {
     //    5:                      matches: pat1
     #[test]
     fn test_add_one_wildcard() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCC.."));
 
@@ -229,106 +229,98 @@ mod tests {
     // we don't match when we don't have any patterns.
     #[test]
     fn test_match_empty() {
-        let nfa = NFA::builder().build();
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 0);
+        let pattern_set = PatternSet::builder().build();
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 0);
     }
 
     // we match things we want to, and don't match other data.
     #[test]
     fn test_match_one() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
-        let nfa = b.build();
+        let pattern_set = b.build();
 
         // true positive
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 1);
         // true negative
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 0);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xEE").len(), 0);
     }
 
     // we match from the beginning of the buffer onwards,
     // ignoring trailing bytes beyond the length of the pattern.
     #[test]
     fn test_match_long() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
-        let nfa = b.build();
+        let pattern_set = b.build();
 
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD\x00").len(), 1);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD\x11").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD\x00").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD\x11").len(), 1);
     }
 
     // we can match when there are single character wildcards present,
     // and order of the pattern declarations should not matter.
     #[test]
     fn test_match_one_tail_wildcard() {
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCC.."));
         b.add_pattern(Pattern::from("AABBCCDD"));
-        let nfa = b.build();
+        let pattern_set = b.build();
 
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\x00").len(), 0);
 
         // order of patterns should not matter
-        let mut b = NFA::builder();
+        let mut b = PatternSet::builder();
         b.add_pattern(Pattern::from("AABBCCDD"));
         b.add_pattern(Pattern::from("AABBCC.."));
-        let nfa = b.build();
+        let pattern_set = b.build();
 
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xEE").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\x00").len(), 0);
     }
 
     // wildcards can be found in the middle of patterns, too.
     #[test]
     fn test_match_one_middle_wildcard() {
-        let nfa = NFA::from_patterns(vec![Pattern::from("AABB..DD"), Pattern::from("AABBCCDD")]);
+        let pattern_set = PatternSet::from_patterns(vec![Pattern::from("AABB..DD"), Pattern::from("AABBCCDD")]);
 
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\x00").len(), 0);
 
         // order of patterns should not matter
-        let nfa = NFA::from_patterns(vec![Pattern::from("AABBCCDD"), Pattern::from("AABB..DD")]);
+        let pattern_set = PatternSet::from_patterns(vec![Pattern::from("AABBCCDD"), Pattern::from("AABB..DD")]);
 
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 0);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xEE\xDD").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\x00").len(), 0);
     }
 
     // we can have an arbitrary mix of wildcards and literals.
     #[test]
     fn test_match_many() {
-        let nfa = NFA::from_patterns(vec![
+        let pattern_set = PatternSet::from_patterns(vec![
             Pattern::from("AABB..DD"),
             Pattern::from("AABBCCDD"),
             Pattern::from("........"),
             Pattern::from("....CCDD"),
         ]);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\xCC\xDD").len(), 4);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\xAA\xBB\x00\x00").len(), 1);
-        assert_eq!(nfa.r#match(b"\x00\x00\xCC\xDD").len(), 2);
-        assert_eq!(nfa.r#match(b"\x00\x00\x00\x00").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\xCC\xDD").len(), 4);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xBB\x00\x00").len(), 1);
+        assert_eq!(pattern_set.r#match(b"\x00\x00\xCC\xDD").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\x00\x00\x00\x00").len(), 1);
     }
 
     #[test]
     fn test_match_pathological_case() {
-        let nfa = NFA::from_patterns(vec![
-            // 10 symbols - 65 states
-            // 15 symbols - 135 states
-            // 17 symbols - 170 states
-            // 19 symbols - 209 states
-            // 22 symbols - 278 states
-            // 25 symbols - 253 states
-            // 30 symbols - 498 states
-            // 32 symbols - 562 states
+        let pattern_set = PatternSet::from_patterns(vec![
             Pattern::from("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
             Pattern::from("................................................................"),
         ]);
-        assert_eq!(nfa.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
+        assert_eq!(pattern_set.r#match(b"\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA\xAA").len(), 2);
     }
 }
