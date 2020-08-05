@@ -119,6 +119,6 @@ impl Module {
                 let section_offset = file_offset as u64 - sec.physical_range.start;
                 sec.virtual_range.start + section_offset
             })
-            .ok_or(NotMapped.into())
+            .ok_or_else(|| NotMapped.into())
     }
 }

@@ -564,17 +564,11 @@ struct InstructionDescriptor {
 }
 
 fn fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| match flow {
-        Flow::Fallthrough(_) => true,
-        _ => false,
-    }))
+    Box::new(flows.iter().filter(|flow| matches!(flow, Flow::Fallthrough(_))))
 }
 
 fn non_fallthrough_flows<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| match flow {
-        Flow::Fallthrough(_) => false,
-        _ => true,
-    }))
+    Box::new(flows.iter().filter(|flow| !matches!(flow, Flow::Fallthrough(_))))
 }
 
 fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
@@ -607,10 +601,7 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
             let successors: Flows = get_insn_flow(module, va, &insn)?
                 // remove CALL instructions for cfg reconstruction.
                 .into_iter()
-                .filter(|succ| match succ {
-                    Flow::Call(_) => false,
-                    _ => true,
-                })
+                .filter(|succ| matches!(succ, Flow::Call(_)))
                 .collect();
 
             for target in successors.iter() {

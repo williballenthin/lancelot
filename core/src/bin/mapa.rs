@@ -148,7 +148,7 @@ impl Ranges {
         {
             return child.end <= range.end;
         }
-        return false;
+        false
     }
 
     /// find ranges that fall within the given range.
@@ -210,8 +210,7 @@ fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
                     .unwrap()
             } else {
                 let delta = va - file_offset;
-                let end = (-end) as u64 + delta;
-                end
+                (-end) as u64 + delta
             };
 
             let key = (va, -(end as i64));
@@ -807,7 +806,7 @@ fn render_range<'a>(
 
                     render_range(address_space, ranges, c1, depth + 1)?;
 
-                    if !(will_render_as_block(ranges, c1) == false && will_render_as_block(ranges, c2) == false) {
+                    if !(!will_render_as_block(ranges, c1) && !will_render_as_block(ranges, c2)) {
                         prefixln(depth + 1, "");
                     }
                 }

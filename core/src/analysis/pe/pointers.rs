@@ -20,7 +20,7 @@
 use anyhow::Result;
 use byteorder::ByteOrder;
 
-use crate::{aspace::AddressSpace, loader::pe::PE, module::Permissions, util, VA};
+use crate::{aspace::AddressSpace, loader::pe::PE, module::Permissions, VA};
 
 pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     let mut candidates: Vec<VA> = vec![];
@@ -65,10 +65,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
         .into_iter()
         .filter(|&va| {
             if let Ok(b) = pe.module.address_space.read_u8(va - 1) {
-                match b {
-                    CC | NOP | RET => true,
-                    _ => false,
-                }
+                matches!(b, CC | NOP | RET)
             } else {
                 false
             }

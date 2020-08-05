@@ -1,7 +1,6 @@
 // https://github.com/NationalSecurityAgency/ghidra/tree/79d8f164f8bb8b15cfb60c5d4faeb8e1c25d15ca/Ghidra/Processors/x86/data/patterns
 #![allow(non_snake_case)]
 use anyhow::Result;
-use log::debug;
 use regex::bytes::Regex;
 
 use crate::{aspace::AddressSpace, loader::pe::PE, VA};
@@ -143,7 +142,9 @@ lazy_static! {
     };
 }
 
+#[allow(dead_code)]
 const INDEX_ALL: usize = 0;
+#[allow(dead_code)]
 const INDEX_PREMATCH: usize = 2;
 const INDEX_MATCH: usize = 4;
 
