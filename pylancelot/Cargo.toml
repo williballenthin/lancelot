@@ -13,9 +13,16 @@ lancelot = { path = "../core" }
 pyo3 = { version = "0.11"}
 
 [features]
-# see: https://github.com/PyO3/pyo3/issues/340
-# see: https://github.com/bytecodealliance/wasmtime/issues/468
-# see: https://github.com/PyO3/pyo3/blob/master/guide/src/advanced.md#testing
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 
+[package.metadata.maturin]
+classifier = [
+  "Programming Language :: Rust",
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Topic :: Security",
+  "Topic :: Software Development :: Disassemblers",
+]
