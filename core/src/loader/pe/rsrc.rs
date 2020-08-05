@@ -41,7 +41,7 @@ impl ResourceSectionData {
     }
 
     pub fn from_pe(pe: &PE) -> Result<Option<ResourceSectionData>> {
-        let opt_header = match pe.pe.header.optional_header {
+        let opt_header = match pe.pe()?.header.optional_header {
             None => return Ok(None),
             Some(opt_header) => opt_header,
         };

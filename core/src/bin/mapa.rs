@@ -279,7 +279,7 @@ const sizeof_IMAGE_FILE_HEADER: RVA = 0x14;
 const sizeof_IMAGE_SECTION_HEADER: RVA = 0x28;
 
 fn offset_IMAGE_NT_HEADERS(pe: &PE) -> RVA {
-    pe.pe.header.dos_header.pe_pointer as RVA
+    pe.pe().unwrap().header.dos_header.pe_pointer as RVA
 }
 
 fn offset_IMAGE_FILE_HEADER(pe: &PE) -> RVA {
@@ -287,7 +287,7 @@ fn offset_IMAGE_FILE_HEADER(pe: &PE) -> RVA {
 }
 
 fn has_optional_header(pe: &PE) -> bool {
-    pe.pe.header.coff_header.size_of_optional_header > 0
+    pe.pe().unwrap().header.coff_header.size_of_optional_header > 0
 }
 
 fn offset_IMAGE_OPTIONAL_HEADER(pe: &PE) -> RVA {
@@ -295,7 +295,7 @@ fn offset_IMAGE_OPTIONAL_HEADER(pe: &PE) -> RVA {
 }
 
 fn sizeof_IMAGE_OPTIONAL_HEADER(pe: &PE) -> RVA {
-    pe.pe.header.coff_header.size_of_optional_header as RVA
+    pe.pe().unwrap().header.coff_header.size_of_optional_header as RVA
 }
 
 fn offset_IMAGE_SECTION_HEADER(pe: &PE) -> RVA {
@@ -328,8 +328,10 @@ fn insert_image_nt_headers_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 
     let base_address = pe.module.address_space.base_address;
     let start = base_address + offset_IMAGE_NT_HEADERS(pe);
-    let end =
-        start + sizeof_Signature + sizeof_IMAGE_FILE_HEADER + (pe.pe.header.coff_header.size_of_optional_header as RVA);
+    let end = start
+        + sizeof_Signature
+        + sizeof_IMAGE_FILE_HEADER
+        + (pe.pe()?.header.coff_header.size_of_optional_header as RVA);
     ranges.va_insert(pe, start, end, Structure::IMAGE_NT_HEADERS)
 }
 
@@ -376,8 +378,8 @@ fn insert_file_header_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 fn insert_section_header_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let base_address = pe.module.address_space.base_address;
     let mut offset = base_address + offset_IMAGE_SECTION_HEADER(pe);
-    for i in 0..pe.pe.header.coff_header.number_of_sections {
-        let section = &pe.pe.sections[i as usize];
+    for i in 0..pe.pe()?.header.coff_header.number_of_sections {
+        let section = &pe.pe()?.sections[i as usize];
 
         let start = offset;
         let end = start + sizeof_IMAGE_SECTION_HEADER;
@@ -404,7 +406,7 @@ fn insert_section_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 fn insert_data_directory_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     if has_optional_header(pe) {
         let base_address = pe.module.address_space.base_address;
-        let opt = pe.pe.header.optional_header.unwrap();
+        let opt = pe.pe()?.header.optional_header.unwrap();
 
         #[allow(clippy::type_complexity)]
         let mut directories: Vec<(

@@ -33,7 +33,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
         let sec_buf = pe.module.address_space.read_buf(vstart, vsize)?;
 
-        if pe.pe.header.coff_header.machine == goblin::pe::header::COFF_MACHINE_X86_64 {
+        if pe.pe()?.header.coff_header.machine == goblin::pe::header::COFF_MACHINE_X86_64 {
             candidates.extend(
                 sec_buf
                     .windows(8)

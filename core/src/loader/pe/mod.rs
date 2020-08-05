@@ -21,24 +21,25 @@ pub enum PEError {
 }
 
 /// A parsed and loaded PE file.
-/// The `pe` field contains the parsed data, courtesy of goblin.
+/// The `buf` field contains the raw data.
 /// The `module` field contains an address space as the PE would be loaded.
-///
-/// The struct has a reference to the lifetime of the underlying data that's
-/// parsed into the PE.
-pub struct PE<'a> {
-    pub pe:     goblin::pe::PE<'a>,
+pub struct PE {
+    pub buf:    Vec<u8>,
     pub module: Module,
 }
 
-impl<'a> PE<'a> {
-    pub fn executable_sections<'b>(self: &'b PE<'a>) -> Box<dyn Iterator<Item = &Section> + 'b> {
+impl PE {
+    pub fn executable_sections<'b>(&'b self) -> Box<dyn Iterator<Item = &Section> + 'b> {
         Box::new(
             self.module
                 .sections
                 .iter()
                 .filter(|section| section.perms.intersects(Permissions::X)),
         )
+    }
+
+    pub fn pe(&self) -> Result<goblin::pe::PE> {
+        get_pe(&self.buf)
     }
 }
 
@@ -232,7 +233,10 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
     };
 
     debug!("pe: loaded");
-    Ok(PE { pe, module })
+    Ok(PE {
+        buf: buf.to_vec(),
+        module,
+    })
 }
 
 #[cfg(test)]

@@ -40,7 +40,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
     let load_config_directory_rva: RVA = {
-        let opt_header = match pe.pe.header.optional_header {
+        let opt_header = match pe.pe()?.header.optional_header {
             Some(opt_header) => opt_header,
             _ => return Ok(vec![]),
         };
