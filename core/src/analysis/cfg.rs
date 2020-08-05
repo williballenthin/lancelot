@@ -601,7 +601,7 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
             let successors: Flows = get_insn_flow(module, va, &insn)?
                 // remove CALL instructions for cfg reconstruction.
                 .into_iter()
-                .filter(|succ| matches!(succ, Flow::Call(_)))
+                .filter(|succ| !matches!(succ, Flow::Call(_)))
                 .collect();
 
             for target in successors.iter() {

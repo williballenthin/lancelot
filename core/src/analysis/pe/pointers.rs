@@ -28,7 +28,6 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     // look for hardcoded pointers into the executable section of the PE.
     // note: this often finds jump tables, too. more filtering is below.
     // note: also finds many exception handlers. see filtering below.
-    // TODO: within code, global pointers may not be pointer-aligned?
     for section in pe.module.sections.iter() {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;

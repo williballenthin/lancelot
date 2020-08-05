@@ -1,21 +1,24 @@
 // from: https://github.com/Maktm/FLIRTDB/blob/1f5763535e02d7cccf2f90a96a8ebaa36e9b2495/cmt/windows/libcmt_15_msvc_x86.pat#L354
 //
-//     6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3 00 0000
-// 0020 :0000 __EH_prolog
+// ```
+//     6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3 00 0000 0020 :0000 __EH_prolog
+// ```
 //
 // take that first column and treat it as a byte signature:
 //
+// ```
 //     rule __EH_prolog : flirt
 //     {
 //         strings:
-//             $bytes =
-// {6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3}
+//             $bytes = {6AFF5064A100000000508B44240C64892500000000896C240C8D6C240C50F2C3}
 //         condition:
 //             $bytes
 //     }
+// ```
 //
 // and search for it:
 //
+// ```
 //     $ yara src/analysis/pe/flirt/__EH_prolog.yara /mnt/c/Windows/SysWOW64/
 //     __EH_prolog /mnt/c/Windows/SysWOW64//ucrtbase.dll
 //     __EH_prolog /mnt/c/Windows/SysWOW64//ucrtbased.dll
