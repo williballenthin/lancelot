@@ -14,6 +14,7 @@ import capa.features.extractors.strings
 from capa.features import String, Characteristic
 from capa.features.file import Export, Import, Section
 from capa.features.basicblock import BasicBlock
+from capa.features.extractors import loops
 from capa.features.extractors.helpers import MIN_STACKSTRING_LEN
 
 
@@ -97,6 +98,37 @@ FILE_HANDLERS = (
 )
 
 
+logger.warning("characteristic(switch) not supported yet")
+def extract_function_switch(ws, f):
+    return []
+
+
+logger.warning("characteristic(calls to) not supported yet")
+def extract_function_calls_to(ws, f):
+    return []
+
+
+def extract_function_loop(ws, f):
+    edges = []
+    for bb in ws.build_cfg(f).basic_blocks.values():
+        for flow in bb.successors:
+            if flow[FLOW_TYPE] in (FLOW_TYPE_UNCONDITIONAL_JUMP, FLOW_TYPE_CONDITIONAL_JUMP, FLOW_TYPE_CONDITIONAL_MOVE):
+                edges.append((bb.address, flow[FLOW_VA]))
+                continue
+
+    if edges and loops.has_loop(edges):
+        yield Characteristic("loop"), f
+
+
+FUNCTION_HANDLERS = (extract_function_switch, extract_function_calls_to, extract_function_loop)
+
+
+def extract_function_features(ws, f):
+    for func_handler in FUNCTION_HANDLERS:
+        for feature, va in func_handler(ws, f):
+            yield feature, va
+
+
 def extract_bb_tight_loop(ws, bb):
     """ check basic block for tight loop indicators """
     if bb.address in map(lambda flow: flow[FLOW_VA], bb.successors):
@@ -104,7 +136,7 @@ def extract_bb_tight_loop(ws, bb):
 
 
 def is_mov_imm_to_stack(insn):
-    if not insn.mnenomic.startswith("mov"):
+    if not insn.mnemonic.startswith("mov"):
         return False
 
     try:
@@ -126,11 +158,11 @@ def is_mov_imm_to_stack(insn):
 
 
 def is_printable_ascii(chars):
-    return all(ord(c) < 127 and c in string.printable for c in chars)
+    return all(c < 127 and chr(c) in string.printable for c in chars)
 
 
 def is_printable_utf16le(chars):
-    if all(c == "\x00" for c in chars[1::2]):
+    if all(c == b"\x00" for c in chars[1::2]):
         return is_printable_ascii(chars[::2])
 
 
@@ -183,7 +215,7 @@ def extract_stackstring(ws, bb):
 
 
 def extract_bb_features(ws, bb):
-    yield BasicBlock(), bb.va
+    yield BasicBlock(), bb.address
     for bb_handler in BASIC_BLOCK_HANDLERS:
         for feature, va in bb_handler(ws, bb):
             yield feature, va
@@ -241,8 +273,7 @@ class LancelotFeatureExtractor(capa.features.extractors.FeatureExtractor):
             yield va
 
     def extract_function_features(self, f):
-        return []
-        for feature, va in capa.features.extractors.viv.function.extract_features(f):
+        for feature, va in extract_function_features(self.ws, f):
             yield feature, va
 
     def get_basic_blocks(self, f):
@@ -256,22 +287,11 @@ class LancelotFeatureExtractor(capa.features.extractors.FeatureExtractor):
                 yield BB(self.ws, bb)
 
     def extract_basic_block_features(self, f, bb):
-        return []
-        for feature, va in capa.features.extractors.viv.basicblock.extract_features(f, bb):
+        for feature, va in extract_bb_features(self.ws, bb):
             yield feature, va
 
     def get_instructions(self, f, bb):
-        return []
-        va = bb.address
-        while va <= bb.address + bb.length:
-            try:
-                insn = self.ws.read_insn(va)
-            except ValueError:
-                logger.warning("failed to read instruction at 0x%x", va)
-                return
-
-            yield insn
-            va += insn.length
+        return bb.instructions
 
     def extract_insn_features(self, f, bb, insn):
         return []
