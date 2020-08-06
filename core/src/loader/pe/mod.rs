@@ -30,6 +30,10 @@ pub struct PE {
 }
 
 impl PE {
+    pub fn from_bytes(buf: &[u8]) -> Result<PE> {
+        load_pe(buf)
+    }
+
     pub fn executable_sections<'b>(&'b self) -> Box<dyn Iterator<Item = &Section> + 'b> {
         Box::new(
             self.module
@@ -159,7 +163,7 @@ fn load_pe_section(
 }
 
 // lots of further detail here: https://github.com/corkami/docs/blob/master/PE/PE.md
-pub fn load_pe(buf: &[u8]) -> Result<PE> {
+fn load_pe(buf: &[u8]) -> Result<PE> {
     let pe = get_pe(buf)?;
 
     let arch = match pe.is_64 {
@@ -245,12 +249,12 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
 mod tests {
     use anyhow::Result;
 
-    use crate::{aspace::AddressSpace, rsrc::*, test::init_logging};
+    use crate::{aspace::AddressSpace, rsrc::*};
 
     #[test]
     fn base_address() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         assert_eq!(0x1_8000_0000, pe.module.address_space.base_address);
 
@@ -260,7 +264,7 @@ mod tests {
     #[test]
     fn mz_header() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         // relative read
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
@@ -276,7 +280,7 @@ mod tests {
     #[test]
     fn k32() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
@@ -287,7 +291,7 @@ mod tests {
     #[test]
     fn tiny() -> Result<()> {
         let buf = get_buf(Rsrc::TINY);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
@@ -298,7 +302,7 @@ mod tests {
     #[test]
     fn nop() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
@@ -309,7 +313,7 @@ mod tests {
     #[test]
     fn mimi() -> Result<()> {
         let buf = get_buf(Rsrc::MIMI);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
@@ -322,14 +326,14 @@ mod tests {
     #[test]
     fn read_each_section() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         for section in pe.module.sections.iter() {
             let start = section.virtual_range.start;
             let size = section.virtual_range.end - section.virtual_range.start;
             pe.module
                 .address_space
-                .read_buf(start, size as usize)
+                .read_bytes(start, size as usize)
                 .expect(&format!("read section {} {:#x} {:#x}", section.name, start, size));
         }
 

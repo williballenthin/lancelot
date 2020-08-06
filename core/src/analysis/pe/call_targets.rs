@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn k32() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
         assert_eq!(3610, fns.len());
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn tiny() -> Result<()> {
         let buf = get_buf(Rsrc::TINY);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
         assert_eq!(0, fns.len());
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn nop() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
         assert_eq!(250, fns.len());
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn mimi() -> Result<()> {
         let buf = get_buf(Rsrc::MIMI);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
         assert_eq!(10907, fns.len());

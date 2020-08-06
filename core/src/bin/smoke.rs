@@ -3,7 +3,7 @@ use log::{debug, error, info};
 #[macro_use]
 extern crate clap;
 
-use lancelot::{loader::pe::load_pe, util};
+use lancelot::{loader::pe::PE, util};
 
 fn _main() -> Result<()> {
     better_panic::install();
@@ -52,7 +52,7 @@ fn _main() -> Result<()> {
     debug!("input: {}", filename);
 
     let buf = util::read_file(filename)?;
-    let pe = load_pe(&buf)?;
+    let pe = PE::from_bytes(&buf)?;
 
     let functions = lancelot::analysis::pe::find_function_starts(&pe)?;
     info!("found {} functions", functions.len());

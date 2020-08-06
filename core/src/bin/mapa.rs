@@ -26,7 +26,6 @@ use lancelot::{
     aspace::{AbsoluteAddressSpace, AddressSpace},
     loader::pe::{
         imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA},
-        load_pe,
         rsrc::{NodeChild, NodeIdentifier, ResourceDataType, ResourceSectionData},
         PE,
     },
@@ -878,7 +877,7 @@ fn _main() -> Result<()> {
     debug!("input: {}", filename);
 
     let buf = util::read_file(filename)?;
-    let pe = load_pe(&buf)?;
+    let pe = PE::from_bytes(&buf)?;
 
     // returns a Ranges containing FileOffsets
     let ranges = compute_ranges(&buf, &pe)?;

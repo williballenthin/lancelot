@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn k32() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
-        let pe = crate::loader::pe::load_pe(&buf)?;
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         // this function has:
         //   - api call at 0x1800527F8

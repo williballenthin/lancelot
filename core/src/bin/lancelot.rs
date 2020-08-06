@@ -5,12 +5,7 @@ extern crate clap;
 #[macro_use]
 extern crate anyhow;
 
-use lancelot::{
-    analysis::dis,
-    aspace::AddressSpace,
-    loader::pe::{load_pe, PE},
-    util, RVA, VA,
-};
+use lancelot::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, RVA, VA};
 
 fn handle_functions(pe: &PE) -> Result<()> {
     let functions = lancelot::analysis::pe::find_function_starts(pe)?;
@@ -162,7 +157,7 @@ fn _main() -> Result<()> {
         debug!("input: {}", filename);
 
         let buf = util::read_file(filename)?;
-        let pe = load_pe(&buf)?;
+        let pe = PE::from_bytes(&buf)?;
 
         handle_functions(&pe)
     } else if let Some(matches) = matches.subcommand_matches("disassemble") {
@@ -174,7 +169,7 @@ fn _main() -> Result<()> {
         let va = parse_va(matches.value_of("va").unwrap())?;
 
         let buf = util::read_file(filename)?;
-        let pe = load_pe(&buf)?;
+        let pe = PE::from_bytes(&buf)?;
 
         handle_disassemble(&pe, va)
     } else {
