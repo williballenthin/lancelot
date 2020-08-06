@@ -5,7 +5,7 @@ authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
 [lib]
-name = "pylancelot"
+name = "lancelot"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -2,8 +2,6 @@ import os.path
 
 import pytest
 
-import pylancelot
-
 
 CD = os.path.dirname(__file__)
 

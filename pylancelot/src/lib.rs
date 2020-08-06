@@ -51,7 +51,7 @@ fn from_bytes(buf: &PyBytes) -> PyResult<PE> {
 }
 
 #[pymodule]
-fn pylancelot(_py: Python, m: &PyModule) -> PyResult<()> {
+fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PE>()?;
     m.add_wrapped(wrap_pyfunction!(from_bytes))?;
 
