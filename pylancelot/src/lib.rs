@@ -7,11 +7,6 @@ use lancelot::{
 };
 use pyo3::{self, prelude::*, types::PyBytes, wrap_pyfunction};
 
-#[pyclass]
-struct PE {
-    inner: lPE,
-}
-
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
     pyo3::exceptions::ValueError::py_err(format!("{}", e))
@@ -50,6 +45,22 @@ fn from_bytes(buf: &PyBytes) -> PyResult<PE> {
     Ok(PE {
         inner: lPE::from_bytes(buf.as_bytes()).map_err(to_py_err)?,
     })
+}
+
+#[pyclass]
+struct PE {
+    inner: lPE,
+}
+
+#[pymethods]
+impl PE {
+    #[getter]
+    fn arch(&self) -> PyResult<&'static str> {
+        Ok(match self.inner.module.arch {
+            lancelot::module::Arch::X32 => "x32",
+            lancelot::module::Arch::X64 => "x64",
+        })
+    }
 }
 
 #[pymodule]

@@ -20,3 +20,8 @@ def test_invalid_pe():
 
 def test_load_pe(k32):
     lancelot.from_bytes(k32)
+
+
+def test_arch(k32):
+    ws = lancelot.from_bytes(k32)
+    assert ws.arch == "x64"
