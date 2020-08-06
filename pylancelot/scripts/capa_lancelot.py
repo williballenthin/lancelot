@@ -1,5 +1,6 @@
 import sys
-import types
+import struct
+import string
 import logging
 import argparse
 
@@ -8,9 +9,12 @@ import capa.main
 import pefile
 import colorama
 import lancelot
+from lancelot import *
 import capa.features.extractors.strings
 from capa.features import String, Characteristic
 from capa.features.file import Export, Import, Section
+from capa.features.basicblock import BasicBlock
+from capa.features.extractors.helpers import MIN_STACKSTRING_LEN
 
 
 logger = logging.getLogger("capa.lancelot")
@@ -46,7 +50,6 @@ def extract_file_export_names(buf, pe):
 
     base_address = pe.OPTIONAL_HEADER.ImageBase
     for exp in pe.DIRECTORY_ENTRY_EXPORT.symbols:
-        # TODO: handle ordinals
         yield Export(exp.name.decode('ascii')), base_address + exp.address
 
 
@@ -55,11 +58,13 @@ def extract_file_import_names(buf, pe):
     for entry in pe.DIRECTORY_ENTRY_IMPORT:
         libname = entry.dll.decode('ascii')
         for imp in entry.imports:
-            # TODO: ordinals
-            impname = imp.name.decode("ascii")
             impaddr = base_address + imp.address
-            yield Import("%s!%s" % (libname, impname)), impaddr
-            yield Import("%s" % (impname)), impaddr
+            if imp.ordinal:
+                yield Import("%s!#%s" % (libname, imp.ordinal)), impaddr
+            else:
+                impname = imp.name.decode("ascii")
+                yield Import("%s!%s" % (libname, impname)), impaddr
+                yield Import("%s" % (impname)), impaddr
 
 
 def extract_file_section_names(buf, pe):
@@ -92,10 +97,109 @@ FILE_HANDLERS = (
 )
 
 
+def extract_bb_tight_loop(ws, bb):
+    """ check basic block for tight loop indicators """
+    if bb.address in map(lambda flow: flow[FLOW_VA], bb.successors):
+        yield Characteristic("tight loop"), bb.address
+
+
+def is_mov_imm_to_stack(insn):
+    if not insn.mnenomic.startswith("mov"):
+        return False
+
+    try:
+        dst, src = insn.operands
+    except ValueError:
+        # not two operands
+        return False
+
+    if src[OPERAND_TYPE] != OPERAND_TYPE_IMMEDIATE:
+        return False
+
+    if not dst[OPERAND_TYPE] != OPERAND_TYPE_MEMORY:
+        return False
+
+    if dst[MEMORY_OPERAND_BASE] not in ("ebp", "rbp", "esp", "rsp"):
+        return False
+
+    return True
+
+
+def is_printable_ascii(chars):
+    return all(ord(c) < 127 and c in string.printable for c in chars)
+
+
+def is_printable_utf16le(chars):
+    if all(c == "\x00" for c in chars[1::2]):
+        return is_printable_ascii(chars[::2])
+
+
+def get_printable_len(operand):
+    """
+    Return string length if all operand bytes are ascii or utf16-le printable
+    """
+    operand_size = operand[OPERAND_SIZE]
+    if operand_size == 8:
+        chars = struct.pack("<B", operand[IMMEDIATE_OPERAND_VALUE])
+    elif operand_size == 16:
+        chars = struct.pack("<H", operand[IMMEDIATE_OPERAND_VALUE])
+    elif operand_size == 32:
+        chars = struct.pack("<I", operand[IMMEDIATE_OPERAND_VALUE])
+    elif operand_size == 64:
+        chars = struct.pack("<Q", operand[IMMEDIATE_OPERAND_VALUE])
+    else:
+        raise ValueError("unexpected operand size: " + str(operand_size))
+
+    if is_printable_ascii(chars):
+        return operand_size / 8
+    if is_printable_utf16le(chars):
+        return operand_size / 16
+
+    return 0
+
+
+def _bb_has_stackstring(ws, bb):
+    """
+    extract potential stackstring creation, using the following heuristics:
+      - basic block contains enough moves of constant bytes to the stack
+    """
+    count = 0
+    for insn in bb.instructions:
+        if is_mov_imm_to_stack(insn):
+            # add number of operand bytes
+            src = insn.operands[1]
+            count += get_printable_len(src)
+
+        if count > MIN_STACKSTRING_LEN:
+            return True
+
+    return False
+
+
+def extract_stackstring(ws, bb):
+    """ check basic block for stackstring indicators """
+    if _bb_has_stackstring(ws, bb):
+        yield Characteristic("stack string"), bb.va
+
+
+def extract_bb_features(ws, bb):
+    yield BasicBlock(), bb.va
+    for bb_handler in BASIC_BLOCK_HANDLERS:
+        for feature, va in bb_handler(ws, bb):
+            yield feature, va
+
+
+BASIC_BLOCK_HANDLERS = (
+    extract_bb_tight_loop,
+    extract_stackstring,
+)
+
+
 class BB(object):
     """extend the lancelot.BasicBlock with an __int__ method to access the address"""
-    def __init__(self, bb):
+    def __init__(self, ws, bb):
         super(BB, self).__init__()
+        self.ws = ws
         self.address = bb.address
         self.length = bb.length
         self.predecessors = bb.predecessors
@@ -103,6 +207,19 @@ class BB(object):
 
     def __int__(self):
         return self.address
+
+    @property
+    def instructions(self):
+        va = self.address
+        while va <= self.address + self.length:
+            try:
+                insn = self.ws.read_insn(va)
+            except ValueError:
+                logger.warning("failed to read instruction at 0x%x", va)
+                return
+
+            yield insn
+            va += insn.length
 
 
 class LancelotFeatureExtractor(capa.features.extractors.FeatureExtractor):
@@ -129,9 +246,14 @@ class LancelotFeatureExtractor(capa.features.extractors.FeatureExtractor):
             yield feature, va
 
     def get_basic_blocks(self, f):
-        cfg = self.ws.build_cfg(f)
-        for bb in cfg.basic_blocks.values():
-            yield BB(bb)
+        try:
+            cfg = self.ws.build_cfg(f)
+        except:
+            logger.warning("failed to build CFG for 0x%x", f)
+            return
+        else:
+            for bb in cfg.basic_blocks.values():
+                yield BB(self.ws, bb)
 
     def extract_basic_block_features(self, f, bb):
         return []
@@ -139,6 +261,7 @@ class LancelotFeatureExtractor(capa.features.extractors.FeatureExtractor):
             yield feature, va
 
     def get_instructions(self, f, bb):
+        return []
         va = bb.address
         while va <= bb.address + bb.length:
             try:
