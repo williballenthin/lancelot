@@ -61,6 +61,11 @@ impl PE {
             lancelot::module::Arch::X64 => "x64",
         })
     }
+
+    #[getter]
+    fn functions(&self) -> PyResult<Vec<u64>> {
+        lancelot::analysis::pe::find_function_starts(&self.inner).map_err(to_py_err)
+    }
 }
 
 #[pymodule]
