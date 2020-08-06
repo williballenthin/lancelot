@@ -50,3 +50,29 @@ def test_functions(k32):
             continue
         address = base_address + export.address
         assert address in functions
+
+
+def test_flow_const():
+    assert lancelot.FLOW_TYPE_FALLTHROUGH == 0
+    assert lancelot.FLOW_TYPE_CALL == 1
+
+
+def test_cfg(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert "Returns: CFG" in ws.build_cfg.__doc__
+    # this is _report_gsfailure
+    # it has a diamond shape
+    cfg = ws.build_cfg(0x1800202B0)
+
+    assert cfg.address == 0x1800202B0
+    assert len(cfg.basic_blocks) == 4
+
+    assert 0x1800202B0 in cfg.basic_blocks
+    assert 0x180020334 in cfg.basic_blocks
+    assert 0x1800202F3 in cfg.basic_blocks
+    assert 0x180020356 in cfg.basic_blocks
+
+    bb0 = cfg.basic_blocks[0x1800202B0]
+    assert 0x180020334 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
+    assert 0x1800202F3 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
