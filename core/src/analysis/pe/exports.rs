@@ -7,7 +7,7 @@ use anyhow::Result;
 use crate::{loader::pe::PE, module::Permissions, VA};
 
 pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
-    let base_address = match pe.pe()?.header.optional_header {
+    let base_address = match pe.header.optional_header {
         Some(opt) => opt.windows_fields.image_base,
         _ => 0x40_000,
     };

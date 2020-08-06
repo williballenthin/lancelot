@@ -26,6 +26,7 @@ pub enum PEError {
 pub struct PE {
     pub buf:    Vec<u8>,
     pub module: Module,
+    pub header: goblin::pe::header::Header,
 }
 
 impl PE {
@@ -236,6 +237,7 @@ pub fn load_pe(buf: &[u8]) -> Result<PE> {
     Ok(PE {
         buf: buf.to_vec(),
         module,
+        header: pe.header,
     })
 }
 
