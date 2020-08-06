@@ -24,6 +24,7 @@ fn to_py_err(e: Error) -> PyErr {
         None => (),
     };
 
+    #[allow(clippy::single_match)]
     match e.downcast_ref::<ModuleError>() {
         Some(ModuleError::InvalidAddress(_)) => return to_value_error(e),
         None => (),
@@ -35,12 +36,13 @@ fn to_py_err(e: Error) -> PyErr {
         None => (),
     };
 
+    #[allow(clippy::single_match)]
     match e.downcast_ref::<PageMapError>() {
         Some(PageMapError::NotMapped) => return to_value_error(e),
         None => (),
     };
 
-    return to_value_error(e);
+    to_value_error(e)
 }
 
 #[pyfunction]
