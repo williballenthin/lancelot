@@ -76,3 +76,34 @@ def test_cfg(k32):
     bb0 = cfg.basic_blocks[0x1800202B0]
     assert 0x180020334 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
     assert 0x1800202F3 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
+
+
+def test_read_insn(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert "Returns: Instruction" in ws.read_insn.__doc__
+
+    with pytest.raises(ValueError):
+        ws.read_insn(0x0)
+
+    # .text:00000001800202B0 48 89 4C 24 08  mov     [rsp+arg_0], rcx
+    insn = ws.read_insn(0x1800202B0)
+    assert insn.address == 0x1800202B0
+    assert insn.length == 5
+    assert insn.mnemonic == "mov"
+
+    operands = insn.operands
+    assert len(operands) == 2
+
+    # op[0] == [rsp + 8]
+    assert operands[0][lancelot.OPERAND_TYPE] == lancelot.OPERAND_TYPE_MEMORY
+    assert operands[0][lancelot.MEMORY_OPERAND_BASE] == "rsp"
+    assert operands[0][lancelot.MEMORY_OPERAND_DISP] == 8
+
+    # op[1] == rcx
+    assert operands[1][lancelot.OPERAND_TYPE] == lancelot.OPERAND_TYPE_REGISTER
+    assert operands[1][lancelot.REGISTER_OPERAND_REGISTER] == "rcx"
+
+    assert operands == ((1, 'rsp', None, 'ss', 0, 8), (3, 'rcx'))
+
+

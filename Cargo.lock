@@ -513,6 +513,7 @@ dependencies = [
  "anyhow 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "lancelot 0.2.0",
  "pyo3 0.11.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "zydis 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
