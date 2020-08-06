@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 lancelot = { path = "../core" }
 pyo3 = { version = "0.11"}
+anyhow = "1"
 
 [features]
 extension-module = ["pyo3/extension-module"]

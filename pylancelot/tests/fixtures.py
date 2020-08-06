@@ -9,7 +9,7 @@ CD = os.path.dirname(__file__)
 
 
 with open(os.path.join(CD, 'data', 'k32.dll_'), 'rb') as f:
-    K32 = pylancelot.from_bytes(f.read())
+    K32 = f.read()
 
 
 @pytest.fixture
