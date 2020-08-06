@@ -602,7 +602,7 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         .map(|section| {
             let start = section.virtual_range.start;
             let size = section.virtual_range.end - section.virtual_range.start;
-            pe.module.address_space.read_buf(start, size as usize).unwrap()
+            pe.module.address_space.read_bytes(start, size as usize).unwrap()
         })
         .collect();
 
@@ -738,7 +738,7 @@ fn format_block_end(range: &Range) -> String {
 fn format_range_hex(address_space: &AbsoluteAddressSpace, range: &Range) -> String {
     let mut ostream: Vec<u8> = Default::default();
     let buf = address_space
-        .read_buf(range.start, (range.end - range.start) as usize)
+        .read_bytes(range.start, (range.end - range.start) as usize)
         .unwrap();
     let b = &buf[..];
     let mut h = hexyl::Printer::new(&mut ostream, true, hexyl::BorderStyle::None, true);

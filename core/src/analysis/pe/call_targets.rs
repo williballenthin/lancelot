@@ -47,7 +47,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
     for section in pe.executable_sections() {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
-        let sec_buf = pe.module.address_space.read_buf(vstart, vsize)?;
+        let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
         for (insn_offset, insn) in dis::linear_disassemble(&decoder, &sec_buf) {
             if let Ok(Some(insn)) = insn {
                 if insn.meta.category != zydis::InstructionCategory::CALL {

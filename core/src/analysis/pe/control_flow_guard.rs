@@ -135,7 +135,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
         let cfg_table = pe
             .module
             .address_space
-            .read_buf(cfg_table_va, cfg_table_count as usize * cfg_table_entry_size)?;
+            .read_bytes(cfg_table_va, cfg_table_count as usize * cfg_table_entry_size)?;
         for entry_buf in cfg_table.chunks_exact(cfg_table_entry_size) {
             let target = pe.module.address_space.base_address + LittleEndian::read_i32(entry_buf) as u64;
 

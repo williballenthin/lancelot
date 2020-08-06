@@ -31,7 +31,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     for section in pe.module.sections.iter() {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
-        let sec_buf = pe.module.address_space.read_buf(vstart, vsize)?;
+        let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
 
         if let crate::module::Arch::X64 = pe.module.arch {
             candidates.extend(

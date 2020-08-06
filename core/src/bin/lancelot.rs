@@ -59,7 +59,7 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
     info!("found {} basic blocks", cfg.basic_blocks.len());
     for bb in cfg.basic_blocks.values() {
         // need to over-read the bb buffer, to account for the final instructions.
-        let buf = pe.module.address_space.read_buf(bb.addr, bb.length as usize + 0x10)?;
+        let buf = pe.module.address_space.read_bytes(bb.addr, bb.length as usize + 0x10)?;
         for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
             // because we over-read the bb buffer,
             // discard the instructions found after it.

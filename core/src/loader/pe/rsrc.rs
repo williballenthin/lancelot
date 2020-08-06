@@ -57,7 +57,7 @@ impl ResourceSectionData {
             pe.module.address_space.base_address + rsrc_table.virtual_address as RVA + rsrc_table.size as RVA
         );
 
-        let buf = pe.module.address_space.read_buf(
+        let buf = pe.module.address_space.read_bytes(
             // goblin calls this a "virtual address", but its actually an RVA.
             pe.module.address_space.base_address + rsrc_table.virtual_address as RVA,
             rsrc_table.size as usize,
@@ -305,7 +305,7 @@ impl ResourceDataDescriptor {
         pe.module
             .address_space
             .relative
-            .read_buf(self.rva as RVA, self.size as usize)
+            .read_bytes(self.rva as RVA, self.size as usize)
     }
 }
 

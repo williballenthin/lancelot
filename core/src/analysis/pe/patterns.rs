@@ -153,7 +153,7 @@ pub fn find_function_prologues(pe: &PE) -> Result<Vec<VA>> {
     for section in pe.executable_sections() {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
-        let sec_buf = pe.module.address_space.read_buf(vstart, vsize)?;
+        let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
 
         for capture in PATTERNS.captures_iter(&sec_buf) {
             let m = capture.get(INDEX_MATCH).unwrap();
