@@ -57,6 +57,8 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     // RET(N) of prior function, x86win_patterns.xml#L7
     const RET: u8 = 0xC3;
 
+    // TODO: ensure these are not pointers themselves
+
     // now, assert that the prior byte must be a either a RET or filler byte.
     // this should filter out almost all jump tables, etc.
     // should also filter out almost all exception handlers, too.
@@ -67,6 +69,14 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                 matches!(b, CC | NOP | RET)
             } else {
                 false
+            }
+        })
+        .filter(|&va| {
+            if let Ok(ptr) = pe.module.read_va_at_va(va) {
+                // the candidate is valid pointer, so its probably not an instruction.
+                !pe.module.probe_va(ptr, Permissions::R)
+            } else {
+                true
             }
         })
         .collect())
