@@ -103,13 +103,15 @@ def test_read_insn(k32):
 
     # op[0] == [rsp + 8]
     assert operands[0][lancelot.OPERAND_TYPE] == lancelot.OPERAND_TYPE_MEMORY
+    assert operands[0][lancelot.OPERAND_SIZE] == 64
     assert operands[0][lancelot.MEMORY_OPERAND_BASE] == "rsp"
     assert operands[0][lancelot.MEMORY_OPERAND_DISP] == 8
 
     # op[1] == rcx
     assert operands[1][lancelot.OPERAND_TYPE] == lancelot.OPERAND_TYPE_REGISTER
+    assert operands[1][lancelot.OPERAND_SIZE] == 64
     assert operands[1][lancelot.REGISTER_OPERAND_REGISTER] == "rcx"
 
-    assert operands == ((1, 'rsp', None, 'ss', 0, 8), (3, 'rcx'))
+    assert operands == ((1, 64, 'rsp', None, 'ss', 0, 8), (3, 64, 'rcx'))
 
 

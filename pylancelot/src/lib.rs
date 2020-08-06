@@ -150,6 +150,7 @@ impl BasicBlock {
 
 /// index into operand tuple
 const OPERAND_TYPE: u8 = 0;
+const OPERAND_SIZE: u8 = 1;
 
 // type of operand
 const OPERAND_TYPE_IMMEDIATE: u8 = 0;
@@ -158,21 +159,21 @@ const OPERAND_TYPE_POINTER: u8 = 2;
 const OPERAND_TYPE_REGISTER: u8 = 3;
 
 /// index into operand tuple when type == immediate
-const IMMEDIATE_OPERAND_VALUE: u8 = 1;
+const IMMEDIATE_OPERAND_VALUE: u8 = 2;
 
 /// index into operand tuple when type == memory
-const MEMORY_OPERAND_BASE: u8 = 1;
-const MEMORY_OPERAND_INDEX: u8 = 2;
-const MEMORY_OPERAND_SEGMENT: u8 = 3;
-const MEMORY_OPERAND_SCALE: u8 = 4;
-const MEMORY_OPERAND_DISP: u8 = 5;
+const MEMORY_OPERAND_BASE: u8 = 2;
+const MEMORY_OPERAND_INDEX: u8 = 3;
+const MEMORY_OPERAND_SEGMENT: u8 = 4;
+const MEMORY_OPERAND_SCALE: u8 = 5;
+const MEMORY_OPERAND_DISP: u8 = 6;
 
 /// index into operand tuple when type == pointer
-const POINTER_OPERAND_SEGEMENT: u8 = 1;
-const POINTER_OPERAND_OFFSET: u8 = 2;
+const POINTER_OPERAND_SEGEMENT: u8 = 2;
+const POINTER_OPERAND_OFFSET: u8 = 3;
 
 /// index into operand tuple when type == reg
-const REGISTER_OPERAND_REGISTER: u8 = 1;
+const REGISTER_OPERAND_REGISTER: u8 = 2;
 
 fn register_to_py(py: Python, register: zydis::Register) -> PyObject {
     if matches!(register, zydis::Register::NONE) {
@@ -193,6 +194,8 @@ fn operand_to_tuple(py: Python, operand: &zydis::DecodedOperand) -> Py<PyTuple> 
         _ => panic!("unexpected operand type"),
     };
     ret.push(ty.into_py(py));
+
+    ret.push(operand.size.into_py(py));
 
     match operand.ty {
         zydis::enums::OperandType::IMMEDIATE => {
@@ -389,6 +392,7 @@ fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // indices into an operand tuple
     m.add("OPERAND_TYPE", OPERAND_TYPE)?;
+    m.add("OPERAND_SIZE", OPERAND_SIZE)?;
     m.add("IMMEDIATE_OPERAND_VALUE", IMMEDIATE_OPERAND_VALUE)?;
     m.add("MEMORY_OPERAND_BASE", MEMORY_OPERAND_BASE)?;
     m.add("MEMORY_OPERAND_INDEX", MEMORY_OPERAND_INDEX)?;
