@@ -54,6 +54,10 @@ struct PE {
 
 #[pymethods]
 impl PE {
+    /// fetch the architecture of the PE file as a string.
+    /// either "x32" or "x64"
+    ///
+    /// Returns: str
     #[getter]
     fn arch(&self) -> PyResult<&'static str> {
         Ok(match self.inner.module.arch {
@@ -62,8 +66,19 @@ impl PE {
         })
     }
 
-    #[getter]
-    fn functions(&self) -> PyResult<Vec<u64>> {
+    /// use a collection of heuristics to identify potential function start
+    /// addresses. this is done both quickly and on a best-effort basis.
+    /// for example, this includes:
+    ///   - exported routines
+    ///   - targets of `call` instructions
+    ///   - function prologue pattern matches
+    ///   - targets of pointers to executable sections
+    ///   - control flow and safeseh table entries
+    ///
+    /// the result is a list of virtual addresses where disassembly could start.
+    ///
+    /// Returns: List[int]
+    fn get_functions(&self) -> PyResult<Vec<u64>> {
         lancelot::analysis::pe::find_function_starts(&self.inner).map_err(to_py_err)
     }
 }

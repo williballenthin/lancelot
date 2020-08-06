@@ -25,12 +25,15 @@ def test_load_pe(k32):
 
 def test_arch(k32):
     ws = lancelot.from_bytes(k32)
+    assert "Returns: str" in lancelot.PE.arch.__doc__
     assert ws.arch == "x64"
 
 
 def test_functions(k32):
     ws = lancelot.from_bytes(k32)
-    functions = ws.functions
+
+    assert "Returns: List[int]" in ws.get_functions.__doc__
+    functions = ws.get_functions()
 
     # IDA identifies 2326
     # lancelot identifies around 2200
