@@ -291,6 +291,14 @@ impl PE {
         }
     }
 
+    /// fetch the module base address.
+    ///
+    /// Returns: int
+    #[getter]
+    pub fn base_address(&self) -> u64 {
+        self.inner.module.address_space.base_address
+    }
+
     /// use a collection of heuristics to identify potential function start
     /// addresses. this is done both quickly and on a best-effort basis.
     /// for example, this includes:

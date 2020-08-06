@@ -29,6 +29,12 @@ def test_arch(k32):
     assert ws.arch == "x64"
 
 
+def test_base_address(k32):
+    ws = lancelot.from_bytes(k32)
+    assert "Returns: int" in lancelot.PE.base_address.__doc__
+    assert ws.base_address == 0x180000000
+
+
 def test_functions(k32):
     ws = lancelot.from_bytes(k32)
 
