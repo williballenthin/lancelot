@@ -115,3 +115,15 @@ def test_read_insn(k32):
     assert operands == ((1, 64, 'rsp', None, 'ss', 0, 8), (3, 64, 'rcx'))
 
 
+def test_probe(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert ws.probe(0x180000000) & lancelot.PERMISSION_READ != 0
+    assert ws.probe(0x180000000) & lancelot.PERMISSION_WRITE == 0
+    assert ws.probe(0x180000000) & lancelot.PERMISSION_EXECUTE == 0
+
+    # part of some functino
+    assert ws.probe(0x1800202B0) & lancelot.PERMISSION_READ != 0
+    assert ws.probe(0x1800202B0) & lancelot.PERMISSION_WRITE == 0
+    assert ws.probe(0x1800202B0) & lancelot.PERMISSION_EXECUTE != 0
+

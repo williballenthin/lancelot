@@ -2,7 +2,7 @@ use anyhow::Error;
 use lancelot::{
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
-    module::ModuleError,
+    module::{ModuleError, Permissions},
     pagemap::PageMapError,
     util::UtilError,
     VA,
@@ -274,6 +274,10 @@ impl Instruction {
     }
 }
 
+const PERMISSION_READ: u8 = 0b001;
+const PERMISSION_WRITE: u8 = 0b010;
+const PERMISSION_EXECUTE: u8 = 0b100;
+
 #[pyclass]
 pub struct PE {
     inner:   lPE,
@@ -371,6 +375,33 @@ impl PE {
             Err(pyo3::exceptions::ValueError::py_err("invalid instruction"))
         }
     }
+
+    pub fn probe(&self, va: VA) -> u8 {
+        match self
+            .inner
+            .module
+            .sections
+            .iter()
+            .find(|section| section.virtual_range.contains(&va))
+        {
+            None => 0x0,
+            Some(sec) => {
+                let mut ret = 0;
+                if sec.permissions.intersects(Permissions::R) {
+                    ret |= PERMISSION_READ;
+                }
+
+                if sec.permissions.intersects(Permissions::W) {
+                    ret |= PERMISSION_WRITE;
+                }
+
+                if sec.permissions.intersects(Permissions::X) {
+                    ret |= PERMISSION_EXECUTE;
+                }
+                ret
+            }
+        }
+    }
 }
 
 #[pymodule]
@@ -409,6 +440,11 @@ fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("OPERAND_TYPE_MEMORY", OPERAND_TYPE_MEMORY)?;
     m.add("OPERAND_TYPE_POINTER", OPERAND_TYPE_POINTER)?;
     m.add("OPERAND_TYPE_REGISTER", OPERAND_TYPE_REGISTER)?;
+
+    // memory permissions
+    m.add("PERMISSION_READ", PERMISSION_READ)?;
+    m.add("PERMISSION_WRITE", PERMISSION_WRITE)?;
+    m.add("PERMISSION_EXECUTE", PERMISSION_EXECUTE)?;
 
     Ok(())
 }

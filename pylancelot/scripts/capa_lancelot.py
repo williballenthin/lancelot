@@ -280,7 +280,30 @@ def extract_insn_api_features(ws, insn):
 
 def extract_insn_number_features(ws, insn):
     """parse number features from the given instruction."""
-    raise NotImplementedError()
+    operands = insn.operands
+
+    for oper in operands:
+        if oper[OPERAND_TYPE] != OPERAND_TYPE_IMMEDIATE:
+            continue
+
+        v = oper[IMMEDIATE_OPERAND_VALUE]
+
+        if ws.probe(v) & PERMISSION_READ:
+            # v is a valid address
+            # therefore, assume its not also a constant.
+            continue
+
+        if (insn.mnemonic == "add"
+            and operands[0][OPERAND_TYPE] == OPERAND_TYPE_REGISTER
+            and operands[0][REGISTER_OPERAND_REGISTER] == "esp"):
+            # skip things like:
+            #
+            #    .text:00401140                 call    sub_407E2B
+            #    .text:00401145                 add     esp, 0Ch
+            return
+
+        yield Number(v), insn.address
+        yield Number(v, arch=get_arch(ws)), insn.address
 
 
 def derefs(ws, p):
@@ -374,7 +397,6 @@ def extract_function_indirect_call_characteristic_features(ws, insn):
     does not include calls like => call ds:dword_ABD4974
     """
     raise NotImplementedError()
-
 
 
 _not_implemented = set([])
