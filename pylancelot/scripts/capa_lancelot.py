@@ -13,6 +13,7 @@ from lancelot import *
 import capa.features.extractors.strings
 from capa.features import String, Characteristic, ARCH_X32, ARCH_X64
 from capa.features.file import Export, Import, Section
+from capa.features.insn import Number
 from capa.features.basicblock import BasicBlock
 from capa.features.extractors import loops
 from capa.features.extractors.helpers import MIN_STACKSTRING_LEN

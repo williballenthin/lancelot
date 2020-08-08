@@ -376,7 +376,18 @@ impl PE {
         }
     }
 
-    pub fn probe(&self, va: VA) -> u8 {
+    pub fn probe(&self, va: i128) -> u8 {
+        // probe should be pretty relaxed about what it accepts
+        // so that it is easy to use.
+        // therefore, do extra validation here.
+        if va < 0 {
+            return 0x0;
+        }
+        if va > u64::MAX as i128 {
+            return 0x0;
+        }
+        let va = va as u64;
+
         match self
             .inner
             .module
