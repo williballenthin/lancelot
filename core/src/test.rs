@@ -38,7 +38,7 @@ pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Module {
         arch,
         sections: vec![Section {
             name:           "shellcode".to_string(),
-            perms:          Permissions::RWX,
+            permissions:    Permissions::RWX,
             physical_range: std::ops::Range {
                 start: 0x0,
                 end:   buf.len() as RVA,

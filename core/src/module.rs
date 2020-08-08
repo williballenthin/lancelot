@@ -47,7 +47,7 @@ pub struct Section {
     pub physical_range: std::ops::Range<RVA>,
     // as mapped into memory with absolute addresses.
     pub virtual_range:  std::ops::Range<VA>,
-    pub perms:          Permissions,
+    pub permissions:    Permissions,
     pub name:           String,
 }
 
@@ -94,7 +94,7 @@ impl Module {
     pub fn probe_va(&self, offset: VA, perm: Permissions) -> bool {
         self.sections
             .iter()
-            .any(|section| section.virtual_range.contains(&offset) && section.perms.intersects(perm))
+            .any(|section| section.virtual_range.contains(&offset) && section.permissions.intersects(perm))
     }
 
     pub fn probe_rva(&self, offset: RVA, perm: Permissions) -> bool {

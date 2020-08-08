@@ -39,7 +39,7 @@ impl PE {
             self.module
                 .sections
                 .iter()
-                .filter(|section| section.perms.intersects(Permissions::X)),
+                .filter(|section| section.permissions.intersects(Permissions::X)),
         )
     }
 
@@ -101,7 +101,7 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<S
             start: base_address,
             end:   base_address + hdr_virt_size,
         },
-        perms:          Permissions::R,
+        permissions:    Permissions::R,
         name:           "header".to_string(),
     })
 }
@@ -157,7 +157,7 @@ fn load_pe_section(
             start: base_address + section.virtual_address as u64,
             end:   base_address + section.virtual_address as u64 + virtual_size,
         },
-        perms,
+        permissions: perms,
         name,
     })
 }
@@ -227,7 +227,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
 
         debug!(
             "pe: address space: mapped {:#x} - {:#x} {:?}",
-            vstart, vend, section.perms
+            vstart, vend, section.permissions
         );
     }
 
