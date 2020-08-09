@@ -575,20 +575,21 @@ fn insert_function_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     let functions = lancelot::analysis::pe::find_function_starts(pe)?;
 
     for &function in functions.iter() {
-        // TODO: handle failure here gracefully.
-        let cfg = lancelot::analysis::cfg::build_cfg(&pe.module, function)?;
-
-        let mut end = function;
-        for bb in cfg.basic_blocks.values() {
-            if bb.addr != end {
-                break;
+        if let Ok(cfg) = lancelot::analysis::cfg::build_cfg(&pe.module, function) {
+            let mut end = function;
+            for bb in cfg.basic_blocks.values() {
+                if bb.addr != end {
+                    break;
+                }
+                end += bb.length;
             }
-            end += bb.length;
+
+            // TODO get function name
+
+            ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
+        } else {
+            debug!("failed to compute build CFG at 0x{:#x}", function);
         }
-
-        // TODO get function name
-
-        ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
     }
     Ok(())
 }
