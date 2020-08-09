@@ -595,25 +595,25 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
         }
 
         // TODO: optimize here by re-using buffers.
-        module.address_space.read_into(va, &mut insn_buf)?;
+        if module.address_space.read_into(va, &mut insn_buf).is_ok() {
+            if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
+                let successors: Flows = get_insn_flow(module, va, &insn)?
+                    // remove CALL instructions for cfg reconstruction.
+                    .into_iter()
+                    .filter(|succ| !matches!(succ, Flow::Call(_)))
+                    .collect();
 
-        if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
-            let successors: Flows = get_insn_flow(module, va, &insn)?
-                // remove CALL instructions for cfg reconstruction.
-                .into_iter()
-                .filter(|succ| !matches!(succ, Flow::Call(_)))
-                .collect();
+                for target in successors.iter() {
+                    queue.push_back(target.va());
+                }
 
-            for target in successors.iter() {
-                queue.push_back(target.va());
+                let desc = InstructionDescriptor {
+                    length: insn.length as u64,
+                    successors,
+                };
+
+                insns.insert(va, desc);
             }
-
-            let desc = InstructionDescriptor {
-                length: insn.length as u64,
-                successors,
-            };
-
-            insns.insert(va, desc);
         }
     }
 
