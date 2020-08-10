@@ -622,7 +622,10 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
             let buf = &mut section_bufs[i];
 
             let start = bb.addr - sec.virtual_range.start;
-            let end = start + bb.length;
+            let mut end = start + bb.length;
+            if end > sec.physical_range.end {
+                end = sec.physical_range.end;
+            }
 
             for i in start..end {
                 buf[i as usize] = 0x0;
