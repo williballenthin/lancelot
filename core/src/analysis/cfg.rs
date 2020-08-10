@@ -663,6 +663,12 @@ fn compute_basic_blocks(
     predecessors: &BTreeMap<VA, Flows>,
     successors: &BTreeMap<VA, Flows>,
 ) -> BTreeMap<VA, BasicBlock> {
+    // find all the basic block start addresses.
+    //
+    // scan through all instructions, looking for:
+    //  1. instruction with nothing before it, or
+    //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
+    //  3. the prior instruction also branched elsewhere
     let starts: Vec<VA> = insns
         .keys()
         .filter(|&va| {
@@ -673,7 +679,7 @@ fn compute_basic_blocks(
                 return true;
             }
 
-            // its a bb start, because there's a branch here.
+            // its a bb start, because there's a branch to here.
             if !empty(non_fallthrough_flows(preds)) {
                 return true;
             }
@@ -693,6 +699,15 @@ fn compute_basic_blocks(
 
     let mut basic_blocks: BTreeMap<VA, BasicBlock> = Default::default();
     let mut basic_blocks_by_last_insn: BTreeMap<VA, VA> = Default::default();
+
+    // compute the basic block instances.
+    //
+    // for each basic block start,
+    // scan forward to find the end of the block.
+    //
+    // set the bb successors.
+    // leave the predecessors for a subsequent pass.
+    // this is because we need the basic blocks indexed by final address.
     for &start in starts.iter() {
         let mut va = start;
         let mut insn = &insns[&va];
@@ -707,28 +722,40 @@ fn compute_basic_blocks(
         loop {
             let flows = &successors[&va];
 
+            // there is no fallthrough here, so end of bb.
+            // for example: ret has no fallthrough, and is end of basic block.
             if empty(fallthrough_flows(flows)) {
-                // end of bb.
-                // for example: ret has no fallthrough, and is end of basic block.
                 break;
             }
 
+            // there is a non-fallthrough flow, so end of bb.
+            // for example: jnz has a non-fallthrough flow from it.
             if !empty(non_fallthrough_flows(flows)) {
-                // end of bb.
-                // for example: jnz has a non-fallthrough flow from it.
                 break;
             }
+
+            // now we need to check the next instruction.
+            // if its the start of a basic block,
+            // then the current basic block must end.
 
             let next_va = va + insn.length;
 
+            // there is not a subsequent instruction, so end of bb.
+            // this might be considered an analysis error.
+            // but, we don't have a better framework for this right now.
+            // options include:
+            //  1. pretend the current BB is ok, or
+            //  2. fail the whole analysis
+            // for right now, we're doing (1).
             if !predecessors.contains_key(&next_va) {
-                log::warn!("cfg: {:#x}: missing key: {:#x}", va, next_va);
+                log::warn!("cfg: {:#x}: no subsequent instruction at {:#x}", va, next_va);
+                break;
             }
 
+            // the next instruction has other flows to it, so its a new bb.
+            // the next instruction is not part of this bb.
+            // for example, the target of a fallthrough AND a jump from elsewhere.
             if !empty(non_fallthrough_flows(&predecessors[&next_va])) {
-                // end of bb.
-                // the next instruction is not part of this bb.
-                // for example, the target of a fallthrough AND a jump from elsewhere.
                 break;
             }
 
@@ -741,7 +768,7 @@ fn compute_basic_blocks(
         // va is the address of the last instruction of the current basic block.
 
         bb.length += insn.length;
-        bb.successors = successors[&va].clone();
+        bb.successors = successors.get(&va).unwrap_or(&smallvec![]).clone();
 
         basic_blocks.insert(start, bb);
         basic_blocks_by_last_insn.insert(va, start);
@@ -749,8 +776,11 @@ fn compute_basic_blocks(
 
     for (va, bb) in basic_blocks.iter_mut() {
         bb.predecessors.extend(
-            predecessors[va]
+            predecessors
+                .get(&va)
+                .unwrap_or(&smallvec![])
                 .iter()
+                .filter(|pred| basic_blocks_by_last_insn.contains_key(&pred.va()))
                 .map(|pred| pred.swap(basic_blocks_by_last_insn[&pred.va()])),
         )
     }
