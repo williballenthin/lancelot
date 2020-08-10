@@ -115,6 +115,28 @@ def test_read_insn(k32):
     assert operands == ((1, 64, 'rsp', None, 'ss', 0, 8), (3, 64, 'rcx'))
 
 
+def test_read_bytes(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert "Returns: bytes" in ws.read_bytes.__doc__
+
+    with pytest.raises(ValueError):
+        ws.read_bytes(0x0, 1)
+
+    assert ws.read_bytes(0x180000000, 2) == b"MZ"
+
+
+def test_read_pointer(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert "Returns: int" in ws.read_pointer.__doc__
+
+    with pytest.raises(ValueError):
+        ws.read_pointer(0x0)
+
+    assert ws.read_pointer(0x180076008) == 0x18007D630
+
+
 def test_probe(k32):
     ws = lancelot.from_bytes(k32)
 

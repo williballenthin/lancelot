@@ -365,13 +365,32 @@ impl PE {
         })
     }
 
-    /// disassemble an instruction at the givne virtual address.
+    /// read a sequence of bytes at the given virtual address.
+    ///
+    /// Args:
+    ///   va (int): the virtual address at which to read data.
+    ///   length (int): the number of bytes to read.
+    ///
+    /// Raises:
+    ///   ValueError - if the address is invalid.
+    ///
+    /// Returns: bytes
+    pub fn read_bytes(&self, py: Python, va: VA, length: usize) -> PyResult<Py<PyBytes>> {
+        self.inner
+            .module
+            .address_space
+            .read_bytes(va, length)
+            .map(|buf| PyBytes::new(py, &buf).into())
+            .map_err(to_py_err)
+    }
+
+    /// disassemble an instruction at the given virtual address.
     ///
     /// Args:
     ///   va (int): the virtual address at which to disassemble.
     ///
     /// Raises:
-    ///   ValueError - if the address or instruction is invalid
+    ///   ValueError - if the address or instruction is invalid.
     ///
     /// Returns: Instruction
     pub fn read_insn(&self, va: VA) -> PyResult<Instruction> {
@@ -390,6 +409,19 @@ impl PE {
         } else {
             Err(pyo3::exceptions::ValueError::py_err("invalid instruction"))
         }
+    }
+
+    /// read a pointer at the given virtual address.
+    ///
+    /// Args:
+    ///   va (int): the virtual address at which to read the pointer.
+    ///
+    /// Raises:
+    ///   ValueError - if the address is invalid.
+    ///
+    /// Returns: int
+    pub fn read_pointer(&self, va: VA) -> PyResult<u64> {
+        self.inner.module.read_va_at_va(va).map_err(to_py_err)
     }
 
     pub fn probe(&self, va: i128) -> u8 {
