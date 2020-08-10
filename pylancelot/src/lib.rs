@@ -159,7 +159,8 @@ const OPERAND_TYPE_POINTER: u8 = 2;
 const OPERAND_TYPE_REGISTER: u8 = 3;
 
 /// index into operand tuple when type == immediate
-const IMMEDIATE_OPERAND_VALUE: u8 = 2;
+const IMMEDIATE_OPERAND_IS_RELATIVE: u8 = 2;
+const IMMEDIATE_OPERAND_VALUE: u8 = 3;
 
 /// index into operand tuple when type == memory
 const MEMORY_OPERAND_BASE: u8 = 2;
@@ -199,6 +200,7 @@ fn operand_to_tuple(py: Python, operand: &zydis::DecodedOperand) -> Py<PyTuple> 
 
     match operand.ty {
         zydis::enums::OperandType::IMMEDIATE => {
+            ret.push(operand.imm.is_relative.into_py(py));
             let value = if operand.imm.is_signed {
                 lancelot::util::u64_i64(operand.imm.value) as i128
             } else {
@@ -435,6 +437,7 @@ fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     // indices into an operand tuple
     m.add("OPERAND_TYPE", OPERAND_TYPE)?;
     m.add("OPERAND_SIZE", OPERAND_SIZE)?;
+    m.add("IMMEDIATE_OPERAND_IS_RELATIVE", IMMEDIATE_OPERAND_IS_RELATIVE)?;
     m.add("IMMEDIATE_OPERAND_VALUE", IMMEDIATE_OPERAND_VALUE)?;
     m.add("MEMORY_OPERAND_BASE", MEMORY_OPERAND_BASE)?;
     m.add("MEMORY_OPERAND_INDEX", MEMORY_OPERAND_INDEX)?;
