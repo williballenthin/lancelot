@@ -19,6 +19,10 @@ lazy_static! {
         // LEAVE RET, x86win_patterns.xml#L8
         let LEAVE_RET = r"\xC9\xC3";
 
+        // JMP DWORD PTR ds:????????
+        // mimikatz:0x46B674
+        let JMP_FAR = r"\xFF\x25....";
+
         // x86win_patterns.xml#L9
         // 0xC2 ......00 0x00
         // let RET_LONGFORM =
@@ -29,6 +33,7 @@ lazy_static! {
             NOP,
             RET,
             LEAVE_RET,
+            JMP_FAR,
         ].join("|"));
 
         // PUSH EBP; MOV EBP, ESP, x86win_patterns.xml#L12
