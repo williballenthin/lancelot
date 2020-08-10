@@ -57,11 +57,10 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     // RET(N) of prior function, x86win_patterns.xml#L7
     const RET: u8 = 0xC3;
 
-    // TODO: ensure these are not pointers themselves
-
     // now, assert that the prior byte must be a either a RET or filler byte.
     // this should filter out almost all jump tables, etc.
     // should also filter out almost all exception handlers, too.
+    // should not be an ASCII string (as seen in 32-bit kernel32)
     Ok(candidates
         .into_iter()
         .filter(|&va| {
@@ -79,5 +78,6 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                 true
             }
         })
+        .filter(|&va| matches!(pe.module.address_space.read_ascii(va), Err(_)))
         .collect())
 }
