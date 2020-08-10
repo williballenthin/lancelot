@@ -7,7 +7,7 @@ use lancelot::{
     util::UtilError,
     VA,
 };
-use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
+use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyObjectProtocol};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
@@ -273,6 +273,20 @@ impl Instruction {
         }
 
         PyTuple::new(py, ret.iter()).into()
+    }
+}
+
+#[pyproto]
+impl PyObjectProtocol for Instruction {
+    fn __str__(&self) -> PyResult<String> {
+        let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("formatter");
+        let mut buffer = [0u8; 200];
+        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+
+        formatter
+            .format_instruction(&self.inner, &mut buffer, Some(self.address), None)
+            .expect("format");
+        Ok(format!("{:#x}: {}", self.address, buffer))
     }
 }
 
