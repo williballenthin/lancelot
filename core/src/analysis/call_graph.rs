@@ -16,7 +16,7 @@ pub struct CallGraph {
     /// map from function start to the addresses that call here.
     /// lookup via `call_instruction_functions` to figure out the functions that
     /// call here.
-    pub calls_to: BTreeMap<VA, Vec<VA>>,
+    pub calls_to:   BTreeMap<VA, Vec<VA>>,
     /// map from an instruction to the addresses that it calls (usually one).
     pub calls_from: BTreeMap<VA, Vec<VA>>,
 
