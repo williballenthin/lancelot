@@ -60,7 +60,10 @@ jobs:
       - name: test pylancelot
         working-directory: ./pylancelot/
         run: |
-          sudo apt-get install -y build-essential gcc cmake python3.8 python3.8-dev
-          sudo python3.8 -m pip install -U pip setuptools maturin pytest
+          sudo apt-get install -y build-essential gcc cmake python3.8 python3.8-dev virtualenv
+          mkdir /tmp/vdir
+          virtualenv -p python3.8 /tmp/vdir
+          source /tmp/vdir/bin/activate
+          pip install -U pip setuptools maturin pytest
           maturin develop
           pytest
