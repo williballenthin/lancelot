@@ -84,6 +84,20 @@ def test_cfg(k32):
     assert 0x1800202F3 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
 
 
+def test_call_graph(k32):
+    ws = lancelot.from_bytes(k32)
+
+    assert "Returns: CallGraph" in ws.build_call_graph.__doc__
+
+    cg = ws.build_call_graph()
+    assert len(cg.calls_to[0x180001068]) == 2
+    assert 0x18000F775 in cg.calls_to[0x180001068]
+    assert 0x180060504 in cg.calls_to[0x180001068]
+    assert 0x180001068 in cg.calls_from[0x180060504]
+    assert 0x1800602C0 in cg.call_instruction_functions[0x180060504]
+    assert 0x180060504 in cg.function_call_instructions[0x1800602C0]
+
+
 def test_read_insn(k32):
     ws = lancelot.from_bytes(k32)
 

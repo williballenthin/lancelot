@@ -75,6 +75,34 @@ pub struct CFG {
     pub basic_blocks: Py<PyDict>,
 }
 
+#[pyclass]
+pub struct CallGraph {
+    /// map from function start to the addresses that call here.
+    /// lookup via `call_instruction_functions` to figure out the functions that
+    /// call here.
+    /// type: Dict[int, List[int]]
+    #[pyo3(get)]
+    pub calls_to: Py<PyDict>,
+
+    /// map from an instruction to the addresses that it calls (usually one).
+    /// type: Dict[int, List[int]]
+    #[pyo3(get)]
+    pub calls_from: Py<PyDict>,
+
+    /// map from function start to the instructions in its CFG that call
+    /// elsewhere. lookup via `calls_to` to figoure out the functions that
+    /// elsewhere. lookup via `calls_to` to figoure out the functions that
+    /// type: Dict[int, List[int]]
+    #[pyo3(get)]
+    pub function_call_instructions: Py<PyDict>,
+
+    /// map from instruction to starts of functions whose CFGs contain the
+    /// instruction (usually one).
+    /// type: Dict[int, List[int]]
+    #[pyo3(get)]
+    pub call_instruction_functions: Py<PyDict>,
+}
+
 const FLOW_FALLTHROUGH: u8 = 0;
 const FLOW_CALL: u8 = 1;
 const FLOW_UNCONDITIONAL_JUMP: u8 = 2;
@@ -140,7 +168,7 @@ impl BasicBlock {
         }
 
         Ok(BasicBlock {
-            address:      bb.addr,
+            address:      bb.address,
             length:       bb.length,
             predecessors: predecessors.into(),
             successors:   successors.into(),
@@ -362,6 +390,44 @@ impl PE {
         Ok(CFG {
             address:      va,
             basic_blocks: basic_blocks.into(),
+        })
+    }
+
+    /// construct and index the call graph among instructions and functions.
+    /// this routine will implicitly find all functions and build a CFG for
+    /// each.
+    ///
+    /// Returns: CallGraph
+    pub fn build_call_graph(&self, py: Python) -> PyResult<CallGraph> {
+        use lancelot::analysis::{call_graph, cfg, pe};
+        use std::collections::BTreeMap;
+
+        let mut cfgs: BTreeMap<VA, cfg::CFG> = Default::default();
+        for &function in pe::find_function_starts(&self.inner).map_err(to_py_err)?.iter() {
+            if let Ok(cfg) = cfg::build_cfg(&self.inner.module, function) {
+                cfgs.insert(function, cfg);
+            }
+        }
+
+        let cg = call_graph::build_call_graph(&self.inner.module, &cfgs).map_err(to_py_err)?;
+
+        let calls_to: PyObject = cg.calls_to.into_py(py);
+        let calls_to: Py<PyDict> = calls_to.extract(py)?;
+
+        let calls_from: PyObject = cg.calls_from.into_py(py);
+        let calls_from: Py<PyDict> = calls_from.extract(py)?;
+
+        let function_call_instructions: PyObject = cg.function_call_instructions.into_py(py);
+        let function_call_instructions: Py<PyDict> = function_call_instructions.extract(py)?;
+
+        let call_instruction_functions: PyObject = cg.call_instruction_functions.into_py(py);
+        let call_instruction_functions: Py<PyDict> = call_instruction_functions.extract(py)?;
+
+        Ok(CallGraph {
+            calls_to,
+            calls_from,
+            function_call_instructions,
+            call_instruction_functions,
         })
     }
 
