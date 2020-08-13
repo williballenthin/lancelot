@@ -578,7 +578,7 @@ fn insert_function_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         if let Ok(cfg) = lancelot::analysis::cfg::build_cfg(&pe.module, function) {
             let mut end = function;
             for bb in cfg.basic_blocks.values() {
-                if bb.addr != end {
+                if bb.address != end {
                     break;
                 }
                 end += bb.length;
@@ -616,12 +616,12 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
                 .sections
                 .iter()
                 .enumerate()
-                .find(|(_, section)| section.virtual_range.contains(&bb.addr))
+                .find(|(_, section)| section.virtual_range.contains(&bb.address))
                 .unwrap();
 
             let buf = &mut section_bufs[i];
 
-            let start = bb.addr - sec.virtual_range.start;
+            let start = bb.address - sec.virtual_range.start;
             let mut end = start + bb.length;
             if end > sec.physical_range.end {
                 end = sec.physical_range.end;

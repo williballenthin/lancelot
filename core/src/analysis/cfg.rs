@@ -71,7 +71,7 @@ type Flows = SmallVec<[Flow; 2]>;
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
     /// start VA of the basic block.
-    pub addr: VA,
+    pub address: VA,
 
     /// length of the basic block in bytes.
     pub length: u64,
@@ -713,7 +713,7 @@ fn compute_basic_blocks(
         let mut insn = &insns[&va];
 
         let mut bb = BasicBlock {
-            addr:         va,
+            address:      va,
             length:       0,
             predecessors: Default::default(),
             successors:   Default::default(),
