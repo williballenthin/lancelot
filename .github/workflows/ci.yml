@@ -64,6 +64,6 @@ jobs:
           mkdir /tmp/vdir
           virtualenv -p python3.8 /tmp/vdir
           source /tmp/vdir/bin/activate
-          pip install -U pip setuptools maturin pytest
+          pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
