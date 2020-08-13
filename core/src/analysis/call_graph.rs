@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use log::debug;
-use smallvec::SmallVec;
 
 use crate::{
     analysis::{cfg, dis},
@@ -17,9 +16,9 @@ pub struct CallGraph {
     /// map from function start to the addresses that call here.
     /// lookup via `call_instruction_functions` to figure out the functions that
     /// call here.
-    pub calls_to:   BTreeMap<VA, Vec<VA>>,
+    pub calls_to: BTreeMap<VA, Vec<VA>>,
     /// map from an instruction to the addresses that it calls (usually one).
-    pub calls_from: BTreeMap<VA, SmallVec<[VA; 1]>>,
+    pub calls_from: BTreeMap<VA, Vec<VA>>,
 
     // instruction membership indexes...
     /// map from function start to the instructions in its CFG that call
@@ -28,7 +27,7 @@ pub struct CallGraph {
     pub function_call_instructions: BTreeMap<VA, Vec<VA>>,
     /// map from instruction to starts of functions whose CFGs contain the
     /// instruction (usually one).
-    pub call_instruction_functions: BTreeMap<VA, SmallVec<[VA; 1]>>,
+    pub call_instruction_functions: BTreeMap<VA, Vec<VA>>,
 }
 
 pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>) -> Result<CallGraph> {
