@@ -31,36 +31,34 @@ pub struct CallGraph {
     pub call_instruction_functions: BTreeMap<VA, SmallVec<[VA; 1]>>,
 }
 
-pub fn build_call_graph(module: &Module, functions: &[VA]) -> Result<CallGraph> {
+pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>) -> Result<CallGraph> {
     debug!("call graph");
 
     let mut cg: CallGraph = Default::default();
     let decoder = dis::get_disassembler(module)?;
 
-    for &function in functions.iter() {
+    for (&function, cfg) in cfgs.iter() {
         debug!("call graph: {:#x}", function);
 
         // ensure there are at least (empty) entries for all the keys in `functions`
         cg.function_call_instructions.entry(function).or_default();
         cg.calls_to.entry(function).or_default();
 
-        if let Ok(cfg) = cfg::build_cfg(module, function) {
-            for basic_block in cfg.basic_blocks.values() {
-                let buf = module
-                    .address_space
-                    .read_bytes(basic_block.address, basic_block.length as usize)?;
+        for basic_block in cfg.basic_blocks.values() {
+            let buf = module
+                .address_space
+                .read_bytes(basic_block.address, basic_block.length as usize)?;
 
-                for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
-                    if let Ok(Some(insn)) = insn {
-                        if matches!(insn.mnemonic, zydis::enums::Mnemonic::CALL) {
-                            let va = basic_block.address + offset as RVA;
-                            for flow in cfg::get_call_insn_flow(module, va, &insn)?.iter() {
-                                if let cfg::Flow::Call(target) = *flow {
-                                    cg.calls_from.entry(va).or_default().push(target);
-                                    cg.calls_to.entry(target).or_default().push(va);
-                                    cg.function_call_instructions.entry(function).or_default().push(va);
-                                    cg.call_instruction_functions.entry(va).or_default().push(function);
-                                }
+            for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
+                if let Ok(Some(insn)) = insn {
+                    if matches!(insn.mnemonic, zydis::enums::Mnemonic::CALL) {
+                        let va = basic_block.address + offset as RVA;
+                        for flow in cfg::get_call_insn_flow(module, va, &insn)?.iter() {
+                            if let cfg::Flow::Call(target) = *flow {
+                                cg.calls_from.entry(va).or_default().push(target);
+                                cg.calls_to.entry(target).or_default().push(va);
+                                cg.function_call_instructions.entry(function).or_default().push(va);
+                                cg.call_instruction_functions.entry(va).or_default().push(function);
                             }
                         }
                     }
@@ -74,17 +72,27 @@ pub fn build_call_graph(module: &Module, functions: &[VA]) -> Result<CallGraph> 
 
 #[cfg(test)]
 mod tests {
-    use crate::{analysis::call_graph::build_call_graph, rsrc::*};
+    use crate::{
+        analysis::{call_graph, cfg::CFG, pe},
+        rsrc::*,
+        VA,
+    };
     use anyhow::Result;
+    use std::collections::BTreeMap;
 
     #[test]
     fn k32() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
-        let functions = crate::analysis::pe::find_function_starts(&pe)?;
+        let mut cfgs: BTreeMap<VA, CFG> = Default::default();
+        for &function in pe::find_function_starts(&pe)?.iter() {
+            if let Ok(cfg) = crate::analysis::cfg::build_cfg(&pe.module, function) {
+                cfgs.insert(function, cfg);
+            }
+        }
 
-        let cg = build_call_graph(&pe.module, &functions)?;
+        let cg = call_graph::build_call_graph(&pe.module, &cfgs)?;
 
         assert_eq!(cg.calls_to[&0x180001068].len(), 2);
         assert!(cg.calls_to[&0x180001068].iter().find(|&&v| v == 0x18000F775).is_some());
