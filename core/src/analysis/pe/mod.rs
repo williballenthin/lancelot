@@ -28,7 +28,7 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     // TODO: validate that the code looks ok
 
     let mut function_starts: Vec<_> = function_starts.into_iter().collect();
-    function_starts.sort();
+    function_starts.sort_unstable();
 
     Ok(function_starts)
 }

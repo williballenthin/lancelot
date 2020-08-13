@@ -317,6 +317,8 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
     let mut ret = vec![];
     let mut input = input;
 
+    // seems like a bug in clippy to warn on this
+    #[allow(clippy::same_item_push)]
     for _ in 0..count {
         // this offset is relative to the start of the function.
         // it is *not* relative to the prior offset.
@@ -354,6 +356,8 @@ fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], V
 
     let mut ret = vec![];
     let mut input = input;
+    // seems like a bug in clippy to warn on this
+    #[allow(clippy::same_item_push)]
     for _ in 0..count {
         // this offset is relative to the start of the function.
         // it is *not* relative to the prior offset.

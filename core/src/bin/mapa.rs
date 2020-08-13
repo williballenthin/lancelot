@@ -497,7 +497,7 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
     }
 
     if addrs.len() > 1 {
-        addrs.sort();
+        addrs.sort_unstable();
 
         // TODO: ensure these all show up near one another.
 
@@ -683,6 +683,7 @@ const MUTED: Color = Color::Fixed(8);
 fn prefix(depth: usize, s: &str) -> String {
     let mut ret: Vec<String> = Default::default();
     for line in s.split('\n') {
+        #[allow(clippy::same_item_push)]
         for _ in 0..depth {
             ret.push(MUTED.paint("│  ").to_string());
         }
