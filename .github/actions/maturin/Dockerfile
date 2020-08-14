@@ -18,7 +18,7 @@ RUN /opt/python/cp38-cp38/bin/python -m pip install --upgrade pip setuptools mat
 # manylinux/centos6 has cmake 2.8
 RUN cd /tmp \
     && curl https://cmake.org/files/v3.12/cmake-3.12.3.tar.gz > cmake-3.12.3.tar.gz \
-    && tar zxvf cmake-3.* \
+    && tar zxvf cmake-3.* > /dev/null \
     && cd cmake-3.* \
     && ./bootstrap --prefix=/usr/local \
     && make -j3 \
