@@ -7,7 +7,7 @@ rustup toolchain install nightly;
 rustup override set nightly;
 cd ./pylancelot;
 ls /opt/python;
-/opt/python/cp38-cp38m/bin/pip install --upgrade pip maturin
-/opt/python/cp38-cp38m/bin/maturin --release --strip;
+/opt/python/cp38-cp38/bin/pip install --upgrade pip maturin
+/opt/python/cp38-cp38/bin/maturin --release --strip;
 cd ../;
 ls -R target;
