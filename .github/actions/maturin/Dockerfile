@@ -26,4 +26,6 @@ RUN cd /tmp \
 
 ENV PATH /usr/local/bin/:$PATH
 
+RUN rustup default stable
+
 ENTRYPOINT ["/opt/python/cp38-cp38/bin/maturin"]
