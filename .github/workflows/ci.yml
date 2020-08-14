@@ -83,5 +83,5 @@ jobs:
         with:
           python-versions: 'cp38-cp38m'
           build-requirements: 'maturin'
-          pre-build-command: 'sh .github/workflows/build-pylancelot.sh'
+          pre-build-command: 'bash .github/workflows/build-pylancelot.sh'
           pip-wheel-args: '--help'
