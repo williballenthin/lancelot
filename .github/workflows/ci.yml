@@ -42,7 +42,8 @@ jobs:
     needs: [check]
     steps:
       - uses: actions/checkout@v2
-        lfs: true
+        with:
+          lfs: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
