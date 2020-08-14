@@ -1,5 +1,8 @@
 #!/bin/sh
 
+set -e;
+set -x;
+
 curl https://sh.rustup.rs | sh -s -- -y;
 rustup set profile minimal;
 rustup toolchain install nightly;
