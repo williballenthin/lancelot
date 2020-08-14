@@ -83,6 +83,5 @@ jobs:
         with:
           python-versions: 'cp38-cp38m'
           build-requirements: 'maturin'
-          #pre-build-command: 'curl https://sh.rustup.rs | sh -s -- -y; rustup set profile minimal; rustup toolchain install nightly; rustup override set nightly; ls; cd lancelot/pylancelot; maturin --release --strip && cd ../..'
-          pre-build-command: 'ls'
+          pre-build-command: 'sh .github/workflows/build-pylancelot.sh'
           pip-wheel-args: '--help'
