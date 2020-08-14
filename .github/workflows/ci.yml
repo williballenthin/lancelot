@@ -3,6 +3,10 @@ on: [push, pull_request]
 name: CI
 
 jobs:
+  checkout:
+    name: checkout
+    uses: actions/checkout@v2
+    lfs: true
   check:
     name: check
     runs-on: [ubuntu-latest]
