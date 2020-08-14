@@ -1,0 +1,18 @@
+name: maturin
+description: build Python wheels via maturin
+inputs:
+  manifestPath:
+    description: "path to Cargo.toml"
+    required: false
+    default: "Cargo.toml"
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  args:
+    - "build"
+    - "--manifest-path"
+    - ${{ inputs.manifestPath }}
+    - "--release"
+    - "--strip"
+    - "--manylinux"
+    - "2010"

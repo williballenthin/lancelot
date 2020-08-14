@@ -1,0 +1,14 @@
+on: [push, pull_request]
+
+name: build
+
+jobs:
+  maturin:
+    name: maturin
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - name: maturin action
+        uses: ./github/actions/maturin
+        with:
+          manifestPath: ./pylancelot/Cargo.toml
