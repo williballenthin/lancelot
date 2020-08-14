@@ -3,15 +3,11 @@ on: [push, pull_request]
 name: CI
 
 jobs:
-  checkout:
-    name: checkout
-    uses: actions/checkout@v2
-    lfs: true
   check:
     name: check
     runs-on: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -25,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -45,7 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+        lfs: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
