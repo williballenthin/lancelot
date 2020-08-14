@@ -9,6 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: maturin action
-        uses: ./github/actions/maturin
+        uses: ./.github/actions/maturin
         with:
           manifestPath: ./pylancelot/Cargo.toml
