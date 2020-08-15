@@ -41,15 +41,10 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: pylancelot-0.1.0-cp38-none-win_amd64.whl
-            artifact_name2: pylancelot-0.1.0-cp35-none-win_amd64.whl
-            artifact_name3: pylancelot-0.1.0-cp36-none-win_amd64.whl
-            artifact_name4: pylancelot-0.1.0-cp37-none-win_amd64.whl
+            plat: win_amd64
           - os: macos-latest
-            artifact_name: pylancelot-0.1.0-cp38-cp38-macosx_10_7_x86_64.whl
-            artifact_name2: none
-            artifact_name3: none
-            artifact_name4: none
+            plat: macosx_x86_64
+
     steps:
       - uses: actions/checkout@v2
 
@@ -71,27 +66,8 @@ jobs:
           
       - uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.artifact_name }}
-          path: target/wheels/${{ matrix.artifact_name }}
-          if-no-files-found: ignore
-          
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ${{ matrix.artifact_name2 }}
-          path: target/wheels/${{ matrix.artifact_name2 }}
-          if-no-files-found: ignore
-          
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ${{ matrix.artifact_name3 }}
-          path: target/wheels/${{ matrix.artifact_name3 }}
-          if-no-files-found: ignore
-          
-      - uses: actions/upload-artifact@v2
-        with:
-          name: ${{ matrix.artifact_name4 }}
-          path: target/wheels/${{ matrix.artifact_name4 }}
-          if-no-files-found: ignore
+          name: pylancelot-${{ matrix.plat }}-whl
+          path: target/wheels/*.whl
           
       - name: install twine
         run: |
@@ -118,23 +94,11 @@ jobs:
         # see Dockerfile for this image
         run: |
           docker run --rm -v $(pwd):/io --workdir=/io williballenthin/maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml --manylinux 2010
-      
+
       - uses: actions/upload-artifact@v2
         with:
-          name: pylancelot-0.1.0-cp35-cp35m-manylinux2010_x86_64.whl
-          path: target/wheels/pylancelot-0.1.0-cp35-cp35m-manylinux2010_x86_64.whl
-      - uses: actions/upload-artifact@v2
-        with:
-          name: pylancelot-0.1.0-cp36-cp36m-manylinux2010_x86_64.whl
-          path: target/wheels/pylancelot-0.1.0-cp36-cp36m-manylinux2010_x86_64.whl
-      - uses: actions/upload-artifact@v2
-        with:
-          name: pylancelot-0.1.0-cp37-cp37m-manylinux2010_x86_64.whl
-          path: target/wheels/pylancelot-0.1.0-cp37-cp37m-manylinux2010_x86_64.whl
-      - uses: actions/upload-artifact@v2
-        with:
-          name: pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
-          path: target/wheels/pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
+          name: pylancelot-manylinux2010_x86_64-whl
+          path: target/wheels/*.whl
            
       - name: install twine
         run: |
