@@ -93,16 +93,16 @@ jobs:
           path: target/wheels/${{ matrix.artifact_name4 }}
           if-no-files-found: ignore
           
-    - name: install twine
-      run: |
-        python -m pip install --upgrade pip setuptools twine
+      - name: install twine
+        run: |
+          python -m pip install --upgrade pip setuptools twine
         
-    - name: publish to pypi
-      env:
-        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      run: |
-        twine upload target/wheels/*       
+      - name: publish to pypi
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          twine upload target/wheels/*       
 
   whl-linux:
     name: build python wheels for manylinux2010
