@@ -2,9 +2,38 @@ on:
   release:
     types: [created, edited]
 
-name: build
+name: publish
 
 jobs:
+  crate:
+   name: publish to crates.io
+   runs-on: ubuntu-latest
+   steps:
+     - uses: actions/checkout@v2
+       
+     - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          
+     - name: login
+       run: cargo login ${CARGO_TOKEN}
+       env:
+         CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
+         
+     - name: publish flirt
+       run: |
+         cd flirt
+         cargo publish
+         cd ..
+       
+     - name: publish core
+       run: |
+         cd core
+         cargo publish
+         cd
+             
   whl-other:
     name: build python wheels for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
