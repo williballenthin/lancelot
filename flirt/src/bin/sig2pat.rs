@@ -6,7 +6,7 @@ extern crate log;
 fn run(sig_path: &str) -> Result<()> {
     let buf = std::fs::read(sig_path)?;
 
-    for sig in flirt::sig::parse(&buf)?.iter() {
+    for sig in lancelot_flirt::sig::parse(&buf)?.iter() {
         println!("{:}", sig);
     }
 
