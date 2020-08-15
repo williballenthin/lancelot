@@ -51,4 +51,4 @@ __pycache__
 
 
 *.pat
-*.sig
+*.sigCargo.lock
