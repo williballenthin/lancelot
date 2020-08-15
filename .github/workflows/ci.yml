@@ -58,7 +58,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -p flirt
+          args: -p lancelot-flirt
       - name: test pylancelot
         working-directory: ./pylancelot/
         run: |
