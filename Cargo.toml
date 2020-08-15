@@ -4,6 +4,7 @@ members = [
     "core",
     "flirt",
     "pylancelot",
+    "bin",
 ]
 
 [profile.release]

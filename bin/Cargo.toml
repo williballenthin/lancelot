@@ -1,0 +1,28 @@
+[package]
+name = "lancelot-bin"
+version = "0.2.1"
+description = "binary analysis tools for x32/x64 PE files"
+authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
+license = "Apache-2.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4"
+clap = "2"
+ansi_term = "0.12"
+hexyl = "0.8"
+fern = "0.6"
+chrono = "0.4"
+anyhow = "1"
+thiserror = "1"
+better-panic = "0.2"
+goblin = "0.2"
+zydis = "3"
+hex = "0.4"
+
+#lancelot = { path = "../core" }
+lancelot = { version = "0.2" }
+
+
