@@ -19,5 +19,18 @@ jobs:
       
       - uses: actions/upload-artifact@v2
         with:
-          name: whl
-          path: target/wheels/
+          name: pylancelot-0.1.0-cp35-cp35m-manylinux2010_x86_64.whl
+          path: target/wheels/pylancelot-0.1.0-cp35-cp35m-manylinux2010_x86_64.whl
+      - uses: actions/upload-artifact@v2
+        with:
+          name: pylancelot-0.1.0-cp36-cp36m-manylinux2010_x86_64.whl
+          path: target/wheels/pylancelot-0.1.0-cp36-cp36m-manylinux2010_x86_64.whl
+      - uses: actions/upload-artifact@v2
+        with:
+          name: pylancelot-0.1.0-cp37-cp37m-manylinux2010_x86_64.whl
+          path: target/wheels/pylancelot-0.1.0-cp37-cp37m-manylinux2010_x86_64.whl
+      - uses: actions/upload-artifact@v2
+        with:
+          name: pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
+          path: target/wheelspylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
+ 
