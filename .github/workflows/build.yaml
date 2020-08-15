@@ -12,10 +12,10 @@ jobs:
      - uses: actions/checkout@v2
        
      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+       with:
+         profile: minimal
+         toolchain: stable
+         override: true
           
      - name: login
        run: cargo login ${CARGO_TOKEN}
@@ -92,6 +92,17 @@ jobs:
           name: ${{ matrix.artifact_name4 }}
           path: target/wheels/${{ matrix.artifact_name4 }}
           if-no-files-found: ignore
+          
+    - name: install twine
+      run: |
+        python -m pip install --upgrade pip setuptools twine
+        
+    - name: publish to pypi
+      env:
+        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      run: |
+        twine upload target/wheels/*       
 
   whl-linux:
     name: build python wheels for manylinux2010
@@ -124,4 +135,14 @@ jobs:
         with:
           name: pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
           path: target/wheels/pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
- 
+           
+      - name: install twine
+        run: |
+          python -m pip install --upgrade pip setuptools twine
+        
+      - name: publish to pypi
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          twine upload target/wheels/* 
