@@ -9,7 +9,7 @@ ENV PATH /opt/python/cp35-cp35m/bin/:/opt/python/cp36-cp36m/bin/:/opt/python/cp3
 ENV USER root
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
-    && rustup default stable
+    && rustup default stable \
     && python3 -m pip install --no-cache-dir cffi \
     && mkdir /io
 
