@@ -31,7 +31,8 @@ widestring = "0.4"
 ansi_term = "0.12"
 hexyl = "0.8"
 
-lancelot-flirt = { path = "../flirt" , optional = true}
+#lancelot-flirt = { path = "../flirt" , optional = true}
+lancelot-flirt = { version = "0.2" , optional = true}
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)
