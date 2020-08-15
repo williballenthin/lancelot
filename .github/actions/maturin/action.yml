@@ -8,6 +8,7 @@ inputs:
 runs:
   using: "docker"
   image: "Dockerfile"
+  pre-entrypoint: 'pre-entrypoint.sh'
   args:
     - "build"
     - "--manifest-path"

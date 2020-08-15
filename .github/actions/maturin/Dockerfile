@@ -22,7 +22,9 @@ RUN cd /tmp \
     && cd cmake-3.* \
     && ./bootstrap --prefix=/usr/local \
     && make -j3 \
-    && make install
+    && make install \
+    && rm -rf /tmp/*
+
 
 ENV PATH /usr/local/bin/:$PATH
 
