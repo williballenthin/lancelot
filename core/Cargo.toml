@@ -2,7 +2,7 @@
 name = "lancelot"
 description = "binary analysis framework for x32/x64 PE files"
 license = "Apache-2.0"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
