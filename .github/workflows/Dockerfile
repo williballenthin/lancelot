@@ -2,13 +2,14 @@
 # https://www.python.org/dev/peps/pep-0571/#compatibility-with-kernels-that-lack-vsyscall
 FROM quay.io/pypa/manylinux2010_x86_64
 
-ENV PATH /root/.cargo/bin:$PATH
+ENV PATH /root/.cargo/bin:/usr/local/bin/:$PATH
 # Add all supported python versions
 ENV PATH /opt/python/cp35-cp35m/bin/:/opt/python/cp36-cp36m/bin/:/opt/python/cp37-cp37m/bin/:/opt/python/cp38-cp38/bin/:$PATH
 # Otherwise `cargo new` errors
 ENV USER root
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
+    && rustup default stable
     && python3 -m pip install --no-cache-dir cffi \
     && mkdir /io
 
@@ -24,10 +25,5 @@ RUN cd /tmp \
     && make -j3 \
     && make install \
     && rm -rf /tmp/*
-
-
-ENV PATH /usr/local/bin/:$PATH
-
-RUN rustup default stable
 
 ENTRYPOINT ["/opt/python/cp38-cp38/bin/maturin"]
