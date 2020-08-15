@@ -32,5 +32,5 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
-          path: target/wheelspylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
+          path: target/wheels/pylancelot-0.1.0-cp38-cp38-manylinux2010_x86_64.whl
  
