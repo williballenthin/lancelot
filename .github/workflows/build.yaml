@@ -15,4 +15,4 @@ jobs:
 
       - name: build wheels
         run: |
-          docker run --rm -v $(pwd):/io williballenthin/maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml --manylinux 2010
+          docker run --rm -v $(pwd):/io --workdir=/io williballenthin/maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml --manylinux 2010
