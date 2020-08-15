@@ -33,7 +33,13 @@ jobs:
          cd core
          cargo publish
          cd ..
-             
+          
+     - name: publish bin
+       run: |
+         cd bin
+         cargo publish
+         cd ..
+                   
   whl-other:
     name: build python wheels for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
