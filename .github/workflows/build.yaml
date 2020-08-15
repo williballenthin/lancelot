@@ -42,6 +42,7 @@ jobs:
                    
   whl-other:
     name: build python wheels for ${{ matrix.os }}
+    needs: [crate]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -88,6 +89,7 @@ jobs:
 
   whl-linux:
     name: build python wheels for manylinux2010
+    needs: [crate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
