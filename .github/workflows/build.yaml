@@ -3,12 +3,16 @@ on: [push, pull_request]
 name: build
 
 jobs:
-  maturin:
-    name: maturin
-    runs-on: [ubuntu-latest]
+  whl:
+    name: build python wheels
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: maturin action
-        uses: ./.github/actions/maturin
+
+      - uses: actions/setup-python@v1
         with:
-          manifestPath: ./pylancelot/Cargo.toml
+          python-version: "3.8"
+
+      - name: build wheels
+        run: |
+          docker run --rm -v $(pwd):/io konstin2/maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml
