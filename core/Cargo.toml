@@ -29,7 +29,7 @@ widestring = "0.4"
 ansi_term = "0.12"
 hexyl = "0.8"
 
-flirt = { path = "../flirt" , optional = true}
+lancelot-flirt = { path = "../flirt" , optional = true}
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)
@@ -40,7 +40,7 @@ test = []
 # TODO: document what these mean.
 pe = ["goblin"]
 dis = ["zydis"]
-analysis-pe = ["dis", "pe", "flirt"]
+analysis-pe = ["dis", "pe", "lancelot-flirt"]
 
 # TODO: figure out how to limit compilation of the binaries
 clitools = ["pe", "dis", "analysis-pe"]
