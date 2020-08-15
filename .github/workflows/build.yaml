@@ -67,7 +67,7 @@ jobs:
         run: |
           pip install maturin
           maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml
-          ls -R target/
+          ls -R target/wheels/
           
       - uses: actions/upload-artifact@v2
         with:
