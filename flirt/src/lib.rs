@@ -304,8 +304,8 @@ impl<'a> FlirtSignatureMatcher<'a> {
     }
 
     /// ```
-    /// use flirt;
-    /// use flirt::pat;
+    /// use lancelot_flirt;
+    /// use lancelot_flirt::pat;
     ///
     /// let pat_buf = "\
     /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
@@ -391,8 +391,8 @@ impl FlirtSignatureSet {
     }
 
     /// ```
-    /// use flirt;
-    /// use flirt::pat;
+    /// use lancelot_flirt;
+    /// use lancelot_flirt::pat;
     ///
     /// let pat_buf = "\
     /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
@@ -401,7 +401,7 @@ impl FlirtSignatureSet {
     /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 20 6562 0067 :0000 __EH_prolog3_catch_align ^0040 ___security_cookie ........33C5508965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
     /// ---";
     ///
-    /// let sigs = flirt::FlirtSignatureSet::with_signatures(pat::parse(pat_buf).unwrap());
+    /// let sigs = lancelot_flirt::FlirtSignatureSet::with_signatures(pat::parse(pat_buf).unwrap());
     /// let matches = sigs.r#match(&[
     ///     // apds.dll / 4FD932C41DF96D019DC265E26E94B81B
     ///     // __EH_prolog3_catch_align
