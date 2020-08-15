@@ -1,4 +1,6 @@
-on: [push, pull_request]
+on:
+  release:
+    types: [created, edited]
 
 name: build
 
