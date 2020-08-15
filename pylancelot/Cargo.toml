@@ -1,6 +1,6 @@
 [package]
 name = "pylancelot"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 

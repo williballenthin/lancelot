@@ -1,6 +1,6 @@
 [package]
 name = "lancelot-bin"
-version = "0.3.0"
+version = "0.3.1"
 description = "binary analysis tools for x32/x64 PE files"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 license = "Apache-2.0"
