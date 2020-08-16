@@ -163,3 +163,7 @@ def test_probe(k32):
     assert ws.probe(0x1800202B0) & lancelot.PERMISSION_WRITE == 0
     assert ws.probe(0x1800202B0) & lancelot.PERMISSION_EXECUTE != 0
 
+
+def test_insn_int(k32):
+    ws = lancelot.from_bytes(k32)
+    assert int(ws.read_insn(0x1800202B0)) == 0x1800202B0

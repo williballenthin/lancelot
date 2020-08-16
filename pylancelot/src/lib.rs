@@ -7,7 +7,7 @@ use lancelot::{
     util::UtilError,
     VA,
 };
-use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyObjectProtocol};
+use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyNumberProtocol, PyObjectProtocol};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
@@ -176,6 +176,13 @@ impl BasicBlock {
     }
 }
 
+#[pyproto]
+impl PyNumberProtocol for BasicBlock {
+    fn __int__(&self) -> PyResult<u64> {
+        Ok(self.address)
+    }
+}
+
 /// index into operand tuple
 const OPERAND_TYPE: u8 = 0;
 const OPERAND_SIZE: u8 = 1;
@@ -315,6 +322,13 @@ impl PyObjectProtocol for Instruction {
             .format_instruction(&self.inner, &mut buffer, Some(self.address), None)
             .expect("format");
         Ok(format!("{:#x}: {}", self.address, buffer))
+    }
+}
+
+#[pyproto]
+impl PyNumberProtocol for Instruction {
+    fn __int__(&self) -> PyResult<u64> {
+        Ok(self.address)
     }
 }
 
