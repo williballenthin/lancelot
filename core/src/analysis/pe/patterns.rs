@@ -23,6 +23,10 @@ lazy_static! {
         // mimikatz:0x46B674
         let JMP_FAR = r"\xFF\x25....";
 
+        // RETN ???
+        // mimikatz:0x45D025
+        let RETN = r"\xC2..";
+
         // x86win_patterns.xml#L9
         // 0xC2 ......00 0x00
         // let RET_LONGFORM =
@@ -34,6 +38,7 @@ lazy_static! {
             RET,
             LEAVE_RET,
             JMP_FAR,
+            RETN,
         ].join("|"));
 
         // PUSH EBP; MOV EBP, ESP, x86win_patterns.xml#L12
