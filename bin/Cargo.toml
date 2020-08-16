@@ -22,7 +22,6 @@ goblin = "0.2"
 zydis = "3"
 hex = "0.4"
 
-#lancelot = { path = "../core" }
-lancelot = { version = "0.3" }
+lancelot = { path = "../core", version = "0.3" }
 
 
