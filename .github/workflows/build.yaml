@@ -30,14 +30,14 @@ jobs:
 
      - name: publish core
        run: |
-         sleep 15  # give a moment for crates.io to propagate
+         sleep 60  # give a moment for crates.io to propagate
          cd core
          cargo publish
          cd ..
 
      - name: publish bin
        run: |
-         sleep 15  # give a moment for crates.io to propagate
+         sleep 60  # give a moment for crates.io to propagate
          cd bin
          cargo publish
          cd ..
