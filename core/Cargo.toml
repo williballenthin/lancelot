@@ -2,7 +2,7 @@
 name = "lancelot"
 description = "binary analysis framework for x32/x64 PE files"
 license = "Apache-2.0"
-version = "0.3.4"
+version = "0.3.5"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
@@ -24,7 +24,7 @@ regex = "1"
 smallvec = "1"
 widestring = "0.4"
 
-lancelot-flirt = { path = "../flirt", version = "0.3.4" }
+lancelot-flirt = { path = "../flirt", version = "0.3.5" }
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)
