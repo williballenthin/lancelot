@@ -1,10 +1,17 @@
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
+use thiserror::Error;
 
 use crate::{
     pagemap::{PageMap, PageMapError},
     RVA, VA,
 };
+
+#[derive(Debug, Error)]
+pub enum AddressSpaceError {
+    #[error("String is too short")]
+    StringTooShort,
+}
 
 pub trait AddressSpace<T> {
     fn read_into(&self, offset: T, buf: &mut [u8]) -> Result<()>;
@@ -90,12 +97,23 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
     }
 
     fn read_ascii(&self, offset: RVA) -> Result<String> {
+        const END_OF_ASCII: u8 = 0x7F;
+        const SPACE: u8 = 0x20;
+        const TAB: u8 = 0x9;
+        const NEWLINE: u8 = 0xA;
+        const LINEFEED: u8 = 0xD;
+
         let buf: Vec<u8> = (offset..std::u64::MAX)
             .map(|offset| self.map.get(offset))
             .take_while(|c| c.is_some())
             .map(|c| c.unwrap())
             .take_while(|&c| c != 0)
+            .take_while(|&c| c < END_OF_ASCII && (c >= SPACE || c == TAB || c == NEWLINE || c == LINEFEED))
             .collect();
+
+        if buf.len() < 4 {
+            return Err(AddressSpaceError::StringTooShort.into());
+        }
 
         Ok(String::from_utf8(buf)?)
     }
