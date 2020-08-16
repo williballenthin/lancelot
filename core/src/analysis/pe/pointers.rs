@@ -19,11 +19,21 @@
 
 use anyhow::Result;
 use byteorder::ByteOrder;
+use log::debug;
 
 use crate::{aspace::AddressSpace, loader::pe::PE, module::Permissions, VA};
 
 pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     let mut candidates: Vec<VA> = vec![];
+
+    let min_addr = pe.module.address_space.base_address;
+    let max_addr = pe
+        .module
+        .sections
+        .iter()
+        .map(|section| section.virtual_range.end)
+        .max()
+        .unwrap();
 
     // look for hardcoded pointers into the executable section of the PE.
     // note: this often finds jump tables, too. more filtering is below.
@@ -33,18 +43,29 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
         let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
 
+        debug!(
+            "pointers: scanning section {:#x}-{:#x}",
+            section.virtual_range.start, section.virtual_range.end
+        );
+
         if let crate::module::Arch::X64 = pe.module.arch {
             candidates.extend(
                 sec_buf
+                    // using windows for unaligned pointers
                     .windows(8)
                     .map(|b| byteorder::LittleEndian::read_u64(b) as VA)
+                    // naive range filter that is very fast
+                    .filter(|&va| va >= min_addr && va < max_addr)
                     .filter(|&va| pe.module.probe_va(va, Permissions::X)),
             )
         } else {
             candidates.extend(
                 sec_buf
+                    // using windows for unaligned pointers
                     .windows(4)
                     .map(|b| byteorder::LittleEndian::read_u32(b) as VA)
+                    // naive range filter that is very fast
+                    .filter(|&va| va >= min_addr && va < max_addr)
                     .filter(|&va| pe.module.probe_va(va, Permissions::X)),
             )
         }
