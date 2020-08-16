@@ -75,8 +75,11 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     const CC: u8 = 0xCC;
     // NOP filler, x86win_patterns.xml#L6
     const NOP: u8 = 0x90;
-    // RET(N) of prior function, x86win_patterns.xml#L7
+    // RET of prior function, x86win_patterns.xml#L7
     const RET: u8 = 0xC3;
+    const RET_FAR: u8 = 0xCB;
+    // RETN of prior function, two byte immediate follows
+    const RETN: u8 = 0xC2;
 
     // now, assert that the prior byte must be a either a RET or filler byte.
     // this should filter out almost all jump tables, etc.
@@ -85,20 +88,52 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     Ok(candidates
         .into_iter()
         .filter(|&va| {
-            if let Ok(b) = pe.module.address_space.read_u8(va - 1) {
-                matches!(b, CC | NOP | RET)
-            } else {
+            let mut buf = [0u8; 3];
+            if matches!(pe.module.address_space.read_into(va - 3, &mut buf), Ok(_)) {
+                // va - 3
+                if buf[0] == RETN {
+                    return true;
+                }
+
+                // va - 1
+                match buf[2] {
+                    CC => return true,
+                    NOP => return true,
+                    RET => return true,
+                    RET_FAR => return true,
+                    _ => (),
+                }
+
+                debug!("pointers: candidate does not follow ret/filler byte: {:#x}", va);
                 false
+            } else {
+                true
             }
         })
         .filter(|&va| {
             if let Ok(ptr) = pe.module.read_va_at_va(va) {
                 // the candidate is valid pointer, so its probably not an instruction.
-                !pe.module.probe_va(ptr, Permissions::R)
+                if pe.module.probe_va(ptr, Permissions::R) {
+                    debug!("pointers: candidate is a valid pointer: {:#x}", va);
+                    false
+                } else {
+                    true
+                }
             } else {
                 true
             }
         })
-        .filter(|&va| matches!(pe.module.address_space.read_ascii(va), Err(_)))
+        .filter(|&va| {
+            if matches!(pe.module.address_space.read_ascii(va), Ok(_)) {
+                debug!("pointers: candidate is a string: {:#x}", va);
+                false
+            } else {
+                true
+            }
+        })
+        .map(|va| {
+            debug!("pointers: valid candidate: {:#x}", va);
+            va
+        })
         .collect())
 }
