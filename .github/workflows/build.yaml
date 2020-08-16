@@ -10,36 +10,38 @@ jobs:
    runs-on: ubuntu-latest
    steps:
      - uses: actions/checkout@v2
-       
+
      - uses: actions-rs/toolchain@v1
        with:
          profile: minimal
          toolchain: stable
          override: true
-          
+
      - name: login
        run: cargo login ${CARGO_TOKEN}
        env:
          CARGO_TOKEN: ${{ secrets.CARGO_TOKEN }}
-         
+
      - name: publish flirt
        run: |
          cd flirt
          cargo publish
          cd ..
-       
+
      - name: publish core
        run: |
+         sleep 5  # give a moment for crates.io to propagate
          cd core
          cargo publish
          cd ..
-          
+
      - name: publish bin
        run: |
+         sleep 5  # give a moment for crates.io to propagate
          cd bin
          cargo publish
          cd ..
-                   
+
   whl-other:
     name: build python wheels for ${{ matrix.os }}
     needs: [crate]
@@ -64,28 +66,28 @@ jobs:
       - uses: actions/setup-python@v1
         with:
           python-version: "3.8"
-          
+
       - name : invoke maturin
         run: |
           pip install maturin
           maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml
           ls -R target/wheels/
-          
+
       - uses: actions/upload-artifact@v2
         with:
           name: pylancelot-${{ matrix.plat }}-whl
           path: target/wheels/*.whl
-          
+
       - name: install twine
         run: |
           python -m pip install --upgrade pip setuptools twine
-        
+
       - name: publish to pypi
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          twine upload target/wheels/*       
+          twine upload target/wheels/*
 
   whl-linux:
     name: build python wheels for manylinux2010
@@ -107,14 +109,14 @@ jobs:
         with:
           name: pylancelot-manylinux2010_x86_64-whl
           path: target/wheels/*.whl
-           
+
       - name: install twine
         run: |
           python -m pip install --upgrade pip setuptools twine
-        
+
       - name: publish to pypi
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          twine upload target/wheels/* 
+          twine upload target/wheels/*
