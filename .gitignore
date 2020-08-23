@@ -52,3 +52,4 @@ __pycache__
 
 *.pat
 *.sigCargo.lock
+resources/evaluation/SoK/SoK-windows-testsuite
