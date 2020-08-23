@@ -54,3 +54,4 @@ __pycache__
 *.sigCargo.lock
 resources/evaluation/SoK/SoK-windows-testsuite
 Cargo.lock
+resources/evaluation/SoK/.ipynb_checkpoints
