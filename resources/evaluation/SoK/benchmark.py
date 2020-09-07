@@ -181,5 +181,18 @@ if __name__ == "__main__":
     rows = sorted(rows)
 
     print("")
-    print("worst performing test cases:")
+    print("worst performing function recall:")
+    print(tabulate.tabulate(rows[:20]))
+
+    ####
+
+    rows = []
+    for test in results["lancelot"].keys():
+        fprecision = results["lancelot"][test]["functions"]["precision"]
+        rows.append((fprecision, test))
+
+    rows = sorted(rows)
+
+    print("")
+    print("worst performing function precision:")
     print(tabulate.tabulate(rows[:20]))
