@@ -1,15 +1,16 @@
-from collections import namedtuple
 import os
-import lancelot
+import sys
 import gzip
 import json
 import os.path
-import yaml
-import tabulate
-import pandas
 import collections
-import tqdm
+from collections import namedtuple
 
+import tqdm
+import yaml
+import pandas
+import lancelot
+import tabulate
 
 Layout = namedtuple("Layout", ["functions", "basic_blocks", "instructions"])
 
@@ -135,6 +136,11 @@ if __name__ == "__main__":
     results = collections.defaultdict(dict)
 
     for test in tqdm.tqdm(list(collect_tests())):
+        # filter tests by first (optional) cli argument
+        if len(sys.argv) > 1:
+            if sys.argv[1] not in test:
+                continue
+
         for framework in frameworks.keys():
             results[framework][test] = compute_stats(framework, test)
 
