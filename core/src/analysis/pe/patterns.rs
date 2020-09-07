@@ -147,7 +147,16 @@ lazy_static! {
             (?:
                 (?: \x48|\x4C ) \x89 . \x24 .    # mov  [rsp+??], ??
             )+
-            [\x50-\x5F]+                         # push ??
+            \x40? [\x50-\x5F]+                   # push ??
+            \x48 \x83 \xEC .                     # sub  rsp, ??
+        ";
+
+        // x64 msvc prologue
+        //
+        //     .text:000000014004742B 40 55                push    rbp
+        //     .text:000000014004742D 48 83 EC 20          sub     rsp, 20h
+        let P19 = r"
+            \x40 \x55                            # push rbp
             \x48 \x83 \xEC .                     # sub  rsp, ??
         ";
 
@@ -155,6 +164,7 @@ lazy_static! {
             P0,
             P6,
             P18,
+            P19,
         ].join("|"));
 
         let re = format!(
