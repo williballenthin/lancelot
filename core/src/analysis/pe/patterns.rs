@@ -133,9 +133,28 @@ lazy_static! {
         // <data>0x56578bf1</data>
         // let P17 = r"";
 
+        // x64 msvc prologue
+        // see #100
+        //
+        //     .text:0000000140001060 48 89 54 24 10       mov     [rsp+arg_8], rdx
+        //     .text:0000000140001065 4C 89 44 24 18       mov     [rsp+arg_10], r8
+        //     .text:000000014000106A 4C 89 4C 24 20       mov     [rsp+arg_18], r9
+        //     .text:000000014000106F 53                   push    rbx
+        //     .text:0000000140001070 56                   push    rsi
+        //     .text:0000000140001071 57                   push    rdi
+        //     .text:0000000140001072 48 83 EC 30          sub     rsp, 30h
+        let P18 = r"
+            (?:
+                (?: \x48|\x4C ) \x89 . \x24 .    # mov  [rsp+??], ??
+            )+
+            [\x50-\x5F]+                         # push ??
+            \x48 \x83 \xEC .                     # sub  rsp, ??
+        ";
+
         let POSTPATTERN = format!("(?P<postpattern>{})", vec![
             P0,
             P6,
+            P18,
         ].join("|"));
 
         let re = format!(
