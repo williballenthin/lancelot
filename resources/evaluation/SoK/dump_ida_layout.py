@@ -19,4 +19,5 @@ for ea in idautils.Functions(0x0, 0xFFFFFFFFFFFFFFFF):
 print("\n".join(lines))
 
 import ida_pro
+
 ida_pro.qexit(0)

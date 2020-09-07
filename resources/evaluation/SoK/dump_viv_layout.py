@@ -1,4 +1,5 @@
 import sys
+
 import viv_utils
 
 vw = viv_utils.getWorkspace(sys.argv[1])

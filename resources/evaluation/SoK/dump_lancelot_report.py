@@ -1,4 +1,5 @@
 import sys
+
 import lancelot
 
 with open(sys.argv[1], "rb") as f:
