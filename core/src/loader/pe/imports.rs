@@ -48,7 +48,7 @@ impl IMAGE_IMPORT_DESCRIPTOR {
     pub fn read_name(&self, pe: &PE) -> Result<String> {
         pe.module
             .address_space
-            .read_ascii(pe.module.address_space.base_address + self.name)
+            .read_ascii(pe.module.address_space.base_address + self.name, 1)
     }
 }
 
@@ -206,6 +206,6 @@ pub fn read_thunks<'a>(
 pub fn read_image_import_by_name(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_BY_NAME> {
     Ok(IMAGE_IMPORT_BY_NAME {
         hint: pe.module.address_space.read_u16(va)?,
-        name: pe.module.address_space.read_ascii(va + 2 as RVA)?,
+        name: pe.module.address_space.read_ascii(va + 2 as RVA, 1)?,
     })
 }

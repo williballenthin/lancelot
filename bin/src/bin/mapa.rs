@@ -503,7 +503,7 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 
         let last_addr = addrs[addrs.len() - 1];
         let start = addrs[0];
-        let end = last_addr + pe.module.address_space.read_ascii(last_addr)?.len() as RVA;
+        let end = last_addr + pe.module.address_space.read_ascii(last_addr, 4)?.len() as RVA;
 
         ranges.va_insert(pe, start, end, Structure::ImportTable)?;
     }

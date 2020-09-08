@@ -64,7 +64,7 @@ pub trait AddressSpace<T> {
     ///
     ///   - PageMapError - if the address is not mapped.
     ///   - std::str::from_utf8 errors - if the data is not valid utf8
-    fn read_ascii(&self, offset: T) -> Result<String>;
+    fn read_ascii(&self, offset: T, minimum_length: usize) -> Result<String>;
 }
 
 /// An AddressSpace in which data is mapped at or near after a base address,
@@ -108,7 +108,7 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
         Ok(())
     }
 
-    fn read_ascii(&self, offset: RVA) -> Result<String> {
+    fn read_ascii(&self, offset: RVA, minimum_length: usize) -> Result<String> {
         const END_OF_ASCII: u8 = 0x7F;
         const SPACE: u8 = 0x20;
         const TAB: u8 = 0x9;
@@ -123,7 +123,7 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
             .take_while(|&c| c < END_OF_ASCII && (c >= SPACE || c == TAB || c == NEWLINE || c == LINEFEED))
             .collect();
 
-        if buf.len() < 4 {
+        if buf.len() < minimum_length {
             return Err(AddressSpaceError::StringTooShort.into());
         }
 
@@ -146,8 +146,8 @@ impl AddressSpace<RVA> for &RelativeAddressSpace {
         (*self).read_into(offset, buf)
     }
 
-    fn read_ascii(&self, offset: RVA) -> Result<String> {
-        (*self).read_ascii(offset)
+    fn read_ascii(&self, offset: RVA, minimum_length: usize) -> Result<String> {
+        (*self).read_ascii(offset, minimum_length)
     }
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
@@ -191,12 +191,13 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
         self.relative.read_into((offset - self.base_address) as RVA, buf)
     }
 
-    fn read_ascii(&self, offset: VA) -> Result<String> {
+    fn read_ascii(&self, offset: VA, minimum_length: usize) -> Result<String> {
         if offset < self.base_address {
             return Err(PageMapError::NotMapped.into());
         }
 
-        self.relative.read_ascii((offset - self.base_address) as RVA)
+        self.relative
+            .read_ascii((offset - self.base_address) as RVA, minimum_length)
     }
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
@@ -212,8 +213,8 @@ impl AddressSpace<VA> for &AbsoluteAddressSpace {
         (*self).read_into(offset, buf)
     }
 
-    fn read_ascii(&self, offset: VA) -> Result<String> {
-        (*self).read_ascii(offset)
+    fn read_ascii(&self, offset: VA, minimum_length: usize) -> Result<String> {
+        (*self).read_ascii(offset, minimum_length)
     }
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
@@ -233,9 +234,9 @@ impl<'a> AddressSpace<RVA> for AddressSpaceSlice<'a> {
         self.inner.read_into(offset, buf)
     }
 
-    fn read_ascii(&self, offset: RVA) -> Result<String> {
+    fn read_ascii(&self, offset: RVA, minimum_length: usize) -> Result<String> {
         let offset = self.base_address + offset;
-        self.inner.read_ascii(offset)
+        self.inner.read_ascii(offset, minimum_length)
     }
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
@@ -251,8 +252,8 @@ impl<'a> AddressSpace<RVA> for &AddressSpaceSlice<'a> {
         (*self).read_into(offset, buf)
     }
 
-    fn read_ascii(&self, offset: VA) -> Result<String> {
-        (*self).read_ascii(offset)
+    fn read_ascii(&self, offset: VA, minimum_length: usize) -> Result<String> {
+        (*self).read_ascii(offset, minimum_length)
     }
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {

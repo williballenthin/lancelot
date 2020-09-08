@@ -69,7 +69,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
         let psize = pe.module.arch.pointer_size();
 
         for import_descriptor in imports::read_import_descriptors(pe, import_directory) {
-            let dll = smol_str::SmolStr::new(pe.module.address_space.relative.read_ascii(import_descriptor.name)?);
+            let dll = smol_str::SmolStr::new(pe.module.address_space.relative.read_ascii(import_descriptor.name, 1)?);
             debug!("imports: {}", dll);
 
             for i in 0.. {
@@ -84,7 +84,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                     IMAGE_THUNK_DATA::Function(name_rva) => {
                         // u16    hint
                         // asciiz name
-                        let name = pe.module.address_space.relative.read_ascii(name_rva + 2)?;
+                        let name = pe.module.address_space.relative.read_ascii(name_rva + 2, 1)?;
                         debug!("imports: {}!{}", dll, name);
                         ImportedSymbol::Name(smol_str::SmolStr::new(name))
                     }

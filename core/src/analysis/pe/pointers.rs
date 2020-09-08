@@ -124,7 +124,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
             }
         })
         .filter(|&va| {
-            if matches!(pe.module.address_space.read_ascii(va), Ok(_)) {
+            if matches!(pe.module.address_space.read_ascii(va, 4), Ok(_)) {
                 debug!("pointers: candidate is a string: {:#x}", va);
                 false
             } else {
