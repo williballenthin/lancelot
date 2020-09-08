@@ -48,15 +48,6 @@ def test_functions(k32):
     # this is _security_check_cookie
     assert 0x180020250 in functions
 
-    # exports identified by pefile should be identified as functions
-    pe = pefile.PE(data=k32)
-    base_address = pe.OPTIONAL_HEADER.ImageBase
-    for export in pe.DIRECTORY_ENTRY_EXPORT.symbols:
-        if export.forwarder is not None:
-            continue
-        address = base_address + export.address
-        assert address in functions
-
 
 def test_flow_const():
     assert lancelot.FLOW_TYPE_FALLTHROUGH == 0
