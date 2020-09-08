@@ -132,7 +132,7 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
     }
 }
 
-fn va_add_signed(va: VA, rva: i64) -> Option<VA> {
+pub(crate) fn va_add_signed(va: VA, rva: i64) -> Option<VA> {
     if rva >= 0 {
         va.checked_add(rva as u64)
     } else if i64::abs(rva) as u64 > va {
