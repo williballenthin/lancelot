@@ -27,9 +27,9 @@ use log::debug;
 
 use crate::{
     aspace::AddressSpace,
-    loader::pe::PE,
+    loader::{pe, pe::PE},
     module::{Arch, Permissions},
-    RVA, VA,
+    VA,
 };
 
 const IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK: u32 = 0xF000_0000;
@@ -39,150 +39,119 @@ const IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT: u32 = 0x400;
 pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
-    let load_config_directory_rva: RVA = {
-        let opt_header = match pe.header.optional_header {
-            Some(opt_header) => opt_header,
-            _ => return Ok(vec![]),
+    if let Ok(Some(load_config_directory)) = pe.get_data_directory(pe::IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG) {
+        debug!("load config directory: {:#x}", load_config_directory.address);
+
+        // offsets defined here:
+        // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
+
+        // according to IDA, the first DWORD is `Size` not `Characteristics` (unused).
+        let size = pe.module.address_space.read_u32(load_config_directory.address)?;
+
+        // max offset into the config directory that we'll read.
+        let max_config_directory_offset = match pe.module.arch {
+            // CFG flags
+            Arch::X32 => 0x58,
+            Arch::X64 => 0x94,
         };
 
-        let load_config_directory = match opt_header.data_directories.get_load_config_table() {
-            Some(load_config_directory) => load_config_directory,
-            _ => return Ok(vec![]),
-        };
-
-        load_config_directory.virtual_address as RVA
-    };
-
-    debug!(
-        "load config directory: {:#x}",
-        pe.module.address_space.base_address + load_config_directory_rva
-    );
-
-    // offsets defined here:
-    // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
-
-    // according to IDA, the first DWORD is `Size` not `Characteristics` (unused).
-    let size = pe.module.address_space.relative.read_u32(load_config_directory_rva)?;
-
-    // max offset into the config directory that we'll read.
-    let max_config_directory_offset = match pe.module.arch {
-        // CFG flags
-        Arch::X32 => 0x58,
-        Arch::X64 => 0x94,
-    };
-
-    // in `d3d11sdklayers.dll` for example, the config size is 0x70,
-    // which is much too small to read the CFG table options.
-    if max_config_directory_offset > size {
-        debug!("no CF Guard table: load config directory too small");
-        return Ok(vec![]);
-    }
-
-    let cfg_flags: u32 = match pe.module.arch {
-        Arch::X32 => pe
-            .module
-            .address_space
-            .relative
-            .read_u32(load_config_directory_rva + 0x58)?,
-        Arch::X64 => pe
-            .module
-            .address_space
-            .relative
-            .read_u32(load_config_directory_rva + 0x90)?,
-    };
-    debug!("CF guard flags: {:#x}", cfg_flags);
-
-    if cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT > 0 {
-        let stride = ((cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK) >> IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT)
-            as usize;
-        if stride > 8 {
-            // stride should really be 1, but we'll accept up to 8 for future compatibility.
-            debug!("unexpected CF guard stride: {:#x}", stride);
+        // in `d3d11sdklayers.dll` for example, the config size is 0x70,
+        // which is much too small to read the CFG table options.
+        if max_config_directory_offset > size {
+            debug!("no CF Guard table: load config directory too small");
             return Ok(vec![]);
         }
 
-        let cfg_table_va: VA = match pe.module.arch {
-            Arch::X32 => pe.module.read_va_at_rva(load_config_directory_rva + 0x50)?,
-            Arch::X64 => pe.module.read_va_at_rva(load_config_directory_rva + 0x80)?,
+        let cfg_flags: u32 = match pe.module.arch {
+            Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x58)?,
+            Arch::X64 => pe.module.address_space.read_u32(load_config_directory.address + 0x90)?,
         };
-        if cfg_table_va == 0 {
-            debug!("CF guard table empty");
-            return Ok(vec![]);
-        };
-        debug!("CF Guard table: {:#x}", cfg_table_va);
+        debug!("CF guard flags: {:#x}", cfg_flags);
 
-        let cfg_table_count = match pe.module.arch {
-            Arch::X32 => pe
-                .module
-                .address_space
-                .relative
-                .read_u32(load_config_directory_rva + 0x54)? as u64,
-            Arch::X64 => pe
-                .module
-                .address_space
-                .relative
-                .read_u64(load_config_directory_rva + 0x88)? as u64,
-        };
-        debug!("CF Guard table count: {:#x}", cfg_table_count);
-
-        // read the table buffer once up front, then iterate slices over it with
-        // windows. this is at the expense of one allocation for the table.
-        // it be faster than doing pe.module.with_va().read_i32() on each offset, on
-        // large tables.
-        //
-        // 4 == sizeof(i32) RVA to function start, both x32 and x64
-        let cfg_table_entry_size: usize = 4 + stride;
-        let cfg_table = pe
-            .module
-            .address_space
-            .read_bytes(cfg_table_va, cfg_table_count as usize * cfg_table_entry_size)?;
-        for entry_buf in cfg_table.chunks_exact(cfg_table_entry_size) {
-            let target = pe.module.address_space.base_address + LittleEndian::read_i32(entry_buf) as u64;
-
-            if pe.module.probe_va(target, Permissions::X) {
-                ret.push(target);
-            } else {
-                debug!("unexpected non-executable CFG target: {:#x}", target);
-                break;
+        if cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_PRESENT > 0 {
+            let stride = ((cfg_flags & IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_MASK)
+                >> IMAGE_GUARD_CF_FUNCTION_TABLE_SIZE_SHIFT) as usize;
+            if stride > 8 {
+                // stride should really be 1, but we'll accept up to 8 for future compatibility.
+                debug!("unexpected CF guard stride: {:#x}", stride);
+                return Ok(vec![]);
             }
-        }
 
-        // add function pointed to by GuardCFCheckFunctionPointer
-        let guard_check_icall_fptr: VA = match pe.module.arch {
-            Arch::X32 => pe.module.read_va_at_rva(load_config_directory_rva + 0x48)?,
-            Arch::X64 => pe.module.read_va_at_rva(load_config_directory_rva + 0x70)?,
-        };
-        if guard_check_icall_fptr != 0 {
-            debug!(
-                "CF Guard check indirect call function pointer: {:#x}",
-                guard_check_icall_fptr
-            );
+            let cfg_table_va: VA = match pe.module.arch {
+                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x50)?,
+                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x80)?,
+            };
+            if cfg_table_va == 0 {
+                debug!("CF guard table empty");
+                return Ok(vec![]);
+            };
+            debug!("CF Guard table: {:#x}", cfg_table_va);
 
-            if let Ok(guard_check_icall) = pe.module.read_va_at_va(guard_check_icall_fptr) {
-                if pe.module.probe_va(guard_check_icall, Permissions::X) {
-                    debug!("CF Guard check icall: {:#x}", guard_check_icall);
-                    ret.push(guard_check_icall);
+            let cfg_table_count = match pe.module.arch {
+                Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x54)? as u64,
+                Arch::X64 => pe.module.address_space.read_u64(load_config_directory.address + 0x88)? as u64,
+            };
+            debug!("CF Guard table count: {:#x}", cfg_table_count);
+
+            // read the table buffer once up front, then iterate slices over it with
+            // windows. this is at the expense of one allocation for the table.
+            // it be faster than doing pe.module.with_va().read_i32() on each offset, on
+            // large tables.
+            //
+            // 4 == sizeof(i32) RVA to function start, both x32 and x64
+            let cfg_table_entry_size: usize = 4 + stride;
+            let cfg_table = pe
+                .module
+                .address_space
+                .read_bytes(cfg_table_va, cfg_table_count as usize * cfg_table_entry_size)?;
+            for entry_buf in cfg_table.chunks_exact(cfg_table_entry_size) {
+                let target = pe.module.address_space.base_address + LittleEndian::read_i32(entry_buf) as u64;
+
+                if pe.module.probe_va(target, Permissions::X) {
+                    ret.push(target);
+                } else {
+                    debug!("unexpected non-executable CFG target: {:#x}", target);
+                    break;
                 }
             }
-        }
 
-        // add function pointed to by GuardCFDispatchFunctionPointer
-        //
-        // set to 0x0 when not used, as is often the case on 32-bit Windows DLLs.
-        let guard_dispatch_icall_fptr: VA = match pe.module.arch {
-            Arch::X32 => pe.module.read_va_at_rva(load_config_directory_rva + 0x4C)?,
-            Arch::X64 => pe.module.read_va_at_rva(load_config_directory_rva + 0x78)?,
-        };
-        if guard_dispatch_icall_fptr != 0 {
-            debug!(
-                "CF Guard dispatch indirect call function pointer: {:#x}",
-                guard_dispatch_icall_fptr
-            );
+            // add function pointed to by GuardCFCheckFunctionPointer
+            let guard_check_icall_fptr: VA = match pe.module.arch {
+                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x48)?,
+                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x70)?,
+            };
+            if guard_check_icall_fptr != 0 {
+                debug!(
+                    "CF Guard check indirect call function pointer: {:#x}",
+                    guard_check_icall_fptr
+                );
 
-            if let Ok(guard_dispatch_icall) = pe.module.read_va_at_va(guard_dispatch_icall_fptr) {
-                if pe.module.probe_va(guard_dispatch_icall, Permissions::X) {
-                    debug!("CF Guard dispatch icall: {:#x}", guard_dispatch_icall);
-                    ret.push(guard_dispatch_icall);
+                if let Ok(guard_check_icall) = pe.module.read_va_at_va(guard_check_icall_fptr) {
+                    if pe.module.probe_va(guard_check_icall, Permissions::X) {
+                        debug!("CF Guard check icall: {:#x}", guard_check_icall);
+                        ret.push(guard_check_icall);
+                    }
+                }
+            }
+
+            // add function pointed to by GuardCFDispatchFunctionPointer
+            //
+            // set to 0x0 when not used, as is often the case on 32-bit Windows DLLs.
+            let guard_dispatch_icall_fptr: VA = match pe.module.arch {
+                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x4C)?,
+                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x78)?,
+            };
+            if guard_dispatch_icall_fptr != 0 {
+                debug!(
+                    "CF Guard dispatch indirect call function pointer: {:#x}",
+                    guard_dispatch_icall_fptr
+                );
+
+                if let Ok(guard_dispatch_icall) = pe.module.read_va_at_va(guard_dispatch_icall_fptr) {
+                    if pe.module.probe_va(guard_dispatch_icall, Permissions::X) {
+                        debug!("CF Guard dispatch icall: {:#x}", guard_dispatch_icall);
+                        ret.push(guard_dispatch_icall);
+                    }
                 }
             }
         }
