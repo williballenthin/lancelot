@@ -8,7 +8,7 @@ pub mod rsrc;
 use crate::{
     aspace::RelativeAddressSpace,
     module::{Arch, Module, Permissions, Section},
-    util, VA,
+    util, RVA, VA,
 };
 
 #[derive(Error, Debug)]
@@ -18,6 +18,29 @@ pub enum PEError {
 
     #[error("malformed PE file: {0}")]
     MalformedPEFile(String),
+}
+
+// ref: https://docs.microsoft.com/en-us/windows/win32/api/dbghelp/nf-dbghelp-imagedirectoryentrytodata#parameters
+pub const IMAGE_DIRECTORY_ENTRY_EXPORT: usize = 0;
+pub const IMAGE_DIRECTORY_ENTRY_IMPORT: usize = 1;
+pub const IMAGE_DIRECTORY_ENTRY_RESOURCE: usize = 2;
+pub const IMAGE_DIRECTORY_ENTRY_EXCEPTION: usize = 3;
+pub const IMAGE_DIRECTORY_ENTRY_SECURITY: usize = 4;
+pub const IMAGE_DIRECTORY_ENTRY_BASERELOC: usize = 5;
+pub const IMAGE_DIRECTORY_ENTRY_DEBUG: usize = 6;
+pub const IMAGE_DIRECTORY_ENTRY_ARCHITECTURE: usize = 7;
+pub const IMAGE_DIRECTORY_ENTRY_GLOBALPTR: usize = 8;
+pub const IMAGE_DIRECTORY_ENTRY_TLS: usize = 9;
+pub const IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG: usize = 10;
+pub const IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT: usize = 11;
+pub const IMAGE_DIRECTORY_ENTRY_IAT: usize = 12;
+pub const IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT: usize = 13;
+pub const IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR: usize = 14;
+pub const IMAGE_DIRECTORY_MAX: usize = IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR;
+
+pub struct DataDirectory {
+    pub address: VA,
+    pub size:    RVA,
 }
 
 /// A parsed and loaded PE file.
@@ -45,6 +68,23 @@ impl PE {
 
     pub fn pe(&self) -> Result<goblin::pe::PE> {
         get_pe(&self.buf)
+    }
+
+    pub fn get_data_directory(&self, data_directory: usize) -> Result<Option<DataDirectory>> {
+        assert!(data_directory <= IMAGE_DIRECTORY_MAX);
+
+        let opt_header = match self.header.optional_header {
+            Some(opt_header) => opt_header,
+            _ => return Ok(None),
+        };
+
+        match opt_header.data_directories.data_directories[data_directory] {
+            Some(directory) => Ok(Some(DataDirectory {
+                address: self.module.address_space.base_address + directory.virtual_address as VA,
+                size:    directory.size as RVA,
+            })),
+            _ => Ok(None),
+        }
     }
 }
 

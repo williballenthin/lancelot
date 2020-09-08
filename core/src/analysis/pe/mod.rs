@@ -213,7 +213,5 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     functions.extend(imports.values().cloned().map(Function::Import));
     functions.sort_unstable();
 
-    //functions.extend(thunks.into_iter(|t| Function::Thunk()))
-
     Ok(function_starts)
 }

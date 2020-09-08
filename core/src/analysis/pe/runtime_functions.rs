@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     aspace::AddressSpace,
-    loader::pe::PE,
+    loader::{pe, pe::PE},
     module::{Arch, Permissions},
     RVA, VA,
 };
@@ -50,17 +50,17 @@ struct UnwindInfo {
 
 #[allow(dead_code)]
 struct RuntimeFunction {
-    function_start:  RVA,
-    function_end:    RVA,
-    unwind_info_rva: RVA,
+    function_start:      VA,
+    function_end:        VA,
+    unwind_info_address: VA,
 }
 
 /// Read the RUNTIME_FUNCTION structure at the given address,
 /// validate it, and return it.
-fn read_runtime_function(pe: &PE, offset: RVA) -> Result<Option<RuntimeFunction>> {
-    let function_start = pe.module.address_space.relative.read_u32(offset)? as RVA;
-    let function_end = pe.module.address_space.relative.read_u32(offset + 4)? as RVA;
-    let unwind_info_rva = pe.module.address_space.relative.read_u32(offset + 8)? as RVA;
+fn read_runtime_function(pe: &PE, offset: VA) -> Result<Option<RuntimeFunction>> {
+    let function_start = pe.module.address_space.read_u32(offset)? as RVA;
+    let function_end = pe.module.address_space.read_u32(offset + 4)? as RVA;
+    let unwind_info_rva = pe.module.address_space.read_u32(offset + 8)? as RVA;
 
     if function_start == 0x0 || function_end == 0x0 || unwind_info_rva == 0x0 {
         return Ok(None);
@@ -73,15 +73,18 @@ fn read_runtime_function(pe: &PE, offset: RVA) -> Result<Option<RuntimeFunction>
     if !pe.module.probe_rva(unwind_info_rva, Permissions::R) {
         return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
     }
+
+    let base_address = pe.module.address_space.base_address;
+
     Ok(Some(RuntimeFunction {
-        function_start,
-        function_end,
-        unwind_info_rva,
+        function_start:      base_address + function_start,
+        function_end:        base_address + function_end,
+        unwind_info_address: base_address + unwind_info_rva,
     }))
 }
 
-fn read_unwind_info(pe: &PE, offset: RVA) -> Result<UnwindInfo> {
-    let hdr = pe.module.address_space.relative.read_bytes(offset, 4)?;
+fn read_unwind_info(pe: &PE, offset: VA) -> Result<UnwindInfo> {
+    let hdr = pe.module.address_space.read_bytes(offset, 4)?;
     let version = hdr[0] & 0b0000_0111;
     let flags = (hdr[0] & 0b1111_1000) >> 3;
 
@@ -97,7 +100,6 @@ fn read_unwind_info(pe: &PE, offset: RVA) -> Result<UnwindInfo> {
     let unwind_codes = pe
         .module
         .address_space
-        .relative
         .read_bytes(offset + 4, 2 * code_count as usize)?
         .windows(2)
         .map(|b| byteorder::LittleEndian::read_u16(b))
@@ -106,7 +108,7 @@ fn read_unwind_info(pe: &PE, offset: RVA) -> Result<UnwindInfo> {
     // https://docs.microsoft.com/en-us/windows/win32/api/winnt/nf-winnt-rtlvirtualunwind
     const UNW_FLAG_CHAININFO: u8 = 0x4;
 
-    let data_rva = offset + 4 + 2 * code_count as RVA;
+    let data_address = offset + 4 + 2 * code_count as RVA;
     let data = if flags == UNW_FLAG_CHAININFO {
         // > If the UNW_FLAG_CHAININFO flag is set,
         // > then an unwind info structure is a secondary one,
@@ -123,13 +125,13 @@ fn read_unwind_info(pe: &PE, offset: RVA) -> Result<UnwindInfo> {
         // > procedure entry point.
         //
         // https://docs.microsoft.com/en-us/cpp/build/exception-handling-x64?view=vs-2019#chained-unwind-info-structures
-        match read_runtime_function(pe, data_rva)? {
+        match read_runtime_function(pe, data_address)? {
             Some(runtime_function) => UnwindInfoData::ChainedUnwindInfo(runtime_function),
             None => return Err(RuntimeFunctionError::InvalidUnwindInfo.into()),
         }
     } else {
         UnwindInfoData::ExceptionHandler {
-            rva: pe.module.address_space.relative.read_u32(data_rva)? as RVA,
+            rva: pe.module.address_space.read_u32(data_address)? as RVA,
         }
     };
 
@@ -152,54 +154,36 @@ pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
         return Ok(ret);
     }
 
-    let (exception_directory_rva, exception_directory_size) = {
-        let opt_header = match pe.header.optional_header {
-            Some(opt_header) => opt_header,
-            _ => return Ok(ret),
-        };
+    if let Ok(Some(exception_directory)) = pe.get_data_directory(pe::IMAGE_DIRECTORY_ENTRY_EXCEPTION) {
+        #[allow(non_upper_case_globals)]
+        const sizeof_RUNTIME_FUNCTION: usize = 4 * 3;
 
-        let exception_directory = match opt_header.data_directories.get_exception_table() {
-            Some(exception_directory) => exception_directory,
-            _ => return Ok(ret),
-        };
+        for va in (exception_directory.address..exception_directory.address + exception_directory.size)
+            .step_by(sizeof_RUNTIME_FUNCTION)
+        {
+            if let Some(runtime_function) = read_runtime_function(pe, va)? {
+                let mut unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
 
-        (
-            exception_directory.virtual_address as RVA,
-            exception_directory.size as RVA,
-        )
-    };
+                // if the UNWIND_INFO is chained,
+                // keep following it until it reaches the "primary entry".
+                while let UnwindInfoData::ChainedUnwindInfo(runtime_function) = unwind_info.data {
+                    debug!("pdata: found chained UNWIND_INFO");
+                    unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
+                }
 
-    debug!(
-        "exception directory: {:#x}",
-        pe.module.address_space.base_address + exception_directory_rva
-    );
+                if !pe.module.probe_va(runtime_function.function_start, Permissions::X) {
+                    return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
+                }
 
-    #[allow(non_upper_case_globals)]
-    const sizeof_RUNTIME_FUNCTION: usize = 4 * 3;
+                let function = pe.module.address_space.base_address + runtime_function.function_start;
 
-    for offset in (0..exception_directory_size).step_by(sizeof_RUNTIME_FUNCTION) {
-        if let Some(runtime_function) = read_runtime_function(pe, exception_directory_rva + offset)? {
-            let mut unwind_info = read_unwind_info(pe, runtime_function.unwind_info_rva)?;
-
-            // if the UNWIND_INFO is chained,
-            // keep following it until it reaches the "primary entry".
-            while let UnwindInfoData::ChainedUnwindInfo(runtime_function) = unwind_info.data {
-                debug!("pdata: found chained UNWIND_INFO");
-                unwind_info = read_unwind_info(pe, runtime_function.unwind_info_rva)?;
+                debug!("pdata: found RUNTIME_FUNCTION: {:#x}", function);
+                ret.push(function);
+            } else {
+                // just read an entry filled with zeros.
+                // assume this means we reached the end of the table.
+                break;
             }
-
-            if !pe.module.probe_rva(runtime_function.function_start, Permissions::X) {
-                return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
-            }
-
-            let function = pe.module.address_space.base_address + runtime_function.function_start;
-
-            debug!("pdata: found RUNTIME_FUNCTION: {:#x}", function);
-            ret.push(function);
-        } else {
-            // just read an entry filled with zeros.
-            // assume this means we reached the end of the table.
-            break;
         }
     }
 
