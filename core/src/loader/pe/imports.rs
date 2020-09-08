@@ -135,7 +135,7 @@ pub fn read_image_thunk_data(pe: &PE, va: VA) -> Result<IMAGE_THUNK_DATA> {
     }
 }
 
-pub fn read_best_thunk_data(pe: &PE, original_first_thunk: VA, first_thunk: VA) -> Result<IMAGE_THUNK_DATA> {
+pub fn read_best_thunk_data(pe: &PE, original_first_thunk_addr: VA, first_thunk_addr: VA) -> Result<IMAGE_THUNK_DATA> {
     // the Original First Thunk (OFT) remains constant, and points to the
     // IMAGE_IMPORT_BY_NAME. FT and OFT are parallel arrays.
 
@@ -147,31 +147,47 @@ pub fn read_best_thunk_data(pe: &PE, original_first_thunk: VA, first_thunk: VA) 
     //
     // however, this doesn't work if the PE has been dumped from memory
     // (and the FTs fixed up).
-    #[allow(clippy::if_same_then_else)]
-    match read_image_thunk_data(pe, first_thunk) {
-        Ok(IMAGE_THUNK_DATA::Function(rva)) => {
-            if rva == 0x0 {
-                // end of array, this is a valid entry, return it.
-                Ok(IMAGE_THUNK_DATA::Function(rva))
-            } else if pe.module.probe_rva(rva, Permissions::R) {
-                // seems to be a valid address, return it.
-                Ok(IMAGE_THUNK_DATA::Function(rva))
-            } else {
-                // invalid address, so let's try from the OFT array
-                // this might happen if we're dealing with a PE that was dumped from memory.
-                // the FT might have been overwritten, so we need to use the OFT, instead.
-                read_image_thunk_data(pe, original_first_thunk)
-            }
-        }
-        Ok(IMAGE_THUNK_DATA::Ordinal(ord)) => {
-            // ordinal is a valid entry, return it.
-            Ok(IMAGE_THUNK_DATA::Ordinal(ord))
-        }
-        Err(_) => {
-            // fall back to the OFT array
-            read_image_thunk_data(pe, original_first_thunk)
-        }
+
+    let ft = read_image_thunk_data(pe, first_thunk_addr);
+    let oft = read_image_thunk_data(pe, original_first_thunk_addr);
+
+    // if only one of the thunks could be read, pick that one.
+    let (ft, oft) = match (ft, oft) {
+        (Ok(ft), Err(_)) => return Ok(ft),
+        (Err(_), Ok(oft)) => return Ok(oft),
+        (Err(e), Err(_)) => return Err(e),
+        //
+        (Ok(ft), Ok(oft)) => (ft, oft),
+    };
+
+    // prefer what FT says it is, if the thunk types conflict
+    let (ftname, oftname) = match (ft, oft) {
+        (IMAGE_THUNK_DATA::Ordinal(_), _) => return Ok(ft),
+        (IMAGE_THUNK_DATA::Function(_), IMAGE_THUNK_DATA::Ordinal(_)) => return Ok(ft),
+        (IMAGE_THUNK_DATA::Function(ftva), IMAGE_THUNK_DATA::Function(oftva)) => (ftva, oftva),
+    };
+
+    // at this point, both say they are names
+    // so
+    // if one of the names is not readable, pick the other thunk
+    if !pe.module.probe_rva(ftname, Permissions::R) {
+        return Ok(oft);
     }
+    if !pe.module.probe_rva(oftname, Permissions::R) {
+        return Ok(ft);
+    }
+
+    // pick the first thunk that appears to contain a string
+    // in a198216798ca38f280dc413f8c57f2c2, FT contains a non-zero hint, but empty
+    // name.
+    if pe.module.address_space.relative.read_u8(ftname + 2)? != 0x0 {
+        return Ok(ft);
+    }
+    if pe.module.address_space.relative.read_u8(oftname + 2)? != 0x0 {
+        return Ok(oft);
+    }
+
+    Ok(oft)
 }
 
 pub fn read_thunks<'a>(
