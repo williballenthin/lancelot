@@ -19,87 +19,64 @@ use log::debug;
 
 use crate::{
     aspace::AddressSpace,
-    loader::pe::PE,
+    loader::{pe, pe::PE},
     module::{Arch, Permissions},
-    RVA, VA,
+    VA,
 };
 
 pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
-    let load_config_directory_rva: RVA = {
-        let opt_header = match pe.header.optional_header {
-            Some(opt_header) => opt_header,
-            _ => return Ok(ret),
+    if let Ok(Some(load_config_directory)) = pe.get_data_directory(pe::IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG) {
+        debug!("load config directory: {:#x}", load_config_directory.address);
+
+        // offsets defined here:
+        // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
+
+        // according to IDA, the first DWORD is `Size` not `Characteristics` (unused).
+        let size = pe.module.address_space.read_u32(load_config_directory.address)?;
+
+        // max offset into the config directory that we'll read.
+        let max_config_directory_offset = match pe.module.arch {
+            // CFG flags
+            Arch::X32 => 0x48,
+            Arch::X64 => 0x70,
         };
 
-        let load_config_directory = match opt_header.data_directories.get_load_config_table() {
-            Some(load_config_directory) => load_config_directory,
-            _ => return Ok(ret),
-        };
-
-        load_config_directory.virtual_address as RVA
-    };
-
-    debug!(
-        "load config directory: {:#x}",
-        pe.module.address_space.base_address + load_config_directory_rva
-    );
-
-    // offsets defined here:
-    // https://docs.microsoft.com/en-us/windows/desktop/debug/pe-format#load-configuration-directory
-
-    // according to IDA, the first DWORD is `Size` not `Characteristics` (unused).
-    let size = pe.module.address_space.relative.read_u32(load_config_directory_rva)?;
-
-    // max offset into the config directory that we'll read.
-    let max_config_directory_offset = match pe.module.arch {
-        // CFG flags
-        Arch::X32 => 0x48,
-        Arch::X64 => 0x70,
-    };
-
-    if max_config_directory_offset > size {
-        debug!("no SafeSEH table: load config directory too small");
-        return Ok(ret);
-    }
-
-    let sehandler_table_va: VA = match pe.module.arch {
-        Arch::X32 => pe.module.read_va_at_rva(load_config_directory_rva + 0x40)?,
-        Arch::X64 => pe.module.read_va_at_rva(load_config_directory_rva + 0x60)?,
-    };
-    if sehandler_table_va == 0 {
-        debug!("SafeSEH table empty");
-        return Ok(ret);
-    };
-    debug!("SafeSEH table: {:#x}", sehandler_table_va);
-
-    let sehandler_table_count = match pe.module.arch {
-        Arch::X32 => pe
-            .module
-            .address_space
-            .relative
-            .read_u32(load_config_directory_rva + 0x44)? as u64,
-        Arch::X64 => pe
-            .module
-            .address_space
-            .relative
-            .read_u64(load_config_directory_rva + 0x68)? as u64,
-    };
-    debug!("SafeSEH table count: {:#x}", sehandler_table_count);
-
-    let mut offset = sehandler_table_va;
-    for _ in 0..sehandler_table_count {
-        let target = pe.module.read_rva_at_va(offset)?;
-        let target = target as u64 + pe.module.address_space.base_address;
-
-        if pe.module.probe_va(target, Permissions::X) {
-            ret.push(target);
-        } else {
-            debug!("unexpected non-executable SafeSEH target: {:#x}", target);
-            break;
+        if max_config_directory_offset > size {
+            debug!("no SafeSEH table: load config directory too small");
+            return Ok(ret);
         }
-        offset += pe.module.arch.pointer_size() as u64
+
+        let sehandler_table_va: VA = match pe.module.arch {
+            Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x40)?,
+            Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x60)?,
+        };
+        if sehandler_table_va == 0 {
+            debug!("SafeSEH table empty");
+            return Ok(ret);
+        };
+        debug!("SafeSEH table: {:#x}", sehandler_table_va);
+
+        let sehandler_table_count = match pe.module.arch {
+            Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x44)? as u64,
+            Arch::X64 => pe.module.address_space.read_u64(load_config_directory.address + 0x68)? as u64,
+        };
+        debug!("SafeSEH table count: {:#x}", sehandler_table_count);
+
+        let mut offset = sehandler_table_va;
+        for _ in 0..sehandler_table_count {
+            let target = pe.module.read_rva_at_va(offset)?;
+            let target = target as u64 + pe.module.address_space.base_address;
+
+            if pe.module.probe_va(target, Permissions::X) {
+                ret.push(target);
+            } else {
+                debug!("unexpected non-executable SafeSEH target: {:#x}", target);
+                break;
+            }
+            offset += pe.module.arch.pointer_size() as u64
+        }
     }
 
     Ok(ret)
