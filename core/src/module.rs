@@ -3,6 +3,7 @@ use bitflags::bitflags;
 use thiserror::Error;
 
 use crate::{
+    arch::Arch,
     aspace::{AbsoluteAddressSpace, AddressSpace},
     pagemap::PageMapError::NotMapped,
     RVA, VA,
@@ -12,21 +13,6 @@ use crate::{
 pub enum ModuleError {
     #[error("invalid address: {0:#x}")]
     InvalidAddress(u64),
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum Arch {
-    X32,
-    X64,
-}
-
-impl Arch {
-    pub fn pointer_size(&self) -> usize {
-        match self {
-            Arch::X32 => 4,
-            Arch::X64 => 8,
-        }
-    }
 }
 
 bitflags! {

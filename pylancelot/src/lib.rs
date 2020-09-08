@@ -1,5 +1,6 @@
 use anyhow::Error;
 use lancelot::{
+    arch::Arch,
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
     module::{ModuleError, Permissions},
@@ -351,8 +352,8 @@ impl PE {
     #[getter]
     pub fn arch(&self) -> &'static str {
         match self.inner.module.arch {
-            lancelot::module::Arch::X32 => "x32",
-            lancelot::module::Arch::X64 => "x64",
+            Arch::X32 => "x32",
+            Arch::X64 => "x64",
         }
     }
 

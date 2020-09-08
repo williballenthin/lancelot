@@ -18,9 +18,10 @@ use anyhow::Result;
 use log::debug;
 
 use crate::{
+    arch::Arch,
     aspace::AddressSpace,
     loader::{pe, pe::PE},
-    module::{Arch, Permissions},
+    module::Permissions,
     VA,
 };
 

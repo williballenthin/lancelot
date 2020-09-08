@@ -3,6 +3,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use thiserror::Error;
 
 use crate::{
+    arch::Arch,
     pagemap::{PageMap, PageMapError},
     RVA, VA,
 };
@@ -40,11 +41,22 @@ pub trait AddressSpace<T> {
         Ok(LittleEndian::read_u64(&buf))
     }
 
+    fn read_pointer(&self, arch: Arch, offset: T) -> Result<u64> {
+        match arch {
+            Arch::X32 => Ok(self.read_u32(offset)? as u64),
+            Arch::X64 => Ok(self.read_u64(offset)? as u64),
+        }
+    }
+
     fn read_bytes(&self, offset: T, length: usize) -> Result<Vec<u8>> {
         let mut buf = vec![0u8; length];
         self.read_into(offset, &mut buf)?;
         Ok(buf)
     }
+
+    /// Create an address space thats backed by this address space,
+    /// where all reads are relative to the given address.
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice>;
 
     /// Read a NULL-terminated, ASCII-encoded string at the given offset.
     ///
@@ -117,6 +129,30 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
 
         Ok(String::from_utf8(buf)?)
     }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        Ok(AddressSpaceSlice {
+            base_address: offset,
+            inner:        Box::new(self),
+        })
+    }
+}
+
+// its annoying that we have to do this.
+// but because in order to `.slice` we need a reference to the inner aspace,
+// then aspace references must also implement aspace.
+impl AddressSpace<RVA> for &RelativeAddressSpace {
+    fn read_into(&self, offset: RVA, buf: &mut [u8]) -> Result<()> {
+        (*self).read_into(offset, buf)
+    }
+
+    fn read_ascii(&self, offset: RVA) -> Result<String> {
+        (*self).read_ascii(offset)
+    }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        (*self).slice(offset)
+    }
 }
 
 /// An AddressSpace in which (mostly) contiguous data is mapped at a base
@@ -144,6 +180,8 @@ pub struct AbsoluteAddressSpace {
     pub relative: RelativeAddressSpace,
 }
 
+impl AbsoluteAddressSpace {}
+
 impl AddressSpace<VA> for AbsoluteAddressSpace {
     fn read_into(&self, offset: VA, buf: &mut [u8]) -> Result<()> {
         if offset < self.base_address {
@@ -159,5 +197,65 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
         }
 
         self.relative.read_ascii((offset - self.base_address) as RVA)
+    }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        Ok(AddressSpaceSlice {
+            base_address: offset,
+            inner:        Box::new(self),
+        })
+    }
+}
+
+impl AddressSpace<VA> for &AbsoluteAddressSpace {
+    fn read_into(&self, offset: VA, buf: &mut [u8]) -> Result<()> {
+        (*self).read_into(offset, buf)
+    }
+
+    fn read_ascii(&self, offset: VA) -> Result<String> {
+        (*self).read_ascii(offset)
+    }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        (*self).slice(offset)
+    }
+}
+
+pub struct AddressSpaceSlice<'a> {
+    /// offset from the start of the underlying aspace that this slice begins
+    base_address: RVA,
+    inner:        Box<dyn AddressSpace<u64> + 'a>,
+}
+
+impl<'a> AddressSpace<RVA> for AddressSpaceSlice<'a> {
+    fn read_into(&self, offset: RVA, buf: &mut [u8]) -> Result<()> {
+        let offset = self.base_address + offset;
+        self.inner.read_into(offset, buf)
+    }
+
+    fn read_ascii(&self, offset: RVA) -> Result<String> {
+        let offset = self.base_address + offset;
+        self.inner.read_ascii(offset)
+    }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        Ok(AddressSpaceSlice {
+            base_address: offset,
+            inner:        Box::new(self),
+        })
+    }
+}
+
+impl<'a> AddressSpace<RVA> for &AddressSpaceSlice<'a> {
+    fn read_into(&self, offset: VA, buf: &mut [u8]) -> Result<()> {
+        (*self).read_into(offset, buf)
+    }
+
+    fn read_ascii(&self, offset: VA) -> Result<String> {
+        (*self).read_ascii(offset)
+    }
+
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+        (*self).slice(offset)
     }
 }

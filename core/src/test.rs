@@ -1,7 +1,8 @@
 //< Helpers that are useful for tests and doctests.
 use crate::{
+    arch::Arch,
     aspace::{AddressSpace, RelativeAddressSpace},
-    module::{Arch, Module, Permissions, Section},
+    module::{Module, Permissions, Section},
     RVA, VA,
 };
 

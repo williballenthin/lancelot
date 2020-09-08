@@ -4,6 +4,7 @@ extern crate lazy_static;
 extern crate log;
 
 pub mod analysis;
+pub mod arch;
 pub mod aspace;
 pub mod config;
 pub mod loader;

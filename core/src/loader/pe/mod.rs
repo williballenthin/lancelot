@@ -6,8 +6,9 @@ pub mod imports;
 pub mod rsrc;
 
 use crate::{
+    arch::Arch,
     aspace::RelativeAddressSpace,
-    module::{Arch, Module, Permissions, Section},
+    module::{Module, Permissions, Section},
     util, RVA, VA,
 };
 

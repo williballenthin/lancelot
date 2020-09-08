@@ -13,9 +13,10 @@ use log::debug;
 use thiserror::Error;
 
 use crate::{
+    arch::Arch,
     aspace::AddressSpace,
     loader::{pe, pe::PE},
-    module::{Arch, Permissions},
+    module::Permissions,
     RVA, VA,
 };
 use byteorder::ByteOrder;

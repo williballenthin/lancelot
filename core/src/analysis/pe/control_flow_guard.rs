@@ -26,9 +26,10 @@ use byteorder::{ByteOrder, LittleEndian};
 use log::debug;
 
 use crate::{
+    arch::Arch,
     aspace::AddressSpace,
     loader::{pe, pe::PE},
-    module::{Arch, Permissions},
+    module::Permissions,
     VA,
 };
 
@@ -62,9 +63,11 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             return Ok(vec![]);
         }
 
+        let load_config = pe.module.address_space.slice(load_config_directory.address)?;
+
         let cfg_flags: u32 = match pe.module.arch {
-            Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x58)?,
-            Arch::X64 => pe.module.address_space.read_u32(load_config_directory.address + 0x90)?,
+            Arch::X32 => load_config.read_u32(0x58)?,
+            Arch::X64 => load_config.read_u32(0x90)?,
         };
         debug!("CF guard flags: {:#x}", cfg_flags);
 
@@ -78,8 +81,8 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             }
 
             let cfg_table_va: VA = match pe.module.arch {
-                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x50)?,
-                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x80)?,
+                Arch::X32 => load_config.read_pointer(pe.module.arch, 0x50)?,
+                Arch::X64 => load_config.read_pointer(pe.module.arch, 0x80)?,
             };
             if cfg_table_va == 0 {
                 debug!("CF guard table empty");
@@ -88,8 +91,8 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             debug!("CF Guard table: {:#x}", cfg_table_va);
 
             let cfg_table_count = match pe.module.arch {
-                Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x54)? as u64,
-                Arch::X64 => pe.module.address_space.read_u64(load_config_directory.address + 0x88)? as u64,
+                Arch::X32 => load_config.read_u32(0x54)? as u64,
+                Arch::X64 => load_config.read_u64(0x88)? as u64,
             };
             debug!("CF Guard table count: {:#x}", cfg_table_count);
 
@@ -117,8 +120,8 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
 
             // add function pointed to by GuardCFCheckFunctionPointer
             let guard_check_icall_fptr: VA = match pe.module.arch {
-                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x48)?,
-                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x70)?,
+                Arch::X32 => load_config.read_pointer(pe.module.arch, 0x48)?,
+                Arch::X64 => load_config.read_pointer(pe.module.arch, 0x70)?,
             };
             if guard_check_icall_fptr != 0 {
                 debug!(
@@ -138,8 +141,8 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
             //
             // set to 0x0 when not used, as is often the case on 32-bit Windows DLLs.
             let guard_dispatch_icall_fptr: VA = match pe.module.arch {
-                Arch::X32 => pe.module.read_va_at_va(load_config_directory.address + 0x4C)?,
-                Arch::X64 => pe.module.read_va_at_va(load_config_directory.address + 0x78)?,
+                Arch::X32 => load_config.read_pointer(pe.module.arch, 0x4C)?,
+                Arch::X64 => load_config.read_pointer(pe.module.arch, 0x78)?,
             };
             if guard_dispatch_icall_fptr != 0 {
                 debug!(

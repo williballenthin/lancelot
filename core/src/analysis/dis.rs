@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 
-use crate::module::{Arch, Module};
+use crate::{arch::Arch, module::Module};
 
 pub fn get_disassembler(module: &Module) -> Result<zydis::Decoder> {
     let mut decoder = match module.arch {

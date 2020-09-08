@@ -48,7 +48,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
             section.virtual_range.start, section.virtual_range.end
         );
 
-        if let crate::module::Arch::X64 = pe.module.arch {
+        if let crate::arch::Arch::X64 = pe.module.arch {
             candidates.extend(
                 sec_buf
                     // using windows for unaligned pointers
