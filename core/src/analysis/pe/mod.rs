@@ -179,7 +179,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
     Ok(thunks)
 }
 
-pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
+pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     let imports = get_imports(pe)?;
     debug!("imports: found {} imports", imports.len());
 
@@ -213,5 +213,16 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     functions.extend(imports.values().cloned().map(Function::Import));
     functions.sort_unstable();
 
-    Ok(function_starts)
+    Ok(functions)
+}
+
+pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
+    Ok(find_functions(pe)?
+        .into_iter()
+        .filter(|f| matches!(f, Function::Local(_)))
+        .map(|f| match f {
+            Function::Local(va) => va,
+            _ => unreachable!(),
+        })
+        .collect())
 }
