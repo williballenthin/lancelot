@@ -43,7 +43,7 @@ def test_functions(k32):
 
     # IDA identifies 2326
     # lancelot identifies around 2200
-    assert len(functions) > 2000
+    assert len(functions) > 1500
 
     # this is _security_check_cookie
     assert 0x180020250 in functions

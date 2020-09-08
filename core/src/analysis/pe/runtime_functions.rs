@@ -176,7 +176,7 @@ pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
                     return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
                 }
 
-                let function = pe.module.address_space.base_address + runtime_function.function_start;
+                let function = runtime_function.function_start;
 
                 debug!("pdata: found RUNTIME_FUNCTION: {:#x}", function);
                 ret.push(function);
@@ -203,6 +203,8 @@ mod tests {
 
         let fns = crate::analysis::pe::runtime_functions::find_pe_runtime_functions(&pe)?;
         assert_eq!(1800, fns.len());
+
+        assert_eq!(fns[0], 0x180001010);
 
         Ok(())
     }

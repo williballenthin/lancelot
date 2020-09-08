@@ -1,6 +1,6 @@
 [package]
 name = "lancelot-bin"
-version = "0.4.1"
+version = "0.4.2"
 description = "binary analysis tools for x32/x64 PE files"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 license = "Apache-2.0"
@@ -22,6 +22,6 @@ goblin = "0.2"
 zydis = "3"
 hex = "0.4"
 
-lancelot = { path = "../core", version = "0.4.1" }
+lancelot = { path = "../core", version = "0.4.2" }
 
 
