@@ -378,7 +378,27 @@ impl PE {
     ///
     /// Returns: List[int]
     pub fn get_functions(&self) -> PyResult<Vec<u64>> {
-        lancelot::analysis::pe::find_function_starts(&self.inner).map_err(to_py_err)
+        Ok(lancelot::analysis::pe::find_functions(&self.inner)
+            .map_err(to_py_err)?
+            .into_iter()
+            .filter(|f| matches!(f, lancelot::analysis::pe::Function::Local(_)))
+            .map(|f| match f {
+                lancelot::analysis::pe::Function::Local(va) => va,
+                _ => unreachable!(),
+            })
+            .collect())
+    }
+
+    pub fn get_thunks(&self) -> PyResult<Vec<u64>> {
+        Ok(lancelot::analysis::pe::find_functions(&self.inner)
+            .map_err(to_py_err)?
+            .into_iter()
+            .filter(|f| matches!(f, lancelot::analysis::pe::Function::Thunk(_)))
+            .map(|f| match f {
+                lancelot::analysis::pe::Function::Thunk(thunk) => thunk.address,
+                _ => unreachable!(),
+            })
+            .collect())
     }
 
     /// disassemble from the given virtual address,

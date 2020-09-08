@@ -33,9 +33,9 @@ pub enum ImportedSymbol {
 pub struct Import {
     /// the address of the First Thunk.
     /// that is, the thing that will be referenced by code.
-    address: VA,
-    dll:     smol_str::SmolStr,
-    symbol:  ImportedSymbol,
+    pub address: VA,
+    pub dll:     smol_str::SmolStr,
+    pub symbol:  ImportedSymbol,
 }
 
 impl std::fmt::Display for Import {
@@ -50,8 +50,8 @@ impl std::fmt::Display for Import {
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Thunk {
     /// the address of the function thunk
-    address: VA,
-    import:  Import,
+    pub address: VA,
+    pub import:  Import,
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
