@@ -11,7 +11,7 @@ travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch
 
 [dependencies]
 log = "0.4"
-goblin = "0.2"
+goblin = "0.3"
 zydis = "3"
 byteorder = "1"
 bitflags = "1"
