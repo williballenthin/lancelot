@@ -106,6 +106,7 @@ fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<Section> {
     let hdr_raw_size = match pe.header.optional_header {
         Some(opt) => opt.windows_fields.size_of_headers,
@@ -156,6 +157,7 @@ const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
+#[allow(clippy::unnecessary_wraps)]
 fn load_pe_section(
     base_address: VA,
     section_alignment: u64,
@@ -220,7 +222,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
         ),
         _ => {
             debug!("pe: base address: using default: 0x40:000");
-            (0x40_000, 0x1000)
+            (0x40_0000, 0x1000)
         }
     };
     debug!("pe: base address: {:#x}", base_address);

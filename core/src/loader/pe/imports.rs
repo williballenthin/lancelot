@@ -126,7 +126,7 @@ pub fn read_image_thunk_data(pe: &PE, va: VA) -> Result<IMAGE_THUNK_DATA> {
     let psize = pe.module.arch.pointer_size();
     let thunk = pe.module.read_rva_at_va(va)?;
 
-    let ordinal_mask: u64 = (1 as u64) << ((psize as u64 * 8) - 1);
+    let ordinal_mask: u64 = 1u64 << ((psize as u64 * 8) - 1);
     if thunk & ordinal_mask > 0x0 {
         // MSB is set, this is an ordinal
         Ok(IMAGE_THUNK_DATA::Ordinal((thunk & 0xFFFF) as u32))
@@ -210,11 +210,7 @@ pub fn read_thunks<'a>(
                 )
             })
             .map(move |(oft, ft)| read_best_thunk_data(pe, oft, ft))
-            .take_while(|thunk| match thunk {
-                Err(_) => false,
-                Ok(IMAGE_THUNK_DATA::Function(0x0)) => false,
-                _ => true,
-            })
+            .take_while(|thunk| !matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))))
             .map(|thunk| thunk.unwrap()),
     )
 }
@@ -222,6 +218,6 @@ pub fn read_thunks<'a>(
 pub fn read_image_import_by_name(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_BY_NAME> {
     Ok(IMAGE_IMPORT_BY_NAME {
         hint: pe.module.address_space.read_u16(va)?,
-        name: pe.module.address_space.read_ascii(va + 2 as RVA, 1)?,
+        name: pe.module.address_space.read_ascii(va + 2u64, 1)?,
     })
 }

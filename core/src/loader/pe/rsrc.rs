@@ -19,18 +19,21 @@ pub struct ResourceSectionData {
 }
 
 impl ResourceSectionData {
+    #[allow(clippy::unnecessary_wraps)]
     fn read_u16(&self, offset: usize) -> Result<u16> {
         // TODO: bounds check
         let buf = &self.buf[offset..offset + 2];
         Ok(LittleEndian::read_u16(buf))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn read_u32(&self, offset: usize) -> Result<u32> {
         // TODO: bounds check
         let buf = &self.buf[offset..offset + 4];
         Ok(LittleEndian::read_u32(buf))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn read_buf(&self, offset: usize, length: usize) -> Result<Vec<u8>> {
         // TODO: bounds check
         Ok(self.buf[offset..offset + length].to_vec())

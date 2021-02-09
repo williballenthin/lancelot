@@ -360,12 +360,10 @@ pub struct FlirtSignatureSet {
     matcher: pattern_set::PatternSet,
 }
 
-// translate from the FLIRT signature format to NFA matcher format (already
-// essentially the same).
-impl std::convert::Into<pattern_set::Pattern> for &FlirtSignature {
-    fn into(self) -> pattern_set::Pattern {
+impl std::convert::From<&FlirtSignature> for pattern_set::Pattern {
+    fn from(sig: &FlirtSignature) -> pattern_set::Pattern {
         pattern_set::Pattern(
-            self.byte_sig
+            sig.byte_sig
                 .0
                 .iter()
                 .map(|s| match s {
