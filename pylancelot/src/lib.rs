@@ -12,7 +12,7 @@ use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyNumberProtocol, PyObje
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
-    pyo3::exceptions::ValueError::py_err(format!("{}", e))
+    pyo3::exceptions::PyValueError::new_err(format!("{}", e))
 }
 
 fn to_py_err(e: Error) -> PyErr {
@@ -508,7 +508,7 @@ impl PE {
                 inner:   insn,
             })
         } else {
-            Err(pyo3::exceptions::ValueError::py_err("invalid instruction"))
+            Err(pyo3::exceptions::PyValueError::new_err("invalid instruction"))
         }
     }
 
@@ -566,7 +566,7 @@ impl PE {
 
 #[pymodule]
 fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_wrapped(wrap_pyfunction!(from_bytes))?;
+    m.add_function(wrap_pyfunction!(from_bytes, m)?)?;
     m.add_class::<PE>()?;
 
     // indices into a flow tuple
