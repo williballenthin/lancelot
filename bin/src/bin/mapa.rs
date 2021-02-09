@@ -132,11 +132,11 @@ impl Ranges {
         self.insert(pstart, pend, structure)
     }
 
-    fn root(&self) -> Result<&Range> {
-        Ok(self.map.values().next().unwrap())
+    fn root(&self) -> &Range {
+        self.map.values().next().unwrap()
     }
 
-    fn has_children<'a>(&self, range: &'a Range) -> bool {
+    fn has_children(&self, range: &Range) -> bool {
         let key = (range.start, -(range.end as i64));
         let max = (u64::MAX, i64::MIN);
 
@@ -152,7 +152,7 @@ impl Ranges {
 
     /// find ranges that fall within the given range.
     /// only collect the ranges that are direct children of the range.
-    fn get_children<'a>(&self, range: &'a Range) -> Result<Vec<&Range>> {
+    fn get_children<'a>(&self, range: &'a Range) -> Vec<&Range> {
         let key = (range.start, -(range.end as i64));
         let max = (u64::MAX, i64::MIN);
 
@@ -181,12 +181,18 @@ impl Ranges {
             // the child overflows the parent range.
             // need to figure out exactly how we handle this.
             // a "straggler".
+            //
+            // ```text
+            // ********        range
+            //    #########    child
+            // ```
+            #[allow(clippy::suspicious_operation_groupings)]
             if child.start <= range.end && child.end >= range.end {
                 break;
             }
         }
 
-        Ok(children)
+        children
     }
 }
 
@@ -228,7 +234,7 @@ fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
     dst
 }
 
-fn get_overlay_range(buf: &[u8], pe: &PE) -> Result<(FileOffset, FileOffset)> {
+fn get_overlay_range(buf: &[u8], pe: &PE) -> (FileOffset, FileOffset) {
     let start = pe
         .module
         .sections
@@ -239,11 +245,11 @@ fn get_overlay_range(buf: &[u8], pe: &PE) -> Result<(FileOffset, FileOffset)> {
 
     let end = buf.len();
 
-    Ok((start as FileOffset, end as FileOffset))
+    (start as FileOffset, end as FileOffset)
 }
 
 fn insert_overlay_ranges(ranges: &mut Ranges, buf: &[u8], pe: &PE) -> Result<()> {
-    let (start, end) = get_overlay_range(buf, pe)?;
+    let (start, end) = get_overlay_range(buf, pe);
     ranges.insert(start, end, Structure::Overlay)?;
 
     let buf = &buf[start as usize..end as usize];
@@ -407,59 +413,59 @@ fn insert_data_directory_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         let opt = pe.header.optional_header.unwrap();
 
         #[allow(clippy::type_complexity)]
-        let mut directories: Vec<(
+        let directories: Vec<(
             Box<dyn Fn() -> Option<goblin::pe::data_directories::DataDirectory>>,
             Structure,
-        )> = vec![];
-
-        directories.push((
-            Box::new(|| *opt.data_directories.get_export_table()),
-            Structure::ExportTable,
-        ));
-        // the import table is handled by find_import_data_range
-        // directories.push((Box::new(|| *opt.data_directories.get_import_table()),
-        // Structure::ImportTable));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_resource_table()),
-            Structure::ResourceTable,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_exception_table()),
-            Structure::ExceptionTable,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_certificate_table()),
-            Structure::CertificateTable,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_base_relocation_table()),
-            Structure::BaseRelocationTable,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_debug_table()),
-            Structure::DebugData,
-        ));
-        directories.push((Box::new(|| *opt.data_directories.get_tls_table()), Structure::TlsTable));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_load_config_table()),
-            Structure::LoadConfigTable,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_bound_import_table()),
-            Structure::BoundImportTable,
-        ));
-        // the import table is handled by find_import_data_range
-        // directories.push((Box::new(||
-        // *opt.data_directories.get_import_address_table()),
-        // Structure::ImportAddressTable));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_delay_import_descriptor()),
-            Structure::DelayImportDescriptor,
-        ));
-        directories.push((
-            Box::new(|| *opt.data_directories.get_clr_runtime_header()),
-            Structure::ClrRuntimeHeader,
-        ));
+        )> = vec![
+            (
+                Box::new(|| *opt.data_directories.get_export_table()),
+                Structure::ExportTable,
+            ),
+            // the import table is handled by find_import_data_range
+            // directories.push((Box::new(|| *opt.data_directories.get_import_table()),
+            // Structure::ImportTable));
+            (
+                Box::new(|| *opt.data_directories.get_resource_table()),
+                Structure::ResourceTable,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_exception_table()),
+                Structure::ExceptionTable,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_certificate_table()),
+                Structure::CertificateTable,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_base_relocation_table()),
+                Structure::BaseRelocationTable,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_debug_table()),
+                Structure::DebugData,
+            ),
+            (Box::new(|| *opt.data_directories.get_tls_table()), Structure::TlsTable),
+            (
+                Box::new(|| *opt.data_directories.get_load_config_table()),
+                Structure::LoadConfigTable,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_bound_import_table()),
+                Structure::BoundImportTable,
+            ),
+            // the import table is handled by find_import_data_range
+            // directories.push((Box::new(||
+            // *opt.data_directories.get_import_address_table()),
+            // Structure::ImportAddressTable));
+            (
+                Box::new(|| *opt.data_directories.get_delay_import_descriptor()),
+                Structure::DelayImportDescriptor,
+            ),
+            (
+                Box::new(|| *opt.data_directories.get_clr_runtime_header()),
+                Structure::ClrRuntimeHeader,
+            ),
+        ];
 
         for (f, structure) in directories.into_iter() {
             if let Some(dir) = f() {
@@ -490,7 +496,7 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 
             for thunk in read_thunks(pe, &import_descriptor) {
                 if let IMAGE_THUNK_DATA::Function(va) = thunk {
-                    addrs.push(base_address + va + 2 as RVA);
+                    addrs.push(base_address + va + 2u64);
                 }
             }
         }
@@ -792,7 +798,7 @@ fn render_range<'a>(
         Structure::IMAGE_OPTIONAL_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
         Structure::IMAGE_SECTION_HEADER(_, _) => prefixln(depth, &format_range_hex(address_space, range)),
         _ => {
-            let children = ranges.get_children(range)?;
+            let children = ranges.get_children(range);
             let has_children = !children.is_empty();
 
             if !has_children {
@@ -829,7 +835,7 @@ fn render_range<'a>(
 
 /// write the output
 fn render(address_space: &AbsoluteAddressSpace, ranges: &Ranges) -> Result<()> {
-    let root = ranges.root()?;
+    let root = ranges.root();
     render_range(address_space, ranges, root, 0)?;
     Ok(())
 }
