@@ -18,6 +18,8 @@ const EMPTY_PAGE: PageFrame = [0u8; PAGE_SIZE];
 /// u32 <= usize for all 32- and 64-bit systems,
 /// so you'll some casting to/from usize.
 type PFN = u32;
+/// use to flag PFNs that should not be used an indices.
+const INVALID_PFN: PFN = u32::MAX;
 
 /// A collection of "physical" pages of memory, indexed by `PFN`.
 #[derive(Clone)]
@@ -174,7 +176,7 @@ impl MMU {
             // initially, don't allocate any page frames, just use zero pages.
             // only when written to should we allocate page on demand.
             // this should be just as fast, since we've reserved the pages above.
-            self.mapping.insert(page_va, (u32::MAX, flags));
+            self.mapping.insert(page_va, (INVALID_PFN, flags));
         }
 
         Ok(())
@@ -197,6 +199,8 @@ impl MMU {
         let (pfn, flags) = self.probe_read(addr)?;
 
         if flags.intersects(PageFlags::ZERO) {
+            // paranoia
+            assert!(pfn == INVALID_PFN);
             return Ok(0);
         }
 
@@ -219,12 +223,12 @@ impl MMU {
             let pf = if flags.intersects(PageFlags::ZERO) {
                 EMPTY_PAGE
             } else {
-                self.pages[pfn].clone()
+                self.pages[pfn]
             };
 
             // and write it into a newly allocated page frame
             let pfn = self.pages.allocate();
-            *(&mut self.pages[pfn]) = pf;
+            self.pages[pfn] = pf;
 
             // now update the mapping to point to the new pf
             let mut flags = flags;
