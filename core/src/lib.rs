@@ -7,6 +7,7 @@ pub mod analysis;
 pub mod arch;
 pub mod aspace;
 pub mod config;
+pub mod emu;
 pub mod loader;
 pub mod module;
 pub mod pagemap;
