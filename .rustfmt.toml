@@ -1,7 +1,7 @@
 enum_discrim_align_threshold = 20
 struct_field_align_threshold = 20
 max_width = 120
-imports_granularity = Crate
+imports_granularity = "Crate"
 newline_style = "Unix"
 reorder_impl_items = true
 use_field_init_shorthand = true
