@@ -182,6 +182,39 @@ impl MMU {
         Ok(())
     }
 
+    pub fn munmap(&mut self, addr: VA, size: u64) -> Result<()> {
+        assert!(is_page_aligned(addr));
+        assert!(is_page_aligned(size));
+
+        let page_count = size / PAGE_SIZE as u64;
+        assert!(page_count <= u32::MAX as u64);
+
+        // ensure all of the pages are already mapped.
+        //
+        // do this all at once up front to avoid getting
+        // half way through and needing to bail.
+        for i in 0..page_count {
+            let page_va = addr + i * PAGE_SIZE as u64;
+            if !self.mapping.contains_key(&page_va) {
+                return Err(MMUError::AddressNotMapped(page_va).into());
+            }
+        }
+
+        for i in 0..page_count {
+            let page_va = addr + i * PAGE_SIZE as u64;
+
+            let (pfn, flags) = self.mapping.remove(&page_va).unwrap();
+
+            if !flags.intersects(PageFlags::ZERO) {
+                self.pages.deallocate(pfn);
+            } else {
+                assert!(pfn == INVALID_PFN);
+            }
+        }
+
+        Ok(())
+    }
+
     fn probe_read(&self, addr: VA) -> Result<(PFN, PageFlags)> {
         let (pfn, flags) = match self.mapping.get(&page_number(addr)) {
             Some(&(pfn, flags)) => (pfn, flags),
@@ -336,6 +369,29 @@ mod tests {
             assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
             assert_eq!(mmu.read_u8(0x2000).unwrap(), 0x0);
             assert!(mmu.read_u8(0x3000).is_err());
+
+            Ok(())
+        }
+
+        #[test]
+        fn munmap() -> Result<()> {
+            let mut mmu: MMU = Default::default();
+
+            assert!(mmu.read_u8(0x1000).is_err());
+            assert!(mmu.read_u8(0x2000).is_err());
+            assert!(mmu.read_u8(0x3000).is_err());
+
+            mmu.mmap(0x1000, 0x3000, Permissions::R).unwrap();
+
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
+            assert_eq!(mmu.read_u8(0x2000).unwrap(), 0x0);
+            assert_eq!(mmu.read_u8(0x3000).unwrap(), 0x0);
+
+            mmu.munmap(0x2000, 0x1000).unwrap();
+
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
+            assert!(mmu.read_u8(0x2000).is_err());
+            assert_eq!(mmu.read_u8(0x3000).unwrap(), 0x0);
 
             Ok(())
         }
