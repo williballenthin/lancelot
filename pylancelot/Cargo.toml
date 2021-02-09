@@ -1,6 +1,6 @@
 [package]
 name = "pylancelot"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
@@ -9,7 +9,7 @@ name = "lancelot"
 crate-type = ["cdylib"]
 
 [dependencies]
-lancelot = { path = "../core", version = "0.4.4" }
+lancelot = { path = "../core", version = "0.4.5" }
 pyo3 = { version = "0.13"}
 anyhow = "1"
 zydis = "3"
