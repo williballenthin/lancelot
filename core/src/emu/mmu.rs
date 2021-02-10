@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{module::Permissions, VA};
 
-const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE: usize = 0x1000;
 const PAGE_SHIFT: usize = 12;
 const PAGE_MASK: u64 = 0xFFF;
 type PageFrame = [u8; PAGE_SIZE];
@@ -230,7 +230,8 @@ impl MMU {
     }
 
     /// read up to one page worth of data from the given address.
-    pub fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
+    /// read will not span more than two pages.
+    fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
         if page_number(addr) != page_number(addr + buf.len() as u64) {
@@ -314,7 +315,18 @@ impl MMU {
         Ok(LittleEndian::read_u128(&buf))
     }
 
-    pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<()> {
+    // read one page worth of data from the given page-aligned address.
+    // panics if `addr` is not page-aligned.
+    pub fn read_page(&self, addr: VA) -> Result<[u8; PAGE_SIZE]> {
+        assert!(is_page_aligned(addr));
+        let mut buf = [0u8; PAGE_SIZE];
+        self.read(addr, &mut buf)?;
+        Ok(buf)
+    }
+
+    /// ensure that the given address can be written to, and if so,
+    /// do any copies necessary due to COW/zero pages.
+    fn probe_write(&mut self, addr: VA) -> Result<(PFN, PageFlags)> {
         let (pfn, flags) = match self.mapping.get(&page_number(addr)) {
             Some(&(pfn, flags)) => (pfn, flags),
             None => return Err(MMUError::AddressNotMapped(addr).into()),
@@ -324,7 +336,7 @@ impl MMU {
             return Err(MMUError::AddressNotWritable(addr).into());
         }
 
-        let pfn = if flags.intersects(PageFlags::ZERO) || flags.intersects(PageFlags::COW) {
+        if flags.intersects(PageFlags::ZERO) || flags.intersects(PageFlags::COW) {
             // collect a copy of the existing page frame contents
             let pf = if flags.intersects(PageFlags::ZERO) {
                 EMPTY_PAGE
@@ -342,14 +354,81 @@ impl MMU {
             flags.remove(PageFlags::COW);
 
             self.mapping.insert(page_number(addr), (pfn, flags));
-            pfn
+            Ok((pfn, flags))
         } else {
-            pfn
-        };
+            Ok((pfn, flags))
+        }
+    }
 
-        (&mut self.pages[pfn])[page_offset(addr)] = value;
+    /// write up one one page worth of data to the given address.
+    fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+        assert!(buf.len() <= PAGE_SIZE);
 
+        if page_number(addr) != page_number(addr + buf.len() as u64) {
+            // split write
+            let write_size: usize = buf.len();
+            let page_offset = page_offset(addr);
+            let first_size = PAGE_SIZE - page_offset;
+            let second_size = write_size - first_size;
+
+            let (first_pfn, _) = self.probe_write(addr)?;
+            // if we fail sometime after this,
+            // then we'll potentially have done a bit of extra work,
+            // if the `probe_write` call did a COW/zero page copy.
+            // but we assume thats not much/common overhead.
+            // it also doesn't affect correctness, just slight performance hit.
+
+            self.pages[first_pfn][page_offset..].copy_from_slice(&buf[..first_size]);
+
+            let next_page_addr = addr + first_size as u64;
+            let (second_pfn, _) = self.probe_write(next_page_addr)?;
+
+            self.pages[second_pfn][..second_size].copy_from_slice(&buf[first_size..]);
+        } else {
+            // common case: all data in single page
+            let (pfn, _) = self.probe_write(addr)?;
+
+            self.pages[pfn][page_offset(addr)..page_offset(addr) + buf.len()].copy_from_slice(buf);
+        }
         Ok(())
+    }
+
+    pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<()> {
+        let buf = [value];
+        self.write(addr, &buf)
+    }
+
+    pub fn write_u16(&mut self, addr: VA, value: u16) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u16>()];
+        LittleEndian::write_u16(&mut buf, value);
+        self.write(addr, &buf)
+    }
+
+    pub fn write_u32(&mut self, addr: VA, value: u32) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u32>()];
+        LittleEndian::write_u32(&mut buf, value);
+        self.write(addr, &buf)
+    }
+
+    pub fn write_u64(&mut self, addr: VA, value: u64) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u64>()];
+        LittleEndian::write_u64(&mut buf, value);
+        self.write(addr, &buf)
+    }
+
+    pub fn write_u128(&mut self, addr: VA, value: u128) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u128>()];
+        LittleEndian::write_u128(&mut buf, value);
+        self.write(addr, &buf)
+    }
+
+    // write one page worth of data from the given page-aligned address.
+    // panics if `addr` is not page-aligned.
+    // panics if `value` is not one page in size.
+    pub fn write_page(&mut self, addr: VA, value: &[u8]) -> Result<()> {
+        assert!(is_page_aligned(addr));
+        assert!(value.len() == PAGE_SIZE);
+        self.write(addr, value)
     }
 }
 
@@ -496,6 +575,34 @@ mod tests {
             assert!(mmu.write_u8(0x1000, 1).is_ok());
             assert_eq!(mmu.read_u8(0x1000).unwrap(), 1);
             assert_eq!(mmu.read_u16(0x1000).unwrap(), 1);
+            assert_eq!(mmu.read_u32(0x1000).unwrap(), 1);
+            assert_eq!(mmu.read_u64(0x1000).unwrap(), 1);
+            assert_eq!(mmu.read_u128(0x1000).unwrap(), 1);
+
+            Ok(())
+        }
+
+        #[test]
+        fn write() -> Result<()> {
+            let mut mmu: MMU = Default::default();
+
+            mmu.mmap(0x1000, 0x1000, Permissions::RW).unwrap();
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0);
+
+            assert!(mmu.write_u8(0x1000, 1).is_ok());
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 1);
+
+            assert!(mmu.write_u16(0x1000, 0x1122).is_ok());
+            assert_eq!(mmu.read_u16(0x1000).unwrap(), 0x1122);
+
+            assert!(mmu.write_u32(0x1000, 0x11223344).is_ok());
+            assert_eq!(mmu.read_u32(0x1000).unwrap(), 0x11223344);
+
+            assert!(mmu.write_u64(0x1000, 0x1122334455667788).is_ok());
+            assert_eq!(mmu.read_u64(0x1000).unwrap(), 0x1122334455667788);
+
+            assert!(mmu.write_u128(0x1000, 0x112233445566778899AABBCCDDEEFF).is_ok());
+            assert_eq!(mmu.read_u128(0x1000).unwrap(), 0x112233445566778899AABBCCDDEEFF);
 
             Ok(())
         }
@@ -518,6 +625,31 @@ mod tests {
             assert_eq!(mmu.read_u16(0x1FFF).unwrap(), 0x2211);
             assert_eq!(mmu.read_u32(0x1FFF).unwrap(), 0x44332211);
             assert_eq!(mmu.read_u64(0x1FFF).unwrap(), 0x8877665544332211);
+
+            Ok(())
+        }
+
+        #[test]
+        fn split_write() -> Result<()> {
+            // ensure that tests `read` and `write` pass before triaging this one.
+            let mut mmu: MMU = Default::default();
+
+            mmu.mmap(0x1000, 0x2000, Permissions::RW).unwrap();
+
+            assert!(mmu.write_u8(0x1FFF, 1).is_ok());
+            assert_eq!(mmu.read_u8(0x1FFF).unwrap(), 1);
+
+            assert!(mmu.write_u16(0x1FFF, 0x1122).is_ok());
+            assert_eq!(mmu.read_u16(0x1FFF).unwrap(), 0x1122);
+
+            assert!(mmu.write_u32(0x1FFF, 0x11223344).is_ok());
+            assert_eq!(mmu.read_u32(0x1FFF).unwrap(), 0x11223344);
+
+            assert!(mmu.write_u64(0x1FFF, 0x1122334455667788).is_ok());
+            assert_eq!(mmu.read_u64(0x1FFF).unwrap(), 0x1122334455667788);
+
+            assert!(mmu.write_u128(0x1FFF, 0x112233445566778899AABBCCDDEEFF).is_ok());
+            assert_eq!(mmu.read_u128(0x1FFF).unwrap(), 0x112233445566778899AABBCCDDEEFF);
 
             Ok(())
         }
