@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use bitflags::*;
 use bitvec::{prelude::*, vec::BitVec};
+use byteorder::{ByteOrder, LittleEndian};
 use thiserror::Error;
 
 use crate::{module::Permissions, VA};
@@ -228,17 +229,89 @@ impl MMU {
         Ok((pfn, flags))
     }
 
-    pub fn read_u8(&self, addr: VA) -> Result<u8> {
-        let (pfn, flags) = self.probe_read(addr)?;
+    /// read up to one page worth of data from the given address.
+    pub fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
+        assert!(buf.len() <= PAGE_SIZE);
 
-        if flags.intersects(PageFlags::ZERO) {
-            // paranoia
-            assert!(pfn == INVALID_PFN);
-            return Ok(0);
+        if page_number(addr) != page_number(addr + buf.len() as u64) {
+            // split read
+            let read_size: usize = buf.len();
+            let page_offset = page_offset(addr);
+            let first_size = PAGE_SIZE - page_offset;
+            let second_size = read_size - first_size;
+
+            let (first_pfn, first_flags) = self.probe_read(addr)?;
+
+            if first_flags.intersects(PageFlags::ZERO) {
+                assert!(first_pfn == INVALID_PFN);
+                for b in &mut buf[..first_size] {
+                    *b = 0;
+                }
+            } else {
+                let first_part = &self.pages[first_pfn][page_offset..];
+                buf[..first_part.len()].copy_from_slice(first_part);
+            }
+
+            let next_page_addr = addr + first_size as u64;
+            let (second_pfn, second_flags) = self.probe_read(next_page_addr)?;
+
+            if second_flags.intersects(PageFlags::ZERO) {
+                assert!(second_pfn == INVALID_PFN);
+                for b in &mut buf[first_size..] {
+                    *b = 0;
+                }
+            } else {
+                let second_part = &self.pages[second_pfn][..second_size];
+                buf[first_size..].copy_from_slice(second_part);
+            }
+        } else {
+            // common case: all data in single page
+            let (pfn, flags) = self.probe_read(addr)?;
+
+            if flags.intersects(PageFlags::ZERO) {
+                // paranoia
+                assert!(pfn == INVALID_PFN);
+
+                for b in &mut buf[..] {
+                    *b = 0;
+                }
+
+                return Ok(());
+            }
+
+            buf.copy_from_slice(&self.pages[pfn][page_offset(addr)..page_offset(addr) + buf.len()]);
         }
+        Ok(())
+    }
 
-        let pf = self.pages[pfn];
-        Ok(pf[page_offset(addr)])
+    pub fn read_u8(&self, addr: VA) -> Result<u8> {
+        let mut buf = [0u8; std::mem::size_of::<u8>()];
+        self.read(addr, &mut buf)?;
+        Ok(buf[0])
+    }
+
+    pub fn read_u16(&self, addr: VA) -> Result<u16> {
+        let mut buf = [0u8; std::mem::size_of::<u16>()];
+        self.read(addr, &mut buf)?;
+        Ok(LittleEndian::read_u16(&buf))
+    }
+
+    pub fn read_u32(&self, addr: VA) -> Result<u32> {
+        let mut buf = [0u8; std::mem::size_of::<u32>()];
+        self.read(addr, &mut buf)?;
+        Ok(LittleEndian::read_u32(&buf))
+    }
+
+    pub fn read_u64(&self, addr: VA) -> Result<u64> {
+        let mut buf = [0u8; std::mem::size_of::<u64>()];
+        self.read(addr, &mut buf)?;
+        Ok(LittleEndian::read_u64(&buf))
+    }
+
+    pub fn read_u128(&self, addr: VA) -> Result<u128> {
+        let mut buf = [0u8; std::mem::size_of::<u128>()];
+        self.read(addr, &mut buf)?;
+        Ok(LittleEndian::read_u128(&buf))
     }
 
     pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<()> {
@@ -410,6 +483,41 @@ mod tests {
 
             assert!(mmu.write_u8(0x2000, 1).is_ok());
             assert_eq!(mmu.read_u8(0x2000).unwrap(), 1);
+
+            Ok(())
+        }
+
+        #[test]
+        fn read() -> Result<()> {
+            let mut mmu: MMU = Default::default();
+
+            mmu.mmap(0x1000, 0x1000, Permissions::RW).unwrap();
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0);
+            assert!(mmu.write_u8(0x1000, 1).is_ok());
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 1);
+            assert_eq!(mmu.read_u16(0x1000).unwrap(), 1);
+
+            Ok(())
+        }
+
+        #[test]
+        fn split_read() -> Result<()> {
+            let mut mmu: MMU = Default::default();
+
+            mmu.mmap(0x1000, 0x2000, Permissions::RW).unwrap();
+            assert!(mmu.write_u8(0x1FFF, 0x11).is_ok());
+            assert!(mmu.write_u8(0x2000, 0x22).is_ok());
+            assert!(mmu.write_u8(0x2001, 0x33).is_ok());
+            assert!(mmu.write_u8(0x2002, 0x44).is_ok());
+            assert!(mmu.write_u8(0x2003, 0x55).is_ok());
+            assert!(mmu.write_u8(0x2004, 0x66).is_ok());
+            assert!(mmu.write_u8(0x2005, 0x77).is_ok());
+            assert!(mmu.write_u8(0x2006, 0x88).is_ok());
+            assert!(mmu.write_u8(0x2007, 0x99).is_ok());
+            assert_eq!(mmu.read_u8(0x1FFF).unwrap(), 0x11);
+            assert_eq!(mmu.read_u16(0x1FFF).unwrap(), 0x2211);
+            assert_eq!(mmu.read_u32(0x1FFF).unwrap(), 0x44332211);
+            assert_eq!(mmu.read_u64(0x1FFF).unwrap(), 0x8877665544332211);
 
             Ok(())
         }
