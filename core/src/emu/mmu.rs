@@ -11,6 +11,7 @@ use crate::{module::Permissions, VA};
 pub const PAGE_SIZE: usize = 0x1000;
 const PAGE_SHIFT: usize = 12;
 const PAGE_MASK: u64 = 0xFFF;
+
 type PageFrame = [u8; PAGE_SIZE];
 const EMPTY_PAGE: PageFrame = [0u8; PAGE_SIZE];
 
@@ -234,7 +235,8 @@ impl MMU {
     fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
-        if page_number(addr) != page_number(addr + buf.len() as u64) {
+        let end_addr = addr + buf.len() as u64;
+        if page_number(addr) != page_number(end_addr) && !is_page_aligned(end_addr) {
             // split read
             let read_size: usize = buf.len();
             let page_offset = page_offset(addr);
@@ -364,7 +366,8 @@ impl MMU {
     fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
-        if page_number(addr) != page_number(addr + buf.len() as u64) {
+        let end_addr = addr + buf.len() as u64;
+        if page_number(addr) != page_number(end_addr) && !is_page_aligned(end_addr) {
             // split write
             let write_size: usize = buf.len();
             let page_offset = page_offset(addr);
@@ -626,6 +629,9 @@ mod tests {
             assert_eq!(mmu.read_u32(0x1FFF).unwrap(), 0x44332211);
             assert_eq!(mmu.read_u64(0x1FFF).unwrap(), 0x8877665544332211);
 
+            assert!(mmu.read_u16(0x2FFE).is_ok());
+            assert!(mmu.read_u16(0x2FFF).is_err());
+
             Ok(())
         }
 
@@ -650,6 +656,9 @@ mod tests {
 
             assert!(mmu.write_u128(0x1FFF, 0x112233445566778899AABBCCDDEEFF).is_ok());
             assert_eq!(mmu.read_u128(0x1FFF).unwrap(), 0x112233445566778899AABBCCDDEEFF);
+
+            assert!(mmu.write_u16(0x2FFE, 1).is_ok());
+            assert!(mmu.write_u16(0x2FFF, 1).is_err());
 
             Ok(())
         }
