@@ -31,6 +31,33 @@ pub struct Registers {
     pub avx:    Option<Box<AVX>>,
 }
 
+impl Registers {
+    // TODO: inline this?
+
+    pub fn rax(&self) -> u64 {
+        self.rax
+    }
+
+    pub fn eax(&self) -> u64 {
+        self.rax & 0xFFFF_FFFF
+    }
+
+    pub fn ax(&self) -> u64 {
+        self.rax & 0xFFFF
+    }
+
+    pub fn ah(&self) -> u64 {
+        (self.rax & 0xFF00) >> 8
+    }
+
+    pub fn al(&self) -> u64 {
+        self.rax & 0xFF
+    }
+
+    // TODO: macro to generate these accessors
+    // reg!(rax, eax, ax, ah, al)
+}
+
 #[derive(Default, Clone)]
 pub struct FPU {
     // TODO: this is not thought out at all.
