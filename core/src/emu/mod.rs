@@ -118,9 +118,46 @@ impl Emulator {
         }
     }
 
-    fn set_register(&mut self, reg: Register, size: u16, value: u64) {
+    fn read_register(&self, reg: Register) -> u64 {
+        match reg {
+            Register::RAX => self.reg.rax,
+            Register::RBX => self.reg.rbx,
+            Register::RCX => self.reg.rcx,
+            Register::RDX => self.reg.rdx,
+            Register::R8 => self.reg.r8,
+            Register::R9 => self.reg.r9,
+            Register::R10 => self.reg.r10,
+            Register::R11 => self.reg.r11,
+            Register::R12 => self.reg.r12,
+            Register::R13 => self.reg.r13,
+            Register::R14 => self.reg.r14,
+            Register::R15 => self.reg.r15,
+            Register::RSI => self.reg.rsi,
+            Register::RDI => self.reg.rdi,
+            Register::RSP => self.reg.rsp,
+            Register::RBP => self.reg.rbp,
+            _ => unimplemented!(),
+        }
+    }
+
+    fn write_register(&mut self, reg: Register, size: u16, value: u64) {
         let reg = match reg {
             Register::RAX => &mut self.reg.rax,
+            Register::RBX => &mut self.reg.rbx,
+            Register::RCX => &mut self.reg.rcx,
+            Register::RDX => &mut self.reg.rdx,
+            Register::R8 => &mut self.reg.r8,
+            Register::R9 => &mut self.reg.r9,
+            Register::R10 => &mut self.reg.r10,
+            Register::R11 => &mut self.reg.r11,
+            Register::R12 => &mut self.reg.r12,
+            Register::R13 => &mut self.reg.r13,
+            Register::R14 => &mut self.reg.r14,
+            Register::R15 => &mut self.reg.r15,
+            Register::RSI => &mut self.reg.rsi,
+            Register::RDI => &mut self.reg.rdi,
+            Register::RSP => &mut self.reg.rsp,
+            Register::RBP => &mut self.reg.rbp,
             _ => unimplemented!(),
         };
 
@@ -150,12 +187,13 @@ impl Emulator {
 
                 let value = match src.ty {
                     IMMEDIATE => src.imm.value,
+                    REGISTER => self.read_register(src.reg),
                     _ => unimplemented!(),
                 };
 
                 match dst.ty {
                     REGISTER => {
-                        self.set_register(dst.reg, dst.size, value);
+                        self.write_register(dst.reg, dst.size, value);
                     }
                     _ => unimplemented!(),
                 }
@@ -202,8 +240,6 @@ mod tests {
 
     #[test]
     fn from_module() -> Result<()> {
-        //init_logging();
-
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         let m = load_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
 
@@ -213,6 +249,42 @@ mod tests {
 
         assert_eq!(emu.reg.rip, m.address_space.base_address + 0x7);
         assert_eq!(emu.reg.rax, 1);
+
+        Ok(())
+    }
+
+    fn emu_from_sc(code: &[u8]) -> Emulator {
+        let m = load_shellcode64(code);
+        let mut emu = Emulator::from_module(&m);
+        emu.reg.rip = m.address_space.base_address; // 0x1000
+
+        emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
+        emu.reg.rsp = 0x6000;
+        emu.reg.rbp = 0x6000;
+
+        emu
+    }
+
+    #[test]
+    fn insn_mov_reg_imm() -> Result<()> {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        let mut emu = emu_from_sc(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+        emu.step()?;
+
+        assert_eq!(emu.reg.rax, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insn_mov_reg_reg() -> Result<()> {
+        // 0:  48 89 c3                mov    rbx,rax
+        let mut emu = emu_from_sc(&b"\x48\x89\xC3"[..]);
+        emu.reg.rax = 1;
+        emu.step()?;
+
+        assert_eq!(emu.reg.rax, 1);
+        assert_eq!(emu.reg.rbx, 1);
 
         Ok(())
     }
