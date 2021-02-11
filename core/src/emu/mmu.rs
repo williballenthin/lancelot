@@ -240,7 +240,7 @@ impl MMU {
 
     /// read up to one page worth of data from the given address.
     /// read will not span more than two pages.
-    fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
+    pub fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
@@ -371,7 +371,7 @@ impl MMU {
     }
 
     /// write up one one page worth of data to the given address.
-    fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+    pub fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
