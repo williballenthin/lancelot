@@ -142,28 +142,44 @@ impl Emulator {
 
     fn write_register(&mut self, reg: Register, size: u16, value: u64) {
         let reg = match reg {
-            Register::RAX => &mut self.reg.rax,
-            Register::RBX => &mut self.reg.rbx,
-            Register::RCX => &mut self.reg.rcx,
-            Register::RDX => &mut self.reg.rdx,
-            Register::R8 => &mut self.reg.r8,
-            Register::R9 => &mut self.reg.r9,
-            Register::R10 => &mut self.reg.r10,
-            Register::R11 => &mut self.reg.r11,
-            Register::R12 => &mut self.reg.r12,
-            Register::R13 => &mut self.reg.r13,
-            Register::R14 => &mut self.reg.r14,
-            Register::R15 => &mut self.reg.r15,
-            Register::RSI => &mut self.reg.rsi,
-            Register::RDI => &mut self.reg.rdi,
-            Register::RSP => &mut self.reg.rsp,
-            Register::RBP => &mut self.reg.rbp,
+            Register::RAX | Register::EAX | Register::AX | Register::AL => &mut self.reg.rax,
+            Register::RBX | Register::EBX | Register::BX | Register::BL => &mut self.reg.rbx,
+            Register::RCX | Register::ECX | Register::CX | Register::CL => &mut self.reg.rcx,
+            Register::RDX | Register::EDX | Register::DX | Register::DL => &mut self.reg.rdx,
+            Register::R8 | Register::R8D | Register::R8W | Register::R8B => &mut self.reg.r8,
+            Register::R9 | Register::R9D | Register::R9W | Register::R9B => &mut self.reg.r9,
+            Register::R10 | Register::R10D | Register::R10W | Register::R10B => &mut self.reg.r10,
+            Register::R11 | Register::R11D | Register::R11W | Register::R11B => &mut self.reg.r11,
+            Register::R12 | Register::R12D | Register::R12W | Register::R12B => &mut self.reg.r12,
+            Register::R13 | Register::R13D | Register::R13W | Register::R13B => &mut self.reg.r13,
+            Register::R14 | Register::R14D | Register::R14W | Register::R14B => &mut self.reg.r14,
+            Register::R15 | Register::R15D | Register::R15W | Register::R15B => &mut self.reg.r15,
+            Register::RSI | Register::ESI | Register::SI | Register::SIL => &mut self.reg.rsi,
+            Register::RDI | Register::EDI | Register::DI | Register::DIL => &mut self.reg.rdi,
+            Register::RSP | Register::ESP | Register::SP | Register::SPL => &mut self.reg.rsp,
+            Register::RBP | Register::EBP | Register::BP | Register::BPL => &mut self.reg.rbp,
+            Register::AH => unimplemented!(),
+            Register::BH => unimplemented!(),
+            Register::CH => unimplemented!(),
+            Register::DH => unimplemented!(),
             _ => unimplemented!(),
         };
 
         match size {
             64 => {
                 *reg = value;
+            }
+            32 => {
+                *reg &= 0xFFFF_FFFF_0000_0000;
+                *reg |= value & 0xFFFF_FFFF;
+            }
+            16 => {
+                *reg &= 0xFFFF_FFFF_FFFF_0000;
+                *reg |= value & 0xFFFF;
+            }
+            8 => {
+                *reg &= 0xFFFF_FFFF_FFFF_FF00;
+                *reg |= value & 0xFF;
             }
             _ => unimplemented!(),
         }
@@ -270,8 +286,31 @@ mod tests {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         let mut emu = emu_from_sc(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
         emu.step()?;
-
         assert_eq!(emu.reg.rax, 1);
+
+        // 0:  b8 01 00 00 00          mov    eax,0x1
+        let mut emu = emu_from_sc(&b"\xB8\x01\x00\x00\x00"[..]);
+        emu.reg.rax = 0xFFFF_FFFF_FFFF_FFFF;
+        emu.step()?;
+        assert_eq!(emu.reg.eax(), 1);
+        assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_0000_0001);
+
+        // 0:  66 b8 01 00             mov    ax,0x1
+        let mut emu = emu_from_sc(&b"\x66\xB8\x01\x00"[..]);
+        emu.reg.rax = 0xFFFF_FFFF_FFFF_FFFF;
+        emu.step()?;
+        assert_eq!(emu.reg.ax(), 1);
+        assert_eq!(emu.reg.eax(), 0xFFFF_0001);
+        assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_FFFF_0001);
+
+        // 0:  b0 01                   mov    al,0x1
+        let mut emu = emu_from_sc(&b"\xB0\x01"[..]);
+        emu.reg.rax = 0xFFFF_FFFF_FFFF_FFFF;
+        emu.step()?;
+        assert_eq!(emu.reg.al(), 1);
+        assert_eq!(emu.reg.ax(), 0xFF01);
+        assert_eq!(emu.reg.eax(), 0xFFFF_FF01);
+        assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_FFFF_FF01);
 
         Ok(())
     }
