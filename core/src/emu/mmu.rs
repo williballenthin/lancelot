@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, btree_map::Entry};
+use std::collections::{btree_map::Entry, BTreeMap};
 
-use log::debug;
 use anyhow::Result;
 use bitflags::*;
 use bitvec::{prelude::*, vec::BitVec};
 use byteorder::{ByteOrder, LittleEndian};
+use log::debug;
 use thiserror::Error;
 
 pub use crate::{module::Permissions, VA};
@@ -219,6 +219,39 @@ impl MMU {
                 self.pages.deallocate(pfn);
             } else {
                 assert!(pfn == INVALID_PFN);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn mprotect(&mut self, addr: VA, size: u64, perms: Permissions) -> Result<()> {
+        debug!("emu: mmu: mprotect: {:#x} {:#x} {:#?}", addr, size, perms);
+
+        assert!(is_page_aligned(addr));
+        assert!(is_page_aligned(size));
+
+        let page_count = size / PAGE_SIZE as u64;
+        assert!(page_count <= u32::MAX as u64);
+
+        // ensure all of the pages are already mapped.
+        //
+        // do this all at once up front to avoid getting
+        // half way through and needing to bail.
+        for i in 0..page_count {
+            let page_va = addr + i * PAGE_SIZE as u64;
+            if !self.mapping.contains_key(&page_va) {
+                return Err(MMUError::AddressNotMapped(page_va).into());
+            }
+        }
+
+        for i in 0..page_count {
+            let page_va = addr + i * PAGE_SIZE as u64;
+
+            if let Entry::Occupied(mut o) = self.mapping.entry(page_va) {
+                let pair = o.get_mut();
+                pair.1.remove(PageFlags::PERM_RWX);
+                pair.1.insert(PageFlags::from_bits_truncate(perms.bits() as u32))
             }
         }
 
@@ -551,6 +584,29 @@ mod tests {
             assert_eq!(mmu.read_u8(0x3000).unwrap(), 0x0);
 
             mmu.munmap(0x2000, 0x1000).unwrap();
+
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
+            assert!(mmu.read_u8(0x2000).is_err());
+            assert_eq!(mmu.read_u8(0x3000).unwrap(), 0x0);
+
+            Ok(())
+        }
+
+        #[test]
+        fn mprotect() -> Result<()> {
+            let mut mmu: MMU = Default::default();
+
+            assert!(mmu.read_u8(0x1000).is_err());
+            assert!(mmu.read_u8(0x2000).is_err());
+            assert!(mmu.read_u8(0x3000).is_err());
+
+            mmu.mmap(0x1000, 0x3000, Permissions::R).unwrap();
+
+            assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
+            assert_eq!(mmu.read_u8(0x2000).unwrap(), 0x0);
+            assert_eq!(mmu.read_u8(0x3000).unwrap(), 0x0);
+
+            mmu.mprotect(0x2000, 0x1000, Permissions::empty()).unwrap();
 
             assert_eq!(mmu.read_u8(0x1000).unwrap(), 0x0);
             assert!(mmu.read_u8(0x2000).is_err());
