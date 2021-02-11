@@ -1,12 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
+use log::debug;
 use anyhow::Result;
 use bitflags::*;
 use bitvec::{prelude::*, vec::BitVec};
 use byteorder::{ByteOrder, LittleEndian};
 use thiserror::Error;
 
-use crate::{module::Permissions, VA};
+pub use crate::{module::Permissions, VA};
 
 pub const PAGE_SIZE: usize = 0x1000;
 const PAGE_SHIFT: usize = 12;
@@ -46,6 +47,7 @@ impl PageFrames {
     /// suggest that `page_count` pages will be allocated soon.
     /// useful to avoid frequent reallocations.
     fn reserve(&mut self, page_count: u32) {
+        debug!("emu: mmu: reserve: {:}", page_count);
         self.frames.reserve(page_count as usize);
         self.allocation_bitmap.reserve(page_count as usize);
     }
@@ -53,6 +55,7 @@ impl PageFrames {
     /// allocate a new page frame, returning the PFN.
     /// page frame contents will be empty.
     fn allocate(&mut self) -> PFN {
+        debug!("emu: mmu: allocate page");
         let maybe_free_index = self
             .allocation_bitmap
             .iter()
@@ -73,6 +76,7 @@ impl PageFrames {
     /// deallocate a page by its PFN.
     /// panics if the page is not allocated.
     fn deallocate(&mut self, pfn: PFN) {
+        debug!("emu: mmu: deallocate page");
         assert!(self.allocation_bitmap.get(pfn as usize).unwrap());
 
         // zero pages upon deallocation.
@@ -149,6 +153,8 @@ impl MMU {
     // map memory at the given virtual address, for the given size, with the given
     // perms. panics if `addr` or `size` are not page aligned.
     pub fn mmap(&mut self, addr: VA, size: u64, perms: Permissions) -> Result<()> {
+        debug!("emu: mmu: mmap: {:#x} {:#x} {:#?}", addr, size, perms);
+
         assert!(is_page_aligned(addr));
         assert!(is_page_aligned(size));
 
@@ -185,6 +191,8 @@ impl MMU {
     }
 
     pub fn munmap(&mut self, addr: VA, size: u64) -> Result<()> {
+        debug!("emu: mmu: munmap: {:#x} {:#x}", addr, size);
+
         assert!(is_page_aligned(addr));
         assert!(is_page_aligned(size));
 
