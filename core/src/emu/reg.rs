@@ -1,3 +1,5 @@
+// https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/x64-architecture
+
 #[derive(Default, Clone)]
 pub struct Registers {
     pub rax:    u64,
@@ -31,31 +33,134 @@ pub struct Registers {
     pub avx:    Option<Box<AVX>>,
 }
 
+macro_rules! reg {
+    ($reg:ident, $get_64:ident, $get_32:ident, $get_16:ident, $get_8l:ident, $set_64:ident, $set_32:ident, $set_16:ident, $set_8l:ident) => {
+        #[inline]
+        pub fn $get_64(&self) -> u64 {
+            self.$reg
+        }
+
+        #[inline]
+        pub fn $get_32(&self) -> u32 {
+            (self.$reg & 0xFFFF_FFFF) as u32
+        }
+
+        #[inline]
+        pub fn $get_16(&self) -> u16 {
+            (self.$reg & 0xFFFF) as u16
+        }
+
+        #[inline]
+        pub fn $get_8l(&self) -> u8 {
+            (self.$reg & 0xFF) as u8
+        }
+
+        #[inline]
+        pub fn $set_64(&mut self, value: u64) {
+            self.$reg = value;
+        }
+
+        #[inline]
+        pub fn $set_32(&mut self, value: u32) {
+            self.$reg &= 0xFFFF_FFFF_0000_0000;
+            self.$reg |= (value as u64) & 0xFFFF_FFFF;
+        }
+
+        #[inline]
+        pub fn $set_16(&mut self, value: u16) {
+            self.$reg &= 0xFFFF_FFFF_FFFF_0000;
+            self.$reg |= (value as u64) & 0xFFFF;
+        }
+
+        #[inline]
+        pub fn $set_8l(&mut self, value: u8) {
+            self.$reg &= 0xFFFF_FFFF_FFFF_FF00;
+            self.$reg |= (value as u64) & 0xFF;
+        }
+    };
+}
+
+// generate accessor and mutator for the "h" register flavor.
+// that is, the 2nd least significant byte, such as AH.
+macro_rules! regh {
+    ($reg:ident, $get_8h:ident, $set_8h:ident) => {
+        #[inline]
+        pub fn $get_8h(&self) -> u8 {
+            ((self.$reg & 0xFF00) >> 8) as u8
+        }
+
+        #[inline]
+        pub fn $set_8h(&mut self, value: u8) {
+            self.$reg &= 0xFFFF_FFFF_FFFF_00FF;
+            self.$reg |= ((value as u64) & 0xFF) << 8;
+        }
+    };
+}
+
 impl Registers {
-    // TODO: inline this?
+    reg!(rax, rax, eax, ax, al, set_rax, set_eax, set_ax, set_al);
 
-    pub fn rax(&self) -> u64 {
-        self.rax
+    regh!(rax, ah, set_ah);
+
+    reg!(rbx, rbx, ebx, bx, bl, set_rbx, set_ebx, set_bx, set_bl);
+
+    regh!(rbx, bh, set_bh);
+
+    reg!(rcx, rcx, ecx, cx, cl, set_rcx, set_ecx, set_cx, set_cl);
+
+    regh!(rcx, ch, set_ch);
+
+    reg!(rdx, rdx, edx, dx, dl, set_rdx, set_edx, set_dx, set_dl);
+
+    regh!(rdx, dh, set_dh);
+
+    reg!(r8, r8, r8d, r8w, r8b, set_r8, set_r8d, set_r8w, set_r8b);
+
+    reg!(r9, r9, r9d, r9w, r9b, set_r9, set_r9d, set_r9w, set_r9b);
+
+    reg!(r10, r10, r10d, r10w, r10b, set_r10, set_r10d, set_r10w, set_r10b);
+
+    reg!(r11, r11, r11d, r11w, r11b, set_r11, set_r11d, set_r11w, set_r11b);
+
+    reg!(r12, r12, r12d, r12w, r12b, set_r12, set_r12d, set_r12w, set_r12b);
+
+    reg!(r13, r13, r13d, r13w, r13b, set_r13, set_r13d, set_r13w, set_r13b);
+
+    reg!(r14, r14, r14d, r14w, r14b, set_r14, set_r14d, set_r14w, set_r14b);
+
+    reg!(r15, r15, r15d, r15w, r15b, set_r15, set_r15d, set_r15w, set_r15b);
+
+    reg!(rsi, rsi, esi, si, sil, set_rsi, set_esi, set_si, set_sil);
+
+    reg!(rdi, rdi, edi, di, dil, set_rdi, set_edi, set_di, set_dil);
+
+    reg!(rsp, rsp, esp, sp, spl, set_rsp, set_esp, set_sp, set_spl);
+
+    reg!(rbp, rbp, ebp, bp, bpl, set_rbp, set_ebp, set_bp, set_bpl);
+
+    pub fn es(&self) -> u16 {
+        self.es
     }
 
-    pub fn eax(&self) -> u64 {
-        self.rax & 0xFFFF_FFFF
+    pub fn cs(&self) -> u16 {
+        self.cs
     }
 
-    pub fn ax(&self) -> u64 {
-        self.rax & 0xFFFF
+    pub fn ss(&self) -> u16 {
+        self.ss
     }
 
-    pub fn ah(&self) -> u64 {
-        (self.rax & 0xFF00) >> 8
+    pub fn ds(&self) -> u16 {
+        self.ds
     }
 
-    pub fn al(&self) -> u64 {
-        self.rax & 0xFF
+    pub fn fs(&self) -> u16 {
+        self.fs
     }
 
-    // TODO: macro to generate these accessors
-    // reg!(rax, eax, ax, ah, al)
+    pub fn gs(&self) -> u16 {
+        self.gs
+    }
 }
 
 #[derive(Default, Clone)]
