@@ -28,6 +28,8 @@ bitvec = "0.20"
 
 lancelot-flirt = { path = "../flirt", version = "0.4.5" }
 
+[dev-dependencies]
+
 [features]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
