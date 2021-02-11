@@ -3,7 +3,7 @@ use std::unimplemented;
 use anyhow::Result;
 use log::debug;
 use thiserror::Error;
-use zydis::enums::Register;
+use zydis::{enums::Register, DecodedOperand};
 
 use crate::{
     arch::Arch,
@@ -119,69 +119,255 @@ impl Emulator {
     }
 
     fn read_register(&self, reg: Register) -> u64 {
+        use Register::*;
         match reg {
-            Register::RAX => self.reg.rax,
-            Register::RBX => self.reg.rbx,
-            Register::RCX => self.reg.rcx,
-            Register::RDX => self.reg.rdx,
-            Register::R8 => self.reg.r8,
-            Register::R9 => self.reg.r9,
-            Register::R10 => self.reg.r10,
-            Register::R11 => self.reg.r11,
-            Register::R12 => self.reg.r12,
-            Register::R13 => self.reg.r13,
-            Register::R14 => self.reg.r14,
-            Register::R15 => self.reg.r15,
-            Register::RSI => self.reg.rsi,
-            Register::RDI => self.reg.rdi,
-            Register::RSP => self.reg.rsp,
-            Register::RBP => self.reg.rbp,
+            RAX => self.reg.rax(),
+            EAX => self.reg.eax() as u64,
+            AX => self.reg.ax() as u64,
+            AH => self.reg.ah() as u64,
+            AL => self.reg.al() as u64,
+
+            RBX => self.reg.rbx(),
+            EBX => self.reg.ebx() as u64,
+            BX => self.reg.bx() as u64,
+            BH => self.reg.bh() as u64,
+            BL => self.reg.bl() as u64,
+
+            RCX => self.reg.rcx(),
+            ECX => self.reg.ecx() as u64,
+            CX => self.reg.cx() as u64,
+            CH => self.reg.ch() as u64,
+            CL => self.reg.cl() as u64,
+
+            RDX => self.reg.rdx(),
+            EDX => self.reg.edx() as u64,
+            DX => self.reg.dx() as u64,
+            DH => self.reg.dh() as u64,
+            DL => self.reg.dl() as u64,
+
+            R8 => self.reg.r8(),
+            R8D => self.reg.r8d() as u64,
+            R8W => self.reg.r8w() as u64,
+            R8B => self.reg.r8b() as u64,
+
+            R9 => self.reg.r9(),
+            R9D => self.reg.r9d() as u64,
+            R9W => self.reg.r9w() as u64,
+            R9B => self.reg.r9b() as u64,
+
+            R10 => self.reg.r10(),
+            R10D => self.reg.r10d() as u64,
+            R10W => self.reg.r10w() as u64,
+            R10B => self.reg.r10b() as u64,
+
+            R11 => self.reg.r11(),
+            R11D => self.reg.r11d() as u64,
+            R11W => self.reg.r11w() as u64,
+            R11B => self.reg.r11b() as u64,
+
+            R12 => self.reg.r12(),
+            R12D => self.reg.r12d() as u64,
+            R12W => self.reg.r12w() as u64,
+            R12B => self.reg.r12b() as u64,
+
+            R13 => self.reg.r13(),
+            R13D => self.reg.r13d() as u64,
+            R13W => self.reg.r13w() as u64,
+            R13B => self.reg.r13b() as u64,
+
+            R14 => self.reg.r14(),
+            R14D => self.reg.r14d() as u64,
+            R14W => self.reg.r14w() as u64,
+            R14B => self.reg.r14b() as u64,
+
+            R15 => self.reg.r15(),
+            R15D => self.reg.r15d() as u64,
+            R15W => self.reg.r15w() as u64,
+            R15B => self.reg.r15b() as u64,
+
+            RSI => self.reg.rsi(),
+            ESI => self.reg.esi() as u64,
+            SI => self.reg.si() as u64,
+            SIL => self.reg.sil() as u64,
+
             _ => unimplemented!(),
         }
     }
 
-    fn write_register(&mut self, reg: Register, size: u16, value: u64) {
-        let reg = match reg {
-            Register::RAX | Register::EAX | Register::AX | Register::AL => &mut self.reg.rax,
-            Register::RBX | Register::EBX | Register::BX | Register::BL => &mut self.reg.rbx,
-            Register::RCX | Register::ECX | Register::CX | Register::CL => &mut self.reg.rcx,
-            Register::RDX | Register::EDX | Register::DX | Register::DL => &mut self.reg.rdx,
-            Register::R8 | Register::R8D | Register::R8W | Register::R8B => &mut self.reg.r8,
-            Register::R9 | Register::R9D | Register::R9W | Register::R9B => &mut self.reg.r9,
-            Register::R10 | Register::R10D | Register::R10W | Register::R10B => &mut self.reg.r10,
-            Register::R11 | Register::R11D | Register::R11W | Register::R11B => &mut self.reg.r11,
-            Register::R12 | Register::R12D | Register::R12W | Register::R12B => &mut self.reg.r12,
-            Register::R13 | Register::R13D | Register::R13W | Register::R13B => &mut self.reg.r13,
-            Register::R14 | Register::R14D | Register::R14W | Register::R14B => &mut self.reg.r14,
-            Register::R15 | Register::R15D | Register::R15W | Register::R15B => &mut self.reg.r15,
-            Register::RSI | Register::ESI | Register::SI | Register::SIL => &mut self.reg.rsi,
-            Register::RDI | Register::EDI | Register::DI | Register::DIL => &mut self.reg.rdi,
-            Register::RSP | Register::ESP | Register::SP | Register::SPL => &mut self.reg.rsp,
-            Register::RBP | Register::EBP | Register::BP | Register::BPL => &mut self.reg.rbp,
-            Register::AH => unimplemented!(),
-            Register::BH => unimplemented!(),
-            Register::CH => unimplemented!(),
-            Register::DH => unimplemented!(),
+    fn write_register(&mut self, reg: Register, value: u64) {
+        use Register::*;
+
+        match reg {
+            // a macro cannot expand to match arms,
+            // which means we need to enumerate all the cases by hand. sorry.
+            // https://stackoverflow.com/a/44033937/87207
+            RAX => self.reg.set_rax(value),
+            EAX => self.reg.set_eax(value as u32),
+            AX => self.reg.set_ax(value as u16),
+            AH => self.reg.set_ah(value as u8),
+            AL => self.reg.set_al(value as u8),
+
+            RBX => self.reg.set_rbx(value),
+            EBX => self.reg.set_ebx(value as u32),
+            BX => self.reg.set_bx(value as u16),
+            BH => self.reg.set_bh(value as u8),
+            BL => self.reg.set_bl(value as u8),
+
+            RCX => self.reg.set_rcx(value),
+            ECX => self.reg.set_ecx(value as u32),
+            CX => self.reg.set_cx(value as u16),
+            CH => self.reg.set_ch(value as u8),
+            CL => self.reg.set_cl(value as u8),
+
+            RDX => self.reg.set_rdx(value),
+            EDX => self.reg.set_edx(value as u32),
+            DX => self.reg.set_dx(value as u16),
+            DH => self.reg.set_dh(value as u8),
+            DL => self.reg.set_dl(value as u8),
+
+            R8 => self.reg.set_r8(value),
+            R8D => self.reg.set_r8d(value as u32),
+            R8W => self.reg.set_r8w(value as u16),
+            R8B => self.reg.set_r8b(value as u8),
+
+            R9 => self.reg.set_r9(value),
+            R9D => self.reg.set_r9d(value as u32),
+            R9W => self.reg.set_r9w(value as u16),
+            R9B => self.reg.set_r9b(value as u8),
+
+            R10 => self.reg.set_r10(value),
+            R10D => self.reg.set_r10d(value as u32),
+            R10W => self.reg.set_r10w(value as u16),
+            R10B => self.reg.set_r10b(value as u8),
+
+            R11 => self.reg.set_r11(value),
+            R11D => self.reg.set_r11d(value as u32),
+            R11W => self.reg.set_r11w(value as u16),
+            R11B => self.reg.set_r11b(value as u8),
+
+            R12 => self.reg.set_r12(value),
+            R12D => self.reg.set_r12d(value as u32),
+            R12W => self.reg.set_r12w(value as u16),
+            R12B => self.reg.set_r12b(value as u8),
+
+            R13 => self.reg.set_r13(value),
+            R13D => self.reg.set_r13d(value as u32),
+            R13W => self.reg.set_r13w(value as u16),
+            R13B => self.reg.set_r13b(value as u8),
+
+            R14 => self.reg.set_r14(value),
+            R14D => self.reg.set_r14d(value as u32),
+            R14W => self.reg.set_r14w(value as u16),
+            R14B => self.reg.set_r14b(value as u8),
+
+            R15 => self.reg.set_r15(value),
+            R15D => self.reg.set_r15d(value as u32),
+            R15W => self.reg.set_r15w(value as u16),
+            R15B => self.reg.set_r15b(value as u8),
+
+            RSI => self.reg.set_rsi(value),
+            ESI => self.reg.set_esi(value as u32),
+            SI => self.reg.set_si(value as u16),
+            SIL => self.reg.set_sil(value as u8),
+
+            RDI => self.reg.set_rdi(value),
+            EDI => self.reg.set_edi(value as u32),
+            DI => self.reg.set_di(value as u16),
+            DIL => self.reg.set_dil(value as u8),
+
+            RSP => self.reg.set_rsp(value),
+            ESP => self.reg.set_esp(value as u32),
+            SP => self.reg.set_sp(value as u16),
+            SPL => self.reg.set_spl(value as u8),
+
+            RBP => self.reg.set_rbp(value),
+            EBP => self.reg.set_ebp(value as u32),
+            BP => self.reg.set_bp(value as u16),
+            BPL => self.reg.set_bpl(value as u8),
+
             _ => unimplemented!(),
+        }
+    }
+
+    fn get_segment_address(&self, reg: Register) -> VA {
+        use Register::*;
+
+        let val = match reg {
+            ES => self.reg.es(),
+            CS => self.reg.cs(),
+            SS => self.reg.ss(),
+            DS => self.reg.ds(),
+            FS => self.reg.fs(),
+            GS => self.reg.gs(),
+            _ => panic!("invalid segment register"),
         };
 
-        match size {
-            64 => {
-                *reg = value;
+        if val == 0 {
+            return 0;
+        }
+
+        unimplemented!();
+    }
+
+    fn read_memory(&self, src: &DecodedOperand) -> Result<u64> {
+        let addr = self.get_segment_address(src.mem.segment);
+
+        if src.mem.base == zydis::Register::NONE
+            && src.mem.index == zydis::Register::NONE
+            && src.mem.scale == 0
+            && src.mem.disp.has_displacement
+        {
+            // example: mov eax, DWORD ds:[0x8000]
+
+            if src.mem.disp.displacement < 0 {
+                // TODO: does this mean interpret as a u64?
+                panic!("negative absolute displacement")
             }
-            32 => {
-                *reg &= 0xFFFF_FFFF_0000_0000;
-                *reg |= value & 0xFFFF_FFFF;
+            let disp = src.mem.disp.displacement as u64;
+
+            // this should wrap if necessary. untested, though.
+            let addr = addr + disp;
+
+            match src.size {
+                64 => self.mem.read_u64(addr),
+                32 => self.mem.read_u32(addr).map(|v| v as u64),
+                16 => self.mem.read_u16(addr).map(|v| v as u64),
+                8 => self.mem.read_u8(addr).map(|v| v as u64),
+                _ => unimplemented!(),
             }
-            16 => {
-                *reg &= 0xFFFF_FFFF_FFFF_0000;
-                *reg |= value & 0xFFFF;
+        } else {
+            unimplemented!();
+        }
+    }
+
+    fn write_memory(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
+        let addr = self.get_segment_address(dst.mem.segment);
+
+        if dst.mem.base == zydis::Register::NONE
+            && dst.mem.index == zydis::Register::NONE
+            && dst.mem.scale == 0
+            && dst.mem.disp.has_displacement
+        {
+            // example: mov eax, DWORD ds:[0x8000]
+
+            if dst.mem.disp.displacement < 0 {
+                // TODO: does this mean interpret as a u64?
+                panic!("negative absolute displacement")
             }
-            8 => {
-                *reg &= 0xFFFF_FFFF_FFFF_FF00;
-                *reg |= value & 0xFF;
+            let disp = dst.mem.disp.displacement as u64;
+
+            // this should wrap if necessary. untested, though.
+            let addr = addr + disp;
+
+            match dst.size {
+                64 => self.mem.write_u64(addr, value),
+                32 => self.mem.write_u32(addr, value as u32),
+                16 => self.mem.write_u16(addr, value as u16),
+                8 => self.mem.write_u8(addr, value as u8),
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
+        } else {
+            unimplemented!();
         }
     }
 
@@ -204,13 +390,15 @@ impl Emulator {
                 let value = match src.ty {
                     IMMEDIATE => src.imm.value,
                     REGISTER => self.read_register(src.reg),
+                    // handle unmapped read
+                    MEMORY => self.read_memory(&src)?,
                     _ => unimplemented!(),
                 };
 
                 match dst.ty {
-                    REGISTER => {
-                        self.write_register(dst.reg, dst.size, value);
-                    }
+                    REGISTER => self.write_register(dst.reg, value),
+                    // handle unmapped write
+                    MEMORY => self.write_memory(&dst, value)?,
                     _ => unimplemented!(),
                 }
 
@@ -282,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn insn_mov_reg_imm() -> Result<()> {
+    fn rw_reg() -> Result<()> {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         let mut emu = emu_from_sc(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
         emu.step()?;
@@ -312,11 +500,88 @@ mod tests {
         assert_eq!(emu.reg.eax(), 0xFFFF_FF01);
         assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_FFFF_FF01);
 
+        // 0:  b4 01                   mov    ah,0x1
+        let mut emu = emu_from_sc(&b"\xB4\x01"[..]);
+        emu.reg.rax = 0xFFFF_FFFF_FFFF_FFFF;
+        emu.step()?;
+        assert_eq!(emu.reg.ah(), 1);
+        assert_eq!(emu.reg.ax(), 0x01FF);
+        assert_eq!(emu.reg.eax(), 0xFFFF_01FF);
+        assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_FFFF_01FF);
+
+        // 0:  48 89 c3                mov    rbx,rax
+        let mut emu = emu_from_sc(&b"\x48\x89\xC3"[..]);
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.reg.rbx(), 0x1122_3344_5566_7788);
+
+        // 0:  89 c3                   mov    ebx,eax
+        let mut emu = emu_from_sc(&b"\x89\xC3"[..]);
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.reg.ebx(), 0x5566_7788);
+
+        // 0:  66 89 c3                mov    bx,ax
+        let mut emu = emu_from_sc(&b"\x66\x89\xC3"[..]);
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.reg.bx(), 0x7788);
+
+        // 0:  88 c3                   mov    bl,al
+        let mut emu = emu_from_sc(&b"\x88\xC3"[..]);
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.reg.bl(), 0x88);
+
+        // 0:  88 e7                   mov    bh,ah
+        let mut emu = emu_from_sc(&b"\x88\xE7"[..]);
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.reg.bh(), 0x77);
+
         Ok(())
     }
 
     #[test]
-    fn insn_mov_reg_reg() -> Result<()> {
+    fn rw_mem() -> Result<()> {
+        // 0:  48 8b 04 25 00 80 00 00   mov    rax,QWORD PTR ds:0x8000
+        let mut emu = emu_from_sc(&b"\x48\x8B\x04\x25\x00\x80\x00\x00"[..]);
+        emu.mem.mmap(0x8000, 0x1000, Permissions::RW)?;
+        emu.mem.write_u64(0x8000, 0x1122_3344_5566_7788)?;
+        emu.step()?;
+        assert_eq!(emu.reg.rax(), 0x1122_3344_5566_7788);
+
+        // 0:  8b 04 25 00 80 00 00    mov    eax,DWORD PTR ds:0x8000
+        let mut emu = emu_from_sc(&b"\x8B\x04\x25\x00\x80\x00\x00"[..]);
+        emu.mem.mmap(0x8000, 0x1000, Permissions::RW)?;
+        emu.mem.write_u64(0x8000, 0x1122_3344_5566_7788)?;
+        emu.step()?;
+        assert_eq!(emu.reg.rax(), 0x5566_7788);
+
+        // 0:  48 89 04 25 00 80 00 00   mov    QWORD PTR ds:0x8000,rax
+        let mut emu = emu_from_sc(&b"\x48\x89\x04\x25\x00\x80\x00\x00"[..]);
+        emu.mem.mmap(0x8000, 0x1000, Permissions::RW)?;
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.mem.read_u64(0x8000)?, 0x1122_3344_5566_7788);
+
+        // 0:  89 04 25 00 80 00 00    mov    DWORD PTR ds:0x8000,eax
+        let mut emu = emu_from_sc(&b"\x89\x04\x25\x00\x80\x00\x00"[..]);
+        emu.mem.mmap(0x8000, 0x1000, Permissions::RW)?;
+        emu.reg.rax = 0x1122_3344_5566_7788;
+        emu.step()?;
+        assert_eq!(emu.mem.read_u32(0x8000)?, 0x5566_7788);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insn_mov() -> Result<()> {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        let mut emu = emu_from_sc(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+        emu.step()?;
+        assert_eq!(emu.reg.rax, 1);
+
         // 0:  48 89 c3                mov    rbx,rax
         let mut emu = emu_from_sc(&b"\x48\x89\xC3"[..]);
         emu.reg.rax = 1;
