@@ -72,3 +72,15 @@ pub fn read_insn(module: &Module, va: VA) -> zydis::DecodedInstruction {
     module.address_space.read_into(va, &mut insn_buf).unwrap();
     decoder.decode(&insn_buf).unwrap().unwrap()
 }
+
+pub fn emu_from_shellcode64(code: &[u8]) -> crate::emu::Emulator {
+    let m = load_shellcode64(code);
+    let mut emu = crate::emu::Emulator::from_module(&m);
+    emu.reg.rip = m.address_space.base_address; // 0x0
+
+    emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
+    emu.reg.rsp = 0x6000;
+    emu.reg.rbp = 0x6000;
+
+    emu
+}
