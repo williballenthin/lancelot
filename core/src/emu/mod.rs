@@ -413,7 +413,6 @@ impl Emulator {
         debug!("emu: step: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
             // TODO:
-            //  - push/pop
             //  - sub/add
             //  - cmp
             //  - jz/jnz
@@ -431,8 +430,6 @@ impl Emulator {
             }
 
             PUSH => {
-                //println!("{:#?}", insn);
-
                 // EXPLICIT/READ/IMMEDIATE|REGISTER
                 let src = &insn.operands[0];
 
@@ -444,12 +441,36 @@ impl Emulator {
                 let dst = &insn.operands[2];
                 assert!(dst.ty == zydis::enums::OperandType::MEMORY);
 
+                match sp_op.reg {
+                    RSP => self.reg.rsp -= 8,
+                    ESP => self.reg.rsp -= 4,
+                    _ => unimplemented!(),
+                }
+
+                let value = self.read_operand(src)?;
+                self.write_operand(&dst, value)?;
+
+                self.reg.rip += insn.length as u64;
+            }
+
+            POP => {
+                // EXPLICIT/write/REGISTER
+                let dst = &insn.operands[0];
+
+                // HIDDEN/WRITE/REG/$SP
+                let sp_op = &insn.operands[1];
+                assert!(sp_op.ty == zydis::enums::OperandType::REGISTER);
+
+                // HIDDEN/READ/MEM
+                let src = &insn.operands[2];
+                assert!(src.ty == zydis::enums::OperandType::MEMORY);
+
                 let value = self.read_operand(src)?;
                 self.write_operand(&dst, value)?;
 
                 match sp_op.reg {
-                    RSP => self.reg.rsp -= 8,
-                    ESP => self.reg.rsp -= 4,
+                    RSP => self.reg.rsp += 8,
+                    ESP => self.reg.rsp += 4,
                     _ => unimplemented!(),
                 }
 
@@ -647,8 +668,25 @@ mod tests {
     }
 
     #[test]
+    fn insn_push_pop() -> Result<()> {
+        // 0:  6a 01                   push   0x1
+        let mut emu = emu_from_sc(&b"\x6A\x01"[..]);
+        emu.step()?;
+        assert_eq!(emu.mem.read_u64(emu.reg.rsp())?, 1);
+
+        // 0:  6a 01                   push   0x1
+        // 2:  58                      pop    rax
+        let mut emu = emu_from_sc(&b"\x6A\x01\x58"[..]);
+        emu.step()?;
+        emu.step()?;
+        assert_eq!(emu.reg.rax, 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn nop() -> Result<()> {
-        init_logging();
+        //init_logging();
 
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
@@ -669,10 +707,10 @@ mod tests {
         assert_eq!(emu.reg.rip, 0x401081);
         emu.step()?;
 
-        /*
         assert_eq!(emu.reg.rip, 0x401083);
         emu.step()?;
 
+        /*
         assert_eq!(emu.reg.rip, 0x401088);
         emu.step()?;
         */
