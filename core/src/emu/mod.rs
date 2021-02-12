@@ -26,6 +26,21 @@ pub struct Emulator {
     pub mem: mmu::MMU,
     pub reg: reg::Registers,
     dis:     zydis::Decoder,
+
+    // for now, as a user-mode focused emulator,
+    // we'll emulate fs/gs segments ourselves.
+    //
+    // see methods `fsbase()` and `set_fsbase()`.
+    // see methods `gsbase()` and `set_gsbase()`.
+    //
+    // the correct way to expose this is:
+    //   - x32: creating a GDT and setting the GDTR register
+    //   - x64: via rdmsr/wrmsr to set the FSBASE/GSBASE registers
+    //
+    // if we want compat with unicorn, then may need to figure this out.
+    // https://github.com/fireeye/speakeasy/blob/8c6375c67dc311f9eeb0192bb0cc452cd880372b/speakeasy/windows/winemu.py#L522
+    fsbase: VA,
+    gsbase: VA,
 }
 
 impl Emulator {
@@ -48,9 +63,11 @@ impl Emulator {
         decoder.enable_mode(zydis::DecoderMode::CLDEMOTE, false).unwrap();
 
         Emulator {
-            mem: Default::default(),
-            reg: Default::default(),
-            dis: decoder,
+            mem:    Default::default(),
+            reg:    Default::default(),
+            dis:    decoder,
+            fsbase: 0,
+            gsbase: 0,
         }
     }
 
@@ -94,6 +111,22 @@ impl Emulator {
         }
 
         emu
+    }
+
+    pub fn fsbase(&self) -> VA {
+        self.fsbase
+    }
+
+    pub fn set_fsbase(&mut self, value: VA) {
+        self.fsbase = value;
+    }
+
+    pub fn gsbase(&self) -> VA {
+        self.gsbase
+    }
+
+    pub fn set_gsbase(&mut self, value: VA) {
+        self.gsbase = value;
     }
 
     pub fn fetch(&mut self) -> Result<zydis::DecodedInstruction> {
@@ -308,36 +341,42 @@ impl Emulator {
     }
 
     fn get_segment_address(&self, reg: Register) -> VA {
-        use Register::*;
+        // see comments in `struct Emulator` about our handling of segmentation.
+        // basically, we're going to take shortcuts.
+        //
+        // only support fs and gs segments, with easy-to-use accessors/mutators.
 
-        let val = match reg {
-            ES => self.reg.es(),
-            CS => self.reg.cs(),
-            SS => self.reg.ss(),
-            DS => self.reg.ds(),
-            FS => self.reg.fs(),
-            GS => self.reg.gs(),
-            _ => panic!("invalid segment register"),
-        };
-
-        if val == 0 {
-            return 0;
+        use zydis::Register::*;
+        match reg {
+            FS => self.fsbase,
+            GS => self.gsbase,
+            // we don't support other segments right now.
+            // so assume they're 0.
+            _ => 0,
         }
-
-        unimplemented!("non-zero segment register");
     }
 
     fn get_operand_address(&self, op: &DecodedOperand) -> VA {
+        use zydis::Register::*;
         assert!(op.ty == zydis::OperandType::MEMORY);
 
         // http://www.c-jump.com/CIS77/ASM/Addressing/lecture.html
 
         let mut addr = 0;
 
+        if op.mem.base == NONE
+            && op.mem.index == NONE
+            && op.mem.scale == 0
+            && op.mem.disp.has_displacement
+            && op.mem.segment != NONE
+        {
+            //unimplemented!("read from segment");
+        }
+
         addr += self.get_segment_address(op.mem.segment);
 
-        if op.mem.base != zydis::Register::NONE {
-            if op.mem.base == zydis::Register::RIP {
+        if op.mem.base != NONE {
+            if op.mem.base == RIP {
                 // TODO: if RIP-relative, add insn length.
                 unimplemented!("rip-relative addressing");
             } else {
@@ -345,7 +384,7 @@ impl Emulator {
             }
         }
 
-        if op.mem.index != zydis::Register::NONE {
+        if op.mem.index != NONE {
             addr += self.read_register(op.mem.index) * (op.mem.scale as u64);
         }
 
@@ -743,8 +782,31 @@ mod tests {
     }
 
     #[test]
+    fn fs_gs() -> Result<()> {
+        // 32bit:
+        // 0:  64 a1 30 00 00 00       mov    eax,fs:0x30
+        let mut emu = emu_from_shellcode32(&b"\x64\xA1\x30\x00\x00\x00"[..]);
+        emu.mem.mmap(0x7000, 0x1000, Permissions::RW).unwrap();
+        emu.set_fsbase(0x7000);
+        emu.mem.write_u32(0x7030, 0x1122_3344)?;
+        emu.step()?;
+        assert_eq!(emu.reg.eax(), 0x1122_3344);
+
+        // 64bit:
+        // 0:  65 48 8b 04 25 60 00 00 00   mov    rax,QWORD PTR gs:0x60
+        let mut emu = emu_from_shellcode64(&b"\x65\x48\x8B\x04\x25\x60\x00\x00\x00"[..]);
+        emu.mem.mmap(0x7000, 0x1000, Permissions::RW).unwrap();
+        emu.set_gsbase(0x7000);
+        emu.mem.write_u64(0x7060, 0x1122_3344_5566_7788)?;
+        emu.step()?;
+        assert_eq!(emu.reg.rax(), 0x1122_3344_5566_7788);
+
+        Ok(())
+    }
+
+    #[test]
     fn nop() -> Result<()> {
-        //init_logging();
+        init_logging();
 
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
@@ -757,6 +819,9 @@ mod tests {
         emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
         emu.reg.rsp = 0x6000;
         emu.reg.rbp = 0x6000;
+
+        emu.mem.mmap(0x7000, 0x1000, Permissions::RW).unwrap();
+        emu.set_fsbase(0x7000);
 
         // .text:00401081 push    18h
         // .text:00401083 push    offset stru_406160
@@ -771,6 +836,8 @@ mod tests {
         // .text:004027A5 mov     eax, large fs:0
         // .text:004027AB push    eax
         assert_eq!(emu.reg.rip, 0x4027A0);
+        emu.step()?;
+
         emu.step()?;
 
         Ok(())

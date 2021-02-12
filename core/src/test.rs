@@ -84,3 +84,15 @@ pub fn emu_from_shellcode64(code: &[u8]) -> crate::emu::Emulator {
 
     emu
 }
+
+pub fn emu_from_shellcode32(code: &[u8]) -> crate::emu::Emulator {
+    let m = load_shellcode32(code);
+    let mut emu = crate::emu::Emulator::from_module(&m);
+    emu.reg.set_eip(m.address_space.base_address as u32); // 0x0
+
+    emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
+    emu.reg.set_esp(0x6000);
+    emu.reg.set_ebp(0x6000);
+
+    emu
+}
