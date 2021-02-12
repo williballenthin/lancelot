@@ -412,31 +412,53 @@ impl Emulator {
 
         debug!("emu: step: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
+            // TODO:
+            //  - push/pop
+            //  - sub/add
+            //  - cmp
+            //  - jz/jnz
+            //  - call
             MOV => {
                 //println!("{:#?}", insn);
 
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
 
-                let value = match src.ty {
-                    IMMEDIATE => src.imm.value,
-                    REGISTER => self.read_register(src.reg),
-                    // handle unmapped read
-                    MEMORY => self.read_memory(&src)?,
-                    _ => unimplemented!(),
-                };
+                let value = self.read_operand(src)?;
+                self.write_operand(dst, value)?;
 
-                match dst.ty {
-                    REGISTER => self.write_register(dst.reg, value),
-                    // handle unmapped write
-                    MEMORY => self.write_memory(&dst, value)?,
+                self.reg.rip += insn.length as u64;
+            }
+
+            PUSH => {
+                //println!("{:#?}", insn);
+
+                // EXPLICIT/READ/IMMEDIATE|REGISTER
+                let src = &insn.operands[0];
+
+                // HIDDEN/WRITE/REG/$SP
+                let sp_op = &insn.operands[1];
+                assert!(sp_op.ty == zydis::enums::OperandType::REGISTER);
+
+                // HIDDEN/WRITE/MEM
+                let dst = &insn.operands[2];
+                assert!(dst.ty == zydis::enums::OperandType::MEMORY);
+
+                let value = self.read_operand(src)?;
+                self.write_operand(&dst, value)?;
+
+                match sp_op.reg {
+                    RSP => self.reg.rsp -= 8,
+                    ESP => self.reg.rsp -= 4,
                     _ => unimplemented!(),
                 }
 
                 self.reg.rip += insn.length as u64;
             }
-            _ => {
-                self.reg.rip += insn.length as u64;
+
+            m => {
+                unimplemented!("mnemonic: {:?}", m);
+                //self.reg.rip += insn.length as u64;
             }
         }
 
@@ -620,6 +642,40 @@ mod tests {
 
         assert_eq!(emu.reg.rax, 1);
         assert_eq!(emu.reg.rbx, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn nop() -> Result<()> {
+        init_logging();
+
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let mut emu = Emulator::from_module(&pe.module);
+
+        let opt = pe.header.optional_header.unwrap();
+        let ep = opt.windows_fields.image_base + opt.standard_fields.address_of_entry_point;
+        emu.reg.rip = ep;
+
+        emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
+        emu.reg.rsp = 0x6000;
+        emu.reg.rbp = 0x6000;
+
+        // .text:00401081 push    18h
+        // .text:00401083 push    offset stru_406160
+        // .text:00401088 call    __SEH_prolog
+
+        assert_eq!(emu.reg.rip, 0x401081);
+        emu.step()?;
+
+        /*
+        assert_eq!(emu.reg.rip, 0x401083);
+        emu.step()?;
+
+        assert_eq!(emu.reg.rip, 0x401088);
+        emu.step()?;
+        */
 
         Ok(())
     }
