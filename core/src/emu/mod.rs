@@ -300,7 +300,7 @@ impl Emulator {
             BP => self.reg.set_bp(value as u16),
             BPL => self.reg.set_bpl(value as u8),
 
-            _ => unimplemented!(),
+            r => unimplemented!("register: {:?}", r),
         }
     }
 
@@ -321,73 +321,89 @@ impl Emulator {
             return 0;
         }
 
-        unimplemented!();
+        unimplemented!("non-zero segment register");
+    }
+
+    fn get_operand_address(&self, op: &DecodedOperand) -> Result<VA> {
+        assert!(op.ty == zydis::OperandType::MEMORY);
+
+        // http://www.c-jump.com/CIS77/ASM/Addressing/lecture.html
+
+        let mut addr = 0;
+
+        addr += self.get_segment_address(op.mem.segment);
+
+        if op.mem.base != zydis::Register::NONE {
+            if op.mem.base == zydis::Register::RIP {
+                // TODO: if RIP-relative, add insn length.
+                unimplemented!("rip-relative addressing");
+            } else {
+                addr += self.read_register(op.mem.base);
+            }
+        }
+
+        if op.mem.index != zydis::Register::NONE {
+            addr += self.read_register(op.mem.index) * (op.mem.scale as u64);
+        }
+
+        if op.mem.disp.has_displacement {
+            if op.mem.disp.displacement < 0 {
+                addr -= op.mem.disp.displacement as u64;
+            } else {
+                addr += op.mem.disp.displacement as u64;
+            }
+        }
+
+        Ok(addr)
     }
 
     fn read_memory(&self, src: &DecodedOperand) -> Result<u64> {
-        let addr = self.get_segment_address(src.mem.segment);
+        let addr = self.get_operand_address(src)?;
 
-        if src.mem.base == zydis::Register::NONE
-            && src.mem.index == zydis::Register::NONE
-            && src.mem.scale == 0
-            && src.mem.disp.has_displacement
-        {
-            // example: mov eax, DWORD ds:[0x8000]
-
-            if src.mem.disp.displacement < 0 {
-                // TODO: does this mean interpret as a u64?
-                panic!("negative absolute displacement")
-            }
-            let disp = src.mem.disp.displacement as u64;
-
-            // this should wrap if necessary. untested, though.
-            let addr = addr + disp;
-
-            match src.size {
-                64 => self.mem.read_u64(addr),
-                32 => self.mem.read_u32(addr).map(|v| v as u64),
-                16 => self.mem.read_u16(addr).map(|v| v as u64),
-                8 => self.mem.read_u8(addr).map(|v| v as u64),
-                _ => unimplemented!(),
-            }
-        } else {
-            unimplemented!();
+        match src.size {
+            64 => self.mem.read_u64(addr),
+            32 => self.mem.read_u32(addr).map(|v| v as u64),
+            16 => self.mem.read_u16(addr).map(|v| v as u64),
+            8 => self.mem.read_u8(addr).map(|v| v as u64),
+            s => unimplemented!("memory read size: {:?}", s),
         }
     }
 
     fn write_memory(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
-        let addr = self.get_segment_address(dst.mem.segment);
+        let addr = self.get_operand_address(dst)?;
 
-        if dst.mem.base == zydis::Register::NONE
-            && dst.mem.index == zydis::Register::NONE
-            && dst.mem.scale == 0
-            && dst.mem.disp.has_displacement
-        {
-            // example: mov eax, DWORD ds:[0x8000]
-
-            if dst.mem.disp.displacement < 0 {
-                // TODO: does this mean interpret as a u64?
-                panic!("negative absolute displacement")
-            }
-            let disp = dst.mem.disp.displacement as u64;
-
-            // this should wrap if necessary. untested, though.
-            let addr = addr + disp;
-
-            match dst.size {
-                64 => self.mem.write_u64(addr, value),
-                32 => self.mem.write_u32(addr, value as u32),
-                16 => self.mem.write_u16(addr, value as u16),
-                8 => self.mem.write_u8(addr, value as u8),
-                _ => unimplemented!(),
-            }
-        } else {
-            unimplemented!();
+        match dst.size {
+            64 => self.mem.write_u64(addr, value),
+            32 => self.mem.write_u32(addr, value as u32),
+            16 => self.mem.write_u16(addr, value as u16),
+            8 => self.mem.write_u8(addr, value as u8),
+            s => unimplemented!("memory write size: {:?}", s),
         }
     }
 
+    fn read_operand(&mut self, src: &DecodedOperand) -> Result<u64> {
+        use zydis::enums::OperandType::*;
+        Ok(match src.ty {
+            IMMEDIATE => src.imm.value,
+            REGISTER => self.read_register(src.reg),
+            // handle unmapped read
+            MEMORY => self.read_memory(&src)?,
+            t => unimplemented!("read operand type: {:?}", t),
+        })
+    }
+
+    fn write_operand(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
+        use zydis::enums::OperandType::*;
+        Ok(match dst.ty {
+            REGISTER => self.write_register(dst.reg, value),
+            // handle unmapped write
+            MEMORY => self.write_memory(&dst, value)?,
+            t => unimplemented!("write operand type: {:?}", t),
+        })
+    }
+
     pub fn step(&mut self) -> Result<()> {
-        use zydis::enums::{Mnemonic::*, OperandType::*};
+        use zydis::enums::{Mnemonic::*, Register::*};
 
         debug!("emu: step: {:#x}", self.reg.rip);
         let insn = self.fetch()?;
@@ -430,7 +446,7 @@ impl Emulator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{arch::Arch, emu::*, test::*};
+    use crate::{arch::Arch, emu::*, rsrc::*, test::*};
 
     use anyhow::Result;
 
