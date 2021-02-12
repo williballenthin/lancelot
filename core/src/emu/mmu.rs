@@ -316,7 +316,7 @@ impl MMU {
                 // paranoia
                 assert!(pfn == INVALID_PFN);
 
-                for b in &mut buf[..] {
+                for b in buf {
                     *b = 0;
                 }
 

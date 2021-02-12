@@ -324,7 +324,7 @@ impl Emulator {
         unimplemented!("non-zero segment register");
     }
 
-    fn get_operand_address(&self, op: &DecodedOperand) -> Result<VA> {
+    fn get_operand_address(&self, op: &DecodedOperand) -> VA {
         assert!(op.ty == zydis::OperandType::MEMORY);
 
         // http://www.c-jump.com/CIS77/ASM/Addressing/lecture.html
@@ -354,11 +354,11 @@ impl Emulator {
             }
         }
 
-        Ok(addr)
+        addr
     }
 
     fn read_memory(&self, src: &DecodedOperand) -> Result<u64> {
-        let addr = self.get_operand_address(src)?;
+        let addr = self.get_operand_address(src);
 
         match src.size {
             64 => self.mem.read_u64(addr),
@@ -370,7 +370,7 @@ impl Emulator {
     }
 
     fn write_memory(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
-        let addr = self.get_operand_address(dst)?;
+        let addr = self.get_operand_address(dst);
 
         match dst.size {
             64 => self.mem.write_u64(addr, value),
@@ -394,12 +394,15 @@ impl Emulator {
 
     fn write_operand(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
         use zydis::enums::OperandType::*;
-        Ok(match dst.ty {
+
+        match dst.ty {
             REGISTER => self.write_register(dst.reg, value),
             // handle unmapped write
             MEMORY => self.write_memory(&dst, value)?,
             t => unimplemented!("write operand type: {:?}", t),
-        })
+        }
+
+        Ok(())
     }
 
     pub fn step(&mut self) -> Result<()> {

@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
