@@ -364,15 +364,6 @@ impl Emulator {
 
         let mut addr = 0;
 
-        if op.mem.base == NONE
-            && op.mem.index == NONE
-            && op.mem.scale == 0
-            && op.mem.disp.has_displacement
-            && op.mem.segment != NONE
-        {
-            //unimplemented!("read from segment");
-        }
-
         addr += self.get_segment_address(op.mem.segment);
 
         if op.mem.base != NONE {
@@ -475,6 +466,18 @@ impl Emulator {
                 let src = &insn.operands[1];
 
                 let value = self.read_operand(&insn, src)?;
+                self.write_operand(dst, value)?;
+
+                self.reg.rip += insn.length as u64;
+            }
+
+            LEA => {
+                //println!("{:#?}", insn);
+
+                let dst = &insn.operands[0];
+                let src = &insn.operands[1];
+
+                let value = self.get_operand_address(src);
                 self.write_operand(dst, value)?;
 
                 self.reg.rip += insn.length as u64;
@@ -732,6 +735,17 @@ mod tests {
     }
 
     #[test]
+    fn insn_lea() -> Result<()> {
+        // 0:  48 8d 58 04             lea    rbx,[rax+0x4]
+        let mut emu = emu_from_shellcode64(&b"\x48\x8D\x58\x04"[..]);
+        emu.reg.rax = 0x80;
+        emu.step()?;
+        assert_eq!(emu.reg.rbx, 0x84);
+
+        Ok(())
+    }
+
+    #[test]
     fn insn_push_pop() -> Result<()> {
         // 0:  6a 01                   push   0x1
         let mut emu = emu_from_shellcode64(&b"\x6A\x01"[..]);
@@ -806,7 +820,7 @@ mod tests {
 
     #[test]
     fn nop() -> Result<()> {
-        init_logging();
+        //init_logging();
 
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
@@ -827,18 +841,26 @@ mod tests {
         // .text:00401083 push    offset stru_406160
         // .text:00401088 call    __SEH_prolog
         assert_eq!(emu.reg.rip, 0x401081);
-        emu.step()?;
-        emu.step()?;
-        emu.step()?;
+        emu.step()?; // push
+        emu.step()?; // push
+        emu.step()?; // call
 
         // .text:004027A0 __SEH_prolog proc near
         // .text:004027A0 push    offset __except_handler3
         // .text:004027A5 mov     eax, large fs:0
         // .text:004027AB push    eax
+        // .text:004027AC mov     eax, [esp+8+arg_4]
+        // .text:004027B0 mov     [esp+8+arg_4], ebp
+        // .text:004027B4 lea     ebp, [esp+8+arg_4]
+        // .text:004027B8 sub     esp, eax
         assert_eq!(emu.reg.rip, 0x4027A0);
-        emu.step()?;
-
-        emu.step()?;
+        emu.step()?; // push
+        emu.step()?; // mov
+        emu.step()?; // push
+        emu.step()?; // mov
+        emu.step()?; // mov
+        emu.step()?; // lea
+        emu.step()?; // sub
 
         Ok(())
     }
