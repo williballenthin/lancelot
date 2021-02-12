@@ -190,7 +190,22 @@ impl Emulator {
             SI => self.reg.si() as u64,
             SIL => self.reg.sil() as u64,
 
-            _ => unimplemented!(),
+            RDI => self.reg.rdi(),
+            EDI => self.reg.edi() as u64,
+            DI => self.reg.di() as u64,
+            DIL => self.reg.dil() as u64,
+
+            RSP => self.reg.rsp(),
+            ESP => self.reg.esp() as u64,
+            SP => self.reg.sp() as u64,
+            SPL => self.reg.spl() as u64,
+
+            RBP => self.reg.rbp(),
+            EBP => self.reg.ebp() as u64,
+            BP => self.reg.bp() as u64,
+            BPL => self.reg.bpl() as u64,
+
+            r => unimplemented!("register: {:?}", r),
         }
     }
 
