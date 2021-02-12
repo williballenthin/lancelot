@@ -51,8 +51,10 @@ __pycache__
 
 
 *.pat
-*.sigCargo.lock
-resources/evaluation/SoK/SoK-windows-testsuite
+*.sig
 Cargo.lock
+resources/evaluation/SoK/analyze-sok.ipynb
+resources/evaluation/SoK/SoK-windows-testsuite
 resources/evaluation/SoK/.ipynb_checkpoints
+resources/evaluation/SoK/binaries.txt
 .vscode
