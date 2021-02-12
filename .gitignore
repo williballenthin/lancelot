@@ -55,3 +55,4 @@ __pycache__
 resources/evaluation/SoK/SoK-windows-testsuite
 Cargo.lock
 resources/evaluation/SoK/.ipynb_checkpoints
+.vscode
