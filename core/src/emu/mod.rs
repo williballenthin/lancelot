@@ -3,7 +3,7 @@ use std::unimplemented;
 use anyhow::Result;
 use log::debug;
 use thiserror::Error;
-use zydis::{enums::Register, DecodedOperand};
+use zydis::{enums::Register, DecodedInstruction, DecodedOperand};
 
 use crate::{
     arch::Arch,
@@ -384,10 +384,16 @@ impl Emulator {
         }
     }
 
-    fn read_operand(&mut self, src: &DecodedOperand) -> Result<u64> {
+    fn read_operand(&mut self, insn: &DecodedInstruction, src: &DecodedOperand) -> Result<u64> {
         use zydis::enums::OperandType::*;
         Ok(match src.ty {
-            IMMEDIATE => src.imm.value,
+            IMMEDIATE => {
+                if src.imm.is_relative {
+                    self.reg.rip + insn.length as u64 + src.imm.value
+                } else {
+                    src.imm.value
+                }
+            }
             REGISTER => self.read_register(src.reg),
             // handle unmapped read
             MEMORY => self.read_memory(&src)?,
@@ -419,17 +425,17 @@ impl Emulator {
         debug!("emu: step: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
             // TODO:
+            //  - call
             //  - sub/add
             //  - cmp
             //  - jz/jnz
-            //  - call
             MOV => {
                 //println!("{:#?}", insn);
 
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
 
-                let value = self.read_operand(src)?;
+                let value = self.read_operand(&insn, src)?;
                 self.write_operand(dst, value)?;
 
                 self.reg.rip += insn.length as u64;
@@ -453,7 +459,7 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                let value = self.read_operand(src)?;
+                let value = self.read_operand(&insn, src)?;
                 self.write_operand(&dst, value)?;
 
                 self.reg.rip += insn.length as u64;
@@ -471,7 +477,7 @@ impl Emulator {
                 let src = &insn.operands[2];
                 assert!(src.ty == zydis::enums::OperandType::MEMORY);
 
-                let value = self.read_operand(src)?;
+                let value = self.read_operand(&insn, src)?;
                 self.write_operand(&dst, value)?;
 
                 match sp_op.reg {
