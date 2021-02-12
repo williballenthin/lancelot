@@ -300,6 +300,9 @@ impl Emulator {
             BP => self.reg.set_bp(value as u16),
             BPL => self.reg.set_bpl(value as u8),
 
+            RIP => self.reg.set_rip(value),
+            EIP => self.reg.set_eip(value as u32),
+
             r => unimplemented!("register: {:?}", r),
         }
     }

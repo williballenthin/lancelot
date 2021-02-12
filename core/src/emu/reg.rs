@@ -138,6 +138,9 @@ impl Registers {
 
     reg!(rbp, rbp, ebp, bp, bpl, set_rbp, set_ebp, set_bp, set_bpl);
 
+    // register IPL is made up, please don't use.
+    reg!(rip, rip, eip, ip, _ipl_fake, set_rip, set_eip, set_ip, _set_ipl);
+
     pub fn es(&self) -> u16 {
         self.es
     }
