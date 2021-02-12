@@ -489,6 +489,30 @@ impl Emulator {
                 self.reg.rip += insn.length as u64;
             }
 
+            CALL => {
+                // EXPLICIT/READ/MEMORY|REGISTER call target
+                let target_op = &insn.operands[0];
+                // HIDDEN/READ-WRITE/REGISTER/PC program counter
+                let pc_op = &insn.operands[1];
+                assert!(pc_op.ty == zydis::enums::OperandType::REGISTER);
+                // HIDDEN/READ-WRITE/REGISTER/SP stack pointer
+                let sp_op = &insn.operands[2];
+                assert!(sp_op.ty == zydis::enums::OperandType::REGISTER);
+                // HIDDEN/READ-WRITE/MEMORY/SP stack contents
+                let _ = &insn.operands[3];
+
+                match sp_op.reg {
+                    RSP => self.reg.rsp -= 8,
+                    ESP => self.reg.rsp -= 4,
+                    _ => unimplemented!(),
+                }
+
+                let return_address = self.reg.rip + insn.length as u64;
+                self.write_operand(sp_op, return_address)?;
+
+                let target = self.read_operand(&insn, target_op)?;
+                self.write_operand(pc_op, target)?;
+            }
             m => {
                 unimplemented!("mnemonic: {:?}", m);
                 //self.reg.rip += insn.length as u64;
@@ -685,6 +709,39 @@ mod tests {
     }
 
     #[test]
+    fn insn_call() -> Result<()> {
+        // 0:  e8 00 00 00 00          call   $+5
+        let mut emu = emu_from_shellcode64(&b"\xE8\x00\x00\x00\x00"[..]);
+        emu.step()?;
+        assert_eq!(emu.reg.rip, 0x5);
+
+        // 0:  ff d0                   call   rax
+        let mut emu = emu_from_shellcode64(&b"\xFF\xD0"[..]);
+        emu.reg.rax = 0x80;
+        emu.step()?;
+        assert_eq!(emu.reg.rip, 0x80);
+
+        // 0x00:  ff 14 25 40 00 00 00    call   QWORD PTR ds:0x40
+        // 0x40:  0x0000000000000080
+        let mut emu = emu_from_shellcode64(&b"\xFF\x14\x25\x40\x00\x00\x00"[..]);
+        emu.mem.write_u64(0x40, 0x80)?;
+        emu.step()?;
+        assert_eq!(emu.reg.rip, 0x80);
+
+        // 0x00:  ff 50 08                call   QWORD PTR [rax+0x8]
+        // 0x40:  0x0000000000000070
+        // 0x48:  0x0000000000000080
+        let mut emu = emu_from_shellcode64(&b"\xFF\x50\x08"[..]);
+        emu.reg.rax = 0x40;
+        emu.mem.write_u64(0x40, 0x70)?;
+        emu.mem.write_u64(0x48, 0x80)?;
+        emu.step()?;
+        assert_eq!(emu.reg.rip, 0x80);
+
+        Ok(())
+    }
+
+    #[test]
     fn nop() -> Result<()> {
         //init_logging();
 
@@ -710,10 +767,10 @@ mod tests {
         assert_eq!(emu.reg.rip, 0x401083);
         emu.step()?;
 
-        /*
         assert_eq!(emu.reg.rip, 0x401088);
         emu.step()?;
-        */
+
+        assert_eq!(emu.reg.rip, 0x4027A0);
 
         Ok(())
     }
