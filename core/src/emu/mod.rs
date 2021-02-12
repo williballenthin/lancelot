@@ -422,7 +422,7 @@ impl Emulator {
         // TODO: handle invalid fetch
         // TODO: handle invalid instruction
 
-        debug!("emu: step: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
+        debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
             // TODO:
             //  - call
@@ -491,27 +491,28 @@ impl Emulator {
 
             CALL => {
                 // EXPLICIT/READ/MEMORY|REGISTER call target
-                let target_op = &insn.operands[0];
+                let target = &insn.operands[0];
                 // HIDDEN/READ-WRITE/REGISTER/PC program counter
-                let pc_op = &insn.operands[1];
-                assert!(pc_op.ty == zydis::enums::OperandType::REGISTER);
+                let pc = &insn.operands[1];
+                assert!(pc.ty == zydis::enums::OperandType::REGISTER);
                 // HIDDEN/READ-WRITE/REGISTER/SP stack pointer
-                let sp_op = &insn.operands[2];
-                assert!(sp_op.ty == zydis::enums::OperandType::REGISTER);
+                let sp = &insn.operands[2];
+                assert!(sp.ty == zydis::enums::OperandType::REGISTER);
                 // HIDDEN/READ-WRITE/MEMORY/SP stack contents
-                let _ = &insn.operands[3];
+                let stack = &insn.operands[3];
+                assert!(stack.ty == zydis::enums::OperandType::MEMORY);
 
-                match sp_op.reg {
+                match sp.reg {
                     RSP => self.reg.rsp -= 8,
                     ESP => self.reg.rsp -= 4,
                     _ => unimplemented!(),
                 }
 
                 let return_address = self.reg.rip + insn.length as u64;
-                self.write_operand(sp_op, return_address)?;
+                self.write_operand(stack, return_address)?;
 
-                let target = self.read_operand(&insn, target_op)?;
-                self.write_operand(pc_op, target)?;
+                let target_addr = self.read_operand(&insn, target)?;
+                self.write_operand(pc, target_addr)?;
             }
             m => {
                 unimplemented!("mnemonic: {:?}", m);
@@ -760,17 +761,17 @@ mod tests {
         // .text:00401081 push    18h
         // .text:00401083 push    offset stru_406160
         // .text:00401088 call    __SEH_prolog
-
         assert_eq!(emu.reg.rip, 0x401081);
         emu.step()?;
-
-        assert_eq!(emu.reg.rip, 0x401083);
+        emu.step()?;
         emu.step()?;
 
-        assert_eq!(emu.reg.rip, 0x401088);
-        emu.step()?;
-
+        // .text:004027A0 __SEH_prolog proc near
+        // .text:004027A0 push    offset __except_handler3
+        // .text:004027A5 mov     eax, large fs:0
+        // .text:004027AB push    eax
         assert_eq!(emu.reg.rip, 0x4027A0);
+        emu.step()?;
 
         Ok(())
     }
