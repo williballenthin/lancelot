@@ -164,6 +164,9 @@ impl Registers {
     pub fn gs(&self) -> u16 {
         self.gs
     }
+
+    // flags
+    // https://www.cs.utexas.edu/~byoung/cs429/condition-codes.pdf
 }
 
 #[derive(Default, Clone)]

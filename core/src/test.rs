@@ -96,3 +96,118 @@ pub fn emu_from_shellcode32(code: &[u8]) -> crate::emu::Emulator {
 
     emu
 }
+
+#[cfg(test)]
+pub mod uc {
+    use unicorn::Cpu;
+
+    use super::load_shellcode64;
+    use crate::{
+        aspace::AddressSpace,
+        emu::mmu::PAGE_SIZE,
+        module::{Module, Permissions},
+    };
+
+    pub struct Uc {
+        emu: unicorn::CpuX86,
+    }
+
+    impl Uc {
+        pub fn from_module(m: &Module) -> Uc {
+            let emu = match m.arch {
+                crate::arch::Arch::X32 => unicorn::CpuX86::new(unicorn::Mode::MODE_32).unwrap(),
+                crate::arch::Arch::X64 => unicorn::CpuX86::new(unicorn::Mode::MODE_64).unwrap(),
+            };
+
+            for section in m.sections.iter() {
+                let mut page_addr = section.virtual_range.start;
+
+                let section_size = section.virtual_range.end - section.virtual_range.start;
+                emu.mem_map(
+                    section.virtual_range.start,
+                    crate::util::align(section_size, PAGE_SIZE as u64) as usize,
+                    unicorn::PROT_WRITE,
+                )
+                .unwrap();
+
+                while page_addr < section.virtual_range.end {
+                    let mut page = [0u8; PAGE_SIZE];
+
+                    // AddressSpace currently allows non-page-aligned sizes.
+                    let page_data = if page_addr + PAGE_SIZE as u64 > section.virtual_range.end {
+                        &mut page[..(section.virtual_range.end - page_addr) as usize]
+                    } else {
+                        &mut page[..]
+                    };
+
+                    m.address_space.read_into(page_addr, page_data).unwrap();
+                    emu.mem_write(page_addr, &page[..]).unwrap();
+                    page_addr += PAGE_SIZE as u64;
+                }
+
+                let mut prot = unicorn::PROT_NONE;
+                if section.permissions.intersects(Permissions::W) {
+                    prot.insert(unicorn::PROT_WRITE);
+                }
+                if section.permissions.intersects(Permissions::R) {
+                    prot.insert(unicorn::PROT_READ);
+                }
+                if section.permissions.intersects(Permissions::X) {
+                    prot.insert(unicorn::PROT_EXEC);
+                }
+
+                emu.mem_protect(
+                    section.virtual_range.start,
+                    crate::util::align(section_size, PAGE_SIZE as u64) as usize,
+                    prot,
+                )
+                .unwrap();
+            }
+
+            Uc { emu }
+        }
+
+        pub fn step(&mut self) -> Result<(), unicorn::Error> {
+            let rip = self.emu.reg_read(unicorn::RegisterX86::RIP).unwrap();
+            self.emu.emu_start(rip, u64::MAX, 0, 1)
+        }
+
+        /// panics if the given emulator does have the same state as this.
+        pub fn check(&self, other: &crate::emu::Emulator) {
+            use unicorn::RegisterX86::*;
+
+            assert_eq!(self.emu.reg_read(RIP).unwrap(), other.reg.rip(), "register: rip",);
+
+            assert_eq!(self.emu.reg_read(RSP).unwrap(), other.reg.rsp(), "register: rsp",);
+
+            assert_eq!(self.emu.reg_read(RBP).unwrap(), other.reg.rbp(), "register: rbp",);
+
+            assert_eq!(self.emu.reg_read(RAX).unwrap(), other.reg.rax(), "register: rax",);
+
+            assert_eq!(self.emu.reg_read(RBX).unwrap(), other.reg.rbx(), "register: rbx",);
+
+            assert_eq!(self.emu.reg_read(RCX).unwrap(), other.reg.rcx(), "register: rcx",);
+
+            assert_eq!(self.emu.reg_read(RDX).unwrap(), other.reg.rdx(), "register: rdx",);
+
+            assert_eq!(self.emu.reg_read(RSI).unwrap(), other.reg.rsi(), "register: rsi",);
+
+            assert_eq!(self.emu.reg_read(RDI).unwrap(), other.reg.rdi(), "register: rdi",);
+        }
+    }
+
+    pub fn uc_from_shellcode64(code: &[u8]) -> Uc {
+        let m = load_shellcode64(code);
+        let mut uc = Uc::from_module(&m);
+
+        uc.emu
+            .reg_write(unicorn::RegisterX86::RIP, m.address_space.base_address)
+            .unwrap(); // 0x0
+
+        uc.emu.mem_map(0x5000, 0x2000, unicorn::PROT_ALL).unwrap();
+        uc.emu.reg_write(unicorn::RegisterX86::RSP, 0x6000).unwrap();
+        uc.emu.reg_write(unicorn::RegisterX86::RBP, 0x6000).unwrap();
+
+        uc
+    }
+}

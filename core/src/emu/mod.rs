@@ -455,7 +455,6 @@ impl Emulator {
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
             // TODO:
-            //  - call
             //  - sub/add
             //  - cmp
             //  - jz/jnz
@@ -472,8 +471,6 @@ impl Emulator {
             }
 
             LEA => {
-                //println!("{:#?}", insn);
-
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
 
@@ -495,13 +492,19 @@ impl Emulator {
                 let dst = &insn.operands[2];
                 assert!(dst.ty == zydis::enums::OperandType::MEMORY);
 
+                // > "The PUSH ESP instruction pushes the value of
+                // > the ESP register as it existed before the
+                // > instruction was executed."
+                //
+                // https://c9x.me/x86/html/file_module_x86_id_269.html
+                let value = self.read_operand(&insn, src)?;
+
                 match sp_op.reg {
                     RSP => self.reg.rsp -= 8,
                     ESP => self.reg.rsp -= 4,
                     _ => unimplemented!(),
                 }
 
-                let value = self.read_operand(&insn, src)?;
                 self.write_operand(&dst, value)?;
 
                 self.reg.rip += insn.length as u64;
@@ -520,13 +523,19 @@ impl Emulator {
                 assert!(src.ty == zydis::enums::OperandType::MEMORY);
 
                 let value = self.read_operand(&insn, src)?;
-                self.write_operand(&dst, value)?;
 
+                // > "The POP ESP instruction increments the
+                // > stack pointer (ESP) before data at the
+                // > old top of stack is written into the destination."
+                //
+                // https://c9x.me/x86/html/file_module_x86_id_248.html
                 match sp_op.reg {
                     RSP => self.reg.rsp += 8,
                     ESP => self.reg.rsp += 4,
                     _ => unimplemented!(),
                 }
+
+                self.write_operand(&dst, value)?;
 
                 self.reg.rip += insn.length as u64;
             }
@@ -556,6 +565,60 @@ impl Emulator {
                 let target_addr = self.read_operand(&insn, target)?;
                 self.write_operand(pc, target_addr)?;
             }
+
+            SUB => {
+                println!("{:#?}", insn);
+                unimplemented!("sub");
+                /*
+                // EXPLICIT/READ|WRITE
+                let dst = &insn.operands[0];
+                // EXPLICIT/READ
+                let src = &insn.operands[1];
+                // EXPLICIT/WRITE/RFLAGS
+                let flags = &insn.operands[2];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                let m = self.read_operand(&insn, dst)?;
+                let n = self.read_operand(&insn, src)?;
+
+                // http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
+                // cf - result of an arithmetic operation on unsigned numbers is out of range.
+                // of - out-of-range result on signed numbers.
+                // sf - sign of the result. Simply a copy of the most significant bit of the result.
+                // af - operation produced a carry or borrow in the low-order 4 bits (nibble) of 8-, 16-, or 32-bit operands.
+                //      No conditional jump instructions with this flag.
+                // pf - Indicates even parity of the low 8 bits of the result.
+                //      PF is set if the lower 8 bits contain even number 1 bits.
+                let (o, sf) = match dst.size {
+                    64 => {
+                        let o = m.wrapping_sub(n);
+                        let sf = (o & (1 << 31)) > 0;
+                        (o, sf)
+                    },
+                    32 => {
+                        // TODO: need to do sign extension, e.g. if n is u16
+                        let o = (m as u32).wrapping_sub(n as u32) as u64;
+                        let sf = (o & (1 << 31)) > 0;
+                        (o, sf)
+                    },
+                    16 => {
+                        let o = (m as u16).wrapping_sub(n as u16) as u64;
+                        let sf = (o & (1 << 15)) > 0;
+                        (o, sf)
+                    },
+                    8 => {
+                        let o = (m as u8).wrapping_sub(n as u8) as u64;
+                        let sf = (o & (1 << 7)) > 0;
+                        (o, sf)
+                    },
+                    s => unimplemented!("sub size {:}", s),
+                };
+
+                let of = n > m;
+                let zf = o == 0;
+                */
+            }
+
             m => {
                 unimplemented!("mnemonic: {:?}", m);
                 //self.reg.rip += insn.length as u64;
@@ -717,6 +780,69 @@ mod tests {
     }
 
     #[test]
+    fn uc_check() {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        let mut uc = uc::uc_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+        uc.step().unwrap();
+
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+        emu.step().unwrap();
+
+        uc.check(&emu);
+    }
+
+    #[test]
+    fn uc_check_failure() {
+        // would want to use `#[should_panic]`
+        // however it still prints the panic stack trace
+        // which makes it look like the test failed.
+        // so we'll catch the panic ourselves.
+
+        // hide the panic stack trace
+        // ref: https://stackoverflow.com/a/35559417/87207
+        std::panic::set_hook(Box::new(|_info| {
+            // do nothing
+        }));
+
+        // catch expected panic
+        // ref: https://stackoverflow.com/a/42649833/87207
+        assert!(
+            std::panic::catch_unwind(|| {
+                // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+                let mut uc = uc::uc_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+                uc.step().unwrap();
+
+                // 0:  48 c7 c0 01 00 00 00    mov    rax,0x2
+                let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x02\x00\x00\x00"[..]);
+                emu.step().unwrap();
+
+                // 1 vs 2 -> failure
+                uc.check(&emu);
+            })
+            .is_err(),
+            "should have failed the uc.check"
+        );
+    }
+
+    fn emu_check(code: &[u8], steps: u32) {
+        let mut uc = uc::uc_from_shellcode64(code);
+        let mut emu = emu_from_shellcode64(code);
+
+        for _ in 0..steps {
+            uc.step().unwrap();
+            emu.step().unwrap();
+            uc.check(&emu)
+        }
+    }
+
+    #[test]
+    fn test_uc_check() {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..], 1);
+    }
+
+    #[test]
     fn insn_mov() -> Result<()> {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
@@ -741,6 +867,34 @@ mod tests {
         emu.reg.rax = 0x80;
         emu.step()?;
         assert_eq!(emu.reg.rbx, 0x84);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insn_sub() -> Result<()> {
+        /*
+        // 0:  48 83 e8 01             sub    rax,0x1
+        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
+        emu.reg.rax = 0x1;
+        emu.step()?;
+        assert_eq!(emu.reg.rax, 0x0);
+        assert!(emu.reg.zf());
+
+        // 0:  48 83 e8 01             sub    rax,0x1
+        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
+        emu.reg.rax = 0x2;
+        emu.step()?;
+        assert_eq!(emu.reg.rax, 0x1);
+        assert!(!emu.reg.zf());
+
+        // 0:  48 83 e8 01             sub    rax,0x1
+        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
+        emu.reg.rax = 0x0;
+        emu.step()?;
+        assert_eq!(emu.reg.rax, 0xFFFF_FFFF_FFFF_FFFF);
+        assert!(!emu.reg.zf());
+        */
 
         Ok(())
     }
@@ -860,7 +1014,7 @@ mod tests {
         emu.step()?; // mov
         emu.step()?; // mov
         emu.step()?; // lea
-        emu.step()?; // sub
+                     //emu.step()?; // sub
 
         Ok(())
     }

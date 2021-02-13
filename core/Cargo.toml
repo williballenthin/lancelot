@@ -30,6 +30,7 @@ lancelot-flirt = { path = "../flirt", version = "0.4.5" }
 
 [dev-dependencies]
 criterion = "0.3"
+unicorn = "0.8.0"
 
 [[bench]]
 name = "emu"
