@@ -1,3 +1,5 @@
+#![allow(clippy::upper_case_acronyms)]
+
 use anyhow::Result;
 use log::{debug, error, info};
 #[macro_use]
