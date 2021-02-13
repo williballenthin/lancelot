@@ -41,6 +41,15 @@ const FLAG_SF: u8 = 7;
 const FLAG_DF: u8 = 10;
 const FLAG_OF: u8 = 11;
 
+pub const STATUS_MASK: u64 = 0
+    | (1 << FLAG_CF)
+    | (1 << FLAG_PF)
+    | (1 << FLAG_AF)
+    | (1 << FLAG_ZF)
+    | (1 << FLAG_SF)
+    | (1 << FLAG_DF)
+    | (1 << FLAG_OF);
+
 macro_rules! flag {
     ($index:ident, $get:ident, $set:ident) => {
         #[inline]

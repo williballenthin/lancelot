@@ -104,7 +104,7 @@ pub mod uc {
     use super::load_shellcode64;
     use crate::{
         aspace::AddressSpace,
-        emu::mmu::PAGE_SIZE,
+        emu::{mmu::PAGE_SIZE, reg::STATUS_MASK},
         module::{Module, Permissions},
     };
 
@@ -193,6 +193,12 @@ pub mod uc {
             assert_eq!(self.emu.reg_read(RSI).unwrap(), other.reg.rsi(), "register: rsi",);
 
             assert_eq!(self.emu.reg_read(RDI).unwrap(), other.reg.rdi(), "register: rdi",);
+
+            assert_eq!(
+                self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
+                other.reg.rflags() & STATUS_MASK,
+                "flags"
+            );
         }
     }
 
