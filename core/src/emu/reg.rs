@@ -33,6 +33,32 @@ pub struct Registers {
     pub avx:    Option<Box<AVX>>,
 }
 
+const FLAG_CF: u8 = 0;
+const FLAG_PF: u8 = 2;
+const FLAG_AF: u8 = 4;
+const FLAG_ZF: u8 = 6;
+const FLAG_SF: u8 = 7;
+const FLAG_DF: u8 = 10;
+const FLAG_OF: u8 = 11;
+
+macro_rules! flag {
+    ($index:ident, $get:ident, $set:ident) => {
+        #[inline]
+        pub fn $get(&self) -> bool {
+            (self.rflags & (1 << $index)) > 0
+        }
+
+        #[inline]
+        pub fn $set(&mut self, is_set: bool) {
+            if is_set {
+                self.rflags |= 1 << $index;
+            } else {
+                self.rflags &= !(1 << $index);
+            }
+        }
+    };
+}
+
 macro_rules! reg {
     ($reg:ident, $get_64:ident, $get_32:ident, $get_16:ident, $get_8l:ident, $set_64:ident, $set_32:ident, $set_16:ident, $set_8l:ident) => {
         #[inline]
@@ -141,6 +167,20 @@ impl Registers {
     // register IPL is made up, please don't use.
     reg!(rip, rip, eip, ip, _ipl_fake, set_rip, set_eip, set_ip, _set_ipl);
 
+    flag!(FLAG_CF, cf, set_cf);
+
+    flag!(FLAG_PF, pf, set_pf);
+
+    flag!(FLAG_AF, af, set_af);
+
+    flag!(FLAG_ZF, zf, set_zf);
+
+    flag!(FLAG_SF, sf, set_sf);
+
+    flag!(FLAG_DF, df, set_df);
+
+    flag!(FLAG_OF, of, set_of);
+
     pub fn es(&self) -> u16 {
         self.es
     }
@@ -167,6 +207,11 @@ impl Registers {
 
     // flags
     // https://www.cs.utexas.edu/~byoung/cs429/condition-codes.pdf
+
+    #[inline]
+    pub fn rflags(&self) -> u64 {
+        self.rflags
+    }
 }
 
 #[derive(Default, Clone)]
