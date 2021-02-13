@@ -30,6 +30,12 @@ lancelot-flirt = { path = "../flirt", version = "0.4.5" }
 
 [dev-dependencies]
 criterion = "0.3"
+# while there is a newer unicorn-rs release (0.9.1)
+# it doesn't build the underlying `unicorn` library transparently.
+# so we use 0.8 that will do it for us.
+#
+# the upstream unicorn/next branch maintains rust bindings,
+# but they're not published yet.
 unicorn = "0.8.0"
 
 [[bench]]
