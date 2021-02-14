@@ -567,9 +567,6 @@ impl Emulator {
             }
 
             SUB => {
-                println!("{:#?}", insn);
-                unimplemented!("sub");
-                /*
                 // EXPLICIT/READ|WRITE
                 let dst = &insn.operands[0];
                 // EXPLICIT/READ
@@ -581,42 +578,93 @@ impl Emulator {
                 let m = self.read_operand(&insn, dst)?;
                 let n = self.read_operand(&insn, src)?;
 
-                // http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
-                // cf - result of an arithmetic operation on unsigned numbers is out of range.
-                // of - out-of-range result on signed numbers.
-                // sf - sign of the result. Simply a copy of the most significant bit of the result.
-                // af - operation produced a carry or borrow in the low-order 4 bits (nibble) of 8-, 16-, or 32-bit operands.
-                //      No conditional jump instructions with this flag.
-                // pf - Indicates even parity of the low 8 bits of the result.
-                //      PF is set if the lower 8 bits contain even number 1 bits.
-                let (o, sf) = match dst.size {
+                let (result, msb_index) = match dst.size {
                     64 => {
-                        let o = m.wrapping_sub(n);
-                        let sf = (o & (1 << 31)) > 0;
-                        (o, sf)
-                    },
+                        let result = m.wrapping_sub(n);
+                        (result, 63)
+                    }
                     32 => {
                         // TODO: need to do sign extension, e.g. if n is u16
-                        let o = (m as u32).wrapping_sub(n as u32) as u64;
-                        let sf = (o & (1 << 31)) > 0;
-                        (o, sf)
-                    },
+                        let result = (m as u32).wrapping_sub(n as u32) as u64;
+                        (result, 31)
+                    }
                     16 => {
-                        let o = (m as u16).wrapping_sub(n as u16) as u64;
-                        let sf = (o & (1 << 15)) > 0;
-                        (o, sf)
-                    },
+                        let result = (m as u16).wrapping_sub(n as u16) as u64;
+                        (result, 15)
+                    }
                     8 => {
-                        let o = (m as u8).wrapping_sub(n as u8) as u64;
-                        let sf = (o & (1 << 7)) > 0;
-                        (o, sf)
-                    },
+                        let result = (m as u8).wrapping_sub(n as u8) as u64;
+                        (result, 7)
+                    }
                     s => unimplemented!("sub size {:}", s),
                 };
 
-                let of = n > m;
-                let zf = o == 0;
-                */
+                // cf - result of an arithmetic operation on unsigned numbers is out of range.
+                // of - out-of-range result on signed numbers.
+                // sf - sign of the result. Simply a copy of the most significant bit of the
+                // result. af - operation produced a carry or borrow in the
+                // low-order 4 bits (nibble) of 8-, 16-, or 32-bit operands.
+                //      No conditional jump instructions with this flag.
+                // pf - Indicates even parity of the low 8 bits of the result.
+                //      PF is set if the lower 8 bits contain even number 1 bits.
+                // zf - result is zero.
+                // http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
+
+                let cf = n > m;
+                let zf = result == 0;
+                let pf = (result as u8).count_ones() % 2 == 0;
+                let sf = (result & (1 << msb_index)) > 0;
+
+                // ```text
+                // > The rules for turning on the overflow flag in binary/integer math are two:
+                // >
+                // > 1. If the sum of two numbers with the sign bits off yields a result number
+                // >   with the sign bit on, the "overflow" flag is turned on.
+                // >
+                // >   0100 + 0100 = 1000 (overflow flag is turned on)
+                // >
+                // > 2. If the sum of two numbers with the sign bits on yields a result number
+                // >   with the sign bit off, the "overflow" flag is turned on.
+                // >
+                // >   1000 + 1000 = 0000 (overflow flag is turned on)
+                // ```
+                // http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
+
+                let m_msb = (m & (1 << msb_index)) > 0;
+                let n_msb = (n & (1 << msb_index)) > 0;
+
+                // ```text
+                // >       SUBTRACTION SIGN BITS
+                // >     num1sign num2sign sumsign
+                // >    ---------------------------
+                // >         0 0 0
+                // >         0 0 1
+                // >         0 1 0
+                // >  *OVER* 0 1 1 (subtracting a negative is the same as adding a positive)
+                // >  *OVER* 1 0 0 (subtracting a positive is the same as adding a negative)
+                // >         1 0 1
+                // >         1 1 0
+                // >         1 1 1
+                // ```
+                // http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
+                let of = match (m_msb, n_msb, sf) {
+                    (false, true, false) => true,
+                    (true, false, true) => true,
+                    _ => false,
+                };
+
+                // https://stackoverflow.com/a/4513781/87207
+                let af = (n as u8) > (m as u8);
+
+                self.write_operand(dst, result)?;
+                self.reg.set_cf(cf);
+                self.reg.set_of(of);
+                self.reg.set_sf(sf);
+                self.reg.set_af(af);
+                self.reg.set_pf(pf);
+                self.reg.set_zf(zf);
+
+                self.reg.rip += insn.length as u64;
             }
 
             m => {
@@ -839,7 +887,7 @@ mod tests {
             // assume that the instructions are padded with NULLs
             // and when we hit them, the testcase is done.
             if emu.mem.read_u64(emu.reg.rip()).unwrap() == 0 {
-                break
+                break;
             }
         }
     }
