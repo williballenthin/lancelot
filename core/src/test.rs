@@ -182,37 +182,105 @@ pub mod uc {
         pub fn check(&self, other: &crate::emu::Emulator) {
             use unicorn::RegisterX86::*;
 
-            assert_eq!(self.emu.reg_read(RIP).unwrap(), other.reg.rip(), "register: rip",);
+            assert_eq!(
+                self.emu.reg_read(RIP).unwrap(),
+                other.reg.rip(),
+                "register: rip, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RIP).unwrap(),
+                other.reg.rip()
+            );
 
-            assert_eq!(self.emu.reg_read(RSP).unwrap(), other.reg.rsp(), "register: rsp",);
+            assert_eq!(
+                self.emu.reg_read(RSP).unwrap(),
+                other.reg.rsp(),
+                "register: rsp, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RSP).unwrap(),
+                other.reg.rsp()
+            );
 
-            assert_eq!(self.emu.reg_read(RBP).unwrap(), other.reg.rbp(), "register: rbp",);
+            assert_eq!(
+                self.emu.reg_read(RBP).unwrap(),
+                other.reg.rbp(),
+                "register: rbp, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RBP).unwrap(),
+                other.reg.rbp()
+            );
 
-            assert_eq!(self.emu.reg_read(RAX).unwrap(), other.reg.rax(), "register: rax",);
+            assert_eq!(
+                self.emu.reg_read(RAX).unwrap(),
+                other.reg.rax(),
+                "register: rax, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RAX).unwrap(),
+                other.reg.rax()
+            );
 
-            assert_eq!(self.emu.reg_read(RBX).unwrap(), other.reg.rbx(), "register: rbx",);
+            assert_eq!(
+                self.emu.reg_read(RBX).unwrap(),
+                other.reg.rbx(),
+                "register: rbx, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RBX).unwrap(),
+                other.reg.rbx()
+            );
 
-            assert_eq!(self.emu.reg_read(RCX).unwrap(), other.reg.rcx(), "register: rcx",);
+            assert_eq!(
+                self.emu.reg_read(RCX).unwrap(),
+                other.reg.rcx(),
+                "register: rcx, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RCX).unwrap(),
+                other.reg.rcx()
+            );
 
-            assert_eq!(self.emu.reg_read(RDX).unwrap(), other.reg.rdx(), "register: rdx",);
+            assert_eq!(
+                self.emu.reg_read(RDX).unwrap(),
+                other.reg.rdx(),
+                "register: rdx, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RDX).unwrap(),
+                other.reg.rdx()
+            );
 
-            assert_eq!(self.emu.reg_read(RSI).unwrap(), other.reg.rsi(), "register: rsi",);
+            assert_eq!(
+                self.emu.reg_read(RSI).unwrap(),
+                other.reg.rsi(),
+                "register: rsi, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RSI).unwrap(),
+                other.reg.rsi()
+            );
 
-            assert_eq!(self.emu.reg_read(RDI).unwrap(), other.reg.rdi(), "register: rdi",);
+            assert_eq!(
+                self.emu.reg_read(RDI).unwrap(),
+                other.reg.rdi(),
+                "register: rdi, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(RDI).unwrap(),
+                other.reg.rdi()
+            );
 
             // we don't emulate all of the flags, just the status flags.
             assert_eq!(
                 self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
-                "flags"
+                "flags, uc: {:#x} emu: {:#x}",
+                self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
+                other.reg.rflags() & STATUS_MASK,
             );
 
             // dereferece $SP and $BP
             let rsp = other.reg.rsp();
-            assert_eq!(self.mem_read_u64(rsp).unwrap(), other.mem.read_u64(rsp).unwrap(),);
+            assert_eq!(
+                self.mem_read_u64(rsp).unwrap(),
+                other.mem.read_u64(rsp).unwrap(),
+                "*RSP, uc: {:#x} emu: {:#x}",
+                self.mem_read_u64(rsp).unwrap(),
+                other.mem.read_u64(rsp).unwrap(),
+            );
 
             let rbp = other.reg.rbp();
-            assert_eq!(self.mem_read_u64(rbp).unwrap(), other.mem.read_u64(rbp).unwrap(),);
+            assert_eq!(
+                self.mem_read_u64(rbp).unwrap(),
+                other.mem.read_u64(rbp).unwrap(),
+                "*RBP, uc: {:#x} emu: {:#x}",
+                self.mem_read_u64(rbp).unwrap(),
+                other.mem.read_u64(rbp).unwrap(),
+            );
         }
     }
 
