@@ -827,21 +827,27 @@ mod tests {
 
     /// emulate the given code using both Unicorn and our emulator,
     /// checking the state of the system after each step.
-    fn emu_check(code: &[u8], steps: u32) {
+    fn emu_check(code: &[u8]) {
         let mut uc = uc::uc_from_shellcode64(code);
         let mut emu = emu_from_shellcode64(code);
 
-        for _ in 0..steps {
+        loop {
             uc.step().unwrap();
             emu.step().unwrap();
-            uc.check(&emu)
+            uc.check(&emu);
+
+            // assume that the instructions are padded with NULLs
+            // and when we hit them, the testcase is done.
+            if emu.mem.read_u64(emu.reg.rip()).unwrap() == 0 {
+                break
+            }
         }
     }
 
     #[test]
     fn test_uc_check() {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
-        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..], 1);
+        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
     }
 
     #[test]
@@ -856,7 +862,6 @@ mod tests {
         // 24: 88 d9                   mov    cl,bl
         emu_check(
             &b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x89\xC3\x48\xC7\xC1\xFF\xFF\xFF\xFF\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x66\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x88\xD9"[..],
-            8,
         );
     }
 
@@ -899,24 +904,23 @@ mod tests {
     fn insn_push_pop() {
         // 0:  6a 01                   push   0x1
         // 2:  58                      pop    rax
-        emu_check(&b"\x6A\x01\x58"[..], 2);
+        emu_check(&b"\x6A\x01\x58"[..]);
     }
 
     #[test]
     fn insn_call() -> Result<()> {
         // 0:  e8 00 00 00 00          call   $+5
-        emu_check(&b"\xE8\x00\x00\x00\x00"[..], 1);
+        emu_check(&b"\xE8\x00\x00\x00\x00"[..]);
 
         // 0:  48 c7 c0 80 00 00 00    mov    rax,0x80
         // 7:  ff d0                   call   rax
-        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\xFF\xD0"[..], 2);
+        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\xFF\xD0"[..]);
 
         // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x80
         // 7:  80 00 00 00
         // b:  ff 14 25 40 00 00 00    call   QWORD PTR ds:0x40
         emu_check(
             &b"\xC7\x04\x25\x40\x00\x00\x00\x80\x00\x00\x00\xFF\x14\x25\x40\x00\x00\x00"[..],
-            2,
         );
 
         // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x70
@@ -925,7 +929,7 @@ mod tests {
         // 12: 80 00 00 00
         // 16: 48 c7 c0 40 00 00 00    mov    rax,0x40
         // 1d: ff 50 08                call   QWORD PTR [rax+0x8]
-        emu_check(&b"\xC7\x04\x25\x40\x00\x00\x00\x70\x00\x00\x00\xC7\x04\x25\x48\x00\x00\x00\x80\x00\x00\x00\x48\xC7\xC0\x40\x00\x00\x00\xFF\x50\x08"[..], 4);
+        emu_check(&b"\xC7\x04\x25\x40\x00\x00\x00\x70\x00\x00\x00\xC7\x04\x25\x48\x00\x00\x00\x80\x00\x00\x00\x48\xC7\xC0\x40\x00\x00\x00\xFF\x50\x08"[..]);
 
         Ok(())
     }
