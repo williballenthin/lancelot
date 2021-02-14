@@ -97,12 +97,14 @@ macro_rules! reg {
 
         #[inline]
         pub fn $set_32(&mut self, value: u32) {
-            self.$reg &= 0xFFFF_FFFF_0000_0000;
-            self.$reg |= (value as u64) & 0xFFFF_FFFF;
+            self.$reg = value as u64;
         }
 
         #[inline]
         pub fn $set_16(&mut self, value: u16) {
+            // only lower 16-bits of a register can be set
+            // without overwriting higher parts.
+            // https://stackoverflow.com/questions/48449833/move-smaller-operand-into-larger-operand#comment83894774_48450559
             self.$reg &= 0xFFFF_FFFF_FFFF_0000;
             self.$reg |= (value as u64) & 0xFFFF;
         }
