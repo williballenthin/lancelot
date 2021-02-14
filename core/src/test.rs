@@ -258,7 +258,7 @@ pub mod uc {
             assert_eq!(
                 self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
-                "flags, uc: {:#x} emu: {:#x}",
+                "flags, uc: {:#b} emu: {:#b}",
                 self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
             );
