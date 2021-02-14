@@ -682,6 +682,7 @@ mod tests {
     use crate::{arch::Arch, emu::*, rsrc::*, test::*};
 
     use anyhow::Result;
+    use dynasmrt::{dynasm, DynasmApi};
 
     const BASE_ADDRESS: u64 = 0x1000;
 
@@ -917,11 +918,32 @@ mod tests {
     fn insn_lea() {
         // 0:  48 c7 c0 80 00 00 00    mov    rax,0x80
         // 7:  48 8d 58 04             lea    rbx,[rax+0x4]
-        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\x48\x8D\x58\x04"[..], 2);
+        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\x48\x8D\x58\x04"[..]);
     }
 
     #[test]
     fn insn_sub() -> Result<()> {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        // 7:  48 83 e8 01             sub    rax,0x1
+        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xE8\x01"[..]);
+
+        // 0:  48 c7 c0 02 00 00 00    mov    rax,0x2
+        // 7:  48 83 e8 01             sub    rax,0x1
+        emu_check(&b"\x48\xC7\xC0\x02\x00\x00\x00\x48\x83\xE8\x01"[..]);
+
+        // 0:  48 c7 c0 00 00 00 00    mov    rax,0x0
+        // 7:  48 83 e8 01             sub    rax,0x1
+        emu_check(&b"\x48\xC7\xC0\x00\x00\x00\x00\x48\x83\xE8\x01"[..]);
+
+        let mut ops = dynasmrt::x64::Assembler::new().unwrap();
+        dynasm!(ops
+            ; .arch x64
+            ; mov rax, 0x1
+            ; sub rax, 0x1
+        );
+        let buf = ops.finalize().unwrap();
+        emu_check(&buf);
+
         /*
         // 0:  48 83 e8 01             sub    rax,0x1
         let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
@@ -967,9 +989,7 @@ mod tests {
         // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x80
         // 7:  80 00 00 00
         // b:  ff 14 25 40 00 00 00    call   QWORD PTR ds:0x40
-        emu_check(
-            &b"\xC7\x04\x25\x40\x00\x00\x00\x80\x00\x00\x00\xFF\x14\x25\x40\x00\x00\x00"[..],
-        );
+        emu_check(&b"\xC7\x04\x25\x40\x00\x00\x00\x80\x00\x00\x00\xFF\x14\x25\x40\x00\x00\x00"[..]);
 
         // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x70
         // 7:  70 00 00 00
