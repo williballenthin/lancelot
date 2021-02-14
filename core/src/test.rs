@@ -99,6 +99,7 @@ pub fn emu_from_shellcode32(code: &[u8]) -> crate::emu::Emulator {
 
 #[cfg(test)]
 pub mod uc {
+    use byteorder::{ByteOrder, LittleEndian};
     use unicorn::Cpu;
 
     use super::load_shellcode64;
@@ -172,6 +173,11 @@ pub mod uc {
             self.emu.emu_start(rip, u64::MAX, 0, 1)
         }
 
+        pub fn mem_read_u64(&self, addr: u64) -> Result<u64, unicorn::Error> {
+            let buf = self.emu.mem_read(addr, 8)?;
+            Ok(LittleEndian::read_u64(&buf))
+        }
+
         /// panics if the given emulator does have the same state as this.
         pub fn check(&self, other: &crate::emu::Emulator) {
             use unicorn::RegisterX86::*;
@@ -194,11 +200,19 @@ pub mod uc {
 
             assert_eq!(self.emu.reg_read(RDI).unwrap(), other.reg.rdi(), "register: rdi",);
 
+            // we don't emulate all of the flags, just the status flags.
             assert_eq!(
                 self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
                 "flags"
             );
+
+            // dereferece $SP and $BP
+            let rsp = other.reg.rsp();
+            assert_eq!(self.mem_read_u64(rsp).unwrap(), other.mem.read_u64(rsp).unwrap(),);
+
+            let rbp = other.reg.rbp();
+            assert_eq!(self.mem_read_u64(rbp).unwrap(), other.mem.read_u64(rbp).unwrap(),);
         }
     }
 
