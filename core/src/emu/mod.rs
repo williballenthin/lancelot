@@ -685,7 +685,7 @@ mod tests {
         emu.reg.rax = 0xFFFF_FFFF_FFFF_FFFF;
         emu.step()?;
         assert_eq!(emu.reg.eax(), 1);
-        assert_eq!(emu.reg.rax(), 0xFFFF_FFFF_0000_0001);
+        assert_eq!(emu.reg.rax(), 0x1);
 
         // 0:  66 b8 01 00             mov    ax,0x1
         let mut emu = emu_from_shellcode64(&b"\x66\xB8\x01\x00"[..]);
@@ -825,6 +825,8 @@ mod tests {
         );
     }
 
+    /// emulate the given code using both Unicorn and our emulator,
+    /// checking the state of the system after each step.
     fn emu_check(code: &[u8], steps: u32) {
         let mut uc = uc::uc_from_shellcode64(code);
         let mut emu = emu_from_shellcode64(code);
@@ -843,32 +845,26 @@ mod tests {
     }
 
     #[test]
-    fn insn_mov() -> Result<()> {
+    fn insn_mov() {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
-        let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
-        emu.step()?;
-        assert_eq!(emu.reg.rax, 1);
-
-        // 0:  48 89 c3                mov    rbx,rax
-        let mut emu = emu_from_shellcode64(&b"\x48\x89\xC3"[..]);
-        emu.reg.rax = 1;
-        emu.step()?;
-
-        assert_eq!(emu.reg.rax, 1);
-        assert_eq!(emu.reg.rbx, 1);
-
-        Ok(())
+        // 7:  48 89 c3                mov    rbx,rax
+        // a:  48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
+        // 11: 89 d9                   mov    ecx,ebx
+        // 13: 48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
+        // 1a: 66 89 d9                mov    cx,bx
+        // 1d: 48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
+        // 24: 88 d9                   mov    cl,bl
+        emu_check(
+            &b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x89\xC3\x48\xC7\xC1\xFF\xFF\xFF\xFF\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x66\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x88\xD9"[..],
+            8,
+        );
     }
 
     #[test]
-    fn insn_lea() -> Result<()> {
-        // 0:  48 8d 58 04             lea    rbx,[rax+0x4]
-        let mut emu = emu_from_shellcode64(&b"\x48\x8D\x58\x04"[..]);
-        emu.reg.rax = 0x80;
-        emu.step()?;
-        assert_eq!(emu.reg.rbx, 0x84);
-
-        Ok(())
+    fn insn_lea() {
+        // 0:  48 c7 c0 80 00 00 00    mov    rax,0x80
+        // 7:  48 8d 58 04             lea    rbx,[rax+0x4]
+        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\x48\x8D\x58\x04"[..], 2);
     }
 
     #[test]
@@ -900,51 +896,36 @@ mod tests {
     }
 
     #[test]
-    fn insn_push_pop() -> Result<()> {
-        // 0:  6a 01                   push   0x1
-        let mut emu = emu_from_shellcode64(&b"\x6A\x01"[..]);
-        emu.step()?;
-        assert_eq!(emu.mem.read_u64(emu.reg.rsp())?, 1);
-
+    fn insn_push_pop() {
         // 0:  6a 01                   push   0x1
         // 2:  58                      pop    rax
-        let mut emu = emu_from_shellcode64(&b"\x6A\x01\x58"[..]);
-        emu.step()?;
-        emu.step()?;
-        assert_eq!(emu.reg.rax, 1);
-
-        Ok(())
+        emu_check(&b"\x6A\x01\x58"[..], 2);
     }
 
     #[test]
     fn insn_call() -> Result<()> {
         // 0:  e8 00 00 00 00          call   $+5
-        let mut emu = emu_from_shellcode64(&b"\xE8\x00\x00\x00\x00"[..]);
-        emu.step()?;
-        assert_eq!(emu.reg.rip, 0x5);
+        emu_check(&b"\xE8\x00\x00\x00\x00"[..], 1);
 
-        // 0:  ff d0                   call   rax
-        let mut emu = emu_from_shellcode64(&b"\xFF\xD0"[..]);
-        emu.reg.rax = 0x80;
-        emu.step()?;
-        assert_eq!(emu.reg.rip, 0x80);
+        // 0:  48 c7 c0 80 00 00 00    mov    rax,0x80
+        // 7:  ff d0                   call   rax
+        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\xFF\xD0"[..], 2);
 
-        // 0x00:  ff 14 25 40 00 00 00    call   QWORD PTR ds:0x40
-        // 0x40:  0x0000000000000080
-        let mut emu = emu_from_shellcode64(&b"\xFF\x14\x25\x40\x00\x00\x00"[..]);
-        emu.mem.write_u64(0x40, 0x80)?;
-        emu.step()?;
-        assert_eq!(emu.reg.rip, 0x80);
+        // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x80
+        // 7:  80 00 00 00
+        // b:  ff 14 25 40 00 00 00    call   QWORD PTR ds:0x40
+        emu_check(
+            &b"\xC7\x04\x25\x40\x00\x00\x00\x80\x00\x00\x00\xFF\x14\x25\x40\x00\x00\x00"[..],
+            2,
+        );
 
-        // 0x00:  ff 50 08                call   QWORD PTR [rax+0x8]
-        // 0x40:  0x0000000000000070
-        // 0x48:  0x0000000000000080
-        let mut emu = emu_from_shellcode64(&b"\xFF\x50\x08"[..]);
-        emu.reg.rax = 0x40;
-        emu.mem.write_u64(0x40, 0x70)?;
-        emu.mem.write_u64(0x48, 0x80)?;
-        emu.step()?;
-        assert_eq!(emu.reg.rip, 0x80);
+        // 0:  c7 04 25 40 00 00 00    mov    DWORD PTR ds:0x40,0x70
+        // 7:  70 00 00 00
+        // b:  c7 04 25 48 00 00 00    mov    DWORD PTR ds:0x48,0x80
+        // 12: 80 00 00 00
+        // 16: 48 c7 c0 40 00 00 00    mov    rax,0x40
+        // 1d: ff 50 08                call   QWORD PTR [rax+0x8]
+        emu_check(&b"\xC7\x04\x25\x40\x00\x00\x00\x70\x00\x00\x00\xC7\x04\x25\x48\x00\x00\x00\x80\x00\x00\x00\x48\xC7\xC0\x40\x00\x00\x00\xFF\x50\x08"[..], 4);
 
         Ok(())
     }
