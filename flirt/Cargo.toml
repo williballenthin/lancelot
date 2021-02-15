@@ -21,3 +21,6 @@ inflate = "0.4"
 anyhow = "1"
 thiserror = "1"
 bitflags = "1"
+
+# https://github.com/myrrlyn/funty/issues/3#issuecomment-778629965
+funty="=1.1.0"
