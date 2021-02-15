@@ -56,7 +56,14 @@ impl PageFrames {
     /// page frame contents will be empty.
     fn allocate(&mut self) -> PFN {
         debug!("emu: mmu: allocate page");
-        if let Some(pfn) = self.allocation_bitmap.first_zero() {
+        let maybe_free_index = self
+            .allocation_bitmap
+            .iter()
+            .enumerate()
+            .find(|(_, b)| !**b)
+            .map(|(i, _)| i);
+
+        if let Some(pfn) = maybe_free_index {
             self.allocation_bitmap.set(pfn, true);
             pfn as PFN
         } else {

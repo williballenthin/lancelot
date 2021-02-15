@@ -24,7 +24,7 @@ regex = "1"
 smallvec = "1"
 widestring = "0.4"
 smol_str = "0.1"
-bitvec = "0.21"
+bitvec = "0.20"
 
 lancelot-flirt = { path = "../flirt", version = "0.4.5" }
 
