@@ -33,6 +33,17 @@ pub struct Registers {
     pub avx:    Option<Box<AVX>>,
 }
 
+// cf - result of an arithmetic operation on unsigned numbers is out of range.
+// of - out-of-range result on signed numbers.
+// sf - sign of the result. Simply a copy of the most significant bit of the
+// result. af - operation produced a carry or borrow in the
+// low-order 4 bits (nibble) of 8-, 16-, or 32-bit operands.
+//      No conditional jump instructions with this flag.
+// pf - Indicates even parity of the low 8 bits of the result.
+//      PF is set if the lower 8 bits contain even number 1 bits.
+// zf - result is zero.
+// http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
+
 const FLAG_CF: u8 = 0;
 const FLAG_PF: u8 = 2;
 const FLAG_AF: u8 = 4;

@@ -598,17 +598,6 @@ impl Emulator {
                     s => unimplemented!("sub size {:}", s),
                 };
 
-                // cf - result of an arithmetic operation on unsigned numbers is out of range.
-                // of - out-of-range result on signed numbers.
-                // sf - sign of the result. Simply a copy of the most significant bit of the
-                // result. af - operation produced a carry or borrow in the
-                // low-order 4 bits (nibble) of 8-, 16-, or 32-bit operands.
-                //      No conditional jump instructions with this flag.
-                // pf - Indicates even parity of the low 8 bits of the result.
-                //      PF is set if the lower 8 bits contain even number 1 bits.
-                // zf - result is zero.
-                // http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
-
                 let zf = result == 0;
                 let pf = (result as u8).count_ones() % 2 == 0;
                 let sf = (result & (1 << msb_index)) > 0;
@@ -649,6 +638,75 @@ impl Emulator {
 
                 // https://stackoverflow.com/a/4513781/87207
                 let af = (n & 0x0F) > (m & 0x0F);
+
+                self.write_operand(dst, result)?;
+                self.reg.set_cf(cf);
+                self.reg.set_of(of);
+                self.reg.set_sf(sf);
+                self.reg.set_af(af);
+                self.reg.set_pf(pf);
+                self.reg.set_zf(zf);
+
+                self.reg.rip += insn.length as u64;
+            }
+
+            ADD => {
+                // EXPLICIT/READ|WRITE
+                let dst = &insn.operands[0];
+                // EXPLICIT/READ
+                let src = &insn.operands[1];
+                // EXPLICIT/WRITE/RFLAGS
+                let flags = &insn.operands[2];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                let m = self.read_operand(&insn, dst)?;
+                let n = self.read_operand(&insn, src)?;
+
+                let (result, msb_index, cf) = match dst.size {
+                    64 => {
+                        let result = (n as u64) as u128 + (m as u64) as u128;
+                        (result as u64 & u64::MAX as u64, 63, result > u64::MAX as u128)
+                    }
+                    32 => {
+                        let result = (n as u32) as u64 + (m as u32) as u64;
+                        (result as u64 & u32::MAX as u64, 31, result > u32::MAX as u64)
+                    }
+                    16 => {
+                        let result = (n as u16) as u32 + (m as u16) as u32;
+                        (result as u64 & u16::MAX as u64, 15, result > u16::MAX as u32)
+                    }
+                    8 => {
+                        let result = (n as u8) as u16 + (m as u8) as u16;
+                        (result as u64 & u8::MAX as u64, 7, result > u8::MAX as u16)
+                    }
+                    s => unimplemented!("sub size {:}", s),
+                };
+
+                let zf = result == 0;
+                let pf = (result as u8).count_ones() % 2 == 0;
+                let sf = (result & (1 << msb_index)) > 0;
+
+                let m_msb = (m & (1 << msb_index)) > 0;
+                let n_msb = (n & (1 << msb_index)) > 0;
+
+                // ```text
+                // >        ADDITION SIGN BITS
+                // >     num1sign num2sign sumsign
+                // >    ---------------------------
+                // >         0 0 0
+                // >  *OVER* 0 0 1 (adding two positives should be positive)
+                // >         0 1 0
+                // >         0 1 1
+                // >         1 0 0
+                // >         1 0 1
+                // >  *OVER* 1 1 0 (adding two negatives should be negative)
+                // >         1 1 1
+                // ```
+                // http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
+                let of = matches!((m_msb, n_msb, sf), (false, false, true) | (true, true, false));
+
+                // https://stackoverflow.com/a/4513781/87207
+                let af = (((n & 0x0F) + (m & 0x0F)) & 0xF0) > 0;
 
                 self.write_operand(dst, result)?;
                 self.reg.set_cf(cf);
@@ -1062,9 +1120,62 @@ mod tests {
                         ; mov eax, i as i32
                         ; sub eax, j as i32
 
+                        // there is no `sub reg64, imm64`
+                        // only `sub reg64, reg64`
                         ; mov rax, QWORD i
                         ; mov rbx, QWORD j
                         ; sub rax, rbx
+                    );
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn insn_add() -> Result<()> {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; add rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x2
+                ; add rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, -1
+                ; add rax, 0x1
+            );
+        });
+
+        for &i in INTERESTING_NUMBERS.iter() {
+            for &j in INTERESTING_NUMBERS.iter() {
+                emu_check_with_asm(|ops| {
+                    dynasm!(ops
+                        ; .arch x64
+                        ; mov al, i as i8
+                        ; add al, j as i8
+
+                        ; mov ax, i as i16
+                        ; add ax, j as i16
+
+                        ; mov eax, i as i32
+                        ; add eax, j as i32
+
+                        ; mov rax, QWORD i
+                        ; mov rbx, QWORD j
+                        ; add rax, rbx
                     );
                 });
             }
