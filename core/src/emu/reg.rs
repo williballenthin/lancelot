@@ -41,8 +41,7 @@ const FLAG_SF: u8 = 7;
 const FLAG_DF: u8 = 10;
 const FLAG_OF: u8 = 11;
 
-pub const STATUS_MASK: u64 = 0
-    | (1 << FLAG_CF)
+pub const STATUS_MASK: u64 = (1 << FLAG_CF)
     | (1 << FLAG_PF)
     | (1 << FLAG_AF)
     | (1 << FLAG_ZF)

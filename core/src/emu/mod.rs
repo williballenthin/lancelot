@@ -645,11 +645,7 @@ impl Emulator {
                 // >         1 1 1
                 // ```
                 // http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
-                let of = match (m_msb, n_msb, sf) {
-                    (false, true, true) => true,
-                    (true, false, false) => true,
-                    _ => false,
-                };
+                let of = matches!((m_msb, n_msb, sf), (false, true, true) | (true, false, false));
 
                 // https://stackoverflow.com/a/4513781/87207
                 let af = (n & 0x0F) > (m & 0x0F);
