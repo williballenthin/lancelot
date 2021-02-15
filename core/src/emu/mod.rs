@@ -578,23 +578,22 @@ impl Emulator {
                 let m = self.read_operand(&insn, dst)?;
                 let n = self.read_operand(&insn, src)?;
 
-                let (result, msb_index) = match dst.size {
+                let (result, msb_index, cf) = match dst.size {
                     64 => {
                         let result = m.wrapping_sub(n);
-                        (result, 63)
+                        (result, 63, n as u64 > m as u64)
                     }
                     32 => {
-                        // TODO: need to do sign extension, e.g. if n is u16
                         let result = (m as u32).wrapping_sub(n as u32) as u64;
-                        (result, 31)
+                        (result, 31, n as u32 > m as u32)
                     }
                     16 => {
                         let result = (m as u16).wrapping_sub(n as u16) as u64;
-                        (result, 15)
+                        (result, 15, n as u16 > m as u16)
                     }
                     8 => {
                         let result = (m as u8).wrapping_sub(n as u8) as u64;
-                        (result, 7)
+                        (result, 7, n as u8 > m as u8)
                     }
                     s => unimplemented!("sub size {:}", s),
                 };
@@ -610,7 +609,6 @@ impl Emulator {
                 // zf - result is zero.
                 // http://service.scs.carleton.ca/sivarama/asm_book_web/Student_copies/ch6_arithmetic.pdf
 
-                let cf = n > m;
                 let zf = result == 0;
                 let pf = (result as u8).count_ones() % 2 == 0;
                 let sf = (result & (1 << msb_index)) > 0;
@@ -648,13 +646,13 @@ impl Emulator {
                 // ```
                 // http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
                 let of = match (m_msb, n_msb, sf) {
-                    (false, true, false) => true,
-                    (true, false, true) => true,
+                    (false, true, true) => true,
+                    (true, false, false) => true,
                     _ => false,
                 };
 
                 // https://stackoverflow.com/a/4513781/87207
-                let af = (n as u8) > (m as u8);
+                let af = (n & 0x0F) > (m & 0x0F);
 
                 self.write_operand(dst, result)?;
                 self.reg.set_cf(cf);
@@ -900,41 +898,8 @@ mod tests {
     }
 
     #[test]
-    fn insn_mov() {
-        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
-        // 7:  48 89 c3                mov    rbx,rax
-        // a:  48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
-        // 11: 89 d9                   mov    ecx,ebx
-        // 13: 48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
-        // 1a: 66 89 d9                mov    cx,bx
-        // 1d: 48 c7 c1 ff ff ff ff    mov    rcx,0xffffffffffffffff
-        // 24: 88 d9                   mov    cl,bl
-        emu_check(
-            &b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x89\xC3\x48\xC7\xC1\xFF\xFF\xFF\xFF\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x66\x89\xD9\x48\xC7\xC1\xFF\xFF\xFF\xFF\x88\xD9"[..],
-        );
-    }
-
-    #[test]
-    fn insn_lea() {
-        // 0:  48 c7 c0 80 00 00 00    mov    rax,0x80
-        // 7:  48 8d 58 04             lea    rbx,[rax+0x4]
-        emu_check(&b"\x48\xC7\xC0\x80\x00\x00\x00\x48\x8D\x58\x04"[..]);
-    }
-
-    #[test]
-    fn insn_sub() -> Result<()> {
-        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
-        // 7:  48 83 e8 01             sub    rax,0x1
-        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xE8\x01"[..]);
-
-        // 0:  48 c7 c0 02 00 00 00    mov    rax,0x2
-        // 7:  48 83 e8 01             sub    rax,0x1
-        emu_check(&b"\x48\xC7\xC0\x02\x00\x00\x00\x48\x83\xE8\x01"[..]);
-
-        // 0:  48 c7 c0 00 00 00 00    mov    rax,0x0
-        // 7:  48 83 e8 01             sub    rax,0x1
-        emu_check(&b"\x48\xC7\xC0\x00\x00\x00\x00\x48\x83\xE8\x01"[..]);
-
+    fn dynasm_assembly() {
+        // test 1: assembly matches defuse.ca
         let mut ops = dynasmrt::x64::Assembler::new().unwrap();
         dynasm!(ops
             ; .arch x64
@@ -942,30 +907,172 @@ mod tests {
             ; sub rax, 0x1
         );
         let buf = ops.finalize().unwrap();
+        assert_eq!(&buf[..], &b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xE8\x01"[..]);
         emu_check(&buf);
 
-        /*
-        // 0:  48 83 e8 01             sub    rax,0x1
-        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
-        emu.reg.rax = 0x1;
-        emu.step()?;
-        assert_eq!(emu.reg.rax, 0x0);
-        assert!(emu.reg.zf());
+        // test 2: easy to emulate it
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; sub rax, 0x1
+            );
+        });
+    }
 
-        // 0:  48 83 e8 01             sub    rax,0x1
-        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
-        emu.reg.rax = 0x2;
-        emu.step()?;
-        assert_eq!(emu.reg.rax, 0x1);
-        assert!(!emu.reg.zf());
+    /// assemble and emulate the given assembly,
+    /// comparing unicorn to our emulator at each step.
+    fn emu_check_with_asm<F>(f: F)
+    where
+        F: Fn(&mut dynasmrt::Assembler<dynasmrt::x64::X64Relocation>),
+    {
+        let mut ops = dynasmrt::x64::Assembler::new().unwrap();
+        f(&mut ops);
+        let buf = ops.finalize().unwrap();
+        emu_check(&buf);
+    }
 
-        // 0:  48 83 e8 01             sub    rax,0x1
-        let mut emu = emu_from_shellcode64(&b"\x48\x83\xE8\x01"[..]);
-        emu.reg.rax = 0x0;
-        emu.step()?;
-        assert_eq!(emu.reg.rax, 0xFFFF_FFFF_FFFF_FFFF);
-        assert!(!emu.reg.zf());
-        */
+    #[test]
+    fn insn_mov() {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x80
+                ; lea rbx, [rax+0x4]
+                ; mov    rax,0x1
+                ; mov    rbx,rax
+                ; mov    rcx,-1
+                ; mov    ecx,ebx
+                ; mov    rcx,-1
+                ; mov    cx,bx
+                ; mov    rcx,-1
+                ; mov    cl,bl
+            );
+        });
+    }
+
+    #[test]
+    fn insn_lea() {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x80
+                ; lea rbx, [rax+0x4]
+            );
+        });
+    }
+
+    const INTERESTING_NUMBERS: [i64; 61] = [
+        i64::MIN,
+        i64::MIN + 1,
+        (i32::MIN as i64) - 1,
+        i32::MIN as i64,
+        (i32::MIN as i64) + 1,
+        (i16::MIN as i64) - 1,
+        i16::MIN as i64,
+        (i16::MIN as i64) + 1,
+        (i8::MIN as i64) - 1,
+        i8::MIN as i64,
+        (i8::MIN as i64) + 1,
+        -65,
+        -64,
+        -63,
+        -42,
+        -69,
+        -1337,
+        -33,
+        -32,
+        -31,
+        -17,
+        -16,
+        -15,
+        -9,
+        -8,
+        -7,
+        -2,
+        -1,
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        15,
+        16,
+        17,
+        31,
+        32,
+        33,
+        42,
+        69,
+        1337,
+        63,
+        64,
+        65,
+        (i8::MAX - 1) as i64,
+        i8::MAX as i64,
+        (i8::MAX as i64) + 1,
+        (i16::MAX - 1) as i64,
+        i16::MAX as i64,
+        (i16::MAX as i64) + 1,
+        (i32::MAX - 1) as i64,
+        i32::MAX as i64,
+        (i32::MAX as i64) + 1,
+        i64::MAX - 1,
+        i64::MAX,
+    ];
+
+    #[test]
+    fn insn_sub() -> Result<()> {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; sub rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x2
+                ; sub rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x0
+                ; sub rax, 0x1
+            );
+        });
+
+        for &i in INTERESTING_NUMBERS.iter() {
+            for &j in INTERESTING_NUMBERS.iter() {
+                emu_check_with_asm(|ops| {
+                    dynasm!(ops
+                        ; .arch x64
+                        ; mov al, i as i8
+                        ; sub al, j as i8
+
+                        ; mov ax, i as i16
+                        ; sub ax, j as i16
+
+                        ; mov eax, i as i32
+                        ; sub eax, j as i32
+
+                        ; mov rax, QWORD i
+                        ; mov rbx, QWORD j
+                        ; sub rax, rbx
+                    );
+                });
+            }
+        }
 
         Ok(())
     }
