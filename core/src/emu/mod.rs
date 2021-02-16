@@ -381,7 +381,7 @@ impl Emulator {
 
         if op.mem.disp.has_displacement {
             if op.mem.disp.displacement < 0 {
-                addr -= op.mem.disp.displacement as u64;
+                addr -= (-op.mem.disp.displacement) as u64;
             } else {
                 addr += op.mem.disp.displacement as u64;
             }
@@ -1001,6 +1001,8 @@ mod tests {
                 ; mov    cx,bx
                 ; mov    rcx,-1
                 ; mov    cl,bl
+                ; mov    [rbp - 4], rax
+                ; mov    rbx, [rbp - 4]
             );
         });
     }
