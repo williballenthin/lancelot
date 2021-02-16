@@ -566,6 +566,28 @@ impl Emulator {
                 self.write_operand(pc, target_addr)?;
             }
 
+            RET => {
+                // HIDDEN/WRITE/REGISTER/PC
+                let pc = &insn.operands[0];
+                assert!(pc.ty == zydis::enums::OperandType::REGISTER);
+                // HIDDEN/READ-WRITE/REGISTER/SP
+                let sp = &insn.operands[1];
+                assert!(sp.ty == zydis::enums::OperandType::REGISTER);
+                // HIDDEN/READ/MEMORY/SP stack contents
+                let stack = &insn.operands[2];
+                assert!(stack.ty == zydis::enums::OperandType::MEMORY);
+
+                let return_address = self.read_operand(&insn, stack)?;
+
+                match sp.reg {
+                    RSP => self.reg.rsp += 8,
+                    ESP => self.reg.rsp += 4,
+                    _ => unimplemented!(),
+                }
+
+                self.write_operand(pc, return_address)?;
+            }
+
             SUB => {
                 // EXPLICIT/READ|WRITE
                 let dst = &insn.operands[0];
@@ -1219,6 +1241,16 @@ mod tests {
     }
 
     #[test]
+    fn insn_ret() {
+        // 0:  6a 05                   push   0x5
+        // 2:  c3                      ret
+        // 3:  90                      nop
+        // 4:  90                      nop
+        // 5:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        emu_check(&b"\x6A\x05\xC3\x90\x90\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+    }
+
+    #[test]
     fn fs_gs() -> Result<()> {
         // 32bit:
         // 0:  64 a1 30 00 00 00       mov    eax,fs:0x30
@@ -1283,7 +1315,15 @@ mod tests {
         emu.step()?; // mov
         emu.step()?; // mov
         emu.step()?; // lea
-                     //emu.step()?; // sub
+        emu.step()?; // sub
+
+        while emu.reg.rip() != 0x4027DA {
+            emu.step()?;
+        }
+
+        // .text:004027DA retn
+        emu.step()?; // retn
+        assert_eq!(emu.reg.rip(), 0x40108D);
 
         Ok(())
     }
