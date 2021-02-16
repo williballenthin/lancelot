@@ -27,7 +27,7 @@ smol_str = "0.1"
 bitvec = "0.20"
 
 # https://github.com/myrrlyn/funty/issues/3#issuecomment-778629965
-funty="=1.1.0"
+funty="=1.2.0"
 
 lancelot-flirt = { path = "../flirt", version = "0.4.5" }
 
