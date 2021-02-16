@@ -7,6 +7,12 @@ fn fetch_benchmark(c: &mut Criterion) {
 
     c.bench_function("fetch", |b| {
         b.iter(|| {
+            emu.mem.read_u128(criterion::black_box(0x0)).unwrap();
+        })
+    });
+
+    c.bench_function("fetch and decode", |b| {
+        b.iter(|| {
             emu.fetch().unwrap();
         })
     });
@@ -28,6 +34,28 @@ fn insn_benchmark(c: &mut Criterion) {
         b.iter(|| {
             emu.reg.rip = 0x0;
             emu.reg.rsp = 0x6000;
+            emu.step().unwrap();
+        })
+    });
+
+    c.bench_function("sub rax, rbx", |b| {
+        // 0:  48 29 d8                sub    rax,rbx
+        let mut emu = lancelot::test::emu_from_shellcode64(&b"\x48\x29\xD8"[..]);
+        b.iter(|| {
+            emu.reg.rip = 0x0;
+            emu.reg.rax = 0x1;
+            emu.reg.rbx = 0x1;
+            emu.step().unwrap();
+        })
+    });
+
+    c.bench_function("add rax, rbx", |b| {
+        // 0:  48 01 d8                add    rax,rbx
+        let mut emu = lancelot::test::emu_from_shellcode64(&b"\x48\x01\xD8"[..]);
+        b.iter(|| {
+            emu.reg.rip = 0x0;
+            emu.reg.rax = 0x1;
+            emu.reg.rbx = 0x1;
             emu.step().unwrap();
         })
     });
