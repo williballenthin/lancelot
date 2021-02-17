@@ -859,6 +859,56 @@ impl Emulator {
 
                 self.reg.rip += insn.length as u64;
             }
+
+            TEST => {
+                // EXPLICIT/READ
+                let m = &insn.operands[0];
+                let size = m.size;
+                // EXPLICIT/READ
+                let n = &insn.operands[1];
+                // HIDDEN/WRITE/RFLAGS
+                let flags = &insn.operands[2];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                let m = self.read_operand(&insn, m)?;
+                let n = self.read_operand(&insn, n)?;
+
+                let (result, msb_index) = match size {
+                    64 => {
+                        let result = m & n;
+                        (result, 63)
+                    }
+                    32 => {
+                        let result = ((m as u32) & (n as u32)) as u64;
+                        (result, 31)
+                    }
+                    16 => {
+                        let result = ((m as u16) & (n as u16)) as u64;
+                        (result, 15)
+                    }
+                    8 => {
+                        let result = ((m as u8) & (n as u8)) as u64;
+                        (result, 7)
+                    }
+                    s => unimplemented!("cmp size {:}", s),
+                };
+
+                let zf = result == 0;
+                let pf = (result as u8).count_ones() % 2 == 0;
+                let sf = (result & (1 << msb_index)) > 0;
+
+                self.reg.set_sf(sf);
+                self.reg.set_pf(pf);
+                self.reg.set_zf(zf);
+
+                self.reg.set_cf(false);
+                self.reg.set_of(false);
+                // AF is undefined
+                // self.reg.set_af(af);
+
+                self.reg.rip += insn.length as u64;
+            }
+
             m => {
                 unimplemented!("mnemonic: {:?}", m);
                 //self.reg.rip += insn.length as u64;
@@ -1378,6 +1428,57 @@ mod tests {
     }
 
     #[test]
+    fn insn_test() -> Result<()> {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; test rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x2
+                ; test rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, -1
+                ; test rax, 0x1
+            );
+        });
+
+        for &i in INTERESTING_NUMBERS.iter() {
+            for &j in INTERESTING_NUMBERS.iter() {
+                emu_check_with_asm(|ops| {
+                    dynasm!(ops
+                        ; .arch x64
+                        ; mov al, i as i8
+                        ; test al, j as i8
+
+                        ; mov ax, i as i16
+                        ; test ax, j as i16
+
+                        ; mov eax, i as i32
+                        ; test eax, j as i32
+
+                        ; mov rax, QWORD i
+                        ; mov rbx, QWORD j
+                        ; test rax, rbx
+                    );
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn insn_jnb() {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         // 7:  48 83 f8 00             cmp    rax,0x0
@@ -1572,6 +1673,25 @@ mod tests {
         emu.step()?; // cmp
         emu.step()?; // jnb
         assert_eq!(emu.reg.rip(), 0x402907);
+
+        // .text:00402907 F7 D8                   neg     eax
+        // .text:00402909 03 C4                   add     eax, esp
+        // .text:0040290B 83 C0 04                add     eax, 4
+        // .text:0040290E 85 00                   test    [eax], eax
+        // .text:00402910 94                      xchg    eax, esp
+        // .text:00402911 8B 00                   mov     eax, [eax]
+        // .text:00402913 50                      push    eax
+        // .text:00402914 C3                      retn
+        emu.step()?; // neg
+        emu.step()?; // add
+        emu.step()?; // add
+        emu.step()?; // test
+                     /*
+                     emu.step()?; // xchg
+                     emu.step()?; // mov
+                     emu.step()?; // push
+                     emu.step()?; // ret
+                     */
 
         Ok(())
     }
