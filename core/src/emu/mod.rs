@@ -454,13 +454,12 @@ impl Emulator {
 
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
-            // TODO:
-            //  - sub/add
-            //  - cmp
-            //  - jz/jnz
-            MOV => {
+            NOP => {
                 //println!("{:#?}", insn);
+                self.reg.rip += insn.length as u64;
+            }
 
+            MOV => {
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
 
@@ -677,7 +676,7 @@ impl Emulator {
                 let dst = &insn.operands[0];
                 // EXPLICIT/READ
                 let src = &insn.operands[1];
-                // EXPLICIT/WRITE/RFLAGS
+                // HIDDEN/WRITE/RFLAGS
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
@@ -746,7 +745,7 @@ impl Emulator {
                 let dst = &insn.operands[0];
                 // EXPLICIT/READ
                 let src = &insn.operands[1];
-                // EXPLICIT/WRITE/RFLAGS
+                // HIDDEN/WRITE/RFLAGS
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
@@ -793,6 +792,73 @@ impl Emulator {
                 self.reg.rip += insn.length as u64;
             }
 
+            JNB => {
+                // EXPLICIT/READ/IMMEDIATE target
+                let target = &insn.operands[0];
+                // HIDDEN/READ-WRITE/REGISTER/PC
+                let pc = &insn.operands[1];
+                assert!(pc.ty == zydis::enums::OperandType::REGISTER);
+                // HIDDEN/READ/REGISTER/FLAGS
+                let flags = &insn.operands[2];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                if !self.reg.cf() {
+                    self.reg.rip = self.read_operand(&insn, target)?;
+                } else {
+                    self.reg.rip += insn.length as u64;
+                }
+            }
+
+            NEG => {
+                // EXPLICIT/READ-WRITE dst
+                let dst = &insn.operands[0];
+                // HIDDEN/WRITE/RFLAGS
+                let flags = &insn.operands[1];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                let m = 0u64;
+                let n = self.read_operand(&insn, dst)?;
+
+                // this is a copy-pasta of SUB,
+                // with the exception that the destination is not written to.
+                let (result, msb_index, cf) = match dst.size {
+                    64 => {
+                        let result = m.wrapping_sub(n);
+                        (result, 63, n as u64 > m as u64)
+                    }
+                    32 => {
+                        let result = (m as u32).wrapping_sub(n as u32) as u64;
+                        (result, 31, n as u32 > m as u32)
+                    }
+                    16 => {
+                        let result = (m as u16).wrapping_sub(n as u16) as u64;
+                        (result, 15, n as u16 > m as u16)
+                    }
+                    8 => {
+                        let result = (m as u8).wrapping_sub(n as u8) as u64;
+                        (result, 7, n as u8 > m as u8)
+                    }
+                    s => unimplemented!("cmp size {:}", s),
+                };
+
+                self.write_operand(dst, result)?;
+                let zf = result == 0;
+                let pf = (result as u8).count_ones() % 2 == 0;
+                let sf = (result & (1 << msb_index)) > 0;
+                let m_msb = (m & (1 << msb_index)) > 0;
+                let n_msb = (n & (1 << msb_index)) > 0;
+                let of = matches!((m_msb, n_msb, sf), (false, true, true) | (true, false, false));
+                let af = (n & 0x0F) > (m & 0x0F);
+
+                self.reg.set_cf(cf);
+                self.reg.set_of(of);
+                self.reg.set_sf(sf);
+                self.reg.set_af(af);
+                self.reg.set_pf(pf);
+                self.reg.set_zf(zf);
+
+                self.reg.rip += insn.length as u64;
+            }
             m => {
                 unimplemented!("mnemonic: {:?}", m);
                 //self.reg.rip += insn.length as u64;
@@ -1310,6 +1376,72 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn insn_jnb() {
+        // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        // 7:  48 83 f8 00             cmp    rax,0x0
+        // b:  73 01                   jnb    e <_main+0xe>
+        // d:  90                      nop
+        // e:  48 c7 c0 01 00 00 00    mov    rax,0x1
+        // 15: 48 83 f8 01             cmp    rax,0x1
+        // 19: 73 01                   jnb    1c <_main+0x1c>
+        // 1b: 90                      nop
+        // 1c: 48 c7 c0 01 00 00 00    mov    rax,0x1
+        // 23: 48 83 f8 02             cmp    rax,0x2
+        // 27: 73 01                   jnb    2a <_main+0x2a>
+        // 29: 90                      nop
+        emu_check(&b"\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xF8\x00\x73\x01\x90\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xF8\x01\x73\x01\x90\x48\xC7\xC0\x01\x00\x00\x00\x48\x83\xF8\x02\x73\x01\x90"[..]);
+    }
+
+    #[test]
+    fn insn_neg() -> Result<()> {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; neg rax
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, -1
+                ; neg rax
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0
+                ; neg rax
+            );
+        });
+
+        for &i in INTERESTING_NUMBERS.iter() {
+            emu_check_with_asm(|ops| {
+                dynasm!(ops
+                    ; .arch x64
+                    ; mov al, i as i8
+                    ; neg al
+
+                    ; mov ax, i as i16
+                    ; neg ax
+
+                    ; mov eax, i as i32
+                    ; neg eax
+
+                    ; mov rax, QWORD i
+                    ; neg rax
+                );
+            });
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn insn_push_pop() {
         // 0:  6a 01                   push   0x1
@@ -1438,6 +1570,8 @@ mod tests {
         // .text:00402900 3D 00 10 00 00          cmp     eax, 1000h
         // .text:00402905 73 0E                   jnb     short probesetup
         emu.step()?; // cmp
+        emu.step()?; // jnb
+        assert_eq!(emu.reg.rip(), 0x402907);
 
         Ok(())
     }
