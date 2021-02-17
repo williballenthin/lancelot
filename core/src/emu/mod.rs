@@ -469,6 +469,18 @@ impl Emulator {
                 self.reg.rip += insn.length as u64;
             }
 
+            XCHG => {
+                let m = &insn.operands[0];
+                let n = &insn.operands[1];
+
+                let mm = self.read_operand(&insn, m)?;
+                let nn = self.read_operand(&insn, n)?;
+                self.write_operand(m, nn)?;
+                self.write_operand(n, mm)?;
+
+                self.reg.rip += insn.length as u64;
+            }
+
             LEA => {
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
@@ -1198,6 +1210,18 @@ mod tests {
     }
 
     #[test]
+    fn insn_xchg() {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x80
+                ; mov rbx, 0x10
+                ; xchg rax, rbx
+            );
+        });
+    }
+
+    #[test]
     fn insn_lea() {
         emu_check_with_asm(|ops| {
             dynasm!(ops
@@ -1686,12 +1710,11 @@ mod tests {
         emu.step()?; // add
         emu.step()?; // add
         emu.step()?; // test
-                     /*
-                     emu.step()?; // xchg
-                     emu.step()?; // mov
-                     emu.step()?; // push
-                     emu.step()?; // ret
-                     */
+        emu.step()?; // xchg
+        emu.step()?; // mov
+        emu.step()?; // push
+        emu.step()?; // ret
+        assert_eq!(emu.reg.rip(), 0x401099);
 
         Ok(())
     }
