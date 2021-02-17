@@ -741,6 +741,58 @@ impl Emulator {
                 self.reg.rip += insn.length as u64;
             }
 
+            CMP => {
+                // EXPLICIT/READ
+                let dst = &insn.operands[0];
+                // EXPLICIT/READ
+                let src = &insn.operands[1];
+                // EXPLICIT/WRITE/RFLAGS
+                let flags = &insn.operands[2];
+                assert!(flags.ty == zydis::enums::OperandType::REGISTER);
+
+                let m = self.read_operand(&insn, dst)?;
+                let n = self.read_operand(&insn, src)?;
+
+                // this is a copy-pasta of SUB,
+                // with the exception that the destination is not written to.
+                let (result, msb_index, cf) = match dst.size {
+                    64 => {
+                        let result = m.wrapping_sub(n);
+                        (result, 63, n as u64 > m as u64)
+                    }
+                    32 => {
+                        let result = (m as u32).wrapping_sub(n as u32) as u64;
+                        (result, 31, n as u32 > m as u32)
+                    }
+                    16 => {
+                        let result = (m as u16).wrapping_sub(n as u16) as u64;
+                        (result, 15, n as u16 > m as u16)
+                    }
+                    8 => {
+                        let result = (m as u8).wrapping_sub(n as u8) as u64;
+                        (result, 7, n as u8 > m as u8)
+                    }
+                    s => unimplemented!("cmp size {:}", s),
+                };
+
+                let zf = result == 0;
+                let pf = (result as u8).count_ones() % 2 == 0;
+                let sf = (result & (1 << msb_index)) > 0;
+                let m_msb = (m & (1 << msb_index)) > 0;
+                let n_msb = (n & (1 << msb_index)) > 0;
+                let of = matches!((m_msb, n_msb, sf), (false, true, true) | (true, false, false));
+                let af = (n & 0x0F) > (m & 0x0F);
+
+                self.reg.set_cf(cf);
+                self.reg.set_of(of);
+                self.reg.set_sf(sf);
+                self.reg.set_af(af);
+                self.reg.set_pf(pf);
+                self.reg.set_zf(zf);
+
+                self.reg.rip += insn.length as u64;
+            }
+
             m => {
                 unimplemented!("mnemonic: {:?}", m);
                 //self.reg.rip += insn.length as u64;
@@ -1209,6 +1261,56 @@ mod tests {
     }
 
     #[test]
+    fn insn_cmp() -> Result<()> {
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x1
+                ; cmp rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, 0x2
+                ; cmp rax, 0x1
+            );
+        });
+
+        emu_check_with_asm(|ops| {
+            dynasm!(ops
+                ; .arch x64
+                ; mov rax, -1
+                ; cmp rax, 0x1
+            );
+        });
+
+        for &i in INTERESTING_NUMBERS.iter() {
+            for &j in INTERESTING_NUMBERS.iter() {
+                emu_check_with_asm(|ops| {
+                    dynasm!(ops
+                        ; .arch x64
+                        ; mov al, i as i8
+                        ; cmp al, j as i8
+
+                        ; mov ax, i as i16
+                        ; cmp ax, j as i16
+
+                        ; mov eax, i as i32
+                        ; cmp eax, j as i32
+
+                        ; mov rax, QWORD i
+                        ; mov rbx, QWORD j
+                        ; cmp rax, rbx
+                    );
+                });
+            }
+        }
+
+        Ok(())
+    }
+    #[test]
     fn insn_push_pop() {
         // 0:  6a 01                   push   0x1
         // 2:  58                      pop    rax
@@ -1324,6 +1426,18 @@ mod tests {
         // .text:004027DA retn
         emu.step()?; // retn
         assert_eq!(emu.reg.rip(), 0x40108D);
+
+        // .text:0040108D mov     edi, 94h ; '”'
+        // .text:00401092 mov     eax, edi
+        // .text:00401094 call    __alloca_probe
+        emu.step()?; // mov
+        emu.step()?; // mov
+        emu.step()?; // call
+        assert_eq!(emu.reg.rip(), 0x402900);
+
+        // .text:00402900 3D 00 10 00 00          cmp     eax, 1000h
+        // .text:00402905 73 0E                   jnb     short probesetup
+        emu.step()?; // cmp
 
         Ok(())
     }
