@@ -70,6 +70,10 @@ where
     }
 }
 
+/// instruction callback that records the addresses that are emulated.
+///
+/// this is a good example of a callback that maintains local state
+/// that you can retrieve after swapping it out of the emulator.
 #[derive(Default)]
 struct TracerInsnCallback {
     instruction_addresses: Vec<VA>,
@@ -553,6 +557,18 @@ impl Emulator {
         Ok(())
     }
 
+    fn on_insn(&mut self, insn: &DecodedInstruction) -> Result<CallbackAction> {
+        let cb = self.cb.handle_insn.replace(Default::default());
+
+        if let Some(mut f) = cb {
+            let ret = f.handle(self, &insn);
+            self.cb.handle_insn.replace(Some(f));
+            ret
+        } else {
+            Ok(CallbackAction::Proceed)
+        }
+    }
+
     pub fn step(&mut self) -> Result<()> {
         use zydis::enums::{Mnemonic::*, Register::*};
 
@@ -561,23 +577,11 @@ impl Emulator {
         // TODO: handle invalid fetch
         // TODO: handle invalid instruction
 
-        {
-            let cb = self.cb.handle_insn.replace(Default::default());
-            if let Some(mut f) = cb {
-                let ret = f.handle(self, &insn);
-
-                // ensure we replace the callback before potentially returning early
-                self.cb.handle_insn.replace(Some(f));
-
-                match ret {
-                    Err(e) => return Err(EmuError::CallbackError(e).into()),
-                    Ok(CallbackAction::Proceed) => {}
-                    Ok(CallbackAction::Abort) => return Ok(()),
-                    Ok(CallbackAction::Retry) => panic!("insn callback cannot Retry"),
-                }
-            } else {
-                self.cb.handle_insn.replace(cb);
-            }
+        match self.on_insn(&insn) {
+            Err(e) => return Err(EmuError::CallbackError(e).into()),
+            Ok(CallbackAction::Retry) => panic!("insn callback cannot Retry"),
+            Ok(CallbackAction::Abort) => return Ok(()),
+            Ok(CallbackAction::Proceed) => {},
         }
 
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
