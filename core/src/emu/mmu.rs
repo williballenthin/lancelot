@@ -129,6 +129,8 @@ pub enum MMUError {
     AddressNotReadable(VA),
     #[error("address not writable: {0:#x}")]
     AddressNotWritable(VA),
+    #[error("address not accessible: {0:#x}, permissions: {1:?}")]
+    AccessViolation(VA, Permissions),
 }
 
 #[derive(Default, Clone)]
@@ -264,16 +266,21 @@ impl MMU {
             None => return Err(MMUError::AddressNotMapped(addr).into()),
         };
 
-        if !flags.intersects(PageFlags::PERM_R) {
-            return Err(MMUError::AddressNotReadable(addr).into());
-        }
-
         Ok((pfn, flags))
     }
 
     /// read up to one page worth of data from the given address.
     /// read will not span more than two pages.
-    pub fn read(&self, addr: VA, buf: &mut [u8]) -> Result<()> {
+    ///
+    /// `perms` are the permissions used to access the data.
+    /// these should match the permissions of the underlying page.
+    /// if the page does not have these permissions, then the access will fail.
+    ///
+    /// Errors:
+    ///  MMUError::AddressNotMapped - if the page is not mapped.
+    ///  MMUError::AccessViolation - if not provided necessary permission to
+    /// access the page.
+    pub fn read(&self, addr: VA, buf: &mut [u8], perms: Permissions) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
@@ -285,6 +292,11 @@ impl MMU {
             let second_size = read_size - first_size;
 
             let (first_pfn, first_flags) = self.probe_read(addr)?;
+
+            // TODO: assume either R or W. doesn't check both.
+            if !first_flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
+                return Err(MMUError::AccessViolation(addr, perms).into());
+            }
 
             if first_flags.intersects(PageFlags::ZERO) {
                 assert!(first_pfn == INVALID_PFN);
@@ -299,6 +311,11 @@ impl MMU {
             let next_page_addr = addr + first_size as u64;
             let (second_pfn, second_flags) = self.probe_read(next_page_addr)?;
 
+            // TODO: assume either R or W. doesn't check both.
+            if !second_flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
+                return Err(MMUError::AccessViolation(addr, perms).into());
+            }
+
             if second_flags.intersects(PageFlags::ZERO) {
                 assert!(second_pfn == INVALID_PFN);
                 for b in &mut buf[first_size..] {
@@ -311,6 +328,11 @@ impl MMU {
         } else {
             // common case: all data in single page
             let (pfn, flags) = self.probe_read(addr)?;
+
+            // TODO: assume either R or W. doesn't check both.
+            if !flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
+                return Err(MMUError::AccessViolation(addr, perms).into());
+            }
 
             if flags.intersects(PageFlags::ZERO) {
                 // paranoia
@@ -328,55 +350,74 @@ impl MMU {
         Ok(())
     }
 
+    /// assumes `Permissions::R`.
     pub fn read_u8(&self, addr: VA) -> Result<u8> {
         let mut buf = [0u8; std::mem::size_of::<u8>()];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
         Ok(buf[0])
     }
 
+    /// assumes `Permissions::R`.
     pub fn read_u16(&self, addr: VA) -> Result<u16> {
         let mut buf = [0u8; std::mem::size_of::<u16>()];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u16(&buf))
     }
 
+    /// assumes `Permissions::R`.
     pub fn read_u32(&self, addr: VA) -> Result<u32> {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u32(&buf))
     }
 
+    /// assumes `Permissions::R`.
     pub fn read_u64(&self, addr: VA) -> Result<u64> {
         let mut buf = [0u8; std::mem::size_of::<u64>()];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u64(&buf))
     }
 
+    /// assumes `Permissions::R`.
     pub fn read_u128(&self, addr: VA) -> Result<u128> {
         let mut buf = [0u8; std::mem::size_of::<u128>()];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u128(&buf))
     }
 
-    // read one page worth of data from the given page-aligned address.
-    // panics if `addr` is not page-aligned.
+    /// read one page worth of data from the given page-aligned address.
+    /// panics if `addr` is not page-aligned.
+    /// assumes `Permissions::R`.
     pub fn read_page(&self, addr: VA) -> Result<[u8; PAGE_SIZE]> {
         assert!(is_page_aligned(addr));
         let mut buf = [0u8; PAGE_SIZE];
-        self.read(addr, &mut buf)?;
+        self.read(addr, &mut buf, Permissions::R)?;
+        Ok(buf)
+    }
+
+    /// read 16-bytes of data from the given address.
+    /// assumes `Permissions::X`.
+    pub fn fetch(&self, addr: VA) -> Result<[u8; 16]> {
+        let mut buf = [0u8; 16];
+        self.read(addr, &mut buf, Permissions::X)?;
         Ok(buf)
     }
 
     /// ensure that the given address can be written to, and if so,
     /// do any copies necessary due to COW/zero pages.
-    fn probe_write(&mut self, addr: VA) -> Result<(PFN, PageFlags)> {
+    ///
+    /// when `sudo` is set, then don't check that the page is writable.
+    /// this should be called by users of the emulator, not within emulation.
+    fn probe_write(&mut self, addr: VA, sudo: bool) -> Result<(PFN, PageFlags)> {
         let (pfn, flags) = match self.mapping.get(&page_number(addr)) {
             Some(&(pfn, flags)) => (pfn, flags),
             None => return Err(MMUError::AddressNotMapped(addr).into()),
         };
 
-        if !flags.intersects(PageFlags::PERM_W) {
-            return Err(MMUError::AddressNotWritable(addr).into());
+        if !sudo {
+            if !flags.intersects(PageFlags::PERM_W) {
+                return Err(MMUError::AddressNotWritable(addr).into());
+            }
         }
 
         if flags.intersects(PageFlags::ZERO) || flags.intersects(PageFlags::COW) {
@@ -404,7 +445,11 @@ impl MMU {
     }
 
     /// write up one one page worth of data to the given address.
-    pub fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+    ///
+    /// when `sudo` is set, then don't check that the page is writable.
+    /// this should be called by users of the emulator, not within emulation.
+    /// enables the implementation of the `patch` API.
+    fn write_inner(&mut self, addr: VA, buf: &[u8], sudo: bool) -> Result<()> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
@@ -415,7 +460,7 @@ impl MMU {
             let first_size = PAGE_SIZE - page_offset;
             let second_size = write_size - first_size;
 
-            let (first_pfn, _) = self.probe_write(addr)?;
+            let (first_pfn, _) = self.probe_write(addr, sudo)?;
             // if we fail sometime after this,
             // then we'll potentially have done a bit of extra work,
             // if the `probe_write` call did a COW/zero page copy.
@@ -425,16 +470,21 @@ impl MMU {
             self.pages[first_pfn][page_offset..].copy_from_slice(&buf[..first_size]);
 
             let next_page_addr = addr + first_size as u64;
-            let (second_pfn, _) = self.probe_write(next_page_addr)?;
+            let (second_pfn, _) = self.probe_write(next_page_addr, sudo)?;
 
             self.pages[second_pfn][..second_size].copy_from_slice(&buf[first_size..]);
         } else {
             // common case: all data in single page
-            let (pfn, _) = self.probe_write(addr)?;
+            let (pfn, _) = self.probe_write(addr, sudo)?;
 
             self.pages[pfn][page_offset(addr)..page_offset(addr) + buf.len()].copy_from_slice(buf);
         }
         Ok(())
+    }
+
+    /// write up one one page worth of data to the given address.
+    pub fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+        self.write_inner(addr, buf, false)
     }
 
     pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<()> {
@@ -473,6 +523,52 @@ impl MMU {
         assert!(is_page_aligned(addr));
         assert!(value.len() == PAGE_SIZE);
         self.write(addr, value)
+    }
+
+    /// write up one one page worth of data to the given address.
+    /// does not respect the write permission, so should not be called by
+    /// instruction emulation. appropriate to be used by users of an
+    /// emulator to tweak memory.
+    pub fn patch(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+        self.write_inner(addr, buf, true)
+    }
+
+    pub fn patch_u8(&mut self, addr: VA, value: u8) -> Result<()> {
+        let buf = [value];
+        self.patch(addr, &buf)
+    }
+
+    pub fn patch_u16(&mut self, addr: VA, value: u16) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u16>()];
+        LittleEndian::write_u16(&mut buf, value);
+        self.patch(addr, &buf)
+    }
+
+    pub fn patch_u32(&mut self, addr: VA, value: u32) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u32>()];
+        LittleEndian::write_u32(&mut buf, value);
+        self.patch(addr, &buf)
+    }
+
+    pub fn patch_u64(&mut self, addr: VA, value: u64) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u64>()];
+        LittleEndian::write_u64(&mut buf, value);
+        self.patch(addr, &buf)
+    }
+
+    pub fn patch_u128(&mut self, addr: VA, value: u128) -> Result<()> {
+        let mut buf = [0u8; std::mem::size_of::<u128>()];
+        LittleEndian::write_u128(&mut buf, value);
+        self.patch(addr, &buf)
+    }
+
+    // patch one page worth of data from the given page-aligned address.
+    // panics if `addr` is not page-aligned.
+    // panics if `value` is not one page in size.
+    pub fn patch_page(&mut self, addr: VA, value: &[u8]) -> Result<()> {
+        assert!(is_page_aligned(addr));
+        assert!(value.len() == PAGE_SIZE);
+        self.patch(addr, value)
     }
 }
 
