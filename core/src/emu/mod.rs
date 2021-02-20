@@ -581,7 +581,7 @@ impl Emulator {
             Err(e) => return Err(EmuError::CallbackError(e).into()),
             Ok(CallbackAction::Retry) => panic!("insn callback cannot Retry"),
             Ok(CallbackAction::Abort) => return Ok(()),
-            Ok(CallbackAction::Proceed) => {},
+            Ok(CallbackAction::Proceed) => {}
         }
 
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
@@ -1806,11 +1806,36 @@ mod tests {
         emu.step()?;
         emu.step()?;
 
+        // TODO: this is pretty terrible.
         let tracer = emu.cb.handle_insn.replace(Default::default()).unwrap();
         let tracert = tracer.as_ref().as_any().downcast_ref::<TracerInsnCallback>().unwrap();
         assert_eq!(tracert.instruction_addresses.len(), 2);
 
+        let tracer: TracerInsnCallback = Default::default();
+        let tracer = with_insn_callback(&mut emu, tracer, |emu| {
+            emu.step()?;
+            emu.step()?;
+            Ok(())
+        })?;
+        let tracert = tracer.as_ref().as_any().downcast_ref::<TracerInsnCallback>().unwrap();
+        assert_eq!(tracert.instruction_addresses.len(), 1);
+
         Ok(())
+    }
+
+    fn with_insn_callback<'e, T: InsnCallback + 'static, F>(
+        emu: &'e mut Emulator,
+        cb: T,
+        f: F,
+    ) -> Result<Box<dyn InsnCallback>>
+    where
+        F: FnOnce(&mut Emulator) -> Result<()>,
+    {
+        let initial_cb = emu.cb.handle_insn.replace(Some(Box::new(cb)));
+        let result = f(emu);
+        let x = emu.cb.handle_insn.replace(initial_cb).unwrap();
+        result?;
+        Ok(x)
     }
 
     fn link_imports(pe: &crate::loader::pe::PE, emu: &mut Emulator) -> Result<()> {
