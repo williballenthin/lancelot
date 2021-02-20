@@ -414,10 +414,8 @@ impl MMU {
             None => return Err(MMUError::AddressNotMapped(addr).into()),
         };
 
-        if !sudo {
-            if !flags.intersects(PageFlags::PERM_W) {
-                return Err(MMUError::AddressNotWritable(addr).into());
-            }
+        if !sudo && !flags.intersects(PageFlags::PERM_W) {
+            return Err(MMUError::AddressNotWritable(addr).into());
         }
 
         if flags.intersects(PageFlags::ZERO) || flags.intersects(PageFlags::COW) {
