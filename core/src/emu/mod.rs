@@ -130,16 +130,10 @@ impl Emulator {
     }
 
     pub fn fetch(&mut self) -> Result<zydis::DecodedInstruction> {
-        // TODO: 32 vs 64
         let pc = self.reg.rip;
         debug!("emu: fetch: {:#x}", pc);
 
-        // TODO: segmentation.
-
-        let mut buf = [0u8; 16];
-
-        // TODO: perms for read should be X, not R.
-        self.mem.read(pc, &mut buf[..])?;
+        let buf = self.mem.fetch(pc)?;
         // TODO: if fail, callback.
 
         let insn = self.dis.decode(&buf[..]);
@@ -1632,9 +1626,61 @@ mod tests {
         Ok(())
     }
 
+    fn link_imports(pe: &crate::loader::pe::PE, emu: &mut Emulator) -> Result<()> {
+        use crate::{loader::pe::imports::*, RVA};
+
+        // for a call to an import,
+        // the compiler will emit something like `call ds:[0x406008]`
+        // where 0x406008 is the first thunk (FT)/IAT entry.
+        // so, it contains a pointer to the function implementation.
+        //
+        // the windows loader will have updated this pointer as it resolved imports.
+        // it now points to the address space of some other module.
+        //
+        // on disk, this entry will typically mirror the original first thunk (OFT)
+        // entry, which contains either:
+        //   - an ordinal, or
+        //   - an ordinal hint and pointer to symbol name
+        //
+        // as we load our emulator, we'll set the FT entry to point to the OFT entry
+        // address. then we can catch invalid fetches and resolve which API was
+        // being called.
+
+        let base_address = pe.module.address_space.base_address;
+        let psize = pe.module.arch.pointer_size();
+
+        if let Some(import_directory) = get_import_directory(pe)? {
+            for import_descriptor in read_import_descriptors(pe, import_directory) {
+                let original_thunk_array = base_address + import_descriptor.original_first_thunk;
+                let first_thunk_array = base_address + import_descriptor.first_thunk;
+
+                for i in 0..std::usize::MAX {
+                    let first_thunk_addr = first_thunk_array + (i * psize) as RVA;
+                    let thunk = read_image_thunk_data(pe, first_thunk_addr);
+                    if matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))) {
+                        break;
+                    }
+
+                    let original_thunk_addr = original_thunk_array + (i * psize) as RVA;
+
+                    match pe.module.arch {
+                        Arch::X32 => {
+                            emu.mem.patch_u32(first_thunk_addr, original_thunk_addr as u32)?;
+                        }
+                        Arch::X64 => {
+                            emu.mem.patch_u64(first_thunk_addr, original_thunk_addr as u64)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     #[test]
     fn nop() -> Result<()> {
-        //init_logging();
+        init_logging();
 
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
@@ -1692,20 +1738,20 @@ mod tests {
         emu.step()?; // call
         assert_eq!(emu.reg.rip(), 0x402900);
 
-        // .text:00402900 3D 00 10 00 00          cmp     eax, 1000h
-        // .text:00402905 73 0E                   jnb     short probesetup
+        // .text:00402900 cmp     eax, 1000h
+        // .text:00402905 jnb     short probesetup
         emu.step()?; // cmp
         emu.step()?; // jnb
         assert_eq!(emu.reg.rip(), 0x402907);
 
-        // .text:00402907 F7 D8                   neg     eax
-        // .text:00402909 03 C4                   add     eax, esp
-        // .text:0040290B 83 C0 04                add     eax, 4
-        // .text:0040290E 85 00                   test    [eax], eax
-        // .text:00402910 94                      xchg    eax, esp
-        // .text:00402911 8B 00                   mov     eax, [eax]
-        // .text:00402913 50                      push    eax
-        // .text:00402914 C3                      retn
+        // .text:00402907 neg     eax
+        // .text:00402909 add     eax, esp
+        // .text:0040290B add     eax, 4
+        // .text:0040290E test    [eax], eax
+        // .text:00402910 xchg    eax, esp
+        // .text:00402911 mov     eax, [eax]
+        // .text:00402913 push    eax
+        // .text:00402914 retn
         emu.step()?; // neg
         emu.step()?; // add
         emu.step()?; // add
@@ -1715,6 +1761,39 @@ mod tests {
         emu.step()?; // push
         emu.step()?; // ret
         assert_eq!(emu.reg.rip(), 0x401099);
+
+        // .text:00401099 mov     [ebp+ms_exc.old_esp], esp
+        // .text:0040109C mov     esi, esp
+        // .text:0040109E mov     [esi], edi
+        // .text:004010A0 push    esi             ; lpVersionInformation
+        emu.step()?; // mov
+        emu.step()?; // mov
+        emu.step()?; // mov
+        emu.step()?; // push
+
+        // next is call to import GetVersionExA.
+        // to make this work, we need to fixup the import table
+        // so we can later reconstruct the target.
+        link_imports(&pe, &mut emu)?;
+
+        // .text:004010A1 call    ds:GetVersionExA
+        assert_eq!(emu.reg.rip(), 0x4010A1);
+        emu.step()?; // call ds:[0x406008]
+
+        // we've mapped the IAT entry to point to the OFT.
+        //
+        //     FT          OFT
+        //     0x406008 -> 0x406e88 (hint: 0x01DF, name: GetVersionExA)
+        assert_eq!(emu.reg.rip(), 0x406e88);
+
+        // but this isn't a code segment,
+        // so if we try to execute it, it will fail.
+        let e = emu.step(); // GetVersionExA impl
+        assert!(e.is_err());
+        assert!(matches!(
+            e.unwrap_err().downcast_ref::<mmu::MMUError>(),
+            Some(mmu::MMUError::AccessViolation(0x406e88, Permissions::X))
+        ));
 
         Ok(())
     }
