@@ -130,20 +130,17 @@ impl Emulator {
         }
     }
 
-    pub fn from_module(m: &Module) -> Emulator {
-        let mut emu = Emulator::with_arch(m.arch);
-
+    pub fn load_module(&mut self, m: &Module) -> Result<()> {
         for section in m.sections.iter() {
             let mut page_addr = section.virtual_range.start;
 
             let section_size = section.virtual_range.end - section.virtual_range.start;
-            emu.mem
+            self.mem
                 .mmap(
                     section.virtual_range.start,
                     crate::util::align(section_size, mmu::PAGE_SIZE as u64),
                     Permissions::W,
-                )
-                .unwrap();
+                )?;
 
             while page_addr < section.virtual_range.end {
                 let mut page = [0u8; mmu::PAGE_SIZE];
@@ -155,20 +152,25 @@ impl Emulator {
                     &mut page[..]
                 };
 
-                m.address_space.read_into(page_addr, page_data).unwrap();
-                emu.mem.write_page(page_addr, &page[..]).unwrap();
+                m.address_space.read_into(page_addr, page_data)?;
+                self.mem.write_page(page_addr, &page[..])?;
                 page_addr += mmu::PAGE_SIZE as u64;
             }
 
-            emu.mem
+            self.mem
                 .mprotect(
                     section.virtual_range.start,
                     crate::util::align(section_size, mmu::PAGE_SIZE as u64),
                     section.permissions,
-                )
-                .unwrap();
+                )?;
         }
 
+        Ok(())
+    }
+
+    pub fn from_module(m: &Module) -> Emulator {
+        let mut emu = Emulator::with_arch(m.arch);
+        emu.load_module(m).expect("failed to load module");
         emu
     }
 
