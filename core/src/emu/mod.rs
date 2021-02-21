@@ -1,4 +1,4 @@
-use std::{cell::RefCell, unimplemented};
+use std::unimplemented;
 
 use anyhow::Result;
 use log::debug;
@@ -23,127 +23,10 @@ pub enum EmuError {
     CallbackError(anyhow::Error),
 }
 
-pub enum CallbackAction {
-    /// The emulation should continue.
-    Proceed,
-
-    /// The emulation should halt.
-    Abort,
-
-    /// If callback due to error, such as `mem_fetch_unmapped`,
-    /// and the error has been fixed,
-    /// retry the operation (such as re-fetch the instruction).
-    Retry,
-}
-
-trait InsnCallback {
-    fn handle(&mut self, emu: &mut Emulator, insn: &DecodedInstruction) -> Result<CallbackAction>;
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-struct ClosureInsnCallback<F>
-where
-    F: Fn(&mut Emulator, &DecodedInstruction) -> Result<CallbackAction>,
-{
-    inner: F,
-}
-
-impl<F: 'static> InsnCallback for ClosureInsnCallback<F>
-where
-    F: Fn(&mut Emulator, &DecodedInstruction) -> Result<CallbackAction>,
-{
-    fn handle(&mut self, emu: &mut Emulator, insn: &DecodedInstruction) -> Result<CallbackAction> {
-        (self.inner)(emu, insn)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-impl<F> ClosureInsnCallback<F>
-where
-    F: Fn(&mut Emulator, &DecodedInstruction) -> Result<CallbackAction>,
-{
-    pub fn new(cb: F) -> ClosureInsnCallback<F> {
-        ClosureInsnCallback { inner: cb }
-    }
-}
-
-/// instruction callback that records the addresses that are emulated.
-///
-/// this is a good example of a callback that maintains local state
-/// that you can retrieve after swapping it out of the emulator.
-#[derive(Default)]
-struct TracerInsnCallback {
-    instruction_addresses: Vec<VA>,
-}
-
-impl InsnCallback for TracerInsnCallback {
-    fn handle(&mut self, emu: &mut Emulator, _insn: &DecodedInstruction) -> Result<CallbackAction> {
-        self.instruction_addresses.push(emu.reg.rip());
-        Ok(CallbackAction::Proceed)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-pub struct Callbacks {
-    /// invoked after an instruction has been fetch and decoded, but prior to
-    /// emulation.
-    ///
-    /// Result:
-    ///   - `CallbackAction::Proceed` - emulate the instruction.
-    ///   - `CallbackAction::Abort` - don't emulate the instruction and halt.
-    ///   - `CallbackAction::Retry` - invalid and may panic.
-    handle_insn: RefCell<Option<Box<dyn InsnCallback>>>, /*
-
-                                                         /// invoked when unmapped memory is read.
-                                                         handle_mem_read_unmapped: (),
-
-                                                         /// invoked when unmapped memory is written to.
-                                                         handle_mem_write_unmapped: (),
-
-                                                         /// invoked when unmapped memory is fetched, prior to execution.
-                                                         handle_mem_fetch_unmapped: (),
-
-                                                         /// invoked when memory cannot be read due to permissions.
-                                                         handle_mem_read_prot: (),
-
-                                                         /// invoked when memory cannot be written to due to permissions.
-                                                         handle_mem_write_prot: (),
-
-                                                         /// invoked when memory cannot be fetched due to permissions.
-                                                         handle_mem_fetch_prot: (),
-
-                                                         /// invoked when valid memory will be read from, after mapping and permissions checks.
-                                                         handle_mem_read: (),
-
-                                                         /// invoked when valid memory will be written to, after mapping and permissions checks.
-                                                         handle_mem_write: (),
-
-                                                         /// invoked when valid memory will be fetched, after mapping and permissions checks.
-                                                         handle_mem_fetch: (),
-
-                                                         */
-}
-
-impl Default for Callbacks {
-    fn default() -> Self {
-        Callbacks {
-            handle_insn: RefCell::new(None),
-        }
-    }
-}
-
 pub struct Emulator {
     pub mem: mmu::MMU,
     pub reg: reg::Registers,
-    pub cb:  Callbacks,
-
-    dis: zydis::Decoder,
+    dis:     zydis::Decoder,
 
     // for now, as a user-mode focused emulator,
     // we'll emulate fs/gs segments ourselves.
@@ -183,7 +66,6 @@ impl Emulator {
         Emulator {
             mem:    Default::default(),
             reg:    Default::default(),
-            cb:     Default::default(),
             dis:    decoder,
             fsbase: 0,
             gsbase: 0,
@@ -557,18 +439,6 @@ impl Emulator {
         Ok(())
     }
 
-    fn on_insn(&mut self, insn: &DecodedInstruction) -> Result<CallbackAction> {
-        let cb = self.cb.handle_insn.replace(Default::default());
-
-        if let Some(mut f) = cb {
-            let ret = f.handle(self, &insn);
-            self.cb.handle_insn.replace(Some(f));
-            ret
-        } else {
-            Ok(CallbackAction::Proceed)
-        }
-    }
-
     pub fn step(&mut self) -> Result<()> {
         use zydis::enums::{Mnemonic::*, Register::*};
 
@@ -576,13 +446,6 @@ impl Emulator {
         let insn = self.fetch()?;
         // TODO: handle invalid fetch
         // TODO: handle invalid instruction
-
-        match self.on_insn(&insn) {
-            Err(e) => return Err(EmuError::CallbackError(e).into()),
-            Ok(CallbackAction::Retry) => panic!("insn callback cannot Retry"),
-            Ok(CallbackAction::Abort) => return Ok(()),
-            Ok(CallbackAction::Proceed) => {}
-        }
 
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
@@ -1762,80 +1625,6 @@ mod tests {
         assert_eq!(emu.reg.rax(), 0x1122_3344_5566_7788);
 
         Ok(())
-    }
-
-    #[test]
-    fn handle_insn() -> Result<()> {
-        let mut ops = dynasmrt::x64::Assembler::new().unwrap();
-        dynasm!(ops
-            ; .arch x64
-            ; mov rax, 0x1
-            ; mov rbx, 0x2
-            ; mov rcx, 0x3
-            ; mov rdx, 0x4
-        );
-        let buf = ops.finalize().unwrap();
-        let mut emu = emu_from_shellcode64(&buf[..]);
-
-        // should be able to stop emulation
-        emu.cb
-            .handle_insn
-            .replace(Some(Box::new(ClosureInsnCallback::new(|_emu, _insn| {
-                Ok(CallbackAction::Abort)
-            }))));
-
-        assert_eq!(emu.reg.rip(), 0x0);
-        emu.step()?;
-        assert_eq!(emu.reg.rip(), 0x0);
-
-        // should be able to continue emulation
-        emu.cb
-            .handle_insn
-            .replace(Some(Box::new(ClosureInsnCallback::new(|_emu, _insn| {
-                Ok(CallbackAction::Proceed)
-            }))));
-
-        assert_eq!(emu.reg.rip(), 0x0);
-        emu.step()?;
-        assert_eq!(emu.reg.rip(), 0x7);
-
-        // should be able to record information at each callback
-        let tracer: TracerInsnCallback = Default::default();
-        emu.cb.handle_insn.replace(Some(Box::new(tracer)));
-        emu.reg.rip = 0x0;
-        emu.step()?;
-        emu.step()?;
-
-        // TODO: this is pretty terrible.
-        let tracer = emu.cb.handle_insn.replace(Default::default()).unwrap();
-        let tracert = tracer.as_ref().as_any().downcast_ref::<TracerInsnCallback>().unwrap();
-        assert_eq!(tracert.instruction_addresses.len(), 2);
-
-        let tracer: TracerInsnCallback = Default::default();
-        let tracer = with_insn_callback(&mut emu, tracer, |emu| {
-            emu.step()?;
-            emu.step()?;
-            Ok(())
-        })?;
-        let tracert = tracer.as_ref().as_any().downcast_ref::<TracerInsnCallback>().unwrap();
-        assert_eq!(tracert.instruction_addresses.len(), 1);
-
-        Ok(())
-    }
-
-    fn with_insn_callback<'e, T: InsnCallback + 'static, F>(
-        emu: &'e mut Emulator,
-        cb: T,
-        f: F,
-    ) -> Result<Box<dyn InsnCallback>>
-    where
-        F: FnOnce(&mut Emulator) -> Result<()>,
-    {
-        let initial_cb = emu.cb.handle_insn.replace(Some(Box::new(cb)));
-        let result = f(emu);
-        let x = emu.cb.handle_insn.replace(initial_cb).unwrap();
-        result?;
-        Ok(x)
     }
 
     fn link_imports(pe: &crate::loader::pe::PE, emu: &mut Emulator) -> Result<()> {
