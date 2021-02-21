@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub mod mmu;
+pub mod plat;
 pub mod reg;
 
 #[derive(Error, Debug)]
@@ -135,12 +136,11 @@ impl Emulator {
             let mut page_addr = section.virtual_range.start;
 
             let section_size = section.virtual_range.end - section.virtual_range.start;
-            self.mem
-                .mmap(
-                    section.virtual_range.start,
-                    crate::util::align(section_size, mmu::PAGE_SIZE as u64),
-                    Permissions::W,
-                )?;
+            self.mem.mmap(
+                section.virtual_range.start,
+                crate::util::align(section_size, mmu::PAGE_SIZE as u64),
+                Permissions::W,
+            )?;
 
             while page_addr < section.virtual_range.end {
                 let mut page = [0u8; mmu::PAGE_SIZE];
@@ -157,12 +157,11 @@ impl Emulator {
                 page_addr += mmu::PAGE_SIZE as u64;
             }
 
-            self.mem
-                .mprotect(
-                    section.virtual_range.start,
-                    crate::util::align(section_size, mmu::PAGE_SIZE as u64),
-                    section.permissions,
-                )?;
+            self.mem.mprotect(
+                section.virtual_range.start,
+                crate::util::align(section_size, mmu::PAGE_SIZE as u64),
+                section.permissions,
+            )?;
         }
 
         Ok(())
@@ -1101,7 +1100,7 @@ impl Emulator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{arch::Arch, emu::*, rsrc::*, test::*};
+    use crate::{arch::Arch, emu::*, test::*};
 
     use anyhow::Result;
     use dynasmrt::{dynasm, DynasmApi};
@@ -1796,192 +1795,6 @@ mod tests {
         emu.mem.write_u64(0x7060, 0x1122_3344_5566_7788)?;
         emu.step()?;
         assert_eq!(emu.reg.rax(), 0x1122_3344_5566_7788);
-
-        Ok(())
-    }
-
-    fn link_imports(pe: &crate::loader::pe::PE, emu: &mut Emulator) -> Result<()> {
-        use crate::{loader::pe::imports::*, RVA};
-
-        // for a call to an import,
-        // the compiler will emit something like `call ds:[0x406008]`
-        // where 0x406008 is the first thunk (FT)/IAT entry.
-        // so, it contains a pointer to the function implementation.
-        //
-        // the windows loader will have updated this pointer as it resolved imports.
-        // it now points to the address space of some other module.
-        //
-        // on disk, this entry will typically mirror the original first thunk (OFT)
-        // entry, which contains either:
-        //   - an ordinal, or
-        //   - an ordinal hint and pointer to symbol name
-        //
-        // as we load our emulator, we'll set the FT entry to point to the OFT entry
-        // address. then we can catch invalid fetches and resolve which API was
-        // being called.
-
-        let base_address = pe.module.address_space.base_address;
-        let psize = pe.module.arch.pointer_size();
-
-        if let Some(import_directory) = get_import_directory(pe)? {
-            for import_descriptor in read_import_descriptors(pe, import_directory) {
-                let original_thunk_array = base_address + import_descriptor.original_first_thunk;
-                let first_thunk_array = base_address + import_descriptor.first_thunk;
-
-                for i in 0..std::usize::MAX {
-                    let first_thunk_addr = first_thunk_array + (i * psize) as RVA;
-                    let thunk = read_image_thunk_data(pe, first_thunk_addr);
-                    if matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))) {
-                        break;
-                    }
-
-                    let original_thunk_addr = original_thunk_array + (i * psize) as RVA;
-
-                    match pe.module.arch {
-                        Arch::X32 => {
-                            emu.mem.poke_u32(first_thunk_addr, original_thunk_addr as u32)?;
-                        }
-                        Arch::X64 => {
-                            emu.mem.poke_u64(first_thunk_addr, original_thunk_addr as u64)?;
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn nop() -> Result<()> {
-        //init_logging();
-
-        let buf = get_buf(Rsrc::NOP);
-        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
-        let mut emu = Emulator::from_module(&pe.module);
-
-        let opt = pe.header.optional_header.unwrap();
-        let ep = opt.windows_fields.image_base + opt.standard_fields.address_of_entry_point;
-        emu.reg.rip = ep;
-
-        emu.mem.mmap(0x5000, 0x2000, Permissions::RW).unwrap();
-        emu.reg.rsp = 0x6000;
-        emu.reg.rbp = 0x6000;
-
-        emu.mem.mmap(0x7000, 0x1000, Permissions::RW).unwrap();
-        emu.set_fsbase(0x7000);
-
-        // .text:00401081 push    18h
-        // .text:00401083 push    offset stru_406160
-        // .text:00401088 call    __SEH_prolog
-        assert_eq!(emu.reg.rip, 0x401081);
-        emu.step()?; // push
-        emu.step()?; // push
-        emu.step()?; // call
-
-        // .text:004027A0 __SEH_prolog proc near
-        // .text:004027A0 push    offset __except_handler3
-        // .text:004027A5 mov     eax, large fs:0
-        // .text:004027AB push    eax
-        // .text:004027AC mov     eax, [esp+8+arg_4]
-        // .text:004027B0 mov     [esp+8+arg_4], ebp
-        // .text:004027B4 lea     ebp, [esp+8+arg_4]
-        // .text:004027B8 sub     esp, eax
-        assert_eq!(emu.reg.rip, 0x4027A0);
-        emu.step()?; // push
-        emu.step()?; // mov
-        emu.step()?; // push
-        emu.step()?; // mov
-        emu.step()?; // mov
-        emu.step()?; // lea
-        emu.step()?; // sub
-
-        while emu.reg.rip() != 0x4027DA {
-            emu.step()?;
-        }
-
-        // .text:004027DA retn
-        emu.step()?; // retn
-        assert_eq!(emu.reg.rip(), 0x40108D);
-
-        // .text:0040108D mov     edi, 94h ; '”'
-        // .text:00401092 mov     eax, edi
-        // .text:00401094 call    __alloca_probe
-        emu.step()?; // mov
-        emu.step()?; // mov
-        emu.step()?; // call
-        assert_eq!(emu.reg.rip(), 0x402900);
-
-        // .text:00402900 cmp     eax, 1000h
-        // .text:00402905 jnb     short probesetup
-        emu.step()?; // cmp
-        emu.step()?; // jnb
-        assert_eq!(emu.reg.rip(), 0x402907);
-
-        // .text:00402907 neg     eax
-        // .text:00402909 add     eax, esp
-        // .text:0040290B add     eax, 4
-        // .text:0040290E test    [eax], eax
-        // .text:00402910 xchg    eax, esp
-        // .text:00402911 mov     eax, [eax]
-        // .text:00402913 push    eax
-        // .text:00402914 retn
-        emu.step()?; // neg
-        emu.step()?; // add
-        emu.step()?; // add
-        emu.step()?; // test
-        emu.step()?; // xchg
-        emu.step()?; // mov
-        emu.step()?; // push
-        emu.step()?; // ret
-        assert_eq!(emu.reg.rip(), 0x401099);
-
-        // .text:00401099 mov     [ebp+ms_exc.old_esp], esp
-        // .text:0040109C mov     esi, esp
-        // .text:0040109E mov     [esi], edi
-        // .text:004010A0 push    esi             ; lpVersionInformation
-        emu.step()?; // mov
-        emu.step()?; // mov
-        emu.step()?; // mov
-        emu.step()?; // push
-
-        // next is call to import GetVersionExA.
-        // to make this work, we need to fixup the import table
-        // so we can later reconstruct the target.
-        link_imports(&pe, &mut emu)?;
-
-        // .text:004010A1 call    ds:GetVersionExA
-        assert_eq!(emu.reg.rip(), 0x4010A1);
-        emu.step()?; // call ds:[0x406008]
-
-        // we've mapped the IAT entry to point to the OFT.
-        //
-        //     FT          OFT
-        //     0x406008 -> 0x406e88 (hint: 0x01DF, name: GetVersionExA)
-        assert_eq!(emu.reg.rip(), 0x406e88);
-
-        // but this isn't a code segment,
-        // so if we try to execute it, it will fail.
-        let e = emu.step(); // GetVersionExA impl
-        assert!(e.is_err());
-        let e = e.unwrap_err();
-        assert!(matches!(
-            e.downcast_ref::<FetchError>(),
-            Some(FetchError::AccessViolation { .. })
-        ));
-
-        // demonstrate how to recover the called imported API.
-        if let Some(FetchError::AccessViolation { va, .. }) = e.downcast_ref::<FetchError>() {
-            use crate::loader::pe::imports::*;
-
-            match read_image_thunk_data(&pe, *va)? {
-                IMAGE_THUNK_DATA::Ordinal(_) => (),
-                IMAGE_THUNK_DATA::Function(rva) => {
-                    let name = read_image_import_by_name(&pe, pe.module.address_space.base_address + rva)?;
-                    assert_eq!(name.name, "GetVersionExA");
-                }
-            }
-        }
 
         Ok(())
     }
