@@ -552,23 +552,17 @@ impl Emulator {
     }
 
     /// Errors:
-    ///   - FetchError::InvalidInstruction for instructions that cannot be
-    ///     decoded.
-    ///   - FetchError::AddressNotMapped when the instruction address is not
-    ///     mapped.
-    ///   - FetchError::AccessViolation when the instruction address is not
-    ///     executable.
     ///   - WriteError::AddressNotMapped when a memory address is not mapped.
     ///   - WriteError::AccessViolation when a memory address is not executable.
     ///   - ReadError::AddressNotMapped when a memory address is not mapped.
     ///   - ReadError::AccessViolation when a memory address is not readable.
-    pub fn step(&mut self) -> Result<()> {
+    ///
+    /// care is taken that when an error occurs, the caller may handle it and
+    /// re-try to execute it.
+    /// that is, the caller may page in some additional memory, for example,
+    /// and then invoke this routine again.
+    pub fn execute(&mut self, insn: &DecodedInstruction) -> Result<()> {
         use zydis::enums::{Mnemonic::*, Register::*};
-
-        debug!("emu: step: {:#x}", self.reg.rip);
-        let insn = self.fetch()?;
-        // TODO: handle invalid fetch
-        // TODO: handle invalid instruction
 
         debug!("emu: insn: {:#x}: {:#?}", self.reg.rip, insn.mnemonic);
         match insn.mnemonic {
@@ -634,9 +628,15 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                self.write_operand(&dst, value)?;
-
-                // TODO: roll back the write to SP if the memory write fails.
+                if let Err(e) = self.write_operand(&dst, value) {
+                    // roll back the stack changes
+                    match sp_op.reg {
+                        RSP => self.reg.rsp += 8,
+                        ESP => self.reg.rsp += 4,
+                        _ => unimplemented!(),
+                    }
+                    return Err(e.into());
+                }
 
                 self.reg.rip += insn.length as u64;
             }
@@ -666,9 +666,15 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                self.write_operand(&dst, value)?;
-
-                // TODO: roll back the write to SP if the memory write fails.
+                if let Err(e) = self.write_operand(&dst, value) {
+                    // roll back the stack changes
+                    match sp_op.reg {
+                        RSP => self.reg.rsp -= 8,
+                        ESP => self.reg.rsp -= 4,
+                        _ => unimplemented!(),
+                    }
+                    return Err(e.into());
+                }
 
                 self.reg.rip += insn.length as u64;
             }
@@ -695,10 +701,20 @@ impl Emulator {
                 let return_address = self.reg.rip + insn.length as u64;
                 self.write_operand(stack, return_address)?;
 
-                // TODO: roll back the write to SP if the memory write fails.
+                if let Err(e) = self.write_operand(stack, return_address) {
+                    // roll back the stack changes
+                    match sp.reg {
+                        RSP => self.reg.rsp += 8,
+                        ESP => self.reg.rsp += 4,
+                        _ => unimplemented!(),
+                    }
+                    return Err(e.into());
+                }
 
-                let target_addr = self.read_operand(&insn, target)?;
-                self.write_operand(pc, target_addr)?;
+                // these read/writes shouldn't ever fail: address computation and PC register
+                // set.
+                let target_addr = self.read_operand(&insn, target).expect("failed to read call target");
+                self.write_operand(pc, target_addr).expect("failed to set PC");
             }
 
             RET => {
@@ -720,9 +736,8 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                self.write_operand(pc, return_address)?;
-
-                // TODO: roll back the write to SP if the memory write fails.
+                // this write shouldn't ever fail: PC register set.
+                self.write_operand(pc, return_address).expect("failed to set PC");
             }
 
             SUB => {
@@ -1052,6 +1067,31 @@ impl Emulator {
                 //self.reg.rip += insn.length as u64;
             }
         }
+
+        Ok(())
+    }
+
+    /// Errors:
+    ///   - FetchError::InvalidInstruction for instructions that cannot be
+    ///     decoded.
+    ///   - FetchError::AddressNotMapped when the instruction address is not
+    ///     mapped.
+    ///   - FetchError::AccessViolation when the instruction address is not
+    ///     executable.
+    ///   - WriteError::AddressNotMapped when a memory address is not mapped.
+    ///   - WriteError::AccessViolation when a memory address is not executable.
+    ///   - ReadError::AddressNotMapped when a memory address is not mapped.
+    ///   - ReadError::AccessViolation when a memory address is not readable.
+    ///
+    /// TODO: this routine should not be part of the base emulator.
+    /// there are too many customizations to handle, like how to deal with
+    /// imports, styles of breakpoints, etc.
+    /// so, provide documentation/examples of `step` routines and remove this.
+    pub fn step(&mut self) -> Result<()> {
+        debug!("emu: step: {:#x}", self.reg.rip);
+
+        let insn = self.fetch()?;
+        self.execute(&insn)?;
 
         Ok(())
     }
