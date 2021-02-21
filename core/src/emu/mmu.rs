@@ -119,17 +119,13 @@ bitflags! {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone, Copy)]
 pub enum MMUError {
     #[error("address already mapped: {0:#x}")]
     AddressAlreadyMapped(VA),
     #[error("address not mapped: {0:#x}")]
     AddressNotMapped(VA),
-    #[error("address not readable: {0:#x}")]
-    AddressNotReadable(VA),
-    #[error("address not writable: {0:#x}")]
-    AddressNotWritable(VA),
-    #[error("address not accessible: {0:#x}, permissions: {1:?}")]
+    #[error("access violation: at {0:#x} wanted permissions: {1:?}")]
     AccessViolation(VA, Permissions),
 }
 
@@ -260,10 +256,12 @@ impl MMU {
         Ok(())
     }
 
-    fn probe_read(&self, addr: VA) -> Result<(PFN, PageFlags)> {
+    /// Errors:
+    ///   MMUError::AddressNotMapped - if the page is not mapped.
+    fn probe_read(&self, addr: VA) -> Result<(PFN, PageFlags), MMUError> {
         let (pfn, flags) = match self.mapping.get(&page_number(addr)) {
             Some(&(pfn, flags)) => (pfn, flags),
-            None => return Err(MMUError::AddressNotMapped(addr).into()),
+            None => return Err(MMUError::AddressNotMapped(addr)),
         };
 
         Ok((pfn, flags))
@@ -277,10 +275,10 @@ impl MMU {
     /// if the page does not have these permissions, then the access will fail.
     ///
     /// Errors:
-    ///  MMUError::AddressNotMapped - if the page is not mapped.
-    ///  MMUError::AccessViolation - if not provided necessary permission to
-    /// access the page.
-    pub fn read(&self, addr: VA, buf: &mut [u8], perms: Permissions) -> Result<()> {
+    ///   MMUError::AddressNotMapped - if the page is not mapped.
+    ///   MMUError::AccessViolation - if the given address is not
+    /// readable/executable.
+    pub fn read(&self, addr: VA, buf: &mut [u8], perms: Permissions) -> Result<(), MMUError> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
@@ -293,9 +291,9 @@ impl MMU {
 
             let (first_pfn, first_flags) = self.probe_read(addr)?;
 
-            // TODO: assume either R or W. doesn't check both.
+            // TODO: assume either R or X. doesn't check both.
             if !first_flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
-                return Err(MMUError::AccessViolation(addr, perms).into());
+                return Err(MMUError::AccessViolation(addr, perms));
             }
 
             if first_flags.intersects(PageFlags::ZERO) {
@@ -311,9 +309,9 @@ impl MMU {
             let next_page_addr = addr + first_size as u64;
             let (second_pfn, second_flags) = self.probe_read(next_page_addr)?;
 
-            // TODO: assume either R or W. doesn't check both.
+            // TODO: assume either R or X. doesn't check both.
             if !second_flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
-                return Err(MMUError::AccessViolation(addr, perms).into());
+                return Err(MMUError::AccessViolation(addr, perms));
             }
 
             if second_flags.intersects(PageFlags::ZERO) {
@@ -329,9 +327,9 @@ impl MMU {
             // common case: all data in single page
             let (pfn, flags) = self.probe_read(addr)?;
 
-            // TODO: assume either R or W. doesn't check both.
+            // TODO: assume either R or X. doesn't check both.
             if !flags.intersects(PageFlags::from_bits_truncate(perms.bits() as u32)) {
-                return Err(MMUError::AccessViolation(addr, perms).into());
+                return Err(MMUError::AccessViolation(addr, perms));
             }
 
             if flags.intersects(PageFlags::ZERO) {
@@ -350,36 +348,46 @@ impl MMU {
         Ok(())
     }
 
-    /// assumes `Permissions::R`.
-    pub fn read_u8(&self, addr: VA) -> Result<u8> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_u8(&self, addr: VA) -> Result<u8, MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u8>()];
         self.read(addr, &mut buf, Permissions::R)?;
         Ok(buf[0])
     }
 
-    /// assumes `Permissions::R`.
-    pub fn read_u16(&self, addr: VA) -> Result<u16> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_u16(&self, addr: VA) -> Result<u16, MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u16>()];
         self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u16(&buf))
     }
 
-    /// assumes `Permissions::R`.
-    pub fn read_u32(&self, addr: VA) -> Result<u32> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_u32(&self, addr: VA) -> Result<u32, MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
         self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u32(&buf))
     }
 
-    /// assumes `Permissions::R`.
-    pub fn read_u64(&self, addr: VA) -> Result<u64> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_u64(&self, addr: VA) -> Result<u64, MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u64>()];
         self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u64(&buf))
     }
 
-    /// assumes `Permissions::R`.
-    pub fn read_u128(&self, addr: VA) -> Result<u128> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_u128(&self, addr: VA) -> Result<u128, MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u128>()];
         self.read(addr, &mut buf, Permissions::R)?;
         Ok(LittleEndian::read_u128(&buf))
@@ -387,8 +395,11 @@ impl MMU {
 
     /// read one page worth of data from the given page-aligned address.
     /// panics if `addr` is not page-aligned.
-    /// assumes `Permissions::R`.
-    pub fn read_page(&self, addr: VA) -> Result<[u8; PAGE_SIZE]> {
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not readable.
+    pub fn read_page(&self, addr: VA) -> Result<[u8; PAGE_SIZE], MMUError> {
         assert!(is_page_aligned(addr));
         let mut buf = [0u8; PAGE_SIZE];
         self.read(addr, &mut buf, Permissions::R)?;
@@ -396,26 +407,35 @@ impl MMU {
     }
 
     /// read 16-bytes of data from the given address.
-    /// assumes `Permissions::X`.
-    pub fn fetch(&self, addr: VA) -> Result<[u8; 16]> {
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not executable.
+    pub fn fetch(&self, addr: VA) -> Result<[u8; 16], MMUError> {
         let mut buf = [0u8; 16];
         self.read(addr, &mut buf, Permissions::X)?;
         Ok(buf)
     }
+
+    // TODO: add peek api
 
     /// ensure that the given address can be written to, and if so,
     /// do any copies necessary due to COW/zero pages.
     ///
     /// when `sudo` is set, then don't check that the page is writable.
     /// this should be called by users of the emulator, not within emulation.
-    fn probe_write(&mut self, addr: VA, sudo: bool) -> Result<(PFN, PageFlags)> {
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    fn probe_write(&mut self, addr: VA, sudo: bool) -> Result<(PFN, PageFlags), MMUError> {
         let (pfn, flags) = match self.mapping.get(&page_number(addr)) {
             Some(&(pfn, flags)) => (pfn, flags),
-            None => return Err(MMUError::AddressNotMapped(addr).into()),
+            None => return Err(MMUError::AddressNotMapped(addr)),
         };
 
         if !sudo && !flags.intersects(PageFlags::PERM_W) {
-            return Err(MMUError::AddressNotWritable(addr).into());
+            return Err(MMUError::AccessViolation(addr, Permissions::W));
         }
 
         if flags.intersects(PageFlags::ZERO) || flags.intersects(PageFlags::COW) {
@@ -446,8 +466,12 @@ impl MMU {
     ///
     /// when `sudo` is set, then don't check that the page is writable.
     /// this should be called by users of the emulator, not within emulation.
-    /// enables the implementation of the `patch` API.
-    fn write_inner(&mut self, addr: VA, buf: &[u8], sudo: bool) -> Result<()> {
+    /// enables the implementation of the `poke` API.
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    fn write_inner(&mut self, addr: VA, buf: &[u8], sudo: bool) -> Result<(), MMUError> {
         assert!(buf.len() <= PAGE_SIZE);
 
         let end_addr = addr + buf.len() as u64;
@@ -481,43 +505,66 @@ impl MMU {
     }
 
     /// write up one one page worth of data to the given address.
-    pub fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write(&mut self, addr: VA, buf: &[u8]) -> Result<(), MMUError> {
         self.write_inner(addr, buf, false)
     }
 
-    pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_u8(&mut self, addr: VA, value: u8) -> Result<(), MMUError> {
         let buf = [value];
         self.write(addr, &buf)
     }
 
-    pub fn write_u16(&mut self, addr: VA, value: u16) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_u16(&mut self, addr: VA, value: u16) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u16>()];
         LittleEndian::write_u16(&mut buf, value);
         self.write(addr, &buf)
     }
 
-    pub fn write_u32(&mut self, addr: VA, value: u32) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_u32(&mut self, addr: VA, value: u32) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
         LittleEndian::write_u32(&mut buf, value);
         self.write(addr, &buf)
     }
 
-    pub fn write_u64(&mut self, addr: VA, value: u64) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_u64(&mut self, addr: VA, value: u64) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u64>()];
         LittleEndian::write_u64(&mut buf, value);
         self.write(addr, &buf)
     }
 
-    pub fn write_u128(&mut self, addr: VA, value: u128) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_u128(&mut self, addr: VA, value: u128) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u128>()];
         LittleEndian::write_u128(&mut buf, value);
         self.write(addr, &buf)
     }
 
-    // write one page worth of data from the given page-aligned address.
-    // panics if `addr` is not page-aligned.
-    // panics if `value` is not one page in size.
-    pub fn write_page(&mut self, addr: VA, value: &[u8]) -> Result<()> {
+    /// write one page worth of data from the given page-aligned address.
+    /// panics if `addr` is not page-aligned.
+    /// panics if `value` is not one page in size.
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    ///   - MMUError::AccessViolation when the given address is not writable.
+    pub fn write_page(&mut self, addr: VA, value: &[u8]) -> Result<(), MMUError> {
         assert!(is_page_aligned(addr));
         assert!(value.len() == PAGE_SIZE);
         self.write(addr, value)
@@ -527,46 +574,62 @@ impl MMU {
     /// does not respect the write permission, so should not be called by
     /// instruction emulation. appropriate to be used by users of an
     /// emulator to tweak memory.
-    pub fn patch(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke(&mut self, addr: VA, buf: &[u8]) -> Result<(), MMUError> {
         self.write_inner(addr, buf, true)
     }
 
-    pub fn patch_u8(&mut self, addr: VA, value: u8) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_u8(&mut self, addr: VA, value: u8) -> Result<(), MMUError> {
         let buf = [value];
-        self.patch(addr, &buf)
+        self.poke(addr, &buf)
     }
 
-    pub fn patch_u16(&mut self, addr: VA, value: u16) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_u16(&mut self, addr: VA, value: u16) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u16>()];
         LittleEndian::write_u16(&mut buf, value);
-        self.patch(addr, &buf)
+        self.poke(addr, &buf)
     }
 
-    pub fn patch_u32(&mut self, addr: VA, value: u32) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_u32(&mut self, addr: VA, value: u32) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u32>()];
         LittleEndian::write_u32(&mut buf, value);
-        self.patch(addr, &buf)
+        self.poke(addr, &buf)
     }
 
-    pub fn patch_u64(&mut self, addr: VA, value: u64) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_u64(&mut self, addr: VA, value: u64) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u64>()];
         LittleEndian::write_u64(&mut buf, value);
-        self.patch(addr, &buf)
+        self.poke(addr, &buf)
     }
 
-    pub fn patch_u128(&mut self, addr: VA, value: u128) -> Result<()> {
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_u128(&mut self, addr: VA, value: u128) -> Result<(), MMUError> {
         let mut buf = [0u8; std::mem::size_of::<u128>()];
         LittleEndian::write_u128(&mut buf, value);
-        self.patch(addr, &buf)
+        self.poke(addr, &buf)
     }
 
-    // patch one page worth of data from the given page-aligned address.
-    // panics if `addr` is not page-aligned.
-    // panics if `value` is not one page in size.
-    pub fn patch_page(&mut self, addr: VA, value: &[u8]) -> Result<()> {
+    /// poke one page worth of data from the given page-aligned address.
+    /// panics if `addr` is not page-aligned.
+    /// panics if `value` is not one page in size.
+    ///
+    /// Errors:
+    ///   - MMUError::AddressNotMapped when the given address is not mapped.
+    pub fn poke_page(&mut self, addr: VA, value: &[u8]) -> Result<(), MMUError> {
         assert!(is_page_aligned(addr));
         assert!(value.len() == PAGE_SIZE);
-        self.patch(addr, value)
+        self.poke(addr, value)
     }
 }
 

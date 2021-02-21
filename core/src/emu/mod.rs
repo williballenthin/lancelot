@@ -23,6 +23,64 @@ pub enum EmuError {
     CallbackError(anyhow::Error),
 }
 
+#[derive(Error, Debug)]
+pub enum FetchError {
+    #[error("invalid instruction: {0:#x}")]
+    InvalidInstruction(VA),
+
+    #[error("fetch: not mapped: at {va:#x}")]
+    AddressNotMapped {
+        va:     VA,
+        #[source]
+        source: mmu::MMUError, /* ::AddressNotMapped */
+    },
+
+    #[error("fetch: access violation: at {va:#x}")]
+    AccessViolation {
+        va:     VA,
+        #[source]
+        source: mmu::MMUError, /* ::AccessViolation */
+    },
+}
+
+#[derive(Error, Debug)]
+pub enum WriteError {
+    #[error("write: not mapped: {size:#x} bytes at {va:#x}")]
+    AddressNotMapped {
+        va:     VA,
+        size:   u16,
+        #[source]
+        source: mmu::MMUError, /* ::AddressNotMapped */
+    },
+
+    #[error("write: access violation: {size:#x} bytes at {va:#x}")]
+    AccessViolation {
+        va:     VA,
+        size:   u16,
+        #[source]
+        source: mmu::MMUError, /* ::AccessViolation */
+    },
+}
+
+#[derive(Error, Debug)]
+pub enum ReadError {
+    #[error("read: not mapped: {size:#x} bytes at {va:#x}")]
+    AddressNotMapped {
+        va:     VA,
+        size:   u16,
+        #[source]
+        source: mmu::MMUError, /* ::AddressNotMapped */
+    },
+
+    #[error("read: access violation: {size:#x} bytes at {va:#x}")]
+    AccessViolation {
+        va:     VA,
+        size:   u16,
+        #[source]
+        source: mmu::MMUError, /* ::AccessViolation */
+    },
+}
+
 pub struct Emulator {
     pub mem: mmu::MMU,
     pub reg: reg::Registers,
@@ -128,22 +186,6 @@ impl Emulator {
 
     pub fn set_gsbase(&mut self, value: VA) {
         self.gsbase = value;
-    }
-
-    pub fn fetch(&mut self) -> Result<zydis::DecodedInstruction> {
-        let pc = self.reg.rip;
-        debug!("emu: fetch: {:#x}", pc);
-
-        let buf = self.mem.fetch(pc)?;
-        // TODO: if fail, callback.
-
-        let insn = self.dis.decode(&buf[..]);
-
-        if let Ok(Some(insn)) = insn {
-            Ok(insn)
-        } else {
-            Err(EmuError::InvalidInstruction(pc).into())
-        }
     }
 
     fn read_register(&self, reg: Register) -> u64 {
@@ -385,31 +427,70 @@ impl Emulator {
         addr
     }
 
-    fn read_memory(&self, src: &DecodedOperand) -> Result<u64> {
+    /// Errors:
+    ///   - ReadError::AddressNotMapped when a memory address is not mapped.
+    ///   - ReadError::AccessViolation when a memory address is not readable.
+    fn read_memory(&self, src: &DecodedOperand) -> Result<u64, ReadError> {
         let addr = self.get_operand_address(src);
 
-        match src.size {
+        let ret = match src.size {
             64 => self.mem.read_u64(addr),
             32 => self.mem.read_u32(addr).map(|v| v as u64),
             16 => self.mem.read_u16(addr).map(|v| v as u64),
             8 => self.mem.read_u8(addr).map(|v| v as u64),
             s => unimplemented!("memory read size: {:?}", s),
+        };
+
+        match ret {
+            Ok(v) => Ok(v),
+            Err(e @ mmu::MMUError::AddressNotMapped(..)) => Err(ReadError::AddressNotMapped {
+                va:     addr,
+                size:   src.size / 8,
+                source: e,
+            }),
+            Err(e @ mmu::MMUError::AccessViolation(..)) => Err(ReadError::AddressNotMapped {
+                va:     addr,
+                size:   src.size / 8,
+                source: e,
+            }),
+            _ => panic!("unexpected error"),
         }
     }
 
-    fn write_memory(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
+    /// Errors:
+    ///   - WriteError::AddressNotMapped when a memory address is not mapped.
+    ///   - WriteError::AccessViolation when a memory address is not writable.
+    fn write_memory(&mut self, dst: &DecodedOperand, value: u64) -> Result<(), WriteError> {
         let addr = self.get_operand_address(dst);
 
-        match dst.size {
+        let ret = match dst.size {
             64 => self.mem.write_u64(addr, value),
             32 => self.mem.write_u32(addr, value as u32),
             16 => self.mem.write_u16(addr, value as u16),
             8 => self.mem.write_u8(addr, value as u8),
             s => unimplemented!("memory write size: {:?}", s),
+        };
+
+        match ret {
+            Ok(()) => Ok(()),
+            Err(e @ mmu::MMUError::AddressNotMapped(..)) => Err(WriteError::AddressNotMapped {
+                va:     addr,
+                size:   dst.size / 8,
+                source: e,
+            }),
+            Err(e @ mmu::MMUError::AccessViolation(..)) => Err(WriteError::AccessViolation {
+                va:     addr,
+                size:   dst.size / 8,
+                source: e,
+            }),
+            _ => panic!("unexpected error"),
         }
     }
 
-    fn read_operand(&mut self, insn: &DecodedInstruction, src: &DecodedOperand) -> Result<u64> {
+    /// Errors:
+    ///   - ReadError::AddressNotMapped when a memory address is not mapped.
+    ///   - ReadError::AccessViolation when a memory address is not readable.
+    fn read_operand(&mut self, insn: &DecodedInstruction, src: &DecodedOperand) -> Result<u64, ReadError> {
         use zydis::enums::OperandType::*;
         Ok(match src.ty {
             IMMEDIATE => {
@@ -426,12 +507,14 @@ impl Emulator {
         })
     }
 
-    fn write_operand(&mut self, dst: &DecodedOperand, value: u64) -> Result<()> {
+    /// Errors:
+    ///   - WriteError::AddressNotMapped when a memory address is not mapped.
+    ///   - WriteError::AccessViolation when a memory address is not executable.
+    fn write_operand(&mut self, dst: &DecodedOperand, value: u64) -> Result<(), WriteError> {
         use zydis::enums::OperandType::*;
 
         match dst.ty {
             REGISTER => self.write_register(dst.reg, value),
-            // handle unmapped write
             MEMORY => self.write_memory(&dst, value)?,
             t => unimplemented!("write operand type: {:?}", t),
         }
@@ -439,6 +522,46 @@ impl Emulator {
         Ok(())
     }
 
+    /// Errors:
+    ///   - FetchError::InvalidInstruction for instructions that cannot be
+    ///     decoded.
+    ///   - FetchError::AddressNotMapped when the instruction address is not
+    ///     mapped.
+    ///   - FetchError::AccessViolation when the instruction address is not
+    ///     executable.
+    pub fn fetch(&mut self) -> Result<zydis::DecodedInstruction, FetchError> {
+        let pc = self.reg.rip;
+        debug!("emu: fetch: {:#x}", pc);
+
+        let buf = match self.mem.fetch(pc) {
+            Ok(buf) => buf,
+            Err(e @ mmu::MMUError::AddressNotMapped(..)) => {
+                return Err(FetchError::AddressNotMapped { va: pc, source: e })
+            }
+            Err(e @ mmu::MMUError::AccessViolation(..)) => {
+                return Err(FetchError::AccessViolation { va: pc, source: e })
+            }
+            _ => panic!("unexpected error"),
+        };
+
+        if let Ok(Some(insn)) = self.dis.decode(&buf[..]) {
+            Ok(insn)
+        } else {
+            Err(FetchError::InvalidInstruction(pc))
+        }
+    }
+
+    /// Errors:
+    ///   - FetchError::InvalidInstruction for instructions that cannot be
+    ///     decoded.
+    ///   - FetchError::AddressNotMapped when the instruction address is not
+    ///     mapped.
+    ///   - FetchError::AccessViolation when the instruction address is not
+    ///     executable.
+    ///   - WriteError::AddressNotMapped when a memory address is not mapped.
+    ///   - WriteError::AccessViolation when a memory address is not executable.
+    ///   - ReadError::AddressNotMapped when a memory address is not mapped.
+    ///   - ReadError::AccessViolation when a memory address is not readable.
     pub fn step(&mut self) -> Result<()> {
         use zydis::enums::{Mnemonic::*, Register::*};
 
@@ -513,6 +636,8 @@ impl Emulator {
 
                 self.write_operand(&dst, value)?;
 
+                // TODO: roll back the write to SP if the memory write fails.
+
                 self.reg.rip += insn.length as u64;
             }
 
@@ -543,6 +668,8 @@ impl Emulator {
 
                 self.write_operand(&dst, value)?;
 
+                // TODO: roll back the write to SP if the memory write fails.
+
                 self.reg.rip += insn.length as u64;
             }
 
@@ -568,6 +695,8 @@ impl Emulator {
                 let return_address = self.reg.rip + insn.length as u64;
                 self.write_operand(stack, return_address)?;
 
+                // TODO: roll back the write to SP if the memory write fails.
+
                 let target_addr = self.read_operand(&insn, target)?;
                 self.write_operand(pc, target_addr)?;
             }
@@ -592,6 +721,8 @@ impl Emulator {
                 }
 
                 self.write_operand(pc, return_address)?;
+
+                // TODO: roll back the write to SP if the memory write fails.
             }
 
             SUB => {
@@ -1666,10 +1797,10 @@ mod tests {
 
                     match pe.module.arch {
                         Arch::X32 => {
-                            emu.mem.patch_u32(first_thunk_addr, original_thunk_addr as u32)?;
+                            emu.mem.poke_u32(first_thunk_addr, original_thunk_addr as u32)?;
                         }
                         Arch::X64 => {
-                            emu.mem.patch_u64(first_thunk_addr, original_thunk_addr as u64)?;
+                            emu.mem.poke_u64(first_thunk_addr, original_thunk_addr as u64)?;
                         }
                     }
                 }
@@ -1792,8 +1923,8 @@ mod tests {
         let e = emu.step(); // GetVersionExA impl
         assert!(e.is_err());
         assert!(matches!(
-            e.unwrap_err().downcast_ref::<mmu::MMUError>(),
-            Some(mmu::MMUError::AccessViolation(0x406e88, Permissions::X))
+            e.unwrap_err().downcast_ref::<FetchError>(),
+            Some(FetchError::AccessViolation { .. })
         ));
 
         Ok(())
