@@ -1962,10 +1962,24 @@ mod tests {
         // so if we try to execute it, it will fail.
         let e = emu.step(); // GetVersionExA impl
         assert!(e.is_err());
+        let e = e.unwrap_err();
         assert!(matches!(
-            e.unwrap_err().downcast_ref::<FetchError>(),
+            e.downcast_ref::<FetchError>(),
             Some(FetchError::AccessViolation { .. })
         ));
+
+        // demonstrate how to recover the called imported API.
+        if let Some(FetchError::AccessViolation { va, .. }) = e.downcast_ref::<FetchError>() {
+            use crate::loader::pe::imports::*;
+
+            match read_image_thunk_data(&pe, *va)? {
+                IMAGE_THUNK_DATA::Ordinal(_) => (),
+                IMAGE_THUNK_DATA::Function(rva) => {
+                    let name = read_image_import_by_name(&pe, pe.module.address_space.base_address + rva)?;
+                    assert_eq!(name.name, "GetVersionExA");
+                }
+            }
+        }
 
         Ok(())
     }
