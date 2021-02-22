@@ -108,6 +108,36 @@ impl WindowsEmulator for Win32Emulator {
     }
 }
 
+impl Win32Emulator {
+    pub fn handle_api(&mut self) -> Result<()> {
+        use super::api::CallingConvention;
+
+        if let Some(symbol) = self.resolve_address(self.pc()) {
+            if let Some(api) = super::api::API.get(&symbol) {
+                let ra = self.pop()?;
+                self.set_pc(ra);
+
+                if let CallingConvention::Stdcall = api.calling_convention {
+                    for _ in 0..api.arguments.len() {
+                        let _ = self.pop()?;
+                    }
+                }
+
+                return Ok(());
+            } else {
+                // we dont know anything about the API
+                // its probably stdcall, but we dont know how many arguments.
+                // TODO
+                unimplemented!("unknown API");
+            }
+        } else {
+            // we don't know what API this is.
+            // TODO
+            unimplemented!("unresolved API");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -136,6 +166,8 @@ mod tests {
     fn step(emu: &mut Win32Emulator) -> Result<()> {
         let insn = emu.inner.fetch()?;
         emu.inner.execute(&insn)?;
+
+        // example: https://github.com/williballenthin/viv-utils/blob/master/viv_utils/emulator_drivers.py
 
         Ok(())
     }
@@ -254,9 +286,7 @@ mod tests {
             assert_eq!(emu.resolve_address(*va).unwrap(), "kernel32.dll!GetVersionExA");
         }
 
-        let ra = emu.pop()?;
-        emu.set_pc(ra);
-        emu.pop()?; // drop that stdcall argument.
+        emu.handle_api()?;
         assert_eq!(emu.pc(), 0x4010A7);
 
         Ok(())

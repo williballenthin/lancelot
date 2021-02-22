@@ -5,6 +5,7 @@ use log::debug;
 
 use crate::{arch::Arch, emu::Emulator, loader::pe::PE, RVA, VA};
 
+pub mod api;
 pub mod win32;
 pub mod win64;
 
