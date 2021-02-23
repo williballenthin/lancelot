@@ -166,15 +166,6 @@ mod tests {
 
     // patterns:
     //   - pat0: aabbccdd
-    //
-    // transition table:
-    //
-    //  aa  bb  cc  dd  ..
-    //  0:  1                   alive: pat0
-    //  1:      2               alive: pat0
-    //  2:          3           alive: pat0
-    //  3:              4       alive: pat0
-    //  4:                      matches: pat0
     #[test]
     fn test_add_one_pattern() {
         let mut b = PatternSet::builder();
@@ -186,16 +177,6 @@ mod tests {
     // patterns:
     //   - pat0: aabbccdd
     //   - pat1: aabbcccc
-    //
-    // transition table:
-    //
-    //  aa  bb  cc  dd  ..
-    //  0:  1                   alive: pat0 pat1
-    //  1:      2               alive: pat0 pat1
-    //  2:          3           alive: pat0 pat1
-    //  3:          5   4       alive: pat0 pat1
-    //  4:                      matches: pat0
-    //  5:                      matches: pat1
     #[test]
     fn test_add_two_patterns() {
         let mut b = PatternSet::builder();
@@ -208,15 +189,6 @@ mod tests {
     // patterns:
     //   - pat0: aabbccdd
     //   - pat1: aabbcc..
-    //
-    // transition table:
-    //       aa  bb  cc  dd  ..
-    //    0:  1                   alive: pat0 pat1
-    //    1:      2               alive: pat0 pat1
-    //    2:          3           alive: pat0 pat1
-    //    3:              4   5   alive: pat0 pat1
-    //    4:                      matches: pat0 pat1
-    //    5:                      matches: pat1
     #[test]
     fn test_add_one_wildcard() {
         let mut b = PatternSet::builder();
