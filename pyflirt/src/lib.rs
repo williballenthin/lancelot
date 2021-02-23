@@ -64,10 +64,8 @@ impl FlirtSignature {
                     }
                 };
 
-                let mut data: Vec<PyObject> = vec![];
-                data.push(name.into_py(py));
-                data.push(ty.into_py(py));
-                data.push(offset.into_py(py));
+                let data = [name.into_py(py), ty.into_py(py), offset.into_py(py)];
+
                 PyTuple::new(py, data.iter()).to_object(py)
             })
             .collect()
@@ -78,16 +76,10 @@ impl FlirtSignature {
 impl PyObjectProtocol for FlirtSignature {
     fn __str__(&self) -> PyResult<String> {
         use lancelot_flirt::Symbol;
-        if let Some(Symbol::Public(name)) = self
-            .inner
-            .names
-            .iter()
-            .filter(|name| matches!(name, Symbol::Public(_)))
-            .next()
-        {
-            return Ok(format!("FlirtSignature(\"{}\")", name.name));
+        if let Some(Symbol::Public(name)) = self.inner.names.iter().find(|name| matches!(name, Symbol::Public(_))) {
+            Ok(format!("FlirtSignature(\"{}\")", name.name))
         } else {
-            return Ok(String::from("FlirtSignature(<unknown public name>)"));
+            Ok(String::from("FlirtSignature(<unknown public name>)"))
         }
     }
 }
@@ -130,8 +122,8 @@ impl FlirtMatcher {
 pub fn compile(py: Python, sigs: &PyList) -> PyResult<FlirtMatcher> {
     let sigs = match sigs.to_object(py).extract::<Vec<FlirtSignature>>(py) {
         Err(_) => {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "must pass only `FlirtSignature` instances to `compile`"
+            return Err(pyo3::exceptions::PyValueError::new_err(String::from(
+                "must pass only `FlirtSignature` instances to `compile`",
             )))
         }
         Ok(sigs) => sigs,
