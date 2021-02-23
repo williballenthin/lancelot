@@ -19,10 +19,10 @@ pub struct Win64Emulator {
 
 impl Default for Win64Emulator {
     fn default() -> Self {
-        return Win64Emulator {
+        Win64Emulator {
             inner:   Emulator::with_arch(Arch::X64),
             imports: Default::default(),
-        };
+        }
     }
 }
 
@@ -100,6 +100,6 @@ impl WindowsEmulator for Win64Emulator {
 
     // TODO: sketching this out
     fn resolve_address(&self, addr: VA) -> Option<String> {
-        self.imports.get(&addr).map(|s| s.clone())
+        self.imports.get(&addr).cloned()
     }
 }

@@ -19,10 +19,10 @@ pub struct Win32Emulator {
 
 impl Default for Win32Emulator {
     fn default() -> Self {
-        return Win32Emulator {
+        Win32Emulator {
             inner:   Emulator::with_arch(Arch::X32),
             imports: Default::default(),
-        };
+        }
     }
 }
 
@@ -104,7 +104,7 @@ impl WindowsEmulator for Win32Emulator {
 
     // TODO: sketching this out
     fn resolve_address(&self, addr: VA) -> Option<String> {
-        self.imports.get(&addr).map(|s| s.clone())
+        self.imports.get(&addr).cloned()
     }
 }
 
@@ -123,7 +123,7 @@ impl Win32Emulator {
                     }
                 }
 
-                return Ok(());
+                Ok(())
             } else {
                 // we dont know anything about the API
                 // its probably stdcall, but we dont know how many arguments.
