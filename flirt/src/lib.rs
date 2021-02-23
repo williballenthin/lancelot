@@ -55,7 +55,7 @@ impl std::fmt::Display for SigElement {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ByteSignature(pub Vec<SigElement>);
 
 impl std::fmt::Display for ByteSignature {
@@ -74,14 +74,14 @@ enum Offset {
     Reference(u16),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Name {
-    offset: i64,
-    name:   String,
+    pub offset: i64,
+    pub name:   String,
 }
 
-#[derive(Debug)]
-enum Symbol {
+#[derive(Debug, Clone)]
+pub enum Symbol {
     Public(Name),
     Local(Name),
     Reference(Name),
@@ -97,7 +97,7 @@ impl std::fmt::Display for Symbol {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TailByte {
     offset: u64,
     value:  u8,
@@ -109,6 +109,7 @@ impl std::fmt::Display for TailByte {
     }
 }
 
+#[derive(Clone)]
 pub struct FlirtSignature {
     pub byte_sig: ByteSignature,
 
@@ -117,7 +118,7 @@ pub struct FlirtSignature {
     crc16:                   u16,
     pub size_of_function:    u64, // max: 0x8000
 
-    names: Vec<Symbol>,
+    pub names: Vec<Symbol>,
 
     // the .pat file format uses a ByteSignature-style to specify a footer mask
     // which starts "at the end of the crc16 block."
