@@ -1,0 +1,154 @@
+#![allow(clippy::upper_case_acronyms)]
+
+use anyhow::Error;
+use lancelot_flirt::{pat, sig};
+use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyObjectProtocol};
+
+/// ValueError -> "you're doing something wrong"
+fn to_value_error(e: anyhow::Error) -> PyErr {
+    pyo3::exceptions::PyValueError::new_err(format!("{}", e))
+}
+
+fn to_py_err(e: Error) -> PyErr {
+    match e.downcast_ref::<sig::SigError>() {
+        Some(sig::SigError::NotSupported) => return to_value_error(e),
+        Some(sig::SigError::CompressionNotSupported(_)) => return to_value_error(e),
+        Some(sig::SigError::CorruptSigFile) => return to_value_error(e),
+        None => (),
+    };
+
+    match e.downcast_ref::<pat::PatError>() {
+        Some(pat::PatError::NotSupported) => return to_value_error(e),
+        Some(pat::PatError::CorruptPatFile) => return to_value_error(e),
+        None => (),
+    };
+
+    to_value_error(e)
+}
+
+// class FlirtSignature:
+//   @property
+//   names: Map[str, Tuple[str, int]] = {"__EH_prolog": ("public", 0x0)}
+//
+// parse_sig(bytes) -> [FlirtSignature]
+// parse_pat(bytes) -> [FlirtSignature]
+//
+// compile([FlirtSignature]) -> FlirtMatcher
+// FlirtMatcher.match(bytes) -> [FlirtSignature]
+
+/// A FLIRT signature that can be used to match a sequence of bytes to function
+/// name.
+#[pyclass]
+#[derive(Clone)]
+pub struct FlirtSignature {
+    inner: lancelot_flirt::FlirtSignature,
+}
+
+#[pymethods]
+impl FlirtSignature {
+    #[getter]
+    pub fn names(&self, py: Python) -> Vec<PyObject> {
+        self.inner
+            .names
+            .iter()
+            .map(|name| {
+                let (name, ty, offset) = match name {
+                    lancelot_flirt::Symbol::Public(name) => {
+                        (String::from(&name.name), String::from("public"), name.offset)
+                    }
+                    lancelot_flirt::Symbol::Local(name) => {
+                        (String::from(&name.name), String::from("local"), name.offset)
+                    }
+                    lancelot_flirt::Symbol::Reference(name) => {
+                        (String::from(&name.name), String::from("reference"), name.offset)
+                    }
+                };
+
+                let mut data: Vec<PyObject> = vec![];
+                data.push(name.into_py(py));
+                data.push(ty.into_py(py));
+                data.push(offset.into_py(py));
+                PyTuple::new(py, data.iter()).to_object(py)
+            })
+            .collect()
+    }
+}
+
+#[pyproto]
+impl PyObjectProtocol for FlirtSignature {
+    fn __str__(&self) -> PyResult<String> {
+        use lancelot_flirt::Symbol;
+        if let Some(Symbol::Public(name)) = self
+            .inner
+            .names
+            .iter()
+            .filter(|name| matches!(name, Symbol::Public(_)))
+            .next()
+        {
+            return Ok(format!("FlirtSignature(\"{}\")", name.name));
+        } else {
+            return Ok(String::from("FlirtSignature(<unknown public name>)"));
+        }
+    }
+}
+
+#[pyfunction]
+pub fn parse_sig(buf: &PyBytes) -> PyResult<Vec<FlirtSignature>> {
+    Ok(sig::parse(buf.as_bytes())
+        .map_err(to_py_err)?
+        .into_iter()
+        .map(|sig| FlirtSignature { inner: sig })
+        .collect())
+}
+
+#[pyfunction]
+pub fn parse_pat(s: String) -> PyResult<Vec<FlirtSignature>> {
+    Ok(pat::parse(&s)
+        .map_err(to_py_err)?
+        .into_iter()
+        .map(|sig| FlirtSignature { inner: sig })
+        .collect())
+}
+
+#[pyclass]
+pub struct FlirtMatcher {
+    inner: lancelot_flirt::FlirtSignatureSet,
+}
+
+#[pymethods]
+impl FlirtMatcher {
+    pub fn r#match(&self, buf: &PyBytes) -> Vec<FlirtSignature> {
+        self.inner
+            .r#match(buf.as_bytes())
+            .into_iter()
+            .map(|sig| FlirtSignature { inner: sig.clone() })
+            .collect()
+    }
+}
+
+#[pyfunction]
+pub fn compile(py: Python, sigs: &PyList) -> PyResult<FlirtMatcher> {
+    let sigs = match sigs.to_object(py).extract::<Vec<FlirtSignature>>(py) {
+        Err(_) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "must pass only `FlirtSignature` instances to `compile`"
+            )))
+        }
+        Ok(sigs) => sigs,
+    };
+
+    Ok(FlirtMatcher {
+        inner: lancelot_flirt::FlirtSignatureSet::with_signatures(sigs.into_iter().map(|sig| sig.inner).collect()),
+    })
+}
+
+#[pymodule]
+fn flirt(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(parse_pat, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_sig, m)?)?;
+    m.add_function(wrap_pyfunction!(compile, m)?)?;
+    m.add_class::<FlirtSignature>()?;
+    m.add_class::<FlirtMatcher>()?;
+
+    Ok(())
+}

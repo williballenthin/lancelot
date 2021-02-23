@@ -3,6 +3,7 @@
 members = [
     "core",
     "flirt",
+    "pyflirt",
     "pylancelot",
     "bin",
 ]
