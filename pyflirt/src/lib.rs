@@ -82,6 +82,10 @@ impl PyObjectProtocol for FlirtSignature {
             Ok(String::from("FlirtSignature(<unknown public name>)"))
         }
     }
+
+    fn __repr__(&self) -> PyResult<String> {
+        self.__str__()
+    }
 }
 
 #[pyfunction]
