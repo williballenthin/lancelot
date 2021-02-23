@@ -20,7 +20,7 @@ fn main() {
     // such as the defaults pulled from env vars, etc.
     let matches = clap::App::new("sig2pat")
         .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
-        .about("translate a FLIRT .sig file into a .pat file")
+        .about("decompress a FLIRT .sig file with compression into one without compression")
         .arg(
             clap::Arg::with_name("verbose")
                 .short("v")
