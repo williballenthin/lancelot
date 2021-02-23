@@ -67,15 +67,26 @@ jobs:
         with:
           python-version: "3.8"
 
-      - name : invoke maturin
+      - name : invoke maturin pylancelot
         run: |
           pip install maturin
           maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml
           ls -R target/wheels/
 
+      - name : invoke maturin pyflirt
+        run: |
+          pip install maturin
+          maturin build --release --strip --manifest-path=./pyflirt/Cargo.toml
+          ls -R target/wheels/
+
       - uses: actions/upload-artifact@v2
         with:
           name: pylancelot-${{ matrix.plat }}-whl
+          path: target/wheels/*.whl
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: python-flirt-${{ matrix.plat }}-whl
           path: target/wheels/*.whl
 
       - name: install twine
@@ -90,7 +101,7 @@ jobs:
           twine upload target/wheels/*
 
   whl-linux:
-    name: build python wheels for manylinux2010
+    name: build pylancelot python wheels for manylinux2010
     needs: [crate]
     runs-on: ubuntu-latest
     steps:
@@ -100,14 +111,23 @@ jobs:
         with:
           python-version: "3.8"
 
-      - name: build wheels
+      - name: build wheels pylancelot
         # see Dockerfile for this image
         run: |
           docker run --rm -v $(pwd):/io --workdir=/io williballenthin/maturin build --release --strip --manifest-path=./pylancelot/Cargo.toml --manylinux 2010
 
+      - name: build wheels pyflirt
+        run: |
+          docker run --rm -v $(pwd):/io --workdir=/io williballenthin/maturin build --release --strip --manifest-path=./pyflirt/Cargo.toml --manylinux 2010
+
       - uses: actions/upload-artifact@v2
         with:
           name: pylancelot-manylinux2010_x86_64-whl
+          path: target/wheels/*.whl
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: python-flirt-manylinux2010_x86_64-whl
           path: target/wheels/*.whl
 
       - name: install twine
