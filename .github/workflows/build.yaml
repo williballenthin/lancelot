@@ -98,7 +98,7 @@ jobs:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          twine upload target/wheels/*
+          twine upload --skip-existing target/wheels/*
 
   whl-linux:
     name: build pylancelot python wheels for manylinux2010
@@ -139,4 +139,4 @@ jobs:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          twine upload target/wheels/*
+          twine upload --skip-existing target/wheels/*
