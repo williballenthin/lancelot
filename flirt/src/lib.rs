@@ -361,6 +361,31 @@ impl FlirtSignature {
             .any(|b| !b)
     }
 
+    /// return true if all the footer bytes match (if there are any).
+    pub fn match_footer(&self, buf: &[u8]) -> bool {
+        let footer_offset = self.byte_sig.0.len() + self.size_of_bytes_crc16 as usize;
+        if let Some(sig) = &self.footer {
+            sig.0
+                .iter()
+                .enumerate()
+                .map(|(i, symbol)| (footer_offset + i, symbol))
+                .map(|(offset, symbol)| match symbol {
+                    // there are potentially a bunch of index operations here,
+                    // but we don't expect this method to be called too often,
+                    // since its the last step of matching.
+                    SigElement::Byte(wanted) => match buf.get(offset) {
+                        None => false,
+                        Some(&found) => found == *wanted,
+                    },
+                    SigElement::Wildcard => true,
+                })
+                .find(|b| !b)
+                .is_none()
+        } else {
+            true
+        }
+    }
+
     pub fn render_pat(&self) -> String {
         use std::io::prelude::*;
         let mut f: Vec<u8> = vec![];
@@ -564,8 +589,8 @@ impl FlirtSignatureSet {
             .iter()
             .map(|&pattern| self.sigs.get(pattern).unwrap())
             .filter(|&sig| sig.match_crc16(buf))
-            // TODO: need to match footer
             .filter(|&sig| sig.match_tail_bytes(buf))
+            .filter(|&sig| sig.match_footer(buf))
             .collect()
     }
 }
