@@ -19,7 +19,6 @@ def test_parse_pat(__EH_prolog3_pat):
     assert str(match) == 'FlirtSignature("__EH_prolog3_catch_align")'
 
 
-@pytest.mark.xfail
 def test_parse_sig(__EH_prolog3_sig):
     sigs = flirt.parse_sig(__EH_prolog3_sig)
     matcher = flirt.compile(sigs)
