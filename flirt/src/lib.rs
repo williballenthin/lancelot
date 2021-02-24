@@ -111,23 +111,129 @@ impl std::fmt::Display for TailByte {
 
 #[derive(Clone)]
 pub struct FlirtSignature {
+    /// a sequence of potentially wildcarded bytes that must match at the start
+    /// of the input buffer. by default, the signature size is up to
+    /// 32-bytes. relocations/fixups get masked by the wildcards.
+    ///
+    /// example (human readable):
+    ///
+    /// ```text
+    /// 48895c2408574883ec20488bd9488d3d........488bcfe8........85c07422
+    /// ```
     pub byte_sig: ByteSignature,
+
+    /// after byte signature matching the start of the function,
+    /// flirt checks the CRC16 checksum of subsequent data.
+    /// usually this is up to the next relocation/fixup.
+    ///
+    /// example
+    ///
+    /// ```text
+    ///  06 2828
+    /// ```
+    ///
+    /// means: the CRC16 of the six bytes following the byte signature match
+    /// must be 0x2828.
 
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
     crc16:                   u16,
-    pub size_of_function:    u64, // max: 0x8000
 
+    /// then size of function.
+    ///
+    /// TODO: i'm not sure if this is used for matching.
+    /// it would require a disassembly of the bytes and reconstruction of the
+    /// control flow.
+    pub size_of_function: u64, // max: 0x8000
+
+    /// next is a sequence of (offset, type, name) tuples.
+    /// the offset is relative from the start of the function/signature match.
+    /// the type is one of:
+    ///   - public
+    ///   - local
+    ///   - reference
+    ///
+    /// public and local names are the names applied to locations once the
+    /// signature completely matched. they're the whole point of doing FLIRT
+    /// signature matching.
+    ///
+    /// reference names are used to differentiate otherwise identical code.
+    /// think of wrapper functions with trivial instructions that jump to a well
+    /// known API. the reference is a relocation/fixup that points to some
+    /// other code or data. if that thing has the given name, then the
+    /// signature can match.
+    ///
+    /// TODO: im not exactly sure if FLIRT relies on these names being provided
+    /// by some other technology (providing the names manually works in IDA)
+    /// or if the matching is recursive ("go FLIRT match over there, then
+    /// come back when you have results").
+    ///
+    /// TODO: im not sure how the reference is expected to be formatted.
+    /// is it always a relocation? is it ever an offset embedded within an
+    /// instruction? some results: its not strictly a relocation.
+    /// in 34a05606d7c41a5856f4a9a64316c6ca at 0x1400152E1 is a reference to
+    /// 0x140034D00 that is `_vmldSinHATab`. its encoded as: `1400152E1 F2
+    /// 0F 10 05 17 FA 01 00 movsd   xmm0, cs:qword_140034D00` instruction
+    /// is at relative offset 0x41, while rule specifies reference is at 0x45:
+    /// `17 FA 01 00` there is not a relocation here, confirmed via CFF and
+    /// IDA Instruction Details. so need to disassemble to find the
+    /// instruction xref? or maybe guess at the address encoding.
+    /// i wonder if its best left to the caller to validate these references?
+    ///
+    /// pat files seem to have many more names, especially references, than
+    /// actually make it into sig files. i presume that sigmake reduces the
+    /// necessary reference names down to whats actually needed to differentiate
+    /// signatures.
+    ///
+    /// example:
+    ///
+    /// ```text
+    /// :0000 __sse2_tanh2 :021d@ _2TAG_PACKET_1_0_1
+    /// ```
+    /// means:
+    ///  - relative offset 0x0 is public name `__sse2_tanh2`
+    ///  - relative offset 0x21D is local (@) name `_2TAG_PACKET_1_0_1`
+    ///
+    /// example:
+    ///
+    /// ```text
+    /// :0000 __common_dsin_cout_rare ^0045 _vmldSinHATab
+    /// ```
+    ///
+    /// means:
+    ///  - relative offset 0x0 is public name `__common_dsin_cout_rare`
+    ///  - relative offset 0x45 should be a reference (^) to symbol
+    ///    `_vmldSinHATab`
     pub names: Vec<Symbol>,
 
-    // the .pat file format uses a ByteSignature-style to specify a footer mask
-    // which starts "at the end of the crc16 block."
-    // not sure how these are translated into tail bytes.
+    /// the .pat file format uses a ByteSignature-style to specify a footer mask
+    /// which starts "at the end of the crc16 block."
+    ///
+    /// however, the entire footer doesn't show up in sig files.
+    /// so, i presume that sigmake reduces the byte signature down to the
+    /// minimal set of tail bytes.
+    ///
+    /// if we aim to support parsing both sig and pat files into a single
+    /// signature format, we'll need to be able to match using either of
+    /// these mechanisms.
+    ///
+    /// example:
+    ///
+    /// ```text
+    ///  ........904883C4305DC3CC
+    /// ```
     footer: Option<ByteSignature>,
 
-    // the .sig file format tracks (offset, byte value) pairs that differentiate
-    // signatures with the same pattern/crc16/references.
-    // not sure how these are translated into the footer.
+    /// the .sig file format tracks (offset, byte value) pairs that
+    /// differentiate signatures with the same pattern/crc16/references.
+    ///
+    /// example:
+    ///
+    /// ```text
+    ///  (0050: 15)
+    /// ```
+    ///
+    /// means: at relative offset 0x50 should be byte 0x15.
     tail_bytes: Vec<TailByte>,
 }
 
