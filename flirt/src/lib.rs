@@ -254,6 +254,33 @@ impl FlirtSignature {
             })
             .any(|b| !b)
     }
+
+    pub fn render_pat(&self) -> String {
+        use std::io::prelude::*;
+        let mut f: Vec<u8> = vec![];
+
+        // no reason these writes should fail, except allocation failure.
+        // which we're not going to handle.
+        write!(f, "{}", self.byte_sig).unwrap();
+        write!(f, " {:02x}", self.size_of_bytes_crc16).unwrap();
+        write!(f, " {:04x}", self.crc16).unwrap();
+        write!(f, " {:04x}", self.size_of_function).unwrap();
+
+        for name in self.names.iter() {
+            write!(f, " {}", name).unwrap();
+        }
+
+        for tail_byte in self.tail_bytes.iter() {
+            write!(f, " ({:04X}: {:02X})", tail_byte.offset, tail_byte.value).unwrap();
+        }
+
+        if let Some(footer) = &self.footer {
+            write!(f, " {}", footer).unwrap();
+        }
+
+        // we're writing utf8 above, so no reason for this to fail.
+        String::from_utf8(f).unwrap()
+    }
 }
 
 pub struct FlirtSignatureMatcher<'a> {
@@ -431,6 +458,7 @@ impl FlirtSignatureSet {
             .iter()
             .map(|&pattern| self.sigs.get(pattern).unwrap())
             .filter(|&sig| sig.match_crc16(buf))
+            // TODO: need to match footer
             .filter(|&sig| sig.match_tail_bytes(buf))
             .collect()
     }

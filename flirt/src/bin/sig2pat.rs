@@ -7,7 +7,7 @@ fn run(sig_path: &str) -> Result<()> {
     let buf = std::fs::read(sig_path)?;
 
     for sig in lancelot_flirt::sig::parse(&buf)?.iter() {
-        println!("{:}", sig);
+        println!("{}", sig.render_pat());
     }
 
     Ok(())
