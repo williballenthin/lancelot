@@ -515,8 +515,8 @@ impl<'a> FlirtSignatureMatcher<'a> {
 }
 
 pub struct FlirtSignatureSet {
-    sigs:    HashMap<pattern_set::Pattern, FlirtSignature>,
-    matcher: pattern_set::PatternSet,
+    sigs_by_pattern: HashMap<pattern_set::Pattern, Vec<FlirtSignature>>,
+    matcher:         pattern_set::PatternSet,
 }
 
 impl std::convert::From<&FlirtSignature> for pattern_set::Pattern {
@@ -536,61 +536,148 @@ impl std::convert::From<&FlirtSignature> for pattern_set::Pattern {
 
 impl FlirtSignatureSet {
     pub fn with_signatures(sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
-        let sigs: HashMap<pattern_set::Pattern, FlirtSignature> =
-            sigs.into_iter().map(|sig| ((&sig).into(), sig)).collect();
+        let mut sigs_by_pattern: HashMap<pattern_set::Pattern, Vec<FlirtSignature>> = Default::default();
 
-        let patterns = sigs.keys().cloned().collect();
+        for sig in sigs.into_iter() {
+            sigs_by_pattern
+                .entry(pattern_set::Pattern::from(&sig))
+                .or_default()
+                .push(sig);
+        }
+
+        let patterns = sigs_by_pattern.keys().cloned().collect();
 
         FlirtSignatureSet {
-            sigs,
+            sigs_by_pattern,
             matcher: pattern_set::PatternSet::from_patterns(patterns),
         }
     }
 
-    /// ```
-    /// use lancelot_flirt;
-    /// use lancelot_flirt::pat;
-    ///
-    /// let pat_buf = "\
-    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
-    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 1F E4CF 0063 :0000 __EH_prolog3_align ^003F ___security_cookie ........33C5508B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
-    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 22 E4CE 006F :0000 __EH_prolog3_catch_GS_align ^0042 ___security_cookie ........33C5508941FC8B4DF08965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
-    /// 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 20 6562 0067 :0000 __EH_prolog3_catch_align ^0040 ___security_cookie ........33C5508965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
-    /// ---";
-    ///
-    /// let sigs = lancelot_flirt::FlirtSignatureSet::with_signatures(pat::parse(pat_buf).unwrap());
-    /// let matches = sigs.r#match(&[
-    ///     // apds.dll / 4FD932C41DF96D019DC265E26E94B81B
-    ///     // __EH_prolog3_catch_align
-    ///
-    ///     // first 0x20
-    ///     0x51, 0x8B, 0x4C, 0x24, 0x0C, 0x89, 0x5C, 0x24,
-    ///     0x0C, 0x8D, 0x5C, 0x24, 0x0C, 0x50, 0x8D, 0x44,
-    ///     0x24, 0x08, 0xF7, 0xD9, 0x23, 0xC1, 0x8D, 0x60,
-    ///     0xF8, 0x8B, 0x43, 0xF0, 0x89, 0x04, 0x24, 0x8B,
-    ///     // crc16 start
-    ///     0x43, 0xF8, 0x50, 0x8B, 0x43, 0xFC, 0x8B, 0x4B,
-    ///     0xF4, 0x89, 0x6C, 0x24, 0x0C, 0x8D, 0x6C, 0x24,
-    ///     0x0C, 0xC7, 0x44, 0x24, 0x08, 0xFF, 0xFF, 0xFF,
-    ///     0xFF, 0x51, 0x53, 0x2B, 0xE0, 0x56, 0x57, 0xA1,
-    ///     // crc end
-    ///     0xD4, 0xAD, 0x19, 0x01, 0x33, 0xC5, 0x50, 0x89,
-    ///     0x65, 0xF0, 0x8B, 0x43, 0x04, 0x89, 0x45, 0x04,
-    ///     0xFF, 0x75, 0xF4, 0x64, 0xA1, 0x00, 0x00, 0x00,
-    ///     0x00, 0x89, 0x45, 0xF4, 0x8D, 0x45, 0xF4, 0x64,
-    ///     0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3]);
-    ///
-    /// assert_eq!(matches.len(), 1);
-    /// assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
-    /// ```
     pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
         self.matcher
             .r#match(buf)
             .iter()
-            .map(|&pattern| self.sigs.get(pattern).unwrap())
+            .flat_map(|&pattern| self.sigs_by_pattern.get(pattern).unwrap())
             .filter(|&sig| sig.match_crc16(buf))
             .filter(|&sig| sig.match_tail_bytes(buf))
             .filter(|&sig| sig.match_footer(buf))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pat, sig, *};
+
+    const PAT: &'static str = "\
+518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 1F E4CF 0063 :0000 __EH_prolog3_align ^003F ___security_cookie ........33C5508B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 22 E4CE 006F :0000 __EH_prolog3_catch_GS_align ^0042 ___security_cookie ........33C5508941FC8B4DF08965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 20 6562 0067 :0000 __EH_prolog3_catch_align ^0040 ___security_cookie ........33C5508965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
+---";
+
+    // sigmake __EH_prolog3.pat __EH_prolog3.sig
+    const SIG: [u8; 217] = [
+        0x49, 0x44, 0x41, 0x53, 0x47, 0x4e, 0x0a, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x55, 0x6e, 0x6e, 0x61, 0x6d, 0x65, 0x64, 0x20, 0x73,
+        0x61, 0x6d, 0x70, 0x6c, 0x65, 0x20, 0x6c, 0x69, 0x62, 0x72, 0x61, 0x72, 0x79, 0x01, 0x20, 0x00, 0x51, 0x8b,
+        0x4c, 0x24, 0x0c, 0x89, 0x5c, 0x24, 0x0c, 0x8d, 0x5c, 0x24, 0x0c, 0x50, 0x8d, 0x44, 0x24, 0x08, 0xf7, 0xd9,
+        0x23, 0xc1, 0x8d, 0x60, 0xf8, 0x8b, 0x43, 0xf0, 0x89, 0x04, 0x24, 0x8b, 0x00, 0x22, 0xe4, 0xce, 0x6f, 0x00,
+        0x5f, 0x5f, 0x45, 0x48, 0x5f, 0x70, 0x72, 0x6f, 0x6c, 0x6f, 0x67, 0x33, 0x5f, 0x63, 0x61, 0x74, 0x63, 0x68,
+        0x5f, 0x47, 0x53, 0x5f, 0x61, 0x6c, 0x69, 0x67, 0x6e, 0x10, 0x21, 0xb4, 0xfe, 0x6e, 0x00, 0x5f, 0x5f, 0x45,
+        0x48, 0x5f, 0x70, 0x72, 0x6f, 0x6c, 0x6f, 0x67, 0x33, 0x5f, 0x47, 0x53, 0x5f, 0x61, 0x6c, 0x69, 0x67, 0x6e,
+        0x10, 0x20, 0x65, 0x62, 0x67, 0x00, 0x5f, 0x5f, 0x45, 0x48, 0x5f, 0x70, 0x72, 0x6f, 0x6c, 0x6f, 0x67, 0x33,
+        0x5f, 0x63, 0x61, 0x74, 0x63, 0x68, 0x5f, 0x61, 0x6c, 0x69, 0x67, 0x6e, 0x10, 0x1f, 0xe4, 0xcf, 0x63, 0x00,
+        0x5f, 0x5f, 0x45, 0x48, 0x5f, 0x70, 0x72, 0x6f, 0x6c, 0x6f, 0x67, 0x33, 0x5f, 0x61, 0x6c, 0x69, 0x67, 0x6e,
+        0x00,
+    ];
+
+    const BUF: [u8; 103] = [
+        // utcutil.dll
+        //  MD5 abc9ea116498feb8f1de45f60d595af6
+        //  SHA-1 2f1ba350237b74c454caf816b7410490f5994c59
+        //  SHA-256 7607897638e9dae406f0840dbae68e879c3bb2f08da350c6734e4e2ef8d61ac2
+        // __EH_prolog3_catch_align
+
+        // first 0x20
+        0x51, 0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x5c, 0x24, 0x0c, 0x8d, 0x5c, 0x24, 0x0c, 0x50, 0x8d, 0x44, 0x24, 0x08,
+        0xf7, 0xd9, 0x23, 0xc1, 0x8d, 0x60, 0xf8, 0x8b, 0x43, 0xf0, 0x89, 0x04, 0x24, 0x8b, // crc16 start
+        0x43, 0xf8, 0x50, 0x8b, 0x43, 0xfc, 0x8b, 0x4b, 0xf4, 0x89, 0x6c, 0x24, 0x0c, 0x8d, 0x6c, 0x24, 0x0c, 0xc7,
+        0x44, 0x24, 0x08, 0xff, 0xff, 0xff, 0xff, 0x51, 0x53, 0x2b, 0xe0, 0x56, 0x57, 0xa1, // footer start
+        0x70, 0x14, 0x01, 0x10, 0x33, 0xc5, 0x50, 0x89, 0x65, 0xf0, 0x8b, 0x43, 0x04, 0x89, 0x45, 0x04, 0xff, 0x75,
+        0xf4, 0x64, 0xa1, 0x00, 0x00, 0x00, 0x00, 0x89, 0x45, 0xf4, 0x8d, 0x45, 0xf4, 0x64, 0xa3, 0x00, 0x00, 0x00,
+        0x00, 0xf2, 0xc3,
+    ];
+
+    #[test]
+    fn test_sig_pat_same() {
+        let pats = pat::parse(PAT).unwrap();
+        let sigs = sig::parse(&SIG).unwrap();
+
+        let pat = pats
+            .iter()
+            .find(|sig| sig.get_name().unwrap() == "__EH_prolog3_catch_align")
+            .unwrap();
+        let sig = sigs
+            .iter()
+            .find(|sig| sig.get_name().unwrap() == "__EH_prolog3_catch_align")
+            .unwrap();
+
+        assert_eq!(pat.byte_sig, sig.byte_sig);
+        assert_eq!(pat.size_of_bytes_crc16, sig.size_of_bytes_crc16);
+        assert_eq!(pat.crc16, sig.crc16);
+
+        // pat references __security_cookie
+        // sig does not have any references
+        // assert_eq!(pat.names, sig.names);
+    }
+
+    #[test]
+    fn test_one_pat_match() {
+        let sigs = pat::parse(&PAT).unwrap();
+        let sig = sigs
+            .iter()
+            .find(|sig| sig.get_name().unwrap() == "__EH_prolog3_catch_align")
+            .unwrap();
+
+        let sigs = FlirtSignatureSet::with_signatures(vec![sig.clone()]);
+        let matches = sigs.r#match(&BUF);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
+    }
+
+    #[test]
+    fn test_pat_match() {
+        let sigs = FlirtSignatureSet::with_signatures(pat::parse(PAT).unwrap());
+        let matches = sigs.r#match(&BUF);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
+    }
+
+    #[test]
+    fn test_one_sig_match() {
+        let sigs = sig::parse(&SIG).unwrap();
+        let sig = sigs
+            .iter()
+            .find(|sig| sig.get_name().unwrap() == "__EH_prolog3_catch_align")
+            .unwrap();
+
+        let sigs = FlirtSignatureSet::with_signatures(vec![sig.clone()]);
+        let matches = sigs.r#match(&BUF);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
+    }
+
+    #[test]
+    fn test_sig_match() {
+        let sigs = FlirtSignatureSet::with_signatures(sig::parse(&SIG).unwrap());
+        let matches = sigs.r#match(&BUF);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].get_name().unwrap(), "__EH_prolog3_catch_align");
     }
 }
