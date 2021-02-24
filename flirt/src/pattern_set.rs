@@ -67,6 +67,12 @@ impl std::fmt::Display for Pattern {
     }
 }
 
+impl std::fmt::Debug for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 fn is_hex_digit(c: char) -> bool {
     c.is_digit(16)
 }

@@ -40,7 +40,7 @@ pub mod pat;
 pub mod pattern_set;
 pub mod sig;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigElement {
     Byte(u8),
     Wildcard,
@@ -55,7 +55,7 @@ impl std::fmt::Display for SigElement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByteSignature(pub Vec<SigElement>);
 
 impl std::fmt::Display for ByteSignature {
@@ -74,13 +74,13 @@ enum Offset {
     Reference(u16),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
     pub offset: i64,
     pub name:   String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Symbol {
     Public(Name),
     Local(Name),
@@ -137,7 +137,7 @@ pub struct FlirtSignature {
 
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
-    crc16:                   u16,
+    pub crc16:               u16,
 
     /// then size of function.
     ///
