@@ -60,9 +60,14 @@ impl std::fmt::Display for Pattern {
             r"(?x)    # whitespace allowed
               (?-u)   # disable unicode mode, so we can match raw bytes
               ^       # match only from start of data
-              ({})    # capture the byte sequence
+              {}      # the byte sequence
             ",
-            parts.join("")
+            parts
+                .join("")
+                // simplify regex by removing trailing wildcards
+                // some patterns are like "<byte> ........." which seems inefficient.
+                // regex engine may optimize this anyways, not sure.
+                .trim_end_matches(".")
         )
     }
 }
@@ -152,7 +157,15 @@ impl PatternSetBuilder {
             patterns.push(format!("{}", pattern));
         }
 
-        let re = regex::bytes::RegexSet::new(patterns).expect("invalid regex");
+        let re = regex::bytes::RegexSetBuilder::new(patterns)
+            // enable use of up to around 100MB for matching
+            // the default is around 10MB, which was insufficient
+            // for loading `vc32rtf.sig` (1.2MB on disk).
+            //
+            // this is something that could be configurable, if necessary.
+            .size_limit(100 * (1 << 20))
+            .build()
+            .expect("invalid regex");
 
         PatternSet {
             patterns: self.patterns,
