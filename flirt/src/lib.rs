@@ -36,6 +36,7 @@ use log::trace;
 use regex::bytes::Regex;
 use std::collections::HashMap;
 
+pub mod decision_tree;
 pub mod pat;
 pub mod pattern_set;
 pub mod sig;
