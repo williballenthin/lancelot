@@ -97,7 +97,6 @@ enum Node {
     },
 }
 
-// TODO: make this a parameter of the tree
 const MAX_PATTERN_SIZE: usize = 32;
 
 fn build_decision_tree(patterns: &[Pattern]) -> Node {
@@ -148,6 +147,10 @@ fn build_decision_tree(patterns: &[Pattern]) -> Node {
         pattern_ids: Vec<PatternId>,
         mut dead_symbol_indices: BitArray,
     ) -> Node {
+        if pattern_ids.len() == 1 {
+            return Node::Leaf { patterns: pattern_ids };
+        }
+
         if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids, &dead_symbol_indices) {
             // safety: symbol_index <= MAX_PATTERN_SIZE
             unsafe { dead_symbol_indices.set_unchecked(symbol_index, true) };
@@ -208,7 +211,7 @@ pub struct DecisionTree {
 impl DecisionTree {
     pub fn new<T: AsRef<str>>(patterns: &[T]) -> DecisionTree {
         for pattern in patterns.iter() {
-            assert!(pattern.as_ref().len() < u8::MAX as usize);
+            //assert!(pattern.as_ref().len() * 2 < MAX_PATTERN_SIZE);
         }
 
         let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
@@ -223,6 +226,42 @@ impl DecisionTree {
     }
 }
 
+impl std::fmt::Debug for DecisionTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn write_indent(f: &mut std::fmt::Formatter, indent: usize) -> std::fmt::Result {
+            for _ in 0..indent {
+                write!(f, " ")?;
+            }
+
+            Ok(())
+        }
+
+        fn rec(f: &mut std::fmt::Formatter, indent: usize, node: &Node) -> std::fmt::Result {
+            match node {
+                Node::Leaf { patterns } => {
+                    write_indent(f, indent)?;
+                    writeln!(f, "{} patterns", patterns.len())?;
+                }
+                Node::Branch { index, choices } => {
+                    write_indent(f, indent)?;
+                    writeln!(f, "index {}", index)?;
+
+                    for (choice, node) in choices.iter() {
+                        write_indent(f, indent + 1)?;
+                        writeln!(f, "choice {:02X}", choice)?;
+
+                        rec(f, indent + 2, node)?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        rec(f, 0, &self.root)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +269,8 @@ mod tests {
     #[test]
     fn test_new() {
         let dt = DecisionTree::new(PATTERNS);
+        println!("{:?}", dt);
+        assert!(false);
     }
 
     const PATTERNS: &'static [&'static str] = &[
