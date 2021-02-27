@@ -128,16 +128,19 @@ fn build_decision_tree(patterns: &[Pattern]) -> Node {
             }
         }
 
-        let distinct_values_by_symbol_index: Vec<usize> = values_seen_by_symbol_index
+        values_seen_by_symbol_index
             .iter()
             .map(|values_seen| values_seen.count_ones())
-            .collect();
-
-        distinct_values_by_symbol_index
-            .iter()
             .enumerate()
-            .filter(|(_, count)| **count != 0)
+            // if all patterns have a wildcard at an index, then the count will be 0. no good.
+            // if all patterns have the same byte an at index, then the count will be 1. no good.
+            .filter(|(_, count)| *count >= 2)
+            // and we don't want to pick a symbol index that's been already used
+            // though in fact, the count should be 1 for these cases, which we ignore above.
+            // TODO: maybe remove me???
             .filter(|(i, _)| !*dead_symbol_indices.get(*i).expect("invalid alive index"))
+            // pick the index with the most cases, under the working assumption this
+            // most differentiates the patterns, more or less.
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("no floats"))
             .map(|(i, _)| i)
     }
