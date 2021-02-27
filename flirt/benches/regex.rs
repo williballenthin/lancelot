@@ -42,13 +42,13 @@ fn regexset_from_patterns(max: usize) -> regex::bytes::RegexSet {
 
 fn regexset_benchmark(c: &mut Criterion) {
     let hundred_haystacks = &HAYSTACKS[..100];
-    let rs = regexset_from_patterns(PATTERNS.len());
     let mut group = c.benchmark_group("regexset");
 
     group.sample_size(100);
     group.measurement_time(std::time::Duration::from_secs(90));
 
     group.bench_function("haystacks/100/patterns/all", |b| {
+        let rs = regexset_from_patterns(PATTERNS.len());
         b.iter(|| {
             for haystack in hundred_haystacks.iter() {
                 rs.matches(black_box(haystack));
@@ -57,6 +57,7 @@ fn regexset_benchmark(c: &mut Criterion) {
     });
 
     group.bench_function("haystacks/all/patterns/all", |b| {
+        let rs = regexset_from_patterns(PATTERNS.len());
         b.iter(|| {
             for haystack in HAYSTACKS.iter() {
                 rs.matches(black_box(haystack));
@@ -107,13 +108,13 @@ fn multiregex_from_patterns(max: usize) -> MultiRegex {
 
 fn multiregex_benchmark(c: &mut Criterion) {
     let hundred_haystacks = &HAYSTACKS[..100];
-    let ms = multiregex_from_patterns(PATTERNS.len());
     let mut group = c.benchmark_group("multiregex");
 
     group.sample_size(100);
     group.measurement_time(std::time::Duration::from_secs(90));
 
     group.bench_function("haystacks/100/patterns/all", |b| {
+        let ms = multiregex_from_patterns(PATTERNS.len());
         b.iter(|| {
             for &haystack in hundred_haystacks.iter() {
                 ms.matches(black_box(haystack));
@@ -122,6 +123,7 @@ fn multiregex_benchmark(c: &mut Criterion) {
     });
 
     group.bench_function("haystacks/all/patterns/all", |b| {
+        let ms = multiregex_from_patterns(PATTERNS.len());
         b.iter(|| {
             for haystack in HAYSTACKS.iter() {
                 ms.matches(black_box(haystack));
@@ -143,9 +145,55 @@ fn multiregex_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
+fn decisiontree_from_patterns(max: usize) -> lancelot_flirt::decision_tree::DecisionTree {
+    lancelot_flirt::decision_tree::DecisionTree::new(&PATTERNS.iter().take(max).cloned().collect::<Vec<&str>>())
+}
+
+fn decisiontree_benchmark(c: &mut Criterion) {
+    let hundred_haystacks = &HAYSTACKS[..100];
+    let mut group = c.benchmark_group("decision tree");
+
+    group.sample_size(100);
+    group.measurement_time(std::time::Duration::from_secs(5));
+
+    /*
+    group.bench_function("haystacks/100/patterns/all", |b| {
+        let dt = decisiontree_from_patterns(PATTERNS.len());
+        b.iter(|| {
+            for &haystack in hundred_haystacks.iter() {
+                dt.matches(black_box(haystack));
+            }
+        });
+    });
+
+    group.bench_function("haystacks/all/patterns/all", |b| {
+        let dt = decisiontree_from_patterns(PATTERNS.len());
+        b.iter(|| {
+            for haystack in HAYSTACKS.iter() {
+                dt.matches(black_box(haystack));
+            }
+        });
+    });
+    */
+
+    for &size in [0, 1, 10, 100, 1000, 10000, PATTERNS.len()].iter() {
+        let dt = decisiontree_from_patterns(size);
+        group.bench_with_input(BenchmarkId::new("haystacks/100/patterns", size), &size, |b, &_size| {
+            b.iter(|| {
+                for haystack in hundred_haystacks.iter() {
+                    dt.matches(black_box(haystack));
+                }
+            })
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(regex, regexset_benchmark);
 criterion_group!(multiregex, multiregex_benchmark);
-criterion_main!(regex, multiregex);
+criterion_group!(decisiontree, decisiontree_benchmark);
+criterion_main!(regex, multiregex, decisiontree);
 
 // byte signature portion of FLIRT signatures from `vc32rtf.sig`.
 const PATTERNS: &'static [&'static str] = &[
