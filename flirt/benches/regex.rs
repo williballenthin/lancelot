@@ -153,7 +153,7 @@ fn decisiontree_benchmark(c: &mut Criterion) {
     let hundred_haystacks = &HAYSTACKS[..100];
     let mut group = c.benchmark_group("decision tree");
 
-    group.sample_size(100);
+    group.sample_size(10);
     group.measurement_time(std::time::Duration::from_secs(5));
 
     /*
@@ -181,7 +181,7 @@ fn decisiontree_benchmark(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("haystacks/100/patterns", size), &size, |b, &_size| {
             b.iter(|| {
                 for haystack in hundred_haystacks.iter() {
-                    dt.matches(black_box(haystack));
+                    black_box(dt.matches(black_box(haystack)));
                 }
             })
         });
