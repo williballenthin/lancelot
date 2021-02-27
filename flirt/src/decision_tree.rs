@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use bitvec::prelude::*;
+use log::debug;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
@@ -195,7 +196,9 @@ impl Node {
         /// recursively build a tree from the given patterns, specified by
         /// `pattern_ids`.
         fn build_decision_tree_inner(patterns: &[Pattern], pattern_ids: Vec<PatternId>) -> Node {
-            if pattern_ids.len() == 1 {
+            //if pattern_ids.len() == 1 {
+            // TODO: tweak this for memory consumption. tradeoff against matching time.
+            if pattern_ids.len() < 64 {
                 return Node::Leaf { patterns: pattern_ids };
             }
 
@@ -287,27 +290,33 @@ pub struct DecisionTree {
 
 impl DecisionTree {
     pub fn new<T: AsRef<str>>(patterns: &[T]) -> DecisionTree {
+        debug!("dt: new");
         let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
         for pattern in patterns.iter() {
             assert!(pattern.0.len() <= MAX_PATTERN_SIZE);
         }
+        debug!("dt: copied patterns");
 
         // bucket size -> (patternid, padded pattern)
         let mut buckets: BTreeMap<usize, (Vec<PatternId>, Vec<Pattern>)> = Default::default();
         for pattern in patterns.iter() {
             let _ = buckets.entry(pattern.len()).or_default();
         }
+        debug!("dt: created {} buckets", buckets.len());
 
         for (pattern_id, pattern) in patterns.iter().enumerate() {
             for (&size, bucket) in buckets.iter_mut() {
-                if pattern.len() <= size {
+                // TODO: exact haystack size matching?
+                if pattern.len() == size {
                     bucket.0.push(pattern_id);
                     bucket.1.push(pattern.pad_until(size));
                 }
             }
         }
 
+        debug!("dt: indexing");
         let buckets = buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
+        debug!("dt: indexing done.");
 
         DecisionTree { patterns, buckets }
     }
@@ -379,7 +388,32 @@ impl std::fmt::Debug for DecisionTree {
 
 #[cfg(test)]
 mod tests {
+    use std::{io::Read, path::PathBuf};
+
     use super::*;
+
+    fn init_logging() {
+        let log_level = log::LevelFilter::Debug;
+        fern::Dispatch::new()
+            .format(move |out, message, record| {
+                out.finish(format_args!(
+                    "{} [{:5}] {} {}",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                    record.level(),
+                    if log_level == log::LevelFilter::Trace {
+                        record.target()
+                    } else {
+                        ""
+                    },
+                    message
+                ))
+            })
+            .level(log_level)
+            .chain(std::io::stderr())
+            .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
+            .apply()
+            .expect("failed to configure logging");
+    }
 
     #[test]
     fn test_new() {
@@ -391,6 +425,9 @@ mod tests {
     #[test]
     fn test_matches() {
         let dt = DecisionTree::new(PATTERNS);
+
+        // empty, too short
+        assert_eq!(dt.matches(b""), vec![]);
 
         // exact match
         assert_eq!(dt.matches(b"\x55\x8B\xEC\x33\xC0\x5D\xC3"), vec![7]);
@@ -431,6 +468,22 @@ mod tests {
             dt.matches(b"\x55\x8B\xEC\x33\xC0\x66!!!!!!\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
             vec![]
         );
+    }
+
+    #[test]
+    fn test_perf() {
+        init_logging();
+
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("benches");
+        path.push("patterns.txt");
+
+        let mut f = std::fs::File::open(path).unwrap();
+        let mut s = String::new();
+        f.read_to_string(&mut s).unwrap();
+        let patterns: Vec<&str> = s.split("\n").filter(|s| s.len() != 0).collect();
+
+        let dt = DecisionTree::new(&patterns);
     }
 
     const PATTERNS: &'static [&'static str] = &[
