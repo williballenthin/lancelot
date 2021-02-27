@@ -37,6 +37,48 @@ impl std::fmt::Display for Symbol {
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct Pattern(pub Vec<Symbol>);
 
+impl Pattern {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// return a new pattern thats been padded until the given size with
+    /// wildcards.
+    pub fn pad_until(&self, size: usize) -> Pattern {
+        let mut other = self.clone();
+
+        if size > self.len() {
+            let needed = size - self.len();
+
+            other.0.reserve(needed);
+            for _ in 0..needed {
+                other.0.push(Symbol::Wildcard)
+            }
+        }
+
+        other
+    }
+
+    pub fn is_match(&self, haystack: &[u8]) -> bool {
+        for (i, symbol) in self.0.iter().enumerate() {
+            match symbol {
+                Symbol::Wildcard => continue,
+                Symbol::Byte(b) => {
+                    if let Some(bb) = haystack.get(i) {
+                        if b != bb {
+                            return false;
+                        }
+                        continue;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for symbol in self.0.iter() {
@@ -94,122 +136,196 @@ enum Node {
         index:   SymbolIndex,
         // decision values
         choices: BTreeMap<u8, Node>,
+        // there may be patterns that match anythere here.
+        // rather than create a choice for each of the ~200 remaining values,
+        // place them all into other.
+        // if this is not None, then this node captures all remaining values.
+        other:   Option<Box<Node>>,
     },
 }
 
+// this is the default pattern size for FLIRT signatures.
+// i haven't seen longer patterns. if we do, then make this configurable.
+// use this to use inline bitarrays below, but can easily migrate to bitvec if
+// necessary.
 const MAX_PATTERN_SIZE: usize = 32;
 
-fn build_decision_tree(patterns: &[Pattern]) -> Node {
-    fn pick_best_symbol_index(patterns: &[Pattern], pattern_ids: &[PatternId]) -> Option<SymbolIndex> {
-        let mut values_seen_by_symbol_index = [bitarr![0; 256]; MAX_PATTERN_SIZE];
-
-        for pattern_id in pattern_ids.iter() {
-            // safety: pattern_ids contains only indices into patterns.
-            let pattern = unsafe { patterns.get_unchecked(*pattern_id as usize) };
-
-            for (symbol_index, symbol) in pattern.0.iter().enumerate() {
-                match symbol {
-                    Symbol::Byte(b) => {
-                        // safety: symbol_index <= MAX_PATTERN_SIZE
-                        // safety: b must be <= u8::MAX (255), which is size of bitarr! as constructed
-                        // above.
-                        unsafe {
-                            values_seen_by_symbol_index
-                                .get_unchecked_mut(symbol_index)
-                                .set_unchecked(*b as usize, true);
-                        }
-                    }
-                    Symbol::Wildcard => {}
-                }
-            }
-        }
-
-        values_seen_by_symbol_index
-            .iter()
-            .map(|values_seen| values_seen.count_ones())
-            .enumerate()
-            // if all patterns have a wildcard at an index, then the count will be 0. no good.
-            // if all patterns have the same byte an at index, then the count will be 1. no good.
-            // this also means that indices that have already been used will not be chosen again.
-            .filter(|(_, count)| *count >= 2)
-            // pick the index with the most cases, under the working assumption this
-            // most differentiates the patterns, more or less.
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("no floats"))
-            .map(|(i, _)| i)
-    }
-
-    fn build_decision_tree_inner(patterns: &[Pattern], pattern_ids: Vec<PatternId>) -> Node {
-        if pattern_ids.len() == 1 {
-            return Node::Leaf { patterns: pattern_ids };
-        }
-
-        if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
-            let mut choices: BTreeMap<u8, Vec<PatternId>> = Default::default();
+impl Node {
+    /// build a tree of `Node` with the given patterns.
+    fn new(patterns: &[Pattern]) -> Node {
+        /// pick the symbol index that has the most distinct values across all
+        /// the patterns. we're only interested in byte values, not
+        /// wildcards, because wildcards don't differentiate patterns.
+        fn pick_best_symbol_index(patterns: &[Pattern], pattern_ids: &[PatternId]) -> Option<SymbolIndex> {
+            // we make a bitarray for each symbol index, and the bitarray is 256 bits long.
+            // for each symbol seen at that symbol index, we set the bit.
+            // then we count the bits set at the end to find the symbol index with most
+            // distinct values.
+            let mut values_seen_by_symbol_index = [bitarr![0; 256]; MAX_PATTERN_SIZE];
 
             for pattern_id in pattern_ids.iter() {
-                // safety: pattern_ids contains only indices into patterns.
-                let pattern = unsafe { patterns.get_unchecked(*pattern_id as usize) };
-
-                // safety: symbol_index <= MAX_PATTERN_SIZE
-                let symbol = unsafe { pattern.0.get_unchecked(symbol_index) };
-
-                match symbol {
-                    Symbol::Byte(b) => {
-                        choices.entry(*b).or_default().push(*pattern_id);
-                    }
-                    Symbol::Wildcard => {
-                        for b in 0..u8::MAX {
-                            choices.entry(b).or_default().push(*pattern_id);
+                if let Some(pattern) = patterns.get(*pattern_id) {
+                    for (symbol_index, symbol) in pattern.0.iter().enumerate() {
+                        match symbol {
+                            Symbol::Byte(b) => {
+                                if let Some(values_seen) = values_seen_by_symbol_index.get_mut(symbol_index) {
+                                    values_seen.set(*b as usize, true);
+                                }
+                            }
+                            Symbol::Wildcard => {}
                         }
                     }
                 }
             }
 
-            let choices: BTreeMap<u8, Node> = choices
-                .into_iter()
-                .map(|(k, v)| {
-                    let v = build_decision_tree_inner(patterns, v);
-                    (k, v)
-                })
-                .collect();
+            values_seen_by_symbol_index
+                .iter()
+                .map(|values_seen| values_seen.count_ones())
+                .enumerate()
+                // if all patterns have a wildcard at an index, then the count will be 0. no good.
+                // if all patterns have the same byte an at index, then the count will be 1. no good.
+                // this also means that indices that have already been used will not be chosen again.
+                .filter(|(_, count)| *count >= 2)
+                // pick the index with the most cases, under the working assumption this
+                // most differentiates the patterns, more or less.
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("no floats"))
+                .map(|(i, _)| i)
+        }
 
-            Node::Branch {
-                index: symbol_index,
-                choices,
+        /// recursively build a tree from the given patterns, specified by
+        /// `pattern_ids`.
+        fn build_decision_tree_inner(patterns: &[Pattern], pattern_ids: Vec<PatternId>) -> Node {
+            if pattern_ids.len() == 1 {
+                return Node::Leaf { patterns: pattern_ids };
             }
-        } else {
-            Node::Leaf { patterns: pattern_ids }
+
+            if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
+                let mut choices: BTreeMap<u8, Vec<PatternId>> = Default::default();
+                let mut wildcards: Vec<PatternId> = Default::default();
+
+                for pattern_id in pattern_ids.into_iter() {
+                    if let Some(pattern) = patterns.get(pattern_id) {
+                        match pattern.0.get(symbol_index) {
+                            Some(Symbol::Byte(b)) => {
+                                choices.entry(*b).or_default().push(pattern_id);
+                            }
+                            Some(Symbol::Wildcard) => wildcards.push(pattern_id),
+                            _ => {}
+                        }
+                    }
+                }
+
+                let other = if wildcards.len() > 0 {
+                    for (_, v) in choices.iter_mut() {
+                        v.extend(wildcards.iter());
+                    }
+                    Some(Box::new(build_decision_tree_inner(patterns, wildcards)))
+                } else {
+                    None
+                };
+
+                let choices: BTreeMap<u8, Node> = choices
+                    .into_iter()
+                    .map(|(k, v)| (k, build_decision_tree_inner(patterns, v)))
+                    .collect();
+
+                Node::Branch {
+                    index: symbol_index,
+                    choices,
+                    other,
+                }
+            } else {
+                Node::Leaf { patterns: pattern_ids }
+            }
+        }
+
+        let pattern_ids = patterns.iter().enumerate().map(|(i, _)| i).collect();
+        build_decision_tree_inner(patterns, pattern_ids)
+    }
+
+    pub fn matches(&self, buf: &[u8]) -> Vec<PatternId> {
+        let mut node = self;
+
+        loop {
+            match node {
+                Node::Leaf { patterns } => return patterns.clone(),
+                Node::Branch { index, choices, other } => {
+                    if let Some(b) = buf.get(*index) {
+                        if let Some(next) = choices.get(b) {
+                            node = next;
+                            continue;
+                        }
+
+                        if let Some(next) = other {
+                            node = &*next;
+                            continue;
+                        }
+
+                        return vec![];
+                    } else {
+                        // since we bucket the patterns by size in the decision tree,
+                        // all input buffers passed here should be at least as large
+                        // as all patterns.
+                        //
+                        // if we reach here its a programming error.
+                        panic!("buffer too small for pattern")
+                    }
+                }
+            }
         }
     }
-
-    let mut pattern_ids = vec![];
-    for id in 0..patterns.len() {
-        pattern_ids.push(id);
-    }
-
-    build_decision_tree_inner(patterns, pattern_ids)
 }
 
 pub struct DecisionTree {
     patterns: Vec<Pattern>,
-    root:     Node,
+    // mapping from pattern size to root node.
+    // the largest bucket contains all patterns (padded out with wildcards).
+    // the smallest bucket contains patterns with only the smallest size.
+    // when matching, pick the largest bucket with size <= matching buffer size.
+    buckets:  BTreeMap<usize, (Vec<PatternId>, Node)>,
 }
 
 impl DecisionTree {
     pub fn new<T: AsRef<str>>(patterns: &[T]) -> DecisionTree {
+        let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
         for pattern in patterns.iter() {
-            //assert!(pattern.as_ref().len() * 2 < MAX_PATTERN_SIZE);
+            assert!(pattern.0.len() <= MAX_PATTERN_SIZE);
         }
 
-        let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
-        let root = build_decision_tree(&patterns);
+        // bucket size -> (patternid, padded pattern)
+        let mut buckets: BTreeMap<usize, (Vec<PatternId>, Vec<Pattern>)> = Default::default();
+        for pattern in patterns.iter() {
+            let _ = buckets.entry(pattern.len()).or_default();
+        }
 
-        DecisionTree { patterns, root }
+        for (pattern_id, pattern) in patterns.iter().enumerate() {
+            for (&size, bucket) in buckets.iter_mut() {
+                if pattern.len() <= size {
+                    bucket.0.push(pattern_id);
+                    bucket.1.push(pattern.pad_until(size));
+                }
+            }
+        }
+
+        let buckets = buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
+
+        DecisionTree { patterns, buckets }
     }
 
-    pub fn r#match(&self, haystack: &[u8]) -> Vec<usize> {
-        // list of indices passed into `new` that match.
-        vec![]
+    pub fn matches(&self, haystack: &[u8]) -> Vec<usize> {
+        if let Some((_, (pattern_ids, root))) = self.buckets.range(0..=haystack.len()).last() {
+            root.matches(haystack)
+                .iter()
+                .map(|pattern_id| pattern_ids[*pattern_id])
+                .filter(|pattern_id| {
+                    let pattern = &self.patterns[*pattern_id as usize];
+                    pattern.is_match(haystack)
+                })
+                .collect()
+        } else {
+            // not a bucket small enough
+            return vec![];
+        }
     }
 }
 
@@ -229,7 +345,7 @@ impl std::fmt::Debug for DecisionTree {
                     write_indent(f, indent)?;
                     writeln!(f, "{} patterns", patterns.len())?;
                 }
-                Node::Branch { index, choices } => {
+                Node::Branch { index, choices, other } => {
                     write_indent(f, indent)?;
                     writeln!(f, "index {}", index)?;
 
@@ -239,13 +355,25 @@ impl std::fmt::Debug for DecisionTree {
 
                         rec(f, indent + 2, node)?;
                     }
+
+                    if let Some(other) = other {
+                        write_indent(f, indent + 1)?;
+                        writeln!(f, "choice ..")?;
+
+                        rec(f, indent + 2, &*other)?;
+                    }
                 }
             }
 
             Ok(())
         }
 
-        rec(f, 0, &self.root)
+        for (size, (_, root)) in self.buckets.iter() {
+            writeln!(f, "size: {}", size)?;
+            rec(f, 2, root)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -255,9 +383,54 @@ mod tests {
 
     #[test]
     fn test_new() {
+        let _ = DecisionTree::new(PATTERNS);
+        //println!("{:?}", dt);
+        //assert!(false);
+    }
+
+    #[test]
+    fn test_matches() {
         let dt = DecisionTree::new(PATTERNS);
-        println!("{:?}", dt);
-        assert!(false);
+
+        // exact match
+        assert_eq!(dt.matches(b"\x55\x8B\xEC\x33\xC0\x5D\xC3"), vec![7]);
+
+        // too short to match anything
+        assert_eq!(dt.matches(b"\x55"), vec![]);
+        assert_eq!(dt.matches(b"\x55\x8B\xEC\x33\xC0\x5D"), vec![]);
+
+        // suffix doesn't matter
+        assert_eq!(dt.matches(b"\x55\x8B\xEC\x33\xC0\x5D\xC3\xAA"), vec![7]);
+        assert_eq!(dt.matches(b"\x55\x8B\xEC\x33\xC0\x5D\xC3\xBB"), vec![7]);
+    }
+
+    #[test]
+    fn test_wildcard() {
+        let dt = DecisionTree::new(PATTERNS);
+
+        // these all match, with the variable bytes in the middle ignored
+        assert_eq!(
+            dt.matches(b"\x55\x8B\xEC\x33\xC0\x66\xA1!!!!\x25\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
+            vec![8]
+        );
+        assert_eq!(
+            dt.matches(b"\x55\x8B\xEC\x33\xC0\x66\xA1!1!!\x25\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
+            vec![8]
+        );
+        assert_eq!(
+            dt.matches(b"\x55\x8B\xEC\x33\xC0\x66\xA1!2!!\x25\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
+            vec![8]
+        );
+        assert_eq!(
+            dt.matches(b"\x55\x8B\xEC\x33\xC0\x66\xA1!3!!\x25\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
+            vec![8]
+        );
+
+        // but this doesn't match, because we've grown the variable bytes too much
+        assert_eq!(
+            dt.matches(b"\x55\x8B\xEC\x33\xC0\x66!!!!!!\x00\x01\x00\x00\xF7\xD8\x1B\xC0\x40\x5D\xC3"),
+            vec![]
+        );
     }
 
     const PATTERNS: &'static [&'static str] = &[
@@ -267,8 +440,11 @@ mod tests {
         "558bec33c0565739410c76158b71088b7d088bd6393a74114083c2043b410c72",
         "558bec33c0568bf1890689460489460889460ce8........ff75088bcee8",
         "558bec33c0568bf1b9ffffff0f578b7d08094e0489461089461889460c8b4604",
+        /* 6 */
         "558bec33c05dc20800",
+        /* 7 */
         "558bec33c05dc3",
+        /* 8 */
         "558bec33c066a1........2500010000f7d81bc0405dc3",
         "558bec33c066a1........2500020000f7d81bc0405dc3",
         "558bec33c066a1........2500040000f7d81bc0405dc3",
