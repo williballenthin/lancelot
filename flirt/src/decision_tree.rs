@@ -100,11 +100,7 @@ enum Node {
 const MAX_PATTERN_SIZE: usize = 32;
 
 fn build_decision_tree(patterns: &[Pattern]) -> Node {
-    fn pick_best_symbol_index(
-        patterns: &[Pattern],
-        pattern_ids: &[PatternId],
-        dead_symbol_indices: &BitArray,
-    ) -> Option<SymbolIndex> {
+    fn pick_best_symbol_index(patterns: &[Pattern], pattern_ids: &[PatternId]) -> Option<SymbolIndex> {
         let mut values_seen_by_symbol_index = [bitarr![0; 256]; MAX_PATTERN_SIZE];
 
         for pattern_id in pattern_ids.iter() {
@@ -134,30 +130,20 @@ fn build_decision_tree(patterns: &[Pattern]) -> Node {
             .enumerate()
             // if all patterns have a wildcard at an index, then the count will be 0. no good.
             // if all patterns have the same byte an at index, then the count will be 1. no good.
+            // this also means that indices that have already been used will not be chosen again.
             .filter(|(_, count)| *count >= 2)
-            // and we don't want to pick a symbol index that's been already used
-            // though in fact, the count should be 1 for these cases, which we ignore above.
-            // TODO: maybe remove me???
-            .filter(|(i, _)| !*dead_symbol_indices.get(*i).expect("invalid alive index"))
             // pick the index with the most cases, under the working assumption this
             // most differentiates the patterns, more or less.
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("no floats"))
             .map(|(i, _)| i)
     }
 
-    fn build_decision_tree_inner(
-        patterns: &[Pattern],
-        pattern_ids: Vec<PatternId>,
-        mut dead_symbol_indices: BitArray,
-    ) -> Node {
+    fn build_decision_tree_inner(patterns: &[Pattern], pattern_ids: Vec<PatternId>) -> Node {
         if pattern_ids.len() == 1 {
             return Node::Leaf { patterns: pattern_ids };
         }
 
-        if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids, &dead_symbol_indices) {
-            // safety: symbol_index <= MAX_PATTERN_SIZE
-            unsafe { dead_symbol_indices.set_unchecked(symbol_index, true) };
-
+        if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
             let mut choices: BTreeMap<u8, Vec<PatternId>> = Default::default();
 
             for pattern_id in pattern_ids.iter() {
@@ -182,7 +168,7 @@ fn build_decision_tree(patterns: &[Pattern]) -> Node {
             let choices: BTreeMap<u8, Node> = choices
                 .into_iter()
                 .map(|(k, v)| {
-                    let v = build_decision_tree_inner(patterns, v, dead_symbol_indices.clone());
+                    let v = build_decision_tree_inner(patterns, v);
                     (k, v)
                 })
                 .collect();
@@ -201,9 +187,7 @@ fn build_decision_tree(patterns: &[Pattern]) -> Node {
         pattern_ids.push(id);
     }
 
-    let dead_symbol_indices = bitarr![0; MAX_PATTERN_SIZE];
-
-    build_decision_tree_inner(patterns, pattern_ids, dead_symbol_indices)
+    build_decision_tree_inner(patterns, pattern_ids)
 }
 
 pub struct DecisionTree {
