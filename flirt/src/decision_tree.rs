@@ -34,7 +34,6 @@ impl std::fmt::Display for Symbol {
         }
     }
 }
-
 // a pattern is just a sequence of symbols.
 #[derive(Hash, PartialEq, Eq, Clone)]
 pub struct Pattern(pub smallvec::SmallVec<[Symbol; MAX_PATTERN_SIZE]>);
@@ -115,10 +114,15 @@ type SymbolIndex = u8; // u8::MAX or less
 // by reducing this number, the tree depth increases, but limits the number of
 // validation scans. by increasing this number, we we trade less memory for
 // slower matching speed.
-const LEAF_SIZE: usize = 16;
+const LEAF_SIZE: usize = 32;
 
 struct VecMap<K: Eq, V> {
-    inner: Vec<(K, V)>,
+    // perf:
+    // keep k and v together, rather than splitting across two vecs.
+    // apparently the overhead of the second vec outweights benefits of packing.
+    //
+    // perf: using smallvec here doesn't help.
+    inner: Vec<(K, V)>
 }
 
 impl<K: Eq, V> Default for VecMap<K, V> {
@@ -132,11 +136,15 @@ impl<K: Eq, V> Default for VecMap<K, V> {
 impl<K: Eq, V> VecMap<K, V> {
     /// undefined if the k is already present.
     pub fn insert(&mut self, k: K, v: V) {
-        self.inner.push((k, v))
+        self.inner.push((k, v));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item=&(K, V)> {
+        self.inner.iter()
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        for (kk, vv) in self.inner.iter() {
+        for (kk, vv) in self.iter() {
             if k == kk {
                 return Some(vv);
             }
@@ -144,15 +152,19 @@ impl<K: Eq, V> VecMap<K, V> {
 
         None
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
-        self.inner.iter()
-    }
 }
+
+use std::iter::Iterator;
 
 impl<K: Eq, V> std::iter::FromIterator<(K, V)> for VecMap<K, V> {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         let mut m: VecMap<K, V> = Default::default();
+
+        let iter = iter.into_iter();
+
+        if let (_, Some(upper)) = iter.size_hint() {
+            m.inner.reserve(upper);
+        }
 
         for (k, v) in iter {
             m.insert(k, v);
@@ -164,20 +176,24 @@ impl<K: Eq, V> std::iter::FromIterator<(K, V)> for VecMap<K, V> {
 
 enum Node {
     Leaf {
-        // the matching patterns.
-        patterns: Vec<PatternId>,
+        /// the matching patterns.
+        //
+        // perf: smallvec[_; 5] chosen empirically.
+        // might be explained by vec being 3 * u64, which is 6 * PatternId (u32).
+        // but smallvec needs one byte to flag inline or pointer, so space for 5 pattern ids.
+        patterns: SmallVec<[PatternId; 5]>,
     },
     Branch {
-        // the index of the symbol to use to branch.
+        /// the index of the symbol to use to branch.
         index:   SymbolIndex,
-        // decision values. if the value is seen, transition to the child node.
+        /// decision values. if the value is seen, transition to the child node.
         // conceptually, this is a btree, but since we dont a expect a large branching factor,
         // especially near the leaves, we dont want the overhead of a full btree node (64 elements?).
         choices: VecMap<u8, Box<Node>>,
-        // there may be patterns that match anythere here.
-        // rather than create a choice for each of the ~200 remaining values,
-        // place them all into other.
-        // if this is not None, then this node captures all remaining values.
+        /// there may be patterns that match anythere here.
+        /// rather than create a choice for each of the ~200 remaining values,
+        /// place them all into other.
+        /// if this is not None, then this node captures all remaining values.
         other:   Option<Box<Node>>,
     },
 }
@@ -236,7 +252,7 @@ impl Node {
             if pattern_ids.len() < LEAF_SIZE {
                 let mut pattern_ids = pattern_ids;
                 pattern_ids.shrink_to_fit();
-                return Node::Leaf { patterns: pattern_ids };
+                return Node::Leaf { patterns: SmallVec::from(pattern_ids) };
             }
 
             if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
@@ -275,7 +291,7 @@ impl Node {
                     other,
                 }
             } else {
-                Node::Leaf { patterns: pattern_ids }
+                Node::Leaf { patterns: SmallVec::from(pattern_ids) }
             }
         }
 
@@ -302,7 +318,7 @@ impl Node {
 
         loop {
             match node {
-                Node::Leaf { patterns } => return patterns.clone(),
+                Node::Leaf { patterns } => return patterns.to_vec(),
                 Node::Branch { index, .. } => {
                     if let Some(b) = buf.get(*index as usize) {
                         if let Some(next) = node.get_child(*b) {
@@ -337,6 +353,10 @@ pub struct DecisionTree {
 impl DecisionTree {
     pub fn new<T: AsRef<str>>(patterns: &[T]) -> DecisionTree {
         debug!("dt: new");
+
+        // TODO: remove me?
+        let start_mem_usage = unsafe { libc::mallinfo() }.uordblks;
+ 
         let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
         for pattern in patterns.iter() {
             assert!(pattern.0.len() <= MAX_PATTERN_SIZE);
@@ -362,6 +382,10 @@ impl DecisionTree {
         debug!("dt: indexing");
         let buckets = buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
         debug!("dt: indexing done.");
+
+        // TODO: remove me?
+        let end_mem_usage = unsafe { libc::mallinfo() }.uordblks;
+        debug!("dt: memory increase: {}", end_mem_usage - start_mem_usage);
 
         DecisionTree { patterns, buckets }
     }
@@ -529,10 +553,7 @@ mod tests {
         f.read_to_string(&mut s).unwrap();
         let patterns: Vec<&str> = s.split("\n").filter(|s| s.len() != 0).collect();
 
-        let dt = DecisionTree::new(&patterns);
-
-        let info = unsafe { libc::mallinfo() };
-        println!("{}", info.uordblks);
+        let _ = DecisionTree::new(&patterns);
     }
 
     const PATTERNS: &'static [&'static str] = &[
