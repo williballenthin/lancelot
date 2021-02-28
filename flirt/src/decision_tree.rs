@@ -122,7 +122,7 @@ struct VecMap<K: Eq, V> {
     // apparently the overhead of the second vec outweights benefits of packing.
     //
     // perf: using smallvec here doesn't help.
-    inner: Vec<(K, V)>
+    inner: Vec<(K, V)>,
 }
 
 impl<K: Eq, V> Default for VecMap<K, V> {
@@ -139,7 +139,7 @@ impl<K: Eq, V> VecMap<K, V> {
         self.inner.push((k, v));
     }
 
-    pub fn iter(&self) -> impl Iterator<Item=&(K, V)> {
+    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
         self.inner.iter()
     }
 
@@ -252,7 +252,9 @@ impl Node {
             if pattern_ids.len() < LEAF_SIZE {
                 let mut pattern_ids = pattern_ids;
                 pattern_ids.shrink_to_fit();
-                return Node::Leaf { patterns: SmallVec::from(pattern_ids) };
+                return Node::Leaf {
+                    patterns: SmallVec::from(pattern_ids),
+                };
             }
 
             if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
@@ -291,7 +293,9 @@ impl Node {
                     other,
                 }
             } else {
-                Node::Leaf { patterns: SmallVec::from(pattern_ids) }
+                Node::Leaf {
+                    patterns: SmallVec::from(pattern_ids),
+                }
             }
         }
 
@@ -356,7 +360,7 @@ impl DecisionTree {
 
         // TODO: remove me?
         let start_mem_usage = unsafe { libc::mallinfo() }.uordblks;
- 
+
         let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
         for pattern in patterns.iter() {
             assert!(pattern.0.len() <= MAX_PATTERN_SIZE);
