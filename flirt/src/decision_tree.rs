@@ -44,23 +44,6 @@ impl Pattern {
         self.0.len()
     }
 
-    /// return a new pattern thats been padded until the given size with
-    /// wildcards.
-    pub fn pad_until(&self, size: usize) -> Pattern {
-        let mut other = self.clone();
-
-        if size > self.len() {
-            let needed = size - self.len();
-
-            other.0.reserve(needed);
-            for _ in 0..needed {
-                other.0.push(Symbol::Wildcard)
-            }
-        }
-
-        other
-    }
-
     pub fn is_match(&self, haystack: &[u8]) -> bool {
         for (i, symbol) in self.0.iter().enumerate() {
             match symbol {
@@ -132,7 +115,52 @@ type SymbolIndex = u8; // u8::MAX or less
 // by reducing this number, the tree depth increases, but limits the number of
 // validation scans. by increasing this number, we we trade less memory for
 // slower matching speed.
-const LEAF_SIZE: usize = 64;
+const LEAF_SIZE: usize = 16;
+
+struct VecMap<K: Eq, V> {
+    inner: Vec<(K, V)>,
+}
+
+impl<K: Eq, V> Default for VecMap<K, V> {
+    fn default() -> Self {
+        VecMap {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl<K: Eq, V> VecMap<K, V> {
+    /// undefined if the k is already present.
+    pub fn insert(&mut self, k: K, v: V) {
+        self.inner.push((k, v))
+    }
+
+    pub fn get(&self, k: &K) -> Option<&V> {
+        for (kk, vv) in self.inner.iter() {
+            if k == kk {
+                return Some(vv);
+            }
+        }
+
+        None
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
+        self.inner.iter()
+    }
+}
+
+impl<K: Eq, V> std::iter::FromIterator<(K, V)> for VecMap<K, V> {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        let mut m: VecMap<K, V> = Default::default();
+
+        for (k, v) in iter {
+            m.insert(k, v);
+        }
+
+        m
+    }
+}
 
 enum Node {
     Leaf {
@@ -145,7 +173,7 @@ enum Node {
         // decision values. if the value is seen, transition to the child node.
         // conceptually, this is a btree, but since we dont a expect a large branching factor,
         // especially near the leaves, we dont want the overhead of a full btree node (64 elements?).
-        choices: Vec<(u8, Box<Node>)>,
+        choices: VecMap<u8, Box<Node>>,
         // there may be patterns that match anythere here.
         // rather than create a choice for each of the ~200 remaining values,
         // place them all into other.
@@ -236,7 +264,7 @@ impl Node {
                     None
                 };
 
-                let choices: Vec<(u8, Box<Node>)> = choices
+                let choices: VecMap<u8, Box<Node>> = choices
                     .into_iter()
                     .map(|(k, v)| (k, Box::new(build_decision_tree_inner(patterns, v))))
                     .collect();
@@ -257,10 +285,8 @@ impl Node {
 
     fn get_child(&self, b: u8) -> Option<&Node> {
         if let Node::Branch { choices, other, .. } = self {
-            for (choice, node) in choices.iter() {
-                if *choice == b {
-                    return Some(&*node);
-                }
+            if let Some(node) = choices.get(&b) {
+                return Some(&*node);
             }
 
             if let Some(node) = other {
@@ -343,7 +369,7 @@ impl DecisionTree {
     pub fn matches(&self, haystack: &[u8]) -> Vec<PatternId> {
         let mut ret: Vec<PatternId> = Default::default();
 
-        for (size, (pattern_ids, root)) in self.buckets.range(0..=haystack.len()) {
+        for (_, (pattern_ids, root)) in self.buckets.range(0..=haystack.len()) {
             ret.extend(
                 root.matches(haystack)
                     .iter()
