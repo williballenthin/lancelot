@@ -117,7 +117,7 @@ type SymbolIndex = u8; // u8::MAX or less
 // by reducing this number, the tree depth increases, but limits the number of
 // validation scans. by increasing this number, we we trade less memory for
 // slower matching speed.
-const LEAF_SIZE: usize = 32;
+const LEAF_SIZE: usize = 1;
 
 struct VecMap<K: Eq, V> {
     // perf:
