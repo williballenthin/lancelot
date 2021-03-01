@@ -2,7 +2,7 @@
 name = "lancelot"
 description = "binary analysis framework for x32/x64 PE files"
 license = "Apache-2.0"
-version = "0.5.3"
+version = "0.5.4"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
 
@@ -29,7 +29,7 @@ bitvec = "0.20"
 # https://github.com/myrrlyn/funty/issues/3#issuecomment-778629965
 funty="=1.1.0"
 
-lancelot-flirt = { path = "../flirt", version = "0.5.3" }
+lancelot-flirt = { path = "../flirt", version = "0.5.4" }
 
 [dev-dependencies]
 criterion = "0.3"
