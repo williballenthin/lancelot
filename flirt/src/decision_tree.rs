@@ -134,8 +134,10 @@ impl<K: Eq, V> Default for VecMap<K, V> {
 }
 
 impl<K: Eq, V> VecMap<K, V> {
-    /// undefined if the k is already present.
+    /// may panic if k is already present.
     pub fn insert(&mut self, k: K, v: V) {
+        debug_assert!(self.inner.iter().find(|(kk, _)| k == *kk).is_none());
+
         self.inner.push((k, v));
     }
 
@@ -207,14 +209,29 @@ const MAX_PATTERN_SIZE: usize = 32;
 impl Node {
     /// build a tree of `Node` with the given patterns.
     fn new(patterns: &[Pattern]) -> Node {
-        /// pick the symbol index that has the most distinct values across all
-        /// the patterns. we're only interested in byte values, not
-        /// wildcards, because wildcards don't differentiate patterns.
+        /// pick the best choice symbol index to split at.
+        ///
+        /// there are two fitness functions, in this order of priority:
+        ///  1. avoid splitting where there are many wildcards, and
+        ///  2. try to split where there are many distinct values.
+        ///
+        /// (2) is intuitive: we want to maximize the branching factor of each
+        /// node. the more branches we have from each node, the
+        /// shallower the tree will be.
+        ///
+        /// (1) we learned our lesson with - when we split where there are
+        /// wildcards, all those wildcard patterns get passed down each
+        /// brach. if there are many wildcards, then each split doesn't
+        /// do much good, since each branch has at least #wildcard
+        /// patterns in it - the tree explodes!
         fn pick_best_symbol_index(patterns: &[Pattern], pattern_ids: &[PatternId]) -> Option<SymbolIndex> {
-            // we make a bitarray for each symbol index, and the bitarray is 256 bits long.
-            // for each symbol seen at that symbol index, we set the bit.
-            // then we count the bits set at the end to find the symbol index with most
-            // distinct values.
+            // number of wildcards seen at each symbol index.
+            let mut wildcards_by_symbol_index = [0u32; MAX_PATTERN_SIZE];
+
+            // set of values seen at each symbol index.
+            // each set is a 256-bit bitarray, index corresponding to a byte value.
+            // use `set.count_ones()` to see how many distinct values seen at a symbol
+            // index.
             let mut values_seen_by_symbol_index = [bitarr![0; 256]; MAX_PATTERN_SIZE];
 
             for pattern_id in pattern_ids.iter() {
@@ -226,24 +243,41 @@ impl Node {
                                     values_seen.set(*b as usize, true);
                                 }
                             }
-                            Symbol::Wildcard => {}
+                            Symbol::Wildcard => {
+                                if let Some(wildcard_count) = wildcards_by_symbol_index.get_mut(symbol_index) {
+                                    *wildcard_count += 1;
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            values_seen_by_symbol_index
+            // construct and sort vector of the following tuples:
+            //
+            //   (wildcard_count, -distinct_value_count, symbol_index)
+            //
+            // which orders:
+            //   1. minimizes wildcards
+            //   2. maximizes distinct values
+            let mut fitness_by_symbol_index: Vec<(u32, usize, usize)> = wildcards_by_symbol_index
                 .iter()
-                .map(|values_seen| values_seen.count_ones())
+                .cloned()
                 .enumerate()
+                .map(|(i, wildcard_count)| (wildcard_count, values_seen_by_symbol_index[i].count_ones(), i))
                 // if all patterns have a wildcard at an index, then the count will be 0. no good.
                 // if all patterns have the same byte an at index, then the count will be 1. no good.
-                // this also means that indices that have already been used will not be chosen again.
-                .filter(|(_, count)| *count >= 2)
-                // pick the index with the most cases, under the working assumption this
-                // most differentiates the patterns, more or less.
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("no floats"))
-                .map(|(i, _)| i as u8)
+                // this means that indices that have already been used will not be chosen again.
+                .filter(|(_, distinct_values, _)| *distinct_values >= 2)
+                // invert the distinct value count, so as we sort from low to high, the index with most distinct values
+                // comes first.
+                .map(|(wildcard_count, distinct_values, i)| (wildcard_count, 256 - distinct_values, i))
+                .collect();
+
+            fitness_by_symbol_index.sort();
+
+            // take the first entry
+            fitness_by_symbol_index.iter().map(|(_, _, i)| *i as u8).next()
         }
 
         /// recursively build a tree from the given patterns, specified by
@@ -258,6 +292,7 @@ impl Node {
             }
 
             if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
+                //debug!("index; {}", symbol_index);
                 let mut choices: BTreeMap<u8, Vec<PatternId>> = Default::default();
                 let mut wildcards: Vec<PatternId> = Default::default();
 
@@ -272,6 +307,12 @@ impl Node {
                         }
                     }
                 }
+
+                /*
+                for (k, v) in choices.iter() {
+                    debug!("{}: {}", *k, v.len());
+                }
+                */
 
                 let other = if wildcards.len() > 0 {
                     for (_, v) in choices.iter_mut() {
@@ -356,23 +397,16 @@ pub struct DecisionTree {
 
 impl DecisionTree {
     pub fn new<T: AsRef<str>>(patterns: &[T]) -> DecisionTree {
-        debug!("dt: new");
-
-        // TODO: remove me?
-        let start_mem_usage = unsafe { libc::mallinfo() }.uordblks;
-
         let patterns: Vec<Pattern> = patterns.iter().map(|p| Pattern::from(p.as_ref())).collect();
         for pattern in patterns.iter() {
             assert!(pattern.0.len() <= MAX_PATTERN_SIZE);
         }
-        debug!("dt: copied patterns");
 
-        // bucket size -> (patternid, padded pattern)
+        // bucket size -> ([patternid], [patterns])
         let mut buckets: BTreeMap<usize, (Vec<PatternId>, Vec<Pattern>)> = Default::default();
         for pattern in patterns.iter() {
             let _ = buckets.entry(pattern.len()).or_default();
         }
-        debug!("dt: created {} buckets", buckets.len());
 
         for (pattern_id, pattern) in patterns.iter().enumerate() {
             for (&size, bucket) in buckets.iter_mut() {
@@ -383,13 +417,45 @@ impl DecisionTree {
             }
         }
 
-        debug!("dt: indexing");
-        let buckets = buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
-        debug!("dt: indexing done.");
+        let buckets: BTreeMap<usize, (Vec<PatternId>, Node)> =
+            buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
 
-        // TODO: remove me?
-        let end_mem_usage = unsafe { libc::mallinfo() }.uordblks;
-        debug!("dt: memory increase: {}", end_mem_usage - start_mem_usage);
+        #[cfg(debug_assertions)]
+        {
+            fn debug_visit(node: &Node) -> (u64, u64) {
+                match node {
+                    Node::Leaf { .. } => (1, 0),
+                    Node::Branch { choices, other, .. } => {
+                        let mut leaf_count = 0;
+                        let mut branch_count = 1;
+
+                        for (_, child) in choices.iter() {
+                            let (lc, bc) = debug_visit(&*child);
+                            leaf_count += lc;
+                            branch_count += bc;
+                        }
+
+                        if let Some(child) = other {
+                            let (lc, bc) = debug_visit(&*child);
+                            leaf_count += lc;
+                            branch_count += bc;
+                        }
+
+                        (leaf_count, branch_count)
+                    }
+                }
+            }
+
+            for (size, (pattern_ids, root)) in buckets.iter() {
+                debug!("size: {}", size);
+
+                let (lc, bc) = debug_visit(root);
+                debug!("  pattern count: {}", pattern_ids.len());
+                debug!("  branch count:  {}", bc);
+                debug!("  leaf count:    {}", lc);
+                debug!("  node count:    {}", lc + bc);
+            }
+        }
 
         DecisionTree { patterns, buckets }
     }
@@ -491,8 +557,8 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let _ = DecisionTree::new(PATTERNS);
-        //println!("{:?}", dt);
+        let _dt = DecisionTree::new(PATTERNS);
+        //println!("\n{:?}", dt);
         //assert!(false);
     }
 
