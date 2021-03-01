@@ -41,9 +41,9 @@ impl std::convert::From<u8> for Symbol {
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.0 == WILDCARD.0 {
-            write!(f, ".")
+            write!(f, "..")
         } else {
-            write!(f, r"\x{:02X}", self.0)
+            write!(f, r"{:02X}", self.0)
         }
     }
 }
@@ -55,20 +55,7 @@ pub struct Pattern(pub Vec<Symbol>);
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let parts: Vec<String> = self.0.iter().map(|s| format!("{}", s)).collect();
-        write!(
-            f,
-            r"(?x)    # whitespace allowed
-              (?-u)   # disable unicode mode, so we can match raw bytes
-              ^       # match only from start of data
-              {}      # the byte sequence
-            ",
-            parts
-                .join("")
-                // simplify regex by removing trailing wildcards
-                // some patterns are like "<byte> ........." which seems inefficient.
-                // regex engine may optimize this anyways, not sure.
-                .trim_end_matches('.')
-        )
+        write!(f, "{}", parts.join(""))
     }
 }
 
@@ -112,7 +99,7 @@ impl std::convert::From<&str> for Pattern {
 
 pub struct PatternSet {
     patterns: Vec<Pattern>,
-    re:       regex::bytes::RegexSet,
+    dt:       super::decision_tree::DecisionTree,
 }
 
 impl std::fmt::Debug for PatternSet {
@@ -126,7 +113,11 @@ impl std::fmt::Debug for PatternSet {
 
 impl PatternSet {
     pub fn r#match(&self, buf: &[u8]) -> Vec<&Pattern> {
-        self.re.matches(buf).into_iter().map(|i| &self.patterns[i]).collect()
+        self.dt
+            .matches(buf)
+            .into_iter()
+            .map(|i| &self.patterns[i as usize])
+            .collect()
     }
 
     pub fn builder() -> PatternSetBuilder {
@@ -157,19 +148,11 @@ impl PatternSetBuilder {
             patterns.push(format!("{}", pattern));
         }
 
-        let re = regex::bytes::RegexSetBuilder::new(patterns)
-            // enable use of up to around 100MB for matching
-            // the default is around 10MB, which was insufficient
-            // for loading `vc32rtf.sig` (1.2MB on disk).
-            //
-            // this is something that could be configurable, if necessary.
-            .size_limit(100 * (1 << 20))
-            .build()
-            .expect("invalid regex");
+        let dt = super::decision_tree::DecisionTree::new(&patterns);
 
         PatternSet {
             patterns: self.patterns,
-            re,
+            dt,
         }
     }
 }
