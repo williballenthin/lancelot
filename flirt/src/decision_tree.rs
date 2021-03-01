@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use bitvec::prelude::*;
-use log::debug;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
@@ -292,7 +291,6 @@ impl Node {
             }
 
             if let Some(symbol_index) = pick_best_symbol_index(patterns, &pattern_ids) {
-                //debug!("index; {}", symbol_index);
                 let mut choices: BTreeMap<u8, Vec<PatternId>> = Default::default();
                 let mut wildcards: Vec<PatternId> = Default::default();
 
@@ -307,12 +305,6 @@ impl Node {
                         }
                     }
                 }
-
-                /*
-                for (k, v) in choices.iter() {
-                    debug!("{}: {}", *k, v.len());
-                }
-                */
 
                 let other = if wildcards.len() > 0 {
                     for (_, v) in choices.iter_mut() {
@@ -410,7 +402,7 @@ impl DecisionTree {
 
         for (pattern_id, pattern) in patterns.iter().enumerate() {
             for (&size, bucket) in buckets.iter_mut() {
-                if pattern.len() == size {
+                if pattern.len() <= size {
                     bucket.0.push(pattern_id as PatternId);
                     bucket.1.push(pattern.clone());
                 }
@@ -420,61 +412,22 @@ impl DecisionTree {
         let buckets: BTreeMap<usize, (Vec<PatternId>, Node)> =
             buckets.into_iter().map(|(k, (a, b))| (k, (a, Node::new(&b)))).collect();
 
-        #[cfg(debug_assertions)]
-        {
-            fn debug_visit(node: &Node) -> (u64, u64) {
-                match node {
-                    Node::Leaf { .. } => (1, 0),
-                    Node::Branch { choices, other, .. } => {
-                        let mut leaf_count = 0;
-                        let mut branch_count = 1;
-
-                        for (_, child) in choices.iter() {
-                            let (lc, bc) = debug_visit(&*child);
-                            leaf_count += lc;
-                            branch_count += bc;
-                        }
-
-                        if let Some(child) = other {
-                            let (lc, bc) = debug_visit(&*child);
-                            leaf_count += lc;
-                            branch_count += bc;
-                        }
-
-                        (leaf_count, branch_count)
-                    }
-                }
-            }
-
-            for (size, (pattern_ids, root)) in buckets.iter() {
-                debug!("size: {}", size);
-
-                let (lc, bc) = debug_visit(root);
-                debug!("  pattern count: {}", pattern_ids.len());
-                debug!("  branch count:  {}", bc);
-                debug!("  leaf count:    {}", lc);
-                debug!("  node count:    {}", lc + bc);
-            }
-        }
-
         DecisionTree { patterns, buckets }
     }
 
     pub fn matches(&self, haystack: &[u8]) -> Vec<PatternId> {
-        let mut ret: Vec<PatternId> = Default::default();
-
-        for (_, (pattern_ids, root)) in self.buckets.range(0..=haystack.len()) {
-            ret.extend(
-                root.matches(haystack)
-                    .iter()
-                    .map(|pattern_id| pattern_ids[*pattern_id as usize])
-                    .filter(|pattern_id| {
-                        let pattern = &self.patterns[*pattern_id as usize];
-                        pattern.is_match(haystack)
-                    }),
-            );
+        // pick the largest bucket whose size is <= haystack size
+        if let Some((_, (pattern_ids, root))) = self.buckets.range(0..=haystack.len()).rev().next() {
+            root.matches(haystack)
+                .iter()
+                // translate from bucket pattern id to global pattern id
+                .map(|pattern_id| pattern_ids[*pattern_id as usize])
+                // validation scan - ensure the pattern matches completely.
+                .filter(|pattern_id| self.patterns[*pattern_id as usize].is_match(haystack))
+                .collect()
+        } else {
+            vec![]
         }
-        ret
     }
 }
 
