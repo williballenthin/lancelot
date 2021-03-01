@@ -67,7 +67,7 @@ impl std::fmt::Display for Pattern {
                 // simplify regex by removing trailing wildcards
                 // some patterns are like "<byte> ........." which seems inefficient.
                 // regex engine may optimize this anyways, not sure.
-                .trim_end_matches(".")
+                .trim_end_matches('.')
         )
     }
 }

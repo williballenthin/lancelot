@@ -42,6 +42,10 @@ impl Pattern {
         self.0.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn is_match(&self, haystack: &[u8]) -> bool {
         for (i, symbol) in self.0.iter().enumerate() {
             match symbol {
@@ -273,7 +277,7 @@ impl Node {
                 .map(|(wildcard_count, distinct_values, i)| (wildcard_count, 256 - distinct_values, i))
                 .collect();
 
-            fitness_by_symbol_index.sort();
+            fitness_by_symbol_index.sort_unstable();
 
             // take the first entry
             fitness_by_symbol_index.iter().map(|(_, _, i)| *i as u8).next()
@@ -306,7 +310,7 @@ impl Node {
                     }
                 }
 
-                let other = if wildcards.len() > 0 {
+                let other = if !wildcards.is_empty() {
                     for (_, v) in choices.iter_mut() {
                         v.extend(wildcards.iter());
                     }
