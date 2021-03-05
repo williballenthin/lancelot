@@ -3,11 +3,11 @@ extern crate chrono;
 extern crate clap;
 extern crate log;
 
-fn run(sig_path: &str) -> Result<()> {
-    let buf = std::fs::read(sig_path)?;
+fn run(pat_path: &str) -> Result<()> {
+    let pat = String::from_utf8(std::fs::read(pat_path)?)?;
 
-    for sig in lancelot_flirt::sig::parse(&buf)?.iter() {
-        println!("{}", sig.render_pat());
+    for pat in lancelot_flirt::pat::parse(&pat)?.iter() {
+        println!("{}", pat.render_pat());
     }
 
     Ok(())
@@ -19,9 +19,9 @@ fn main() {
     // while the macro form of clap is more readable,
     // it doesn't seem to allow us to use dynamically-generated values,
     // such as the defaults pulled from env vars, etc.
-    let matches = clap::App::new("sig2pat")
+    let matches = clap::App::new("parsepat")
         .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
-        .about("translate a FLIRT .sig file into a .pat file")
+        .about("parse a .pat file and... do nothing.")
         .arg(
             clap::Arg::with_name("verbose")
                 .short("v")
@@ -30,10 +30,10 @@ fn main() {
                 .help("log verbose messages"),
         )
         .arg(
-            clap::Arg::with_name("sig")
+            clap::Arg::with_name("pat")
                 .required(true)
                 .index(1)
-                .help("path to .sig file"),
+                .help("path to .pat file"),
         )
         .get_matches();
 
@@ -63,7 +63,7 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(matches.value_of("sig").unwrap()) {
+    if let Err(e) = run(matches.value_of("pat").unwrap()) {
         eprintln!("error: {:}", e);
     }
 }
