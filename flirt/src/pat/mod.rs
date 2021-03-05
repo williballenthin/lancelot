@@ -197,8 +197,8 @@ fn tail_byte(input: &str) -> IResult<&str, TailByte> {
 }
 
 fn tail_bytes(input: &str) -> IResult<&str, Vec<TailByte>> {
-    match opt(many1(tail_byte))(input)? {
-        (input, Some(tail_bytes)) => Ok((input, tail_bytes)),
+    match opt(many1(pair(tail_byte, opt(tag(" ")))))(input)? {
+        (input, Some(tail_bytes)) => Ok((input, tail_bytes.into_iter().map(|p| p.0).collect())),
         (input, None) => Ok((input, vec![])),
     }
 }
@@ -252,6 +252,8 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
 }
 
 fn comment(input: &str) -> IResult<&str, ()> {
+    // comments are an extension of the .pat file format
+    // but enable us to provide a header with license information.
     let (input, _) = tag("#")(input)?;
     let (input, _) = take_while(is_not_newline)(input)?;
 
@@ -333,6 +335,11 @@ mod tests {
         parse("\
 0330020028000000000000007f........16547f........1a5816547f 00 0000 0034 :0000 ???__E??_R3?$_Iosb@H@std@@8@@YMXXZ@?A0x7094697c@@$$FYMXXZ ^000d 040002DD (0003: 17)
 0330020028000000000000007f........16547f........1a5816547f 00 0000 0034 :0000 ???__E??_R3?$_Iosb@H@std@@8@@YMXXZ@?A0xb8f7dd2a@@$$FYMXXZ ^000d 040002EB (0003: 17)
+---
+        ").unwrap();
+
+        parse("\
+033002004b000000000000007f........7f........547f........1a581654 01 087b 0057 :0000 ???__E??_R17?0A@EA@?$_Iosb@H@std@@8@@YMXXZ@?A0x4b1bc67a@@$$FYMXXZ ^0012 040001BF (0006: 1E) (0010: 15)
 ---
         ").unwrap();
     }
