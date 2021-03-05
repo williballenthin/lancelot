@@ -101,7 +101,7 @@ jobs:
           twine upload --skip-existing target/wheels/*
 
   whl-linux:
-    name: build pylancelot python wheels for manylinux2010
+    name: build python wheels for manylinux2010
     needs: [crate]
     runs-on: ubuntu-latest
     steps:

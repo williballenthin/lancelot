@@ -52,6 +52,10 @@ fn whitespace(input: &str) -> IResult<&str, &str> {
     take_while(|c| c == ' ')(input)
 }
 
+fn is_not_newline(c: char) -> bool {
+    c != '\r' && c != '\n'
+}
+
 fn is_hex_digit(c: char) -> bool {
     c.is_digit(16)
 }
@@ -246,19 +250,40 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     ))
 }
 
+fn comment(input: &str) -> IResult<&str, ()> {
+    let (input, _) = tag("#")(input)?;
+    let (input, _) = take_while(is_not_newline)(input)?;
+
+    Ok((input, ()))
+}
+
+fn line(input: &str) -> IResult<&str, Option<FlirtSignature>> {
+    if let Ok((input, _)) = comment(input) {
+        return Ok((input, None));
+    }
+
+    match pat_signature(input) {
+        Ok((input, sig)) => Ok((input, Some(sig))),
+        Err(e) => Err(e),
+    }
+}
+
 /// parse a .pat file into FLIRT signatures.
 fn pat(input: &str) -> IResult<&str, Vec<FlirtSignature>> {
     // each signature is newline separated.
     // drop the newline after we've parsed it.
-    let pat_sig_line = map(pair(pat_signature, alt((tag("\r\n"), tag("\n")))), |p| p.0);
-    let (input, sigs) = many0(pat_sig_line)(input)?;
+    let maybe_pat = map(pair(line, alt((tag("\r\n"), tag("\n")))), |p| p.0);
+    let (input, sigs) = many0(maybe_pat)(input)?;
 
     // the file ends with `---`.
     let (input, _) = tag("---")(input)?;
 
     // TODO: assert there is nothing left in the file
 
-    Ok((input, sigs))
+    Ok((
+        input,
+        sigs.into_iter().filter(|s| s.is_some()).map(|s| s.unwrap()).collect(),
+    ))
 }
 
 /// ```
@@ -271,5 +296,34 @@ pub fn parse(buf: &str) -> Result<Vec<FlirtSignature>> {
         Ok(sigs)
     } else {
         Err(PatError::CorruptPatFile.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pat_parse() {
+        parse("---").unwrap();
+
+        parse("\
+3B0D........F27502F2C3F2E9...................................... 00 0000 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002 ___security_cookie ^000D ___report_gsfailure
+---
+        ").unwrap();
+
+        parse(
+            "\
+# foo
+---
+        ",
+        )
+        .unwrap();
+
+        parse("\
+# foo
+3B0D........F27502F2C3F2E9...................................... 00 0000 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002 ___security_cookie ^000D ___report_gsfailure
+---
+        ").unwrap();
     }
 }
