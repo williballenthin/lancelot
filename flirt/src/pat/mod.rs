@@ -182,6 +182,7 @@ fn symbols(input: &str) -> IResult<&str, Vec<Symbol>> {
 fn tail_byte(input: &str) -> IResult<&str, TailByte> {
     let (input, _) = tag("(")(input)?;
     let (input, offset) = hex_offset(input)?;
+    let (input, _) = tag(":")(input)?;
     let (input, _) = whitespace(input)?;
     let (input, value) = hex_byte(input)?;
     let (input, _) = tag(")")(input)?;
@@ -323,6 +324,15 @@ mod tests {
         parse("\
 # foo
 3B0D........F27502F2C3F2E9...................................... 00 0000 0011 :0000 @__security_check_cookie@4 :000B@ $failure$4 ^0002 ___security_cookie ^000D ___report_gsfailure
+---
+        ").unwrap();
+    }
+
+    #[test]
+    fn test_pat_tail_bytes() {
+        parse("\
+0330020028000000000000007f........16547f........1a5816547f 00 0000 0034 :0000 ???__E??_R3?$_Iosb@H@std@@8@@YMXXZ@?A0x7094697c@@$$FYMXXZ ^000d 040002DD (0003: 17)
+0330020028000000000000007f........16547f........1a5816547f 00 0000 0034 :0000 ???__E??_R3?$_Iosb@H@std@@8@@YMXXZ@?A0xb8f7dd2a@@$$FYMXXZ ^000d 040002EB (0003: 17)
 ---
         ").unwrap();
     }
