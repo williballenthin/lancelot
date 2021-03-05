@@ -70,9 +70,9 @@ impl std::fmt::Display for ByteSignature {
 
 #[derive(Debug)]
 enum Offset {
-    Public(u16),
-    Local(u16),
-    Reference(u16),
+    Public(u64),
+    Local(u64),
+    Reference(u64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

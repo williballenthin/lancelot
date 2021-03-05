@@ -81,6 +81,42 @@ fn hex_word(input: &str) -> IResult<&str, u16> {
     Ok((input, v))
 }
 
+/// at least four hex characters, but maybe more, and can be an odd number.
+/// see test `test_large_function`.
+fn hex_word_plus(input: &str) -> IResult<&str, u64> {
+    let (input, nibbles) = take_while(is_hex_digit)(input)?;
+    let mut v = 0u64;
+    let nibbles = nibbles
+        .chars()
+        .map(|c| match c {
+            '0' => 0,
+            '1' => 1,
+            '2' => 2,
+            '3' => 3,
+            '4' => 4,
+            '5' => 5,
+            '6' => 6,
+            '7' => 7,
+            '8' => 8,
+            '9' => 9,
+            'A' | 'a' => 0xA,
+            'B' | 'b' => 0xB,
+            'C' | 'c' => 0xC,
+            'D' | 'd' => 0xD,
+            'E' | 'e' => 0xE,
+            'F' | 'f' => 0xF,
+            _ => panic!("unexpect hex digit"),
+        })
+        .collect::<Vec<u8>>();
+
+    for nibble in nibbles.into_iter() {
+        v <<= 4;
+        v |= nibble as u64;
+    }
+
+    Ok((input, v))
+}
+
 /// parse a single byte signature element, which is either a hex byte or a
 /// wildcard.
 fn sig_element(input: &str) -> IResult<&str, SigElement> {
@@ -94,14 +130,14 @@ fn byte_signature(input: &str) -> IResult<&str, ByteSignature> {
 }
 
 /// parse a hex-encoded offset, like `0000`
-/// max is 0x8000.
-/// TODO: this can be negative.
-fn hex_offset(input: &str) -> IResult<&str, u16> {
-    hex_word(input)
+/// this value can be greater than one word. if so, it does not necessarily have
+/// an even number of digits. TODO: this can be negative.
+fn hex_offset(input: &str) -> IResult<&str, u64> {
+    hex_word_plus(input)
 }
 
 /// parse a public offset, like `:0000`
-fn public_offset(input: &str) -> IResult<&str, u16> {
+fn public_offset(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag(":")(input)?;
     let (input, offset) = hex_offset(input)?;
     let (input, _) = peek(tag(" "))(input)?;
@@ -110,7 +146,7 @@ fn public_offset(input: &str) -> IResult<&str, u16> {
 }
 
 /// parse a local offset, like `:000B@`
-fn local_offset(input: &str) -> IResult<&str, u16> {
+fn local_offset(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag(":")(input)?;
     let (input, offset) = hex_offset(input)?;
     let (input, _) = tag("@")(input)?;
@@ -119,7 +155,7 @@ fn local_offset(input: &str) -> IResult<&str, u16> {
 }
 
 /// parse an external reference, like `^0002`
-fn reference_offset(input: &str) -> IResult<&str, u16> {
+fn reference_offset(input: &str) -> IResult<&str, u64> {
     let (input, _) = tag("^")(input)?;
     let (input, offset) = hex_offset(input)?;
 
@@ -216,7 +252,7 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     let (input, _) = whitespace(input)?;
     trace!("crc16: {:04x}", crc16);
 
-    let (input, size_of_function) = hex_word(input)?;
+    let (input, size_of_function) = hex_word_plus(input)?;
     let (input, _) = whitespace(input)?;
     trace!("function size: {:04x}", size_of_function);
 
@@ -340,6 +376,24 @@ mod tests {
 
         parse("\
 033002004b000000000000007f........7f........547f........1a581654 01 087b 0057 :0000 ???__E??_R17?0A@EA@?$_Iosb@H@std@@8@@YMXXZ@?A0x4b1bc67a@@$$FYMXXZ ^0012 040001BF (0006: 1E) (0010: 15)
+---
+        ").unwrap();
+    }
+
+    #[test]
+    fn test_large_function() {
+        // large function size field
+        parse(
+            "\
+3c14a918d430e77901b6ed5ffc95ba75102562772b73fb79c65537a5765f9018 ff 3041 2989a :0000 foo
+---
+        ",
+        )
+        .unwrap();
+
+        // large name offset
+        parse("\
+3c14a918d430e77901b6ed5ffc95ba75102562772b73fb79c65537a5765f9018 ff 3041 2989a :0000 ecp_nistz256_precomputed :25100 ecp_nistz256_mul_by_2 :251a0 ecp_nistz256_div_by_2 :25280 ecp_nistz256_mul_by_3 :25380 ecp_nistz256_add :25420 ecp_nistz256_sub :254c0 ecp_nistz256_neg :25560 ecp_nistz256_ord_mul_mont :258e0 ecp_nistz256_ord_sqr_mont :26300 ecp_nistz256_to_mont :26340 ecp_nistz256_mul_mont :26640 ecp_nistz256_sqr_mont :26ce0 ecp_nistz256_from_mont :26e00 ecp_nistz256_scatter_w5 :26e60 ecp_nistz256_gather_w5 :26fc0 ecp_nistz256_scatter_w7 :27000 ecp_nistz256_gather_w7 :272a0 ecp_nistz256_avx2_gather_w7 :27580 ecp_nistz256_point_double :278c0 ecp_nistz256_point_add :28020 ecp_nistz256_point_add_affine
 ---
         ").unwrap();
     }
