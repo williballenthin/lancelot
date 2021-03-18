@@ -28,7 +28,7 @@ impl std::convert::From<u8> for Symbol {
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Symbol::Byte(b) => write!(f, r"\x{:02X}", b),
+            Symbol::Byte(b) => write!(f, r"{:02X}", b),
             Symbol::Wildcard => write!(f, ".."),
         }
     }
@@ -445,11 +445,19 @@ impl std::fmt::Debug for DecisionTree {
             Ok(())
         }
 
-        fn rec(f: &mut std::fmt::Formatter, indent: usize, node: &Node) -> std::fmt::Result {
+        fn rec(f: &mut std::fmt::Formatter, patterns: &[Pattern], bucket: &[PatternId], indent: usize, node: &Node) -> std::fmt::Result {
             match node {
-                Node::Leaf { patterns } => {
+                Node::Leaf { patterns: pattern_ids } => {
                     write_indent(f, indent)?;
-                    writeln!(f, "{} patterns", patterns.len())?;
+                    writeln!(f, "{} patterns", pattern_ids.len())?;
+
+                    for pattern_id in pattern_ids.iter() {
+                        let index = bucket[*pattern_id as usize];
+                        let pattern = &patterns[index as usize];
+
+                        write_indent(f, indent + 1)?;
+                        writeln!(f, "{}", pattern)?;
+                    }
                 }
                 Node::Branch { index, choices, other } => {
                     write_indent(f, indent)?;
@@ -459,14 +467,14 @@ impl std::fmt::Debug for DecisionTree {
                         write_indent(f, indent + 1)?;
                         writeln!(f, "choice {:02X}", choice)?;
 
-                        rec(f, indent + 2, node)?;
+                        rec(f, patterns, bucket, indent + 2, node)?;
                     }
 
                     if let Some(other) = other {
                         write_indent(f, indent + 1)?;
                         writeln!(f, "choice ..")?;
 
-                        rec(f, indent + 2, &*other)?;
+                        rec(f, patterns, bucket, indent + 2, &*other)?;
                     }
                 }
             }
@@ -474,9 +482,9 @@ impl std::fmt::Debug for DecisionTree {
             Ok(())
         }
 
-        for (size, (_, root)) in self.buckets.iter() {
+        for (size, (bucket, root)) in self.buckets.iter() {
             writeln!(f, "size: {}", size)?;
-            rec(f, 2, root)?;
+            rec(f, &self.patterns, bucket, 2, root)?;
         }
 
         Ok(())
