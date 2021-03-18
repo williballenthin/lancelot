@@ -267,17 +267,13 @@ impl std::fmt::Debug for FlirtSignature {
         write!(f, "{}", self)?;
 
         // emit local names
-        for (i, name) in self.names.iter().enumerate() {
-            write!(f, "{}", name)?;
-            if i != self.names.len() - 1 {
-                write!(f, " ")?;
-            }
+        for name in self.names.iter() {
+            write!(f, " {}", name)?;
         }
 
         // emit trailing byte patterns
         if let Some(footer) = &self.footer {
-            write!(f, " ")?;
-            write!(f, "{}", footer)?;
+            write!(f, " {}", footer)?;
         }
 
         Ok(())
