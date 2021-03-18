@@ -385,9 +385,8 @@ impl Node {
 pub struct DecisionTree {
     patterns: Vec<Pattern>,
     // mapping from pattern size to root node.
-    // the largest bucket contains all patterns (padded out with wildcards).
-    // the smallest bucket contains patterns with only the smallest size.
-    // when matching, pick the largest bucket with size <= matching buffer size.
+    // each bucket contains only the patterns of that size.
+    // during matching, need to do a match against each bucket with the haystack size and smaller.
     buckets:  BTreeMap<usize, (Vec<PatternId>, Node)>,
 }
 
@@ -406,7 +405,7 @@ impl DecisionTree {
 
         for (pattern_id, pattern) in patterns.iter().enumerate() {
             for (&size, bucket) in buckets.iter_mut() {
-                if pattern.len() <= size {
+                if pattern.len() == size {
                     bucket.0.push(pattern_id as PatternId);
                     bucket.1.push(pattern.clone());
                 }
@@ -420,18 +419,27 @@ impl DecisionTree {
     }
 
     pub fn matches(&self, haystack: &[u8]) -> Vec<PatternId> {
-        // pick the largest bucket whose size is <= haystack size
-        if let Some((_, (pattern_ids, root))) = self.buckets.range(0..=haystack.len()).rev().next() {
-            root.matches(haystack)
-                .iter()
-                // translate from bucket pattern id to global pattern id
-                .map(|pattern_id| pattern_ids[*pattern_id as usize])
-                // validation scan - ensure the pattern matches completely.
-                .filter(|pattern_id| self.patterns[*pattern_id as usize].is_match(haystack))
-                .collect()
-        } else {
-            vec![]
+        // we may be passed a haystack that is much larger than we actually need.
+        // so we need to match against patterns with all sizes less than that.
+        // and we can't assume that the haystack contains just the target function.
+        // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802026030
+        // in which Hex-Rays distributes a signature that matches across multiple
+        // functions.
+
+        let mut patterns = vec![];
+        for (_size, (pattern_ids, root)) in self.buckets.range(0..=haystack.len()) {
+            patterns.extend(
+                root.matches(haystack)
+                    .iter()
+                    .cloned()
+                    // translate from bucket pattern id to global pattern id
+                    .map(|pattern_id| pattern_ids[pattern_id as usize])
+                    // validation scan - ensure the pattern matches completely.
+                    .filter(|pattern_id| self.patterns[*pattern_id as usize].is_match(haystack)),
+            );
         }
+
+        patterns
     }
 }
 
@@ -445,7 +453,13 @@ impl std::fmt::Debug for DecisionTree {
             Ok(())
         }
 
-        fn rec(f: &mut std::fmt::Formatter, patterns: &[Pattern], bucket: &[PatternId], indent: usize, node: &Node) -> std::fmt::Result {
+        fn rec(
+            f: &mut std::fmt::Formatter,
+            patterns: &[Pattern],
+            bucket: &[PatternId],
+            indent: usize,
+            node: &Node,
+        ) -> std::fmt::Result {
             match node {
                 Node::Leaf { patterns: pattern_ids } => {
                     write_indent(f, indent)?;
