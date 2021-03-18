@@ -276,6 +276,7 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
     Ok((
         input,
         FlirtSignature {
+            byte_sig_size: 32, // TODO: fixme, this is not static
             byte_sig,
             size_of_bytes_crc16,
             crc16,

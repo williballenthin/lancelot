@@ -88,6 +88,15 @@ impl Header {
     fn get_size(&self) -> usize {
         0x25 + self.extra.get_size() + self.library_name.as_bytes().len()
     }
+
+    fn get_pattern_size(&self) -> u16 {
+        match self.extra {
+            HeaderExtra::V5 => 32,
+            HeaderExtra::V6_7 { .. } => 32,
+            HeaderExtra::V8_9 { pattern_size, .. } => pattern_size,
+            HeaderExtra::V10 { pattern_size, .. } => pattern_size,
+        }
+    }
 }
 
 fn utf8(input: &[u8], size: u16) -> IResult<&[u8], String> {
@@ -509,6 +518,7 @@ fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
             }
 
             ret.push(FlirtSignature {
+                byte_sig_size: header.get_pattern_size(),
                 byte_sig: ByteSignature(prefix.clone()),
                 size_of_bytes_crc16: crc_len,
                 crc16: crc,
