@@ -299,11 +299,11 @@ pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>
     // > Far Jumps in Real-Address or Virtual-8086 Mode.
     // > When executing a far jump in realaddress or virtual-8086 mode,
     // > the processor jumps to the code segment and offset specified with the
-    // target operand. > Here the target operand specifies an absolute far
-    // address either directly with a > pointer (ptr16:16 or ptr16:32) or
-    // indirectly with a memory location (m16:16 or m16:32). > With the
-    // pointer method, the segment and address of the called procedure is encoded
-    // > in the instruction, using a 4-byte (16-bit operand size) or
+    // > target operand. Here the target operand specifies an absolute far
+    // > address either directly with a pointer (ptr16:16 or ptr16:32) or
+    // > indirectly with a memory location (m16:16 or m16:32). With the
+    // > pointer method, the segment and address of the called procedure is
+    // > encoded in the instruction, using a 4-byte (16-bit operand size) or
     // > 6-byte (32-bit operand size) far address immediate.
     // TODO: do something intelligent with the segment.
     Ok(Some(op.ptr.offset as u64))
