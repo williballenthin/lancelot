@@ -100,9 +100,16 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                         assert!(*offset >= 0, "negative offset");
 
                         if let Some(target) = get_ref(module, &decoder, va, *offset as u64) {
-                            // TODO: special case "."
+                            if wanted_name == "." {
+                                // special case: name "." matches anything
+                                // not exactly sure, might instead match special data `ctype`.
+                                // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
 
-                            // can't use entry because of mutable cache used to create cache entry.
+                                // TODO: get_ref only returns executable references.
+                                continue;
+                            }
+
+                            // can't use entry API because of mutable cache used to create cache entry.
                             #[allow(clippy::map_entry)]
                             if !cache.contains_key(&target) {
                                 let target_sigs = match_flirt_inner(module, sigs, decoder, target, cache)
