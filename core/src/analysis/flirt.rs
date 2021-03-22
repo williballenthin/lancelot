@@ -93,11 +93,15 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
         let size = sec.virtual_range.end - va;
         let buf = module.address_space.read_bytes(va, size as usize)?;
 
+        debug!("flirt: matching: {:#x}", va);
+
         Ok(sigs
             .r#match(&buf)
             .iter()
             .filter(|sig| {
                 let mut does_match_references = true;
+
+                debug!("flirt: {:#x}: candidate: {:?}", va, sig);
 
                 'names: for name in sig.names.iter() {
                     if let Symbol::Reference(Name {
@@ -121,6 +125,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
 
                             let mut does_name_match = false;
                             'sigs: for target_sig in target_sigs.iter() {
+                                debug!("flirt: {:#x}: found reference: {:?} @ {:#x}", va, target_sig, offset);
                                 for name in target_sig.names.iter() {
                                     match name {
                                         Symbol::Reference(_) => continue,
