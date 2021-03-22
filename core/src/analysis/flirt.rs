@@ -24,7 +24,7 @@ fn get_ref(module: &Module, decoder: &zydis::Decoder, va: VA, ref_offset: u64) -
                     .operands
                     .iter()
                     .filter(|op| matches!(op.visibility, zydis::OperandVisibility::EXPLICIT));
-                for (i, op) in explicit_operands.take(2).enumerate() {
+                for (j, op) in explicit_operands.take(2).enumerate() {
                     match op.ty {
                         zydis::OperandType::MEMORY => {
                             if op.mem.base == zydis::Register::NONE
@@ -55,7 +55,7 @@ fn get_ref(module: &Module, decoder: &zydis::Decoder, va: VA, ref_offset: u64) -
                             continue;
                         }
                         zydis::OperandType::IMMEDIATE => {
-                            if insn.raw.imm[i].offset == i as u8 {
+                            if insn.raw.imm[j].offset == i as u8 {
                                 if let Ok(target) = insn.calc_absolute_address(candidate_insn_va, op) {
                                     if module.probe_va(target, Permissions::RX) {
                                         return Some(target);
