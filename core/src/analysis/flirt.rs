@@ -27,28 +27,15 @@ fn get_ref(module: &Module, decoder: &zydis::Decoder, va: VA, ref_offset: u64) -
                 for (j, op) in explicit_operands.take(2).enumerate() {
                     match op.ty {
                         zydis::OperandType::MEMORY => {
-                            if op.mem.base == zydis::Register::NONE
+                            if (op.mem.base == zydis::Register::NONE || op.mem.base == zydis::Register::RIP)
                                 && op.mem.index == zydis::Register::NONE
                                 && op.mem.scale == 0
                                 && op.mem.disp.has_displacement
+                                && insn.raw.disp_offset == i as u8
                             {
-                                if insn.raw.disp_offset == i as u8 {
-                                    if let Ok(target) = insn.calc_absolute_address(candidate_insn_va, op) {
-                                        if module.probe_va(target, Permissions::RX) {
-                                            return Some(target);
-                                        }
-                                    }
-                                }
-                            } else if op.mem.base == zydis::Register::RIP
-                                && op.mem.index == zydis::Register::NONE
-                                && op.mem.scale == 0
-                                && op.mem.disp.has_displacement
-                            {
-                                if insn.raw.disp_offset == i as u8 {
-                                    if let Ok(target) = insn.calc_absolute_address(candidate_insn_va, op) {
-                                        if module.probe_va(target, Permissions::RX) {
-                                            return Some(target);
-                                        }
+                                if let Ok(target) = insn.calc_absolute_address(candidate_insn_va, op) {
+                                    if module.probe_va(target, Permissions::RX) {
+                                        return Some(target);
                                     }
                                 }
                             }
@@ -115,6 +102,8 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                         if let Some(target) = get_ref(module, &decoder, va, *offset as u64) {
                             // TODO: special case "."
 
+                            // can't use entry because of mutable cache used to create cache entry.
+                            #[allow(clippy::map_entry)]
                             if !cache.contains_key(&target) {
                                 let target_sigs = match_flirt_inner(module, sigs, decoder, target, cache)
                                     .unwrap_or_else(|_| Default::default());
