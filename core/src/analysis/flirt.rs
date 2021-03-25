@@ -138,9 +138,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                             // special case: name "." matches any data?
                             // not exactly sure if this should only match special data `ctype`?
                             // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
-                            if let Some(_) =
-                                guess_reference_target(module, &decoder, va, *offset as u64, Permissions::R)
-                            {
+                            if guess_reference_target(module, &decoder, va, *offset as u64, Permissions::R).is_some() {
                                 continue;
                             } else {
                                 does_match_references = false;
