@@ -18,8 +18,8 @@ fn _main() -> Result<()> {
         (about: "Binary analysis framework")
         (@arg verbose: -v --verbose +multiple "log verbose messages")
         (@arg quiet: -q --quiet "disable informational messages")
-        (@arg sig: +required "path to FLIRT sig/pat")
-        (@arg input: +required "path to file to analyze"))
+        (@arg input: +required "path to file to analyze")
+        (@arg sig: +required +multiple "path to FLIRT sig/pat"))
     .get_matches();
 
     // --quiet overrides --verbose
@@ -54,14 +54,17 @@ fn _main() -> Result<()> {
         .apply()
         .expect("failed to configure logging");
 
-    let sigpath = matches.value_of("sig").unwrap();
-    let sigs = if sigpath.ends_with(".pat") {
-        FlirtSignatureSet::with_signatures(pat::parse(&String::from_utf8(util::read_file(sigpath)?)?)?)
-    } else if sigpath.ends_with(".sig") {
-        FlirtSignatureSet::with_signatures(sig::parse(&util::read_file(sigpath)?)?)
-    } else {
-        return Err(anyhow::anyhow!("--sig must end with .pat or .sig"));
-    };
+    let mut sigs = vec![];
+    for sigpath in matches.values_of("sig").unwrap() {
+        if sigpath.ends_with(".pat") {
+            sigs.extend(pat::parse(&String::from_utf8(util::read_file(sigpath)?)?)?);
+        } else if sigpath.ends_with(".sig") {
+            sigs.extend(sig::parse(&util::read_file(sigpath)?)?);
+        } else {
+            return Err(anyhow::anyhow!("--sig must end with .pat or .sig"));
+        };
+    }
+    let sigs = FlirtSignatureSet::with_signatures(sigs);
 
     let filename = matches.value_of("input").unwrap();
     debug!("input: {}", filename);
