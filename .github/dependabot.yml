@@ -1,0 +1,20 @@
+version: 2
+updates:
+- package-ecosystem: cargo
+  directory: "/"
+  schedule:
+    interval: daily
+  open-pull-requests-limit: 10
+  ignore:
+  - dependency-name: funty
+    versions:
+    - 1.2.0
+  - dependency-name: bitvec
+    versions:
+    - 0.21.0
+  - dependency-name: unicorn
+    versions:
+    - 0.9.1
+  - dependency-name: nom
+    versions:
+    - 6.0.0
