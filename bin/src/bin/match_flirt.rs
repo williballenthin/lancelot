@@ -118,15 +118,19 @@ fn _main() -> Result<()> {
         }
     }
 
-    for (va, names) in names.iter() {
-        if names.len() == 1 {
-            let names: Vec<_> = names.iter().collect();
-            println!("{:#x}: {}", va, names[0]);
-        } else {
-            println!("{:#x}:", va);
-            for name in names.iter() {
-                println!("  - {}", name);
+    for &va in functions.iter() {
+        if let Some(names) = names.get(&va) {
+            if names.len() == 1 {
+                let names: Vec<_> = names.iter().collect();
+                println!("{:#x}: {}", va, names[0]);
+            } else {
+                println!("{:#x}:", va);
+                for name in names.iter() {
+                    println!("  - {}", name);
+                }
             }
+        } else {
+            println!("{:#x}: (unknown)", va);
         }
     }
 
