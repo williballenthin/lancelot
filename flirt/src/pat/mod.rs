@@ -320,10 +320,7 @@ fn pat(input: &str) -> IResult<&str, Vec<FlirtSignature>> {
 
     // TODO: assert there is nothing left in the file
 
-    Ok((
-        input,
-        sigs.into_iter().filter(|s| s.is_some()).map(|s| s.unwrap()).collect(),
-    ))
+    Ok((input, sigs.into_iter().flatten().collect()))
 }
 
 /// ```

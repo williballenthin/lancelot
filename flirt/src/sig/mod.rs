@@ -641,7 +641,7 @@ pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>> {
 
             if header.features.intersects(Features::COMPRESSED) {
                 let header_buf = &input[..header.get_size()];
-                match inflate::inflate_bytes_zlib(&compressed) {
+                match inflate::inflate_bytes_zlib(compressed) {
                     Ok(decompressed) => {
                         // stitch together the header with the decompressed payload
                         let mut buf = vec![];

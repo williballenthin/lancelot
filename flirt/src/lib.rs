@@ -370,7 +370,7 @@ impl FlirtSignature {
     pub fn match_footer(&self, buf: &[u8]) -> bool {
         let footer_offset = self.byte_sig.0.len() + self.size_of_bytes_crc16 as usize;
         if let Some(sig) = &self.footer {
-            sig.0
+            !sig.0
                 .iter()
                 .enumerate()
                 .map(|(i, symbol)| (footer_offset + i, symbol))
@@ -384,8 +384,7 @@ impl FlirtSignature {
                     },
                     SigElement::Wildcard => true,
                 })
-                .find(|b| !b)
-                .is_none()
+                .any(|b| !b)
         } else {
             true
         }

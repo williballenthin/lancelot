@@ -139,7 +139,7 @@ impl<K: Eq, V> Default for VecMap<K, V> {
 impl<K: Eq, V> VecMap<K, V> {
     /// may panic if k is already present.
     pub fn insert(&mut self, k: K, v: V) {
-        debug_assert!(self.inner.iter().find(|(kk, _)| k == *kk).is_none());
+        debug_assert!(!self.inner.iter().any(|(kk, _)| k == *kk));
 
         self.inner.push((k, v));
     }
