@@ -58,11 +58,11 @@ sigs = flirt.parse_pat(PAT)
 matcher = flirt.compile(sigs)
 
 # match the signatures against the given buffer, starting at offset 0.
-# results in a list of match tuples like:
+# results in a list of rule instances with a field `name` tuple like:
 #
 #     ("__EH_prolog3_catch_align", "public", 0)
 for m in matcher.match(BUF):
-    print("match: " + m.names[0][0])
+    print("match: " + m.names[0])
 ```
 
 expected output:
@@ -98,7 +98,7 @@ There's also a matching implementation in Python for vivisect [here](https://git
 
 ### Usage: example tool
 
-The tool [capa](https://github.com/fireeye/capa)`capa` uses `python-flirt` to recognize statically-linked functions within PE files.
+The tool [capa](https://github.com/fireeye/capa) uses `python-flirt` to recognize statically-linked functions within PE files.
 You can use this code as an example for how to integrate this library with your client code.
 
 ## License
