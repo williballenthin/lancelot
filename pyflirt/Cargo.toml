@@ -3,6 +3,10 @@ name = "python-flirt"
 version = "0.6.3"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
+homepage = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
+readme = "README.md"
 
 [lib]
 name = "flirt"
@@ -28,3 +32,10 @@ classifier = [
   "Topic :: Security",
   "Topic :: Software Development :: Disassemblers",
 ]
+
+[profile.release]
+codegen-units = 1
+debug = false
+incremental = false
+lto = true
+opt-level = 3
