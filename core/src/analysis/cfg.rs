@@ -551,7 +551,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
         _ => smallvec![],
     };
 
-    if does_insn_fallthrough(&insn) {
+    if does_insn_fallthrough(insn) {
         flows.push(Flow::Fallthrough(va + insn.length as u64))
     }
 
@@ -777,7 +777,7 @@ fn compute_basic_blocks(
     for (va, bb) in basic_blocks.iter_mut() {
         bb.predecessors.extend(
             predecessors
-                .get(&va)
+                .get(va)
                 .unwrap_or(&smallvec![])
                 .iter()
                 .filter(|pred| basic_blocks_by_last_insn.contains_key(&pred.va()))

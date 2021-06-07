@@ -535,10 +535,10 @@ fn insert_resource_ranges_inner(
             )?;
         }
         NodeChild::Node(child) => {
-            for (entry, child) in child.children(&rsrc)?.into_iter() {
+            for (entry, child) in child.children(rsrc)?.into_iter() {
                 // when the first element is recognized, render it like `RT_VERSION`,
                 // otherwise, like `0x0`.
-                let prefix = match entry.id(&rsrc)? {
+                let prefix = match entry.id(rsrc)? {
                     NodeIdentifier::ID(id) => {
                         if prefix.is_empty() {
                             match ResourceDataType::from_u32(id) {

@@ -44,7 +44,7 @@ fn render_insn(insn: &zydis::ffi::DecodedInstruction, va: VA) -> String {
     let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
 
     formatter
-        .format_instruction(&insn, &mut buffer, Some(va), None)
+        .format_instruction(insn, &mut buffer, Some(va), None)
         .expect("format");
     format!("{}", buffer)
 }

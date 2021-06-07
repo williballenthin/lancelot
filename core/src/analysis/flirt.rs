@@ -138,7 +138,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                             // special case: name "." matches any data?
                             // not exactly sure if this should only match special data `ctype`?
                             // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
-                            if guess_reference_target(module, &decoder, va, *offset as u64, Permissions::R).is_some() {
+                            if guess_reference_target(module, decoder, va, *offset as u64, Permissions::R).is_some() {
                                 continue;
                             } else {
                                 does_match_references = false;
@@ -153,7 +153,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                         // this drastically when we have many nested references (like CALL wrappers).
                         // see: https://github.com/fireeye/capa/issues/448
                         if let Some(target) =
-                            guess_reference_target(module, &decoder, va, *offset as u64, Permissions::X)
+                            guess_reference_target(module, decoder, va, *offset as u64, Permissions::X)
                         {
                             // this is just:
                             //   target_sigs = cached(match_flirt_inner(...target...))

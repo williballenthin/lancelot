@@ -184,15 +184,15 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     debug!("imports: found {} imports", imports.len());
 
     let mut function_starts: HashSet<VA> = Default::default();
-    function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?);
-    function_starts.extend(crate::analysis::pe::exports::find_pe_exports(&pe)?);
-    function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?);
-    function_starts.extend(crate::analysis::pe::runtime_functions::find_pe_runtime_functions(&pe)?);
-    function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?);
-    function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?);
-    function_starts.extend(crate::analysis::pe::patterns::find_function_prologues(&pe)?);
+    function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(pe)?);
+    function_starts.extend(crate::analysis::pe::exports::find_pe_exports(pe)?);
+    function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(pe)?);
+    function_starts.extend(crate::analysis::pe::runtime_functions::find_pe_runtime_functions(pe)?);
+    function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(pe)?);
+    function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(pe)?);
+    function_starts.extend(crate::analysis::pe::patterns::find_function_prologues(pe)?);
     function_starts.extend(crate::analysis::pe::pointers::find_pe_nonrelocated_executable_pointers(
-        &pe,
+        pe,
     )?);
 
     // TODO: validate that the code looks ok

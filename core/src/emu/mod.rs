@@ -503,7 +503,7 @@ impl Emulator {
             }
             REGISTER => self.read_register(src.reg),
             // handle unmapped read
-            MEMORY => self.read_memory(&src)?,
+            MEMORY => self.read_memory(src)?,
             t => unimplemented!("read operand type: {:?}", t),
         })
     }
@@ -516,7 +516,7 @@ impl Emulator {
 
         match dst.ty {
             REGISTER => self.write_register(dst.reg, value),
-            MEMORY => self.write_memory(&dst, value)?,
+            MEMORY => self.write_memory(dst, value)?,
             t => unimplemented!("write operand type: {:?}", t),
         }
 
@@ -576,7 +576,7 @@ impl Emulator {
                 let dst = &insn.operands[0];
                 let src = &insn.operands[1];
 
-                let value = self.read_operand(&insn, src)?;
+                let value = self.read_operand(insn, src)?;
                 self.write_operand(dst, value)?;
 
                 self.reg.rip += insn.length as u64;
@@ -586,8 +586,8 @@ impl Emulator {
                 let m = &insn.operands[0];
                 let n = &insn.operands[1];
 
-                let mm = self.read_operand(&insn, m)?;
-                let nn = self.read_operand(&insn, n)?;
+                let mm = self.read_operand(insn, m)?;
+                let nn = self.read_operand(insn, n)?;
                 self.write_operand(m, nn)?;
                 self.write_operand(n, mm)?;
 
@@ -621,7 +621,7 @@ impl Emulator {
                 // > instruction was executed."
                 //
                 // https://c9x.me/x86/html/file_module_x86_id_269.html
-                let value = self.read_operand(&insn, src)?;
+                let value = self.read_operand(insn, src)?;
 
                 match sp_op.reg {
                     RSP => self.reg.rsp -= 8,
@@ -629,7 +629,7 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                if let Err(e) = self.write_operand(&dst, value) {
+                if let Err(e) = self.write_operand(dst, value) {
                     // roll back the stack changes
                     match sp_op.reg {
                         RSP => self.reg.rsp += 8,
@@ -654,7 +654,7 @@ impl Emulator {
                 let src = &insn.operands[2];
                 assert!(src.ty == zydis::enums::OperandType::MEMORY);
 
-                let value = self.read_operand(&insn, src)?;
+                let value = self.read_operand(insn, src)?;
 
                 // > "The POP ESP instruction increments the
                 // > stack pointer (ESP) before data at the
@@ -667,7 +667,7 @@ impl Emulator {
                     _ => unimplemented!(),
                 }
 
-                if let Err(e) = self.write_operand(&dst, value) {
+                if let Err(e) = self.write_operand(dst, value) {
                     // roll back the stack changes
                     match sp_op.reg {
                         RSP => self.reg.rsp -= 8,
@@ -714,7 +714,7 @@ impl Emulator {
 
                 // these read/writes shouldn't ever fail: address computation and PC register
                 // set.
-                let target_addr = self.read_operand(&insn, target).expect("failed to read call target");
+                let target_addr = self.read_operand(insn, target).expect("failed to read call target");
                 self.write_operand(pc, target_addr).expect("failed to set PC");
             }
 
@@ -729,7 +729,7 @@ impl Emulator {
                 let stack = &insn.operands[2];
                 assert!(stack.ty == zydis::enums::OperandType::MEMORY);
 
-                let return_address = self.read_operand(&insn, stack)?;
+                let return_address = self.read_operand(insn, stack)?;
 
                 match sp.reg {
                     RSP => self.reg.rsp += 8,
@@ -750,8 +750,8 @@ impl Emulator {
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
-                let m = self.read_operand(&insn, dst)?;
-                let n = self.read_operand(&insn, src)?;
+                let m = self.read_operand(insn, dst)?;
+                let n = self.read_operand(insn, src)?;
 
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
@@ -834,8 +834,8 @@ impl Emulator {
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
-                let m = self.read_operand(&insn, dst)?;
-                let n = self.read_operand(&insn, src)?;
+                let m = self.read_operand(insn, dst)?;
+                let n = self.read_operand(insn, src)?;
 
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
@@ -903,8 +903,8 @@ impl Emulator {
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
-                let m = self.read_operand(&insn, dst)?;
-                let n = self.read_operand(&insn, src)?;
+                let m = self.read_operand(insn, dst)?;
+                let n = self.read_operand(insn, src)?;
 
                 // this is a copy-pasta of SUB,
                 // with the exception that the destination is not written to.
@@ -957,7 +957,7 @@ impl Emulator {
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
                 if !self.reg.cf() {
-                    self.reg.rip = self.read_operand(&insn, target)?;
+                    self.reg.rip = self.read_operand(insn, target)?;
                 } else {
                     self.reg.rip += insn.length as u64;
                 }
@@ -971,7 +971,7 @@ impl Emulator {
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
                 let m = 0u64;
-                let n = self.read_operand(&insn, dst)?;
+                let n = self.read_operand(insn, dst)?;
 
                 // this is a copy-pasta of SUB,
                 // with the exception that the destination is not written to.
@@ -1024,8 +1024,8 @@ impl Emulator {
                 let flags = &insn.operands[2];
                 assert!(flags.ty == zydis::enums::OperandType::REGISTER);
 
-                let m = self.read_operand(&insn, m)?;
-                let n = self.read_operand(&insn, n)?;
+                let m = self.read_operand(insn, m)?;
+                let n = self.read_operand(insn, n)?;
 
                 let (result, msb_index) = match size {
                     64 => {
