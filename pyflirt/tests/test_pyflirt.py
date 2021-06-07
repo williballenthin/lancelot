@@ -41,3 +41,4 @@ def test_too_much_data():
 
     match = matches[0]
     assert match.names[0] == ("_malloc", "public", 0)
+
