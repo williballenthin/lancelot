@@ -1,4 +1,4 @@
-//< Helpers that are useful for tests and doctests.
+//! Helpers that are useful for tests and doctests.
 use crate::{
     arch::Arch,
     aspace::{AddressSpace, RelativeAddressSpace},

@@ -3,6 +3,8 @@ name = "pylancelot"
 version = "0.6.5"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
+homepage = "https://github.com/williballenthin/lancelot"
+repository = "https://github.com/williballenthin/lancelot"
 
 [lib]
 name = "lancelot"

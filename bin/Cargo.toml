@@ -5,6 +5,8 @@ description = "binary analysis tools for x32/x64 PE files"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 license = "Apache-2.0"
 edition = "2018"
+homepage = "https://github.com/williballenthin/lancelot"
+repository = "https://github.com/williballenthin/lancelot"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

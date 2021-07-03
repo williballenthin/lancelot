@@ -9,16 +9,15 @@ pub mod analysis;
 pub mod arch;
 pub mod aspace;
 pub mod config;
+#[cfg(any(test, doctest, feature = "emu", feature = "test"))]
 pub mod emu;
 pub mod loader;
 pub mod module;
 pub mod pagemap;
+pub mod rsrc;
 pub mod util;
 
-// helpers that are useful during doctests, tests.
-// TODO: restrict this to tests only
-pub mod rsrc;
-
+#[cfg(any(test, doctest, feature = "test"))]
 pub mod test;
 
 pub type VA = u64;
