@@ -14,9 +14,10 @@ pub mod emu;
 pub mod loader;
 pub mod module;
 pub mod pagemap;
-pub mod rsrc;
 pub mod util;
 
+#[cfg(any(test, doctest, feature = "test"))]
+pub mod rsrc;
 #[cfg(any(test, doctest, feature = "test"))]
 pub mod test;
 
