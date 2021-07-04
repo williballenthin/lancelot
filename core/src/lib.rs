@@ -9,7 +9,7 @@ pub mod analysis;
 pub mod arch;
 pub mod aspace;
 pub mod config;
-#[cfg(any(test, doctest, feature = "emu", feature = "test"))]
+#[cfg(feature = "emulator")]
 pub mod emu;
 pub mod loader;
 pub mod module;
@@ -18,7 +18,7 @@ pub mod util;
 
 #[cfg(any(test, doctest, feature = "test"))]
 pub mod rsrc;
-#[cfg(any(test, doctest, feature = "test"))]
+#[cfg(all(any(test, doctest, feature = "test"), feature = "emulator"))]
 pub mod test;
 
 pub type VA = u64;

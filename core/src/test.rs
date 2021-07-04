@@ -64,6 +64,7 @@ pub fn load_shellcode64(buf: &[u8]) -> Module {
 }
 
 /// this is for testing, so will panic on error.
+#[cfg(feature = "disassembler")]
 pub fn read_insn(module: &Module, va: VA) -> zydis::DecodedInstruction {
     use crate::analysis::dis;
 

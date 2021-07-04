@@ -1,10 +1,9 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use log::debug;
 
 use crate::{
-    analysis::{cfg, dis},
     aspace::AddressSpace,
     loader::pe::{
         imports,
@@ -13,7 +12,12 @@ use crate::{
     },
     RVA, VA,
 };
+#[cfg(feature = "disassembler")]
+use crate::analysis::{cfg, dis};
+#[cfg(feature = "disassembler")]
+use std::collections::HashSet;
 
+#[cfg(feature = "disassembler")]
 pub mod call_targets;
 pub mod control_flow_guard;
 pub mod entrypoints;
@@ -109,6 +113,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
     Ok(imports)
 }
 
+#[cfg(feature = "disassembler")]
 pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<VA>) -> Result<BTreeMap<VA, Thunk>> {
     let mut thunks: BTreeMap<VA, Thunk> = Default::default();
     let decoder = dis::get_disassembler(&pe.module)?;
@@ -179,6 +184,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
     Ok(thunks)
 }
 
+#[cfg(feature = "disassembler")]
 pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     let imports = get_imports(pe)?;
     debug!("imports: found {} imports", imports.len());
@@ -216,6 +222,7 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     Ok(functions)
 }
 
+#[cfg(feature = "disassembler")]
 pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     Ok(find_functions(pe)?
         .into_iter()
