@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lancelot = { path = "../core", version = "0.6.5" }
-pyo3 = { version = "0.13"}
+pyo3 = { version = "0.14"}
 anyhow = "1"
 zydis = "3"
 
