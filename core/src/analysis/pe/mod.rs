@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use log::debug;
 
+#[cfg(feature = "disassembler")]
+use crate::analysis::{cfg, dis};
 use crate::{
     aspace::AddressSpace,
     loader::pe::{
@@ -12,8 +14,6 @@ use crate::{
     },
     RVA, VA,
 };
-#[cfg(feature = "disassembler")]
-use crate::analysis::{cfg, dis};
 #[cfg(feature = "disassembler")]
 use std::collections::HashSet;
 
