@@ -162,41 +162,6 @@ pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::Dec
         .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
 }
 
-/// ## test simple memory ptr operand
-///
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::{get_first_operand, get_memory_operand_xref};
-///
-/// // 0:  ff 25 06 00 00 00   +->  jmp    DWORD PTR ds:0x6
-/// // 6:  00 00 00 00         +--  dw     0x0
-/// let mut module = load_shellcode32(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
-/// let insn = read_insn(&module, 0x0);
-/// let op = get_first_operand(&insn).unwrap();
-/// let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
-///
-/// assert_eq!(xref.is_some(), true);
-/// assert_eq!(xref.unwrap(), 0x0);
-/// ```
-///
-/// ## test RIP-relative
-///
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::{get_first_operand, get_memory_operand_xref};
-///
-/// // FF 15 00 00 00 00         CALL $+5
-/// // 00 00 00 00 00 00 00 00   dq 0x0
-/// let mut module = load_shellcode64(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
-/// let insn = read_insn(&module, 0x0);
-/// let op = get_first_operand(&insn).unwrap();
-/// let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
-///
-/// assert_eq!(xref.is_some(), true);
-/// assert_eq!(xref.unwrap(), 0x0);
-/// ```
 #[allow(clippy::if_same_then_else)]
 pub fn get_memory_operand_xref(
     module: &Module,
@@ -276,23 +241,6 @@ pub fn get_memory_operand_xref(
     }
 }
 
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::{get_first_operand, get_pointer_operand_xref};
-///
-/// // this is a far ptr jump from addr 0x0 to itmodule:
-/// // JMP FAR PTR 0:00000000
-/// // [ EA ] [ 00 00 00 00 ] [ 00 00 ]
-/// // opcode   ptr            segment
-/// let mut module = load_shellcode32(b"\xEA\x00\x00\x00\x00\x00\x00");
-/// let insn = read_insn(&module, 0x0);
-/// let op = get_first_operand(&insn).unwrap();
-/// let xref = get_pointer_operand_xref(&op).unwrap();
-///
-/// assert_eq!(xref.is_some(), true, "has pointer operand xref");
-/// assert_eq!(xref.unwrap(), 0x0, "correct pointer operand xref");
-/// ```
 pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>> {
     // ref: https://c9x.me/x86/html/file_module_x86_id_147.html
     //
@@ -309,33 +257,6 @@ pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>
     Ok(Some(op.ptr.offset as u64))
 }
 
-/// ## test relative immediate operand
-///
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::{get_first_operand, get_immediate_operand_xref};
-///
-/// // this is a jump from addr 0x0 to itmodule:
-/// // JMP $+0;
-/// let mut module = load_shellcode32(b"\xEB\xFE");
-/// let insn = read_insn(&module, 0x0);
-/// let op = get_first_operand(&insn).unwrap();
-/// let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
-///
-/// assert_eq!(xref.is_some(), true, "has immediate operand");
-/// assert_eq!(xref.unwrap(), 0x0, "correct immediate operand");
-///
-///
-/// // this is a jump from addr 0x0 to -1, which is unmapped
-/// // JMP $-1;
-/// let mut module = load_shellcode32(b"\xEB\xFD");
-/// let insn = read_insn(&module, 0x0);
-/// let op = get_first_operand(&insn).unwrap();
-/// let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
-///
-/// assert_eq!(xref.is_some(), false, "does not have immediate operand");
-/// ```
 pub fn get_immediate_operand_xref(
     module: &Module,
     va: VA,
@@ -402,18 +323,6 @@ fn get_operand_xref(
     }
 }
 
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::get_call_insn_flow;
-///
-/// // E8 00 00 00 00  CALL $+5
-/// // 90              NOP
-/// let mut module = load_shellcode32(b"\xE8\x00\x00\x00\x00\x90");
-/// let insn = read_insn(&module, 0x0);
-/// let flows = get_call_insn_flow(&module, 0x0, &insn).unwrap();
-/// assert_eq!(flows[0].va(), 0x5);
-/// ```
 pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CALL, then its a programming error. panic!
     // all CALLs should have an operand.
@@ -425,18 +334,6 @@ pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     }
 }
 
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::get_jmp_insn_flow;
-///
-/// // E9 00 00 00 00  JMP $+5
-/// // 90              NOP
-/// let mut module = load_shellcode32(b"\xE9\x00\x00\x00\x00\x90");
-/// let insn = read_insn(&module, 0x0);
-/// let flows = get_jmp_insn_flow(&module, 0x0, &insn).unwrap();
-/// assert_eq!(flows[0].va(), 0x5);
-/// ```
 pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
     // if this is not a JMP, then its a programming error. panic!
     // all JMPs should have an operand.
@@ -459,19 +356,6 @@ pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstructi
     }
 }
 
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::get_cjmp_insn_flow;
-///
-/// // 75 01 JNZ $+1
-/// // CC    BREAK
-/// // 90    NOP
-/// let mut module = load_shellcode32(b"\x75\x01\xCC\x90");
-/// let insn = read_insn(&module, 0x0);
-/// let flows = get_cjmp_insn_flow(&module, 0x0, &insn).unwrap();
-/// assert_eq!(flows[0].va(), 0x3);
-/// ```
 pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CJMP, then its a programming error. panic!
     // all conditional jumps should have an operand.
@@ -483,18 +367,6 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     }
 }
 
-/// ```
-/// use lancelot::test::*;
-/// use lancelot::analysis::dis::get_disassembler;
-/// use lancelot::analysis::cfg::get_cmov_insn_flow;
-///
-/// // 0F 44 C3  CMOVZ EAX, EBX
-/// // 90        NOP
-/// let mut module = load_shellcode32(b"\x0F\x44\xC3\x90");
-/// let insn = read_insn(&module, 0x0);
-/// let flows = get_cmov_insn_flow(0x0, &insn).unwrap();
-/// assert_eq!(flows[0].va(), 0x3);
-/// ```
 pub fn get_cmov_insn_flow(va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
     let next = va + insn.length as u64;
     Ok(smallvec![Flow::ConditionalMove(next)])
@@ -620,7 +492,7 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
     Ok(insns)
 }
 
-// compute successors for an instruction (specified by VA).
+/// compute successors for an instruction (specified by VA).
 /// this function should not fail.
 fn compute_successors(insns: &BTreeMap<VA, InstructionDescriptor>) -> BTreeMap<VA, Flows> {
     let mut successors: BTreeMap<VA, Flows> = Default::default();
@@ -638,7 +510,7 @@ fn compute_successors(insns: &BTreeMap<VA, InstructionDescriptor>) -> BTreeMap<V
     successors
 }
 
-// compute predecessors for an instruction (specified by VA).
+/// compute predecessors for an instruction (specified by VA).
 /// this function should not fail.
 fn compute_predecessors(insns: &BTreeMap<VA, InstructionDescriptor>) -> BTreeMap<VA, Flows> {
     let mut predecessors: BTreeMap<VA, Flows> = Default::default();
@@ -805,7 +677,7 @@ pub fn build_cfg(module: &Module, va: VA) -> Result<CFG> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{analysis::cfg::build_cfg, rsrc::*};
+    use crate::{analysis::cfg::*, rsrc::*, test::*};
     use anyhow::Result;
 
     #[test]
@@ -821,5 +693,109 @@ mod tests {
         assert_eq!(cfg.basic_blocks.len(), 4);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_get_memory_operand_xref_simple() {
+        // 0:  ff 25 06 00 00 00   +->  jmp    DWORD PTR ds:0x6
+        // 6:  00 00 00 00         +--  dw     0x0
+        let module = load_shellcode32(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
+        let insn = read_insn(&module, 0x0);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
+
+        assert_eq!(xref.is_some(), true);
+        assert_eq!(xref.unwrap(), 0x0);
+    }
+
+    #[test]
+    fn test_get_memory_operand_xref_rip_relative() {
+        // FF 15 00 00 00 00         CALL $+5
+        // 00 00 00 00 00 00 00 00   dq 0x0
+        let module = load_shellcode64(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
+        let insn = read_insn(&module, 0x0);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
+
+        assert_eq!(xref.is_some(), true);
+        assert_eq!(xref.unwrap(), 0x0);
+    }
+
+    #[test]
+    fn test_get_pointer_operand_xref() {
+        // this is a far ptr jump from addr 0x0 to itmodule:
+        // JMP FAR PTR 0:00000000
+        // [ EA ] [ 00 00 00 00 ] [ 00 00 ]
+        // opcode   ptr            segment
+        let module = load_shellcode32(b"\xEA\x00\x00\x00\x00\x00\x00");
+        let insn = read_insn(&module, 0x0);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_pointer_operand_xref(&op).unwrap();
+
+        assert_eq!(xref.is_some(), true, "has pointer operand xref");
+        assert_eq!(xref.unwrap(), 0x0, "correct pointer operand xref");
+    }
+
+    #[test]
+    fn test_get_immediate_operand_xref() {
+        // this is a jump from addr 0x0 to itmodule:
+        // JMP $+0;
+        let module = load_shellcode32(b"\xEB\xFE");
+        let insn = read_insn(&module, 0x0);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
+
+        assert_eq!(xref.is_some(), true, "has immediate operand");
+        assert_eq!(xref.unwrap(), 0x0, "correct immediate operand");
+
+        // this is a jump from addr 0x0 to -1, which is unmapped
+        // JMP $-1;
+        let module = load_shellcode32(b"\xEB\xFD");
+        let insn = read_insn(&module, 0x0);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
+
+        assert_eq!(xref.is_some(), false, "does not have immediate operand");
+    }
+
+    #[test]
+    fn test_get_call_insn_flow() {
+        // E8 00 00 00 00  CALL $+5
+        // 90              NOP
+        let module = load_shellcode32(b"\xE8\x00\x00\x00\x00\x90");
+        let insn = read_insn(&module, 0x0);
+        let flows = get_call_insn_flow(&module, 0x0, &insn).unwrap();
+        assert_eq!(flows[0].va(), 0x5);
+    }
+
+    #[test]
+    fn test_get_jmp_insn_flow() {
+        // E9 00 00 00 00  JMP $+5
+        // 90              NOP
+        let module = load_shellcode32(b"\xE9\x00\x00\x00\x00\x90");
+        let insn = read_insn(&module, 0x0);
+        let flows = get_jmp_insn_flow(&module, 0x0, &insn).unwrap();
+        assert_eq!(flows[0].va(), 0x5);
+    }
+
+    #[test]
+    fn test_get_cjmp_insn_flow() {
+        // 75 01 JNZ $+1
+        // CC    BREAK
+        // 90    NOP
+        let module = load_shellcode32(b"\x75\x01\xCC\x90");
+        let insn = read_insn(&module, 0x0);
+        let flows = get_cjmp_insn_flow(&module, 0x0, &insn).unwrap();
+        assert_eq!(flows[0].va(), 0x3);
+    }
+
+    #[test]
+    fn test_get_cmov_insn_flow() {
+        // 0F 44 C3  CMOVZ EAX, EBX
+        // 90        NOP
+        let module = load_shellcode32(b"\x0F\x44\xC3\x90");
+        let insn = read_insn(&module, 0x0);
+        let flows = get_cmov_insn_flow(0x0, &insn).unwrap();
+        assert_eq!(flows[0].va(), 0x3);
     }
 }
