@@ -18,11 +18,6 @@ pub enum Rsrc {
 }
 
 /// Fetch the file system name of the given resource.
-///
-/// ```
-/// use lancelot::rsrc::*;
-/// assert_eq!(get_name(Rsrc::K32), "k32.bin");
-/// ```
 pub fn get_name(rsrc: Rsrc) -> String {
     match rsrc {
         Rsrc::K32 => String::from("k32.bin"),
@@ -33,11 +28,6 @@ pub fn get_name(rsrc: Rsrc) -> String {
 }
 
 /// Fetch the file system path of the given resource.
-///
-/// ```
-/// use lancelot::rsrc::*;
-/// assert!(get_path(Rsrc::K32).ends_with("k32.bin"));
-/// ```
 pub fn get_path(rsrc: Rsrc) -> String {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("resources");
@@ -47,12 +37,6 @@ pub fn get_path(rsrc: Rsrc) -> String {
 }
 
 /// Fetch the contents of the given resource.
-///
-/// ```
-/// use lancelot::rsrc::*;
-/// assert_eq!(get_buf(Rsrc::K32)[0], b'M');
-/// assert_eq!(get_buf(Rsrc::K32)[1], b'Z');
-/// ```
 pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
     let path = get_path(rsrc);
     let mut buf = util::read_file(&path).unwrap();
@@ -72,4 +56,25 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
         }
     }
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_buf() {
+        assert_eq!(get_buf(Rsrc::K32)[0], b'M');
+        assert_eq!(get_buf(Rsrc::K32)[1], b'Z');
+    }
+
+    #[test]
+    fn test_get_path() {
+        assert!(get_path(Rsrc::K32).ends_with("k32.bin"));
+    }
+
+    #[test]
+    fn test_get_name() {
+        assert_eq!(get_name(Rsrc::K32), "k32.bin");
+    }
 }
