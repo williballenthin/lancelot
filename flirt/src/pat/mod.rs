@@ -86,30 +86,27 @@ fn hex_word(input: &str) -> IResult<&str, u16> {
 fn hex_word_plus(input: &str) -> IResult<&str, u64> {
     let (input, nibbles) = take_while(is_hex_digit)(input)?;
     let mut v = 0u64;
-    let nibbles = nibbles
-        .chars()
-        .map(|c| match c {
-            '0' => 0,
-            '1' => 1,
-            '2' => 2,
-            '3' => 3,
-            '4' => 4,
-            '5' => 5,
-            '6' => 6,
-            '7' => 7,
-            '8' => 8,
-            '9' => 9,
-            'A' | 'a' => 0xA,
-            'B' | 'b' => 0xB,
-            'C' | 'c' => 0xC,
-            'D' | 'd' => 0xD,
-            'E' | 'e' => 0xE,
-            'F' | 'f' => 0xF,
-            _ => panic!("unexpect hex digit"),
-        })
-        .collect::<Vec<u8>>();
+    let nibbles = nibbles.chars().map(|c| match c {
+        '0' => 0,
+        '1' => 1,
+        '2' => 2,
+        '3' => 3,
+        '4' => 4,
+        '5' => 5,
+        '6' => 6,
+        '7' => 7,
+        '8' => 8,
+        '9' => 9,
+        'A' | 'a' => 0xA,
+        'B' | 'b' => 0xB,
+        'C' | 'c' => 0xC,
+        'D' | 'd' => 0xD,
+        'E' | 'e' => 0xE,
+        'F' | 'f' => 0xF,
+        _ => panic!("unexpect hex digit"),
+    });
 
-    for nibble in nibbles.into_iter() {
+    for nibble in nibbles {
         v <<= 4;
         v |= nibble as u64;
     }
