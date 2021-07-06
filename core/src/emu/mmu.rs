@@ -1,3 +1,5 @@
+#![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
+
 use std::collections::{btree_map::Entry, BTreeMap};
 
 use anyhow::Result;

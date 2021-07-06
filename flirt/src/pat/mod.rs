@@ -1,3 +1,5 @@
+#![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
+
 // from: https://github.com/Maktm/FLIRTDB/blob/1f5763535e02d7cccf2f90a96a8ebaa36e9b2495/cmt/windows/libcmt_15_msvc_x86.pat#L355
 //
 //    3B0D........F27502F2C3F2E9...................................... 00 0000
@@ -25,7 +27,6 @@
 // ^0002 ___security_cookie
 // ^^^^^ reference offset
 // ^^^^^^^^^^^^^^^^^^ reference name
-
 use anyhow::Result;
 use log::trace;
 use nom::{

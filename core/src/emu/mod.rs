@@ -1,3 +1,5 @@
+#![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
+
 use std::unimplemented;
 
 use anyhow::Result;
