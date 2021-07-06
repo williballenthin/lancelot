@@ -92,20 +92,13 @@ impl PE {
 }
 
 fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
-    match goblin::Object::parse(buf)? {
-        goblin::Object::PE(pe) => {
-            if let Some(opt) = pe.header.optional_header {
-                if opt.data_directories.get_clr_runtime_header().is_some() {
-                    return Err(PEError::FormatNotSupported(".NET assembly".to_string()).into());
-                }
-            }
-            Ok(pe)
+    let pe = goblin::pe::PE::parse(buf)?;
+    if let Some(opt) = pe.header.optional_header {
+        if opt.data_directories.get_clr_runtime_header().is_some() {
+            return Err(PEError::FormatNotSupported(".NET assembly".to_string()).into());
         }
-        goblin::Object::Elf(_) => Err(PEError::FormatNotSupported("elf".to_string()).into()),
-        goblin::Object::Archive(_) => Err(PEError::FormatNotSupported("archive".to_string()).into()),
-        goblin::Object::Mach(_) => Err(PEError::FormatNotSupported("macho".to_string()).into()),
-        goblin::Object::Unknown(_) => Err(PEError::FormatNotSupported("unknown".to_string()).into()),
     }
+    Ok(pe)
 }
 
 #[allow(clippy::unnecessary_wraps)]

@@ -1,5 +1,9 @@
+#[cfg(feature = "disassembler")]
 pub mod call_graph;
+#[cfg(feature = "disassembler")]
 pub mod cfg;
+#[cfg(feature = "disassembler")]
 pub mod dis;
+#[cfg(feature = "flirt")]
 pub mod flirt;
 pub mod pe;

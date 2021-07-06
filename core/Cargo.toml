@@ -5,34 +5,42 @@ license = "Apache-2.0"
 version = "0.6.5"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2018"
+homepage = "https://github.com/williballenthin/lancelot"
+repository = "https://github.com/williballenthin/lancelot"
 
 [badges]
 travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "master" }
 
 [dependencies]
 log = "0.4"
-goblin = "0.4"
-zydis = "3"
+goblin = { version = "0.4", features = ["std", "pe32"], default-features = false }
+zydis = { version = "3", optional = true }
 byteorder = "1"
 bitflags = "1"
 lazy_static = "1"
-fern = "0.6"
-chrono = "0.4"
 anyhow = "1"
 thiserror = "1"
 regex = "1"
 smallvec = "1"
 widestring = "0.4"
 smol_str = "0.1"
-bitvec = "0.20"
+
+# chrono, bitvec, and fern are only needed by tests, but because of the need for a feature named
+# test, they also have to be optional dependencies as well.
+fern = { version = "0.6", optional = true }
+chrono = { version = "0.4", features = ["clock"], default-features = false, optional = true}
+bitvec = { version = "0.20", optional = true }
 
 # https://github.com/myrrlyn/funty/issues/3#issuecomment-778629965
 funty="=1.1.0"
 
-lancelot-flirt = { path = "../flirt", version = "0.6.5" }
+lancelot-flirt = { path = "../flirt", version = "0.6.5", optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
+chrono = { version = "0.4", features = ["clock"], default-features = false }
+bitvec = "0.20"
+fern = "0.6"
 # while there is a newer unicorn-rs release (0.9.1)
 # it doesn't build the underlying `unicorn` library transparently.
 # so we use 0.8 that will do it for us.
@@ -46,8 +54,13 @@ dynasmrt = "1.0.1"
 [[bench]]
 name = "emu"
 harness = false
+required-features = ["emulator"]
 
 [features]
+default = ["emulator", "flirt", "disassembler"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
-test = []
+test = ["chrono", "fern", "emulator"]
+flirt = ["lancelot-flirt", "disassembler"]
+emulator = ["bitvec", "zydis"]
+disassembler = ["zydis"]

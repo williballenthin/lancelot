@@ -58,3 +58,4 @@ resources/evaluation/SoK/SoK-windows-testsuite
 resources/evaluation/SoK/.ipynb_checkpoints
 resources/evaluation/SoK/binaries.txt
 .vscode
+*/target/
