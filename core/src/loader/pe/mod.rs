@@ -160,9 +160,7 @@ fn load_pe_section(
 ) -> Result<Section> {
     let section_name = String::from_utf8_lossy(&section.name[..]).into_owned();
 
-    let trimmed_name = section_name
-        .trim_end_matches('\u{0}')
-        .trim_end();
+    let trimmed_name = section_name.trim_end_matches('\u{0}').trim_end();
 
     let name = trimmed_name
         .split_once('\u{0}')
