@@ -158,13 +158,16 @@ fn load_pe_section(
     section_alignment: u64,
     section: &goblin::pe::section_table::SectionTable,
 ) -> Result<Section> {
-    let name = String::from_utf8_lossy(&section.name[..])
-        .into_owned()
+    let section_name = String::from_utf8_lossy(&section.name[..]).into_owned();
+
+    let trimmed_name = section_name
         .trim_end_matches('\u{0}')
-        .trim_end()
-        .splitn(2, '\u{0}')
-        .next()
-        .unwrap()
+        .trim_end();
+
+    let name = trimmed_name
+        .split_once('\u{0}')
+        .map(|(name, _)| name)
+        .unwrap_or_else(|| trimmed_name)
         .to_string();
 
     let virtual_size = util::align(section.virtual_size as u64, section_alignment);
