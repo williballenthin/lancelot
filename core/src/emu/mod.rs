@@ -607,7 +607,7 @@ impl Emulator {
             }
 
             PUSH => {
-                // EXPLICIT/READ/IMMEDIATE|REGISTER
+                // EXPLICIT/READ/IMMEDIATE/REGISTER
                 let src = &insn.operands[0];
 
                 // HIDDEN/WRITE/REG/$SP
@@ -683,7 +683,7 @@ impl Emulator {
             }
 
             CALL => {
-                // EXPLICIT/READ/MEMORY|REGISTER call target
+                // EXPLICIT/READ/MEMORY/REGISTER call target
                 let target = &insn.operands[0];
                 // HIDDEN/READ-WRITE/REGISTER/PC program counter
                 let pc = &insn.operands[1];
@@ -744,7 +744,7 @@ impl Emulator {
             }
 
             SUB => {
-                // EXPLICIT/READ|WRITE
+                // EXPLICIT/READ/WRITE
                 let dst = &insn.operands[0];
                 // EXPLICIT/READ
                 let src = &insn.operands[1];
@@ -828,7 +828,7 @@ impl Emulator {
             }
 
             ADD => {
-                // EXPLICIT/READ|WRITE
+                // EXPLICIT/READ/WRITE
                 let dst = &insn.operands[0];
                 // EXPLICIT/READ
                 let src = &insn.operands[1];

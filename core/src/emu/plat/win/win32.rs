@@ -266,6 +266,8 @@ mod tests {
         step(&mut emu)?; // mov
         step(&mut emu)?; // push
 
+        // handling imports:
+        //
         // next is call to import GetVersionExA.
         // .text:004010A1 call    ds:GetVersionExA
         assert_eq!(emu.pc(), 0x4010A1);
@@ -278,7 +280,7 @@ mod tests {
         assert_eq!(emu.pc(), 0x406e88);
 
         // but this isn't a code segment,
-        // so if we try to execute it, it will fail.
+        // so if we try to execute it, it will fail with a FetchError
         let e = step(&mut emu).unwrap_err(); // GetVersionExA impl
 
         // demonstrate how to recover the called imported API.
