@@ -47,7 +47,7 @@ fern = "0.6"
 #
 # the upstream unicorn/next branch maintains rust bindings,
 # but they're not published yet.
-unicorn = "0.8.0"
+unicorn = "0.9.0"
 dynasm = "1.0.1"
 dynasmrt = "1.0.1"
 
