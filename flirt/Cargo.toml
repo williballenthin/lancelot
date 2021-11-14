@@ -4,7 +4,7 @@ description = "parse and match FLIRT signatures"
 license = "Apache-2.0"
 version = "0.6.5"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
 repository = "https://github.com/williballenthin/lancelot"
 

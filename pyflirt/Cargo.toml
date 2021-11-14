@@ -2,7 +2,7 @@
 name = "python-flirt"
 version = "0.6.5"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
 homepage = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
