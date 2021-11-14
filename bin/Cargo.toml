@@ -26,5 +26,3 @@ hex = "0.4"
 
 lancelot = { path = "../core", version = "0.6.5" }
 lancelot-flirt = { path = "../flirt", version = "0.6.5" }
-
-

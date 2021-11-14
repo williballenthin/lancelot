@@ -4,14 +4,28 @@
 
 intel x86(-64) code analysis library that reconstructs control flow
 
+## maintenance
+
+```
+$ cargo outdated -x unicorn
+```
+
+because we use an older version of unicorn thats easier to build with cargo,
+we want to ignore any old dependencies stemming from unicorn.
 
 ## testing
 
 ```
 $ pushd core; cargo test; popd
 $ pushd flirt; cargo test; popd
+$ pushd bin; cargo test; popd
 
 $ pushd pylancelot
+$   maturin develop
+$   pytest
+$ popd
+
+$ pushd pyflirt
 $   maturin develop
 $   pytest
 $ popd

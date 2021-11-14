@@ -22,24 +22,21 @@ anyhow = "1"
 thiserror = "1"
 regex = "1"
 smallvec = "1"
-widestring = "0.4"
+widestring = "0.5"
 smol_str = "0.1"
 
 # chrono, bitvec, and fern are only needed by tests, but because of the need for a feature named
 # test, they also have to be optional dependencies as well.
 fern = { version = "0.6", optional = true }
 chrono = { version = "0.4", features = ["clock"], default-features = false, optional = true}
-bitvec = { version = "0.20", optional = true }
-
-# https://github.com/myrrlyn/funty/issues/3#issuecomment-778629965
-funty="=1.1.0"
+bitvec = { version = "0.22", optional = true }
 
 lancelot-flirt = { path = "../flirt", version = "0.6.5", optional = true}
 
 [dev-dependencies]
 criterion = "0.3"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
-bitvec = "0.20"
+bitvec = "0.22"
 fern = "0.6"
 # while there is a newer unicorn-rs release (0.9.1)
 # it doesn't build the underlying `unicorn` library transparently.
