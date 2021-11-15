@@ -1,7 +1,4 @@
 use anyhow::Result;
-extern crate chrono;
-extern crate clap;
-extern crate log;
 
 fn run(sig_path: &str) -> Result<()> {
     let buf = std::fs::read(sig_path)?;

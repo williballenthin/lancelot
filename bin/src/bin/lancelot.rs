@@ -1,11 +1,8 @@
 #![allow(clippy::upper_case_acronyms)]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use clap::clap_app;
 use log::{debug, error, info};
-#[macro_use]
-extern crate clap;
-#[macro_use]
-extern crate anyhow;
 
 use lancelot::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, RVA, VA};
 

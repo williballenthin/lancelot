@@ -15,13 +15,10 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
-use log::{debug, error};
-#[macro_use]
-extern crate clap;
-#[macro_use]
-extern crate anyhow;
 use ansi_term::Colour as Color;
+use anyhow::{anyhow, Result};
+use clap::clap_app;
+use log::{debug, error};
 
 use lancelot::{
     aspace::{AbsoluteAddressSpace, AddressSpace},

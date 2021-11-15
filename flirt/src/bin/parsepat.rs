@@ -1,7 +1,4 @@
 use anyhow::Result;
-extern crate chrono;
-extern crate clap;
-extern crate log;
 
 fn run(pat_path: &str) -> Result<()> {
     let pat = String::from_utf8(std::fs::read(pat_path)?)?;

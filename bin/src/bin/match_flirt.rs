@@ -3,9 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
+use clap::clap_app;
 use log::{debug, error, info};
-#[macro_use]
-extern crate clap;
 
 use lancelot::{loader::pe::PE, util, VA};
 use lancelot_flirt::*;
