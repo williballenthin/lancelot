@@ -1,6 +1,4 @@
 on: [push, pull_request]
-  #  release:
-  #  types: [created, edited]
 
 name: bindings
 
@@ -31,7 +29,7 @@ jobs:
         target: ${{ matrix.target }}
         manylinux: auto
         command: build
-        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+        args: --release --no-sdist --strip --manifest-path=./pyflirt/Cargo.toml
     - uses: actions/upload-artifact@v2
       name: upload
       with:
@@ -42,21 +40,27 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        python: [
+          { version: '3.6', abi: 'cp36-cp36m' },
+          { version: '3.7', abi: 'cp37-cp37m' },
+          { version: '3.8', abi: 'cp38-cp38' },
+          { version: '3.9', abi: 'cp39-cp39' },
+          { version: '3.10', abi: 'cp310-cp310' },
+        ]
         target: [aarch64, armv7]
+
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-python@v2
-      with:
-        python-version: 3.9
-
     - uses: messense/maturin-action@v1
       name: build pylancelot for linux (${{ matrix.target }})
+      env:
+        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
       with:
         maturin-version: latest
         target: ${{ matrix.target }}
         manylinux: auto
         command: build
-        args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
+        args: --interpreter=/opt/python/${{ matrix.python.abi }}/bin/python --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
       name: build pyflirt for linux (${{ matrix.target }})
       with:
@@ -64,7 +68,7 @@ jobs:
         target: ${{ matrix.target }}
         manylinux: auto
         command: build
-        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+        args: --release --no-sdist --strip --manifest-path=./pyflirt/Cargo.toml
 
     - name: Upload wheels
       uses: actions/upload-artifact@v2
@@ -90,7 +94,7 @@ jobs:
         profile: minimal
         default: true
     - uses: messense/maturin-action@v1
-      name: build pylancelot for windows  (${{ matrix.target }})
+      name: build pylancelot for windows (${{ matrix.target }})
       with:
         maturin-version: latest
         command: build
@@ -102,13 +106,13 @@ jobs:
         maturin-version: latest
         command: build
         target: ${{ matrix.target }}
-        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+        args: --release --no-sdist --strip --manifest-path=./pyflirt/Cargo.toml
     - uses: actions/upload-artifact@v2
       name: upload
       with:
         name: wheels
         path: target/wheels/*.whl
-                                                                                
+
   macos:
     runs-on: macos-latest
     steps:
