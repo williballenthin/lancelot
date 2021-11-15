@@ -49,13 +49,6 @@ jobs:
       with:
         python-version: 3.9
 
-    - name: Build Wheels
-      uses: messense/maturin-action@v1
-      with:
-        target: ${{ matrix.target }}
-        manylinux: auto
-        args: --release --out dist --no-sdist -m python/Cargo.toml
-
     - uses: messense/maturin-action@v1
       name: build pylancelot for linux (${{ matrix.target }})
       with:
