@@ -9,12 +9,6 @@ updates:
   - dependency-name: funty
     versions:
     - 1.2.0
-  - dependency-name: bitvec
-    versions:
-    - 0.21.0
   - dependency-name: unicorn
     versions:
-    - 0.9.1
-  - dependency-name: nom
-    versions:
-    - 6.0.0
+    - 0.8.0
