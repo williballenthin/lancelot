@@ -53,7 +53,7 @@ fn main() {
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "{} [{:5}] {} {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
                 if log_level == log::LevelFilter::Trace {
                     record.target()
