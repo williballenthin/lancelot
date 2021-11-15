@@ -5,70 +5,184 @@ on: [push, pull_request]
 name: bindings
 
 jobs:
-  setup:
-   name: setup
-   runs-on: ubuntu-latest
-   steps:
-     - uses: actions/checkout@v2
-
-     - uses: actions-rs/toolchain@v1
-       with:
-         profile: minimal
-         toolchain: stable
-         override: true
-
   linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64, i686]
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+        architecture: x64
     - uses: messense/maturin-action@v1
+      name: build pylancelot for linux (${{ matrix.target }})
       with:
         maturin-version: latest
+        target: ${{ matrix.target }}
         manylinux: auto
         command: build
         args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
+      name: build pyflirt for linux (${{ matrix.target }})
       with:
         maturin-version: latest
+        target: ${{ matrix.target }}
         manylinux: auto
         command: build
         args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
-    - name : ls
-      run: |
-        ls -R target/wheels/
- 
+    - uses: actions/upload-artifact@v2
+      name: upload
+      with:
+        name: wheels
+        path: target/wheels/*.whl
+  
+  linux-cross:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [aarch64, armv7]
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+
+    - name: Build Wheels
+      uses: messense/maturin-action@v1
+      with:
+        target: ${{ matrix.target }}
+        manylinux: auto
+        args: --release --out dist --no-sdist -m python/Cargo.toml
+
+    - uses: messense/maturin-action@v1
+      name: build pylancelot for linux (${{ matrix.target }})
+      with:
+        maturin-version: latest
+        target: ${{ matrix.target }}
+        manylinux: auto
+        command: build
+        args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: messense/maturin-action@v1
+      name: build pyflirt for linux (${{ matrix.target }})
+      with:
+        maturin-version: latest
+        target: ${{ matrix.target }}
+        manylinux: auto
+        command: build
+        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v2
+      with:
+        name: wheels
+        path: dist
+
   windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x64, x86]
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+        architecture: ${{ matrix.target }}
+    - name: install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
     - uses: messense/maturin-action@v1
+      name: build pylancelot for windows  (${{ matrix.target }})
       with:
         maturin-version: latest
         command: build
+        target: ${{ matrix.target }}
         args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
+      name: build pyflirt for windows (${{ matrix.target }})
       with:
         maturin-version: latest
         command: build
+        target: ${{ matrix.target }}
         args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
-                                                                               
+    - uses: actions/upload-artifact@v2
+      name: upload
+      with:
+        name: wheels
+        path: target/wheels/*.whl
+                                                                                
   macos:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+        architecture: x64
+    - name: install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
     - name: Install aarch64-apple-darwin toolchain
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: aarch64-apple-darwin
     - uses: messense/maturin-action@v1
+      name: build pylancelot for macos (universal2)
       with:
         maturin-version: latest
         command: build
         args: --release --no-sdist --universal2 --strip --manifest-path=./pylancelot/Cargo.toml
- 
     - uses: messense/maturin-action@v1
+      name: build pyflirt for macos (universal2)
       with:
         maturin-version: latest
         command: build
         args: --release --no-sdist --universal2 --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: messense/maturin-action@v1
+      name: build pylancelot for macos (x86_64)
+      with:
+        maturin-version: latest
+        command: build
+        target: x86_64
+        args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: messense/maturin-action@v1
+      name: build pyflirt for macos (x86_64)
+      with:
+        maturin-version: latest
+        command: build
+        target: x86_64
+        args: --release --no-sdist --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: actions/upload-artifact@v2
+      name: upload
+      with:
+        name: wheels
+        path: target/wheels/*.whl
+        
+  release:
+    name: push to pypi
+    runs-on: ubuntu-latest
+    if: "startsWith(github.ref, 'refs/tags/')"
+    needs: [ macos, windows, linux, linux-cross ]
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: wheels
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Publish to PyPi
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          pip install --upgrade twine
+          twine upload --skip-existing *
