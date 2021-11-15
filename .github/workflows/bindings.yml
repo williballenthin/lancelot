@@ -1,0 +1,74 @@
+on: [push, pull_request]
+  #  release:
+  #  types: [created, edited]
+
+name: bindings
+
+jobs:
+  setup:
+   name: setup
+   runs-on: ubuntu-latest
+   steps:
+     - uses: actions/checkout@v2
+
+     - uses: actions-rs/toolchain@v1
+       with:
+         profile: minimal
+         toolchain: stable
+         override: true
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        manylinux: auto
+        command: build
+        args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        manylinux: auto
+        command: build
+        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+    - name : ls
+      run: |
+        ls -R target/wheels/
+ 
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        command: build
+        args: --release --no-sdist --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        command: build
+        args: --release --no-sdist  --strip --manifest-path=./pyflirt/Cargo.toml
+                                                                               
+  macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install aarch64-apple-darwin toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-apple-darwin
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        command: build
+        args: --release --no-sdist --universal2 --strip --manifest-path=./pylancelot/Cargo.toml
+ 
+    - uses: messense/maturin-action@v1
+      with:
+        maturin-version: latest
+        command: build
+        args: --release --no-sdist --universal2 --strip --manifest-path=./pyflirt/Cargo.toml
