@@ -95,7 +95,7 @@ pub fn read_image_import_descriptor(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_DESC
     let buf = pe.module.address_space.read_bytes(va, sizeof_IMAGE_IMPORT_DESCRIPTOR)?;
 
     // these fields are all u32, even on 64-bit
-    let entries: Vec<u32> = buf.chunks_exact(0x4).map(|b| LittleEndian::read_u32(b)).collect();
+    let entries: Vec<u32> = buf.chunks_exact(0x4).map(LittleEndian::read_u32).collect();
 
     Ok(IMAGE_IMPORT_DESCRIPTOR {
         original_first_thunk: entries[0] as RVA,

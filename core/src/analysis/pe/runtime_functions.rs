@@ -105,7 +105,7 @@ fn read_unwind_info(pe: &PE, offset: VA) -> Result<UnwindInfo> {
         .address_space
         .read_bytes(offset + 4, 2 * code_count as usize)?
         .windows(2)
-        .map(|b| byteorder::LittleEndian::read_u16(b))
+        .map(byteorder::LittleEndian::read_u16)
         .collect();
 
     // https://docs.microsoft.com/en-us/windows/win32/api/winnt/nf-winnt-rtlvirtualunwind

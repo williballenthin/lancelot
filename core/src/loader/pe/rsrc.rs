@@ -281,11 +281,7 @@ impl ResourceNodeName {
     }
 
     fn name(&self) -> Result<String> {
-        let chars: Vec<u16> = self
-            .character_buf
-            .chunks_exact(2)
-            .map(|buf| LittleEndian::read_u16(buf))
-            .collect();
+        let chars: Vec<u16> = self.character_buf.chunks_exact(2).map(LittleEndian::read_u16).collect();
 
         widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
     }

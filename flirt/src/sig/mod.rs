@@ -35,6 +35,7 @@ bitflags! {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum HeaderExtra {
     V5,
@@ -63,6 +64,7 @@ impl HeaderExtra {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct Header {
     // offset 6
