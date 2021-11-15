@@ -1,6 +1,6 @@
 [package]
 name = "pylancelot"
-version = "0.6.5"
+version = "0.7.0"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
@@ -11,7 +11,7 @@ name = "lancelot"
 crate-type = ["cdylib"]
 
 [dependencies]
-lancelot = { path = "../core", version = "0.6.5" }
+lancelot = { path = "../core", version = "0.7.0" }
 pyo3 = { version = "0.15"}
 anyhow = "1"
 zydis = { git = "https://github.com/williballenthin/zydis-rs", branch = "fix-26" }

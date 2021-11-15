@@ -2,7 +2,7 @@
 name = "lancelot-flirt"
 description = "parse and match FLIRT signatures"
 license = "Apache-2.0"
-version = "0.6.5"
+version = "0.7.0"
 authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
