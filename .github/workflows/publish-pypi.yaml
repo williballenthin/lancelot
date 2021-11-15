@@ -1,6 +1,8 @@
-on: [push, pull_request]
+on:
+  release:
+    types: [created, edited]
 
-name: bindings
+name: publish pypi
 
 jobs:
   linux:
@@ -74,7 +76,7 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: wheels
-        path: dist
+        path: target/wheels/*.whl
 
   windows:
     runs-on: windows-latest
