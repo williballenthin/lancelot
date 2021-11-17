@@ -52,6 +52,10 @@ pub fn get_call_import_xref(imports: &BTreeSet<VA>, va: VA, insn: &zydis::Decode
     }
 }
 
+// provide `imports` if you've done analysis of the module to find
+// the pointers used in the import table.
+// when provided, will extract the call edges to the import pointers.
+// otherwise, the call to/from import edges won't be indexed.
 pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>, imports: &BTreeSet<VA>) -> Result<CallGraph> {
     debug!("call graph");
 
