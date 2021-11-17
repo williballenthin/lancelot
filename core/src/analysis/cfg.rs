@@ -163,8 +163,7 @@ pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::Dec
 }
 
 #[allow(clippy::if_same_then_else)]
-pub fn get_memory_operand_xref(
-    module: &Module,
+pub fn get_memory_operand_ptr(
     va: VA,
     insn: &zydis::DecodedInstruction,
     op: &zydis::DecodedOperand,
@@ -187,19 +186,7 @@ pub fn get_memory_operand_xref(
         if op.mem.disp.displacement < 0 {
             return Ok(None);
         }
-        let ptr: VA = op.mem.disp.displacement as u64;
-
-        let dst = match module.read_va_at_va(ptr) {
-            Ok(dst) => dst,
-            Err(_) => return Ok(None),
-        };
-
-        if !module.probe_va(dst, Permissions::X) {
-            return Ok(None);
-        };
-
-        // this is the happy path!
-        Ok(Some(dst))
+        return Ok(Some(op.mem.disp.displacement as VA));
     } else if op.mem.base == zydis::Register::RIP
         // only valid on x64
         && op.mem.index == zydis::Register::NONE
@@ -210,22 +197,10 @@ pub fn get_memory_operand_xref(
         // it works like a relative immediate,
         // that is: dst = *(rva + displacement + instruction len)
 
-        let ptr = match va_add_signed(va + insn.length as u64, op.mem.disp.displacement as i64) {
-            None => return Ok(None),
-            Some(ptr) => ptr,
-        };
-
-        let dst = match module.read_va_at_va(ptr) {
-            Ok(dst) => dst,
-            Err(_) => return Ok(None),
-        };
-
-        if !module.probe_va(dst, Permissions::X) {
-            return Ok(None);
-        };
-
-        // this is the happy path!
-        Ok(Some(dst))
+        match va_add_signed(va + insn.length as u64, op.mem.disp.displacement as i64) {
+            None => Ok(None),
+            Some(ptr) => Ok(Some(ptr)),
+        }
     } else if op.mem.base != zydis::Register::NONE {
         // this is something like `CALL [eax+4]`
         // can't resolve without emulation
@@ -238,6 +213,37 @@ pub fn get_memory_operand_xref(
         println!("{:#x}: get mem op xref", va);
         print_op(op);
         panic!("not supported");
+    }
+}
+
+#[allow(clippy::if_same_then_else)]
+pub fn get_memory_operand_xref(
+    module: &Module,
+    va: VA,
+    insn: &zydis::DecodedInstruction,
+    op: &zydis::DecodedOperand,
+) -> Result<Option<VA>> {
+    if let Some(ptr) = get_memory_operand_ptr(va, insn, op)? {
+        let dst = match module.read_va_at_va(ptr) {
+            Ok(dst) => dst,
+            Err(_) => return Ok(None),
+        };
+
+        // target should be executable.
+        //
+        // note: pointers from the import table may not point to executable memory.
+        // however, we don't have the context to identify these pointers here.
+        //
+        // see: lancelot::analysis::call_graph::get_import_call_xref(...)
+        // for this type of analysis.
+        if !module.probe_va(dst, Permissions::X) {
+            return Ok(None);
+        };
+
+        // this is the happy path!
+        Ok(Some(dst))
+    } else {
+        Ok(None)
     }
 }
 
@@ -693,6 +699,24 @@ mod tests {
         assert_eq!(cfg.basic_blocks.len(), 4);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_get_memory_operand_ptr() {
+        //```
+        // .text:00000001800134D4 call    cs:KernelBaseGetGlobalData
+        //```
+        //
+        // this should result in a call flow to IAT entry 0x1800773F0
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::PE::from_bytes(&buf).unwrap();
+
+        let insn = read_insn(&pe.module, 0x1800134D4);
+        let op = get_first_operand(&insn).unwrap();
+        let xref = get_memory_operand_ptr(0x1800134D4, &insn, &op).unwrap();
+
+        assert_eq!(xref.is_some(), true);
+        assert_eq!(xref.unwrap(), 0x1800773F0);
     }
 
     #[test]
