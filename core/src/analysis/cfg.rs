@@ -184,9 +184,10 @@ pub fn get_memory_operand_ptr(
         // see doctest: [test simple memory ptr operand]()
 
         if op.mem.disp.displacement < 0 {
-            return Ok(None);
+            Ok(None)
+        } else {
+            Ok(Some(op.mem.disp.displacement as VA))
         }
-        return Ok(Some(op.mem.disp.displacement as VA));
     } else if op.mem.base == zydis::Register::RIP
         // only valid on x64
         && op.mem.index == zydis::Register::NONE
