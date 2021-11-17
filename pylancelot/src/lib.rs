@@ -438,7 +438,11 @@ impl PE {
     /// Returns: CallGraph
     pub fn build_call_graph(&self, py: Python) -> PyResult<CallGraph> {
         use lancelot::analysis::{call_graph, cfg, pe};
-        use std::collections::BTreeMap;
+        use std::collections::{BTreeMap, BTreeSet};
+        let imports: BTreeSet<VA> = match pe::get_imports(&self.inner) {
+            Ok(imports) => imports.keys().cloned().collect(),
+            Err(_) => Default::default(),
+        };
 
         let mut cfgs: BTreeMap<VA, cfg::CFG> = Default::default();
         for &function in pe::find_function_starts(&self.inner).map_err(to_py_err)?.iter() {
@@ -447,7 +451,7 @@ impl PE {
             }
         }
 
-        let cg = call_graph::build_call_graph(&self.inner.module, &cfgs).map_err(to_py_err)?;
+        let cg = call_graph::build_call_graph(&self.inner.module, &cfgs, &imports).map_err(to_py_err)?;
 
         let calls_to: PyObject = cg.calls_to.into_py(py);
         let calls_to: Py<PyDict> = calls_to.extract(py)?;

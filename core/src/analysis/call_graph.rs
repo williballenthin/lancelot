@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 use log::debug;
@@ -30,11 +30,37 @@ pub struct CallGraph {
     pub call_instruction_functions: BTreeMap<VA, Vec<VA>>,
 }
 
-pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>) -> Result<CallGraph> {
+pub fn get_call_import_xref(imports: &BTreeSet<VA>, va: VA, insn: &zydis::DecodedInstruction) -> Option<VA> {
+    assert!(matches!(insn.mnemonic, zydis::enums::Mnemonic::CALL));
+
+    // calls always have a first operand
+    let op = crate::analysis::cfg::get_first_operand(&insn).unwrap();
+
+    if !matches!(op.ty, zydis::OperandType::MEMORY) {
+        // doesn't look like `call [...]`
+        return None;
+    }
+
+    if let Ok(Some(ptr)) = crate::analysis::cfg::get_memory_operand_ptr(va, insn, op) {
+        if imports.contains(&ptr) {
+            return Some(ptr);
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    }
+}
+
+pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>, imports: &BTreeSet<VA>) -> Result<CallGraph> {
     debug!("call graph");
 
     let mut cg: CallGraph = Default::default();
     let decoder = dis::get_disassembler(module)?;
+
+    for &import in imports.iter() {
+        cg.calls_to.entry(import).or_default();
+    }
 
     for (&function, cfg) in cfgs.iter() {
         debug!("call graph: {:#x}", function);
@@ -52,12 +78,18 @@ pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>) -> Resul
                 if let Ok(Some(insn)) = insn {
                     if matches!(insn.mnemonic, zydis::enums::Mnemonic::CALL) {
                         let va = basic_block.address + offset as RVA;
-                        for flow in cfg::get_call_insn_flow(module, va, &insn)?.iter() {
-                            if let cfg::Flow::Call(target) = *flow {
-                                cg.calls_from.entry(va).or_default().push(target);
-                                cg.calls_to.entry(target).or_default().push(va);
-                                cg.function_call_instructions.entry(function).or_default().push(va);
-                                cg.call_instruction_functions.entry(va).or_default().push(function);
+                        cg.function_call_instructions.entry(function).or_default().push(va);
+                        cg.call_instruction_functions.entry(va).or_default().push(function);
+
+                        if let Some(import) = get_call_import_xref(imports, va, &insn) {
+                            cg.calls_from.entry(va).or_default().push(import);
+                            cg.calls_to.entry(import).or_default().push(va);
+                        } else {
+                            for flow in cfg::get_call_insn_flow(module, va, &insn)?.iter() {
+                                if let cfg::Flow::Call(target) = *flow {
+                                    cg.calls_from.entry(va).or_default().push(target);
+                                    cg.calls_to.entry(target).or_default().push(va);
+                                }
                             }
                         }
                     }
@@ -77,12 +109,13 @@ mod tests {
         VA,
     };
     use anyhow::Result;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn k32() -> Result<()> {
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let imports: BTreeSet<VA> = crate::analysis::pe::get_imports(&pe)?.keys().cloned().collect();
 
         let mut cfgs: BTreeMap<VA, CFG> = Default::default();
         for &function in pe::find_function_starts(&pe)?.iter() {
@@ -91,7 +124,7 @@ mod tests {
             }
         }
 
-        let cg = call_graph::build_call_graph(&pe.module, &cfgs)?;
+        let cg = call_graph::build_call_graph(&pe.module, &cfgs, &imports)?;
 
         assert_eq!(cg.calls_to[&0x180001068].len(), 2);
         assert!(cg.calls_to[&0x180001068].iter().find(|&&v| v == 0x18000F775).is_some());
@@ -109,6 +142,28 @@ mod tests {
             .find(|&&v| v == 0x180060504)
             .is_some());
 
+        // ```
+        // .text:00000001800134D0 sub_1800134D0 proc near
+        // .text:...
+        // .text:00000001800134D4 call    cs:KernelBaseGetGlobalData
+        // ```
+        //
+        // this should result in a call flow to IAT entry 0x1800773F0
+        #[allow(non_snake_case)]
+        let KernelBaseGetGlobalData = 0x1800773F0;
+        assert!(cg.function_call_instructions[&0x1800134D0]
+            .iter()
+            .find(|&&v| v == 0x1800134D4)
+            .is_some());
+        assert!(cg.calls_from[&0x1800134D4]
+            .iter()
+            .find(|&&v| v == KernelBaseGetGlobalData)
+            .is_some());
+        assert!(cg.calls_to[&KernelBaseGetGlobalData]
+            .iter()
+            .find(|&&v| v == 0x1800134D4)
+            .is_some());
+
         Ok(())
     }
 
@@ -116,6 +171,7 @@ mod tests {
     fn mimi() -> Result<()> {
         let buf = get_buf(Rsrc::MIMI);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let imports: BTreeSet<VA> = crate::analysis::pe::get_imports(&pe)?.keys().cloned().collect();
 
         let mut cfgs: BTreeMap<VA, CFG> = Default::default();
         for &function in pe::find_function_starts(&pe)?.iter() {
@@ -124,7 +180,7 @@ mod tests {
             }
         }
 
-        let cg = call_graph::build_call_graph(&pe.module, &cfgs)?;
+        let cg = call_graph::build_call_graph(&pe.module, &cfgs, &imports)?;
 
         assert!(cg.function_call_instructions.get(&0x45CC62).is_some());
         assert!(cg.function_call_instructions.get(&0x45D028).is_some());
