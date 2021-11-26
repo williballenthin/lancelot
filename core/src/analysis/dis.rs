@@ -1,6 +1,12 @@
 use anyhow::Result;
 use log::debug;
 
+// because we use zydis data structures throughout our API
+// make this dependency public.
+// this way, our users can do `use lancelot::analysis::dis::zydis`
+// and not have any version conflicts.
+pub use zydis;
+
 use crate::{arch::Arch, module::Module};
 
 pub fn get_disassembler(module: &Module) -> Result<zydis::Decoder> {
