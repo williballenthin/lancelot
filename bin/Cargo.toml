@@ -21,7 +21,6 @@ anyhow = "1"
 thiserror = "1"
 better-panic = "0.2"
 goblin = "0.4"
-zydis = { git = "https://github.com/williballenthin/zydis-rs", branch = "fix-26" }
 hex = "0.4"
 
 lancelot = { path = "../core", version = "0.7.0" }

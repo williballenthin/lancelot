@@ -4,7 +4,12 @@ use anyhow::{anyhow, Result};
 use clap::clap_app;
 use log::{debug, error, info};
 
-use lancelot::{analysis::dis, aspace::AddressSpace, loader::pe::PE, util, RVA, VA};
+use lancelot::{
+    analysis::{dis, dis::zydis},
+    aspace::AddressSpace,
+    loader::pe::PE,
+    util, RVA, VA,
+};
 
 fn handle_functions(pe: &PE) -> Result<()> {
     let functions = lancelot::analysis::pe::find_function_starts(pe)?;

@@ -14,7 +14,6 @@ crate-type = ["cdylib"]
 lancelot = { path = "../core", version = "0.7.0" }
 pyo3 = { version = "0.15"}
 anyhow = "1"
-zydis = { git = "https://github.com/williballenthin/zydis-rs", branch = "fix-26" }
 
 [features]
 extension-module = ["pyo3/extension-module"]

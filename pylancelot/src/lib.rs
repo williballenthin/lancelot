@@ -3,6 +3,7 @@
 
 use anyhow::Error;
 use lancelot::{
+    analysis::dis::zydis,
     arch::Arch,
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
