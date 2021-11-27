@@ -1,0 +1,30 @@
+[package]
+name = "jslancelot"
+version = "0.7.0"
+authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
+edition = "2021"
+homepage = "https://github.com/williballenthin/lancelot"
+repository = "https://github.com/williballenthin/lancelot"
+license = "Apache 2.0"
+description = "Javascript bindings for Lancelot"
+readme = "./README.md"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lancelot = { path = "../core", version = "0.7.0" }
+anyhow = "1"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
+wee_alloc = { version = "0.4", optional = true }
+console_error_panic_hook = "0.1"
+
+[features]
+# the default allocator is about 6k, wee_alloc is 1k
+default = ["wee_alloc"]
+
+[profile.release]
+lto = true
+

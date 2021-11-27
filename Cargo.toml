@@ -5,6 +5,7 @@ members = [
     "flirt",
     "pyflirt",
     "pylancelot",
+    "jslancelot",
     "bin",
 ]
 
