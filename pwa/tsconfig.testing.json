@@ -1,0 +1,18 @@
+// separate TS config to enable mocha testing
+// specifically, enable import statement via `commonjs` module.
+// ref: https://stackoverflow.com/a/60994632/87207
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "es2015",
+        "lib": ["es2017", "dom"],
+        "declaration": false,
+        "noImplicitAny": false,
+        "removeComments": true,
+        "inlineSourceMap": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+    },
+    "include": ["tests/*.ts", "src/**/*.ts", "src/*.ts"]
+  }

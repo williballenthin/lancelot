@@ -1,0 +1,45 @@
+{
+  "name": "lancelot-pwa",
+  "version": "0.1.0",
+  "description": "lancelot pwa ui",
+  "scripts": {
+    "lint": "eslint ./src --ext .js,.jsx,.ts,.tsx",
+    "format": "prettier --write .",
+    "test": "env TS_NODE_PROJECT='tsconfig.testing.json' mocha -r ts-node/register tests/*",
+    "build": "webpack --mode development",
+    "watch": "webpack --mode=development --watch",
+    "build-release": "webpack --mode production",
+    "clean": "rm -rf public/js/*.bundle.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/williballenthin/lancelot"
+  },
+  "keywords": [],
+  "author": "william.ballenthin@mandiant.com",
+  "license": "Apache 2.0",
+  "private": false,
+  "devDependencies": {
+    "@types/mocha": "^9.0.0",
+    "@typescript-eslint/eslint-plugin": "^4.19.0",
+    "@typescript-eslint/parser": "^4.19.0",
+    "eslint": "^7.23.0",
+    "mocha": "^8.3.2",
+    "prettier": "^2.3.2",
+    "pretty-quick": "^3.1.1",
+    "ts-loader": "^8.1.0",
+    "ts-mocha": "^8.0.0",
+    "typescript": "^4.2.3",
+    "webpack": "^5.28.0",
+    "webpack-cli": "^4.6.0"
+  },
+  "dependencies": {
+    "assert": "^2.0.0",
+    "console-browserify": "^1.2.0",
+    "dedent": "^0.7.0",
+    "htm": "^3.0.4",
+    "immer": "^9.0.1",
+    "json-loader": "^0.5.7",
+    "preact": "^10.5.13"
+  }
+}
