@@ -5,10 +5,12 @@ export function report(action: string, meta: Record<string, string>) {
         headers[`X-Metric-${k}`] = v;
     }
 
+    /*
     fetch("/metrics/" + action, {
         mode: "cors",
         credentials: "include",
         method: "GET",
         headers,
     });
+    */
 }

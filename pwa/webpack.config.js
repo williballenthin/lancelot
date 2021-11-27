@@ -1,16 +1,27 @@
 const path = require("path");
+const process = require("process");
 const webpack = require("webpack");
 
+const isDevelopment = process.env.NODE_ENV !== "production";
+
 module.exports = {
+    mode: isDevelopment ? "development" : "production",
     entry: {
-        lancelot: "./src/app/lancelot/index.ts",
+        lancelot: "./src/app/lancelot/index.tsx",
     },
     module: {
         rules: [
             {
                 test: /\.tsx?$/,
-                use: "ts-loader",
                 exclude: /node_modules/,
+                loader: "ts-loader",
+                /*
+                options: {
+                    getCustomTransformers: () => ({
+                        before: [require('react-refresh-typescript')()]
+                    }),
+                }
+                */
             },
             {
                 test: /\.yaml$/,
@@ -49,4 +60,9 @@ module.exports = {
         // will not emit the bundle in prod mode if *any* error is encountered.
         emitOnErrors: false,
     },
+    /*
+    devServer: {
+        hot: true,
+    },
+    */
 };

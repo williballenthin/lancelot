@@ -10,7 +10,7 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    "jsxImportSource": "react",
     "module": "es6",
     "target": "es6",
     "outDir": "./public/js/",
@@ -21,7 +21,7 @@
     //
     // dom.iterable: enable URLSearchParams().keys()
     // ref: https://github.com/microsoft/TypeScript/issues/38139#issuecomment-618603173
-    "lib": ["es2020.string", "dom.iterable"],
+    "lib": ["es2020.string", "dom.iterable", "dom"],
 
     "noImplicitAny": true,
     "strict": true,
