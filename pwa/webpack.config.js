@@ -17,6 +17,16 @@ module.exports = {
                 type: "json",
                 use: "yaml-loader",
             },
+            {
+                test: /\.bin$/,
+                exclude: /node_modules/,
+                type: "asset/inline",
+                generator: {
+                    dataUrl: (content) => {
+                        return content;
+                    },
+                },
+            },
         ],
     },
     resolve: {
