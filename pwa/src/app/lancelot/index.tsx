@@ -6,6 +6,7 @@ import * as Metrics from "../../components/metrics";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
+import { objectTraps } from "immer/dist/internal";
 
 export const APP = {
     set_theme: (name: string) => {
@@ -83,13 +84,9 @@ const AppPage = ({ version, buf, ws, pe }: any) => (
 // the assumes the given object is either:
 //  - a wasm-bindgen created object (e.g. with .ptr), or
 //  - a list of wasm-bindgen created objects.
-function to_js<T>(obj: T): T {
+function wasm_to_js<T>(obj: T): T {
     if (Array.isArray(obj)) {
-        const ret = obj.map(to_js);
-        for (const v in obj) {
-            (v as any).free();
-        }
-        return ret as any as T;
+        return obj.map(wasm_to_js) as any as T;
     } else {
         const obj_ = obj as any;
         const ret: any = {};
@@ -101,7 +98,7 @@ function to_js<T>(obj: T): T {
                 if (Object.hasOwnProperty.call(v, "ptr")) {
                     // is a wasm-bindgen object
                     // recursively convert to JS.
-                    v = to_js(v);
+                    v = wasm_to_js(v);
                 }
 
                 // TODO: handle lists
@@ -130,7 +127,7 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
     const proxy: any = {
         get: function(target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
-                return to_js(target.sections)
+                return wasm_to_js(target.sections)
             } else {
                 return (target as any)[prop];
             }
