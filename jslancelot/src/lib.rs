@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use anyhow::Error;
 use lancelot::{
     arch::Arch,
+    aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
     module::ModuleError,
     pagemap::PageMapError,
@@ -173,5 +174,10 @@ impl PE {
             .map(Section::from)
             .map(JsValue::from)
             .collect()
+    }
+
+    #[wasm_bindgen]
+    pub fn read_bytes(&self, va: u64, size: usize) -> Result<Vec<u8>, JsError> {
+        self.inner.module.address_space.read_bytes(va, size).map_err(to_js_err)
     }
 }
