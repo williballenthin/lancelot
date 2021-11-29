@@ -1,4 +1,8 @@
+import { useCallback, useState } from "react";
 import ReactDOM from "react-dom";
+import * as immer from "immer";
+import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
+import { Provider, useSelector, useDispatch } from "react-redux";
 
 import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
@@ -18,77 +22,149 @@ export const APP = {
 type u64 = bigint | BigInt;
 type address = u64;
 
+interface AppState {
+    address: address;
+}
+
+export const { actions, reducer } = createSlice({
+    name: "app",
+    initialState: {
+        address: BigInt(0x400000),
+    },
+    reducers: {
+        set_address: (state, action) => {
+            state.address = action.payload;
+        },
+    },
+});
+
+const store = configureStore({
+    reducer,
+});
+
+interface Dispatches {
+    dispatch: Dispatch<any>;
+}
+
 // an address that may be valid in this workspace.
-const Address = ({address} : {address: address}) => (
-    <span className="lancelot-address bp4-monospace-text">0x{address.toString(0x10)}</span>
+const Address = ({ address, dispatch }: { address: address } & Dispatches) => (
+    <a className="lancelot-address bp4-monospace-text" onDoubleClick={() => dispatch(actions.set_address(address))}>
+        0x{address.toString(0x10)}
+    </a>
 );
 
 // a size of an item or delta/difference between two addresses.
-const Size = ({size} : {size: u64}) => (
+const Size = ({ size }: { size: u64 | number }) => (
     <span className="lancelot-size bp4-monospace-text">0x{size.toString(0x10)}</span>
 );
 
 // the name of a location for which the address is known.
-const NamedLocation = ({name, address} : {name: string, address: address}) => (
-    <span className="lancelot-named-location bp4-monospace-text">{name}</span>
+const NamedLocation = ({ name, address, dispatch }: { name: string; address: address } & Dispatches) => (
+    <a className="lancelot-named-location bp4-monospace-text" onDoubleClick={() => dispatch(actions.set_address(address))}>
+        {name}
+    </a>
 );
 
-const AppPage = ({ version, buf, ws, pe }: any) => (
-    <div id="app">
-        <header style={{padding: "8px"}}>
-            <nav>lancelot version: {version}</nav>
-        </header>
-        <div style={{padding: "8px"}}>
-            <p>size: <Size size={buf.length} /></p>
+// these things should not change.
+interface Workspace {
+    buf: Uint8Array;
+    arch: string;
+    functions: address[];
+    sections: Lancelot.Section[];
+    pe: Lancelot.PE;
+}
 
-            <p>arch: {ws.arch}</p>
+const HexView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
+    const { address, ws, size = 0x100 } = props;
+    const { dispatch } = props;
+    const buf = ws.pe.read_bytes(address, size);
 
+    return (
+        <div className="lancelot-hex-view">
             <p>
-                header:
+                hex@
+                <Address address={address} dispatch={dispatch} />:
             </p>
-            <pre>
-                {Utils.hexdump(pe.read_bytes(BigInt(0x400000), 0x100), 0x400000)}
-            </pre>
-
-            <p>sections:</p>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>name</th>
-                        <th>start</th>
-                        <th>end</th>
-                        <th>size</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {Array.prototype.map.call(ws.sections, (section: Lancelot.Section) => (
-                    <tr key={section.name}>
-                        <td><NamedLocation name={section.name} address={section.virtual_range.start} /></td>
-                        <td><Address address={section.virtual_range.start} /></td>
-                        <td><Address address={section.virtual_range.end} /></td>
-                        <td><Size size={section.virtual_range.size} /></td>
-                    </tr>
-                ))}
-                </tbody>
-            </table>
-
-            <p>functions:</p>
-
-            <ul>
-                {Array.prototype.map.call(ws.functions, (f: BigInt) => (
-                    <li key={f.toString()}><Address address={f} /></li>
-                ))}
-            </ul>
+            <pre>{Utils.hexdump(buf, address as bigint)}</pre>
         </div>
-    </div>
-);
+    );
+};
+
+const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
+    const address = useSelector<AppState, address>((state) => state.address);
+    const dispatch = useDispatch();
+
+    return (
+        <div id="app">
+            <header style={{ padding: "8px" }}>
+                <nav>lancelot version: {version}</nav>
+            </header>
+            <div style={{ padding: "8px" }}>
+                <p>
+                    size: <Size size={ws.buf.length} />
+                </p>
+
+                <p>arch: {ws.arch}</p>
+
+                <HexView ws={ws} address={address} dispatch={dispatch} />
+
+                <p>header:</p>
+                <pre>{Utils.hexdump(ws.pe.read_bytes(BigInt(0x400000), 0x100), 0x400000)}</pre>
+
+                <p>sections:</p>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>name</th>
+                            <th>start</th>
+                            <th>end</th>
+                            <th>size</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Array.prototype.map.call(ws.sections, (section: Lancelot.Section) => (
+                            <tr key={section.name}>
+                                <td>
+                                    <NamedLocation
+                                        name={section.name}
+                                        address={section.virtual_range.start}
+                                        dispatch={dispatch}
+                                    />
+                                </td>
+                                <td>
+                                    <Address address={section.virtual_range.start} dispatch={dispatch} />
+                                </td>
+                                <td>
+                                    <Address address={section.virtual_range.end} dispatch={dispatch} />
+                                </td>
+                                <td>
+                                    <Size size={section.virtual_range.size} />
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                <p>functions:</p>
+
+                <ul>
+                    {Array.prototype.map.call(ws.functions, (f: BigInt) => (
+                        <li key={f.toString()}>
+                            <Address address={f} dispatch={dispatch} />
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+};
 
 // convert the given object from a wasm-allocated object to
 // a real JS object. then, free the wasm-allocated object.
 //
 // only works with plain old data, no methods.
-// relies on the fact that wasm-bindgen emits only getters 
+// relies on the fact that wasm-bindgen emits only getters
 // for accessing struct data.
 //
 // the assumes the given object is either:
@@ -136,19 +212,18 @@ function wasm_to_js<T>(obj: T): T {
 // https://github.com/rustwasm/wasm-bindgen/issues/2292
 function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
     const proxy: any = {
-        get: function(target: Lancelot.PE, prop: string) {
+        get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
-                return wasm_to_js(target.sections)
+                return wasm_to_js(target.sections);
             } else {
                 return (target as any)[prop];
             }
-        }
-    }
+        },
+    };
 
     const pe = new Proxy(Lancelot.from_bytes(buf), proxy);
     return pe;
 }
-
 
 async function amain() {
     await init();
@@ -159,14 +234,19 @@ async function amain() {
     const buf = Uint8Array.from(NOP.data);
     const pe = pe_from_bytes(buf);
 
-    const ws = {
+    const ws: Workspace = {
+        buf,
+        pe,
         arch: pe.arch,
-        functions: pe.functions(),
+        functions: Array.prototype.map.call(pe.functions(), BigInt) as address[],
         sections: pe.sections,
-    }
+    };
 
-    const app = <AppPage version={Lancelot.version()} buf={buf} pe={pe} ws={ws} />;
-
+    const app = (
+        <Provider store={store}>
+            <AppPage version={Lancelot.version()} ws={ws} />;
+        </Provider>
+    );
     ReactDOM.render(app, document.getElementById("app"));
 
     Metrics.report(`lancelot/load`, {

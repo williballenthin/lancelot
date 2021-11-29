@@ -149,7 +149,7 @@ const RENDERED_ASCII: string[] = [];
 for (let i = 0; i < 0x100; i++) {
     // " " to "~", which are all the printable ascii characters.
     // does not include tab or newline (which may take more than one column).
-    if (i >= 0x20 && i <= 0x7F) {
+    if (i >= 0x20 && i <= 0x7f) {
         RENDERED_ASCII.push(String.fromCharCode(i));
     } else {
         RENDERED_ASCII.push(".");

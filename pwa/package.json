@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@blueprintjs/core": "^4.0.0-beta.10",
+    "@reduxjs/toolkit": "^1.6.2",
     "assert": "^2.0.0",
     "console-browserify": "^1.2.0",
     "dedent": "^0.7.0",
@@ -49,6 +50,7 @@
     "json-loader": "^0.5.7",
     "preact": "^10.5.13",
     "react": "^17.0.2",
-    "react-dom": "^17.0.2"
+    "react-dom": "^17.0.2",
+    "react-redux": "^7.2.6"
   }
 }
