@@ -29,6 +29,21 @@ bitflags! {
     }
 }
 
+impl std::fmt::Display for Permissions {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.intersects(Permissions::R) {
+            write!(f, "R")?;
+        }
+        if self.intersects(Permissions::W) {
+            write!(f, "W")?;
+        }
+        if self.intersects(Permissions::X) {
+            write!(f, "X")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Section {
     // source data, from the PE file, relative to file start.
