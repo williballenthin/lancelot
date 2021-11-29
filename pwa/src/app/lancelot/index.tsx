@@ -1,12 +1,11 @@
 import ReactDOM from "react-dom";
 
-import { docReady } from "../../components/utils";
+import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
 import * as Metrics from "../../components/metrics";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
-import { objectTraps } from "immer/dist/internal";
 
 export const APP = {
     set_theme: (name: string) => {
@@ -43,6 +42,13 @@ const AppPage = ({ version, buf, ws, pe }: any) => (
             <p>size: <Size size={buf.length} /></p>
 
             <p>arch: {ws.arch}</p>
+
+            <p>
+                header:
+            </p>
+            <pre>
+                {Utils.hexdump(pe.read_bytes(BigInt(0x400000), 0x100), 0x400000)}
+            </pre>
 
             <p>sections:</p>
 
@@ -81,6 +87,10 @@ const AppPage = ({ version, buf, ws, pe }: any) => (
 // convert the given object from a wasm-allocated object to
 // a real JS object. then, free the wasm-allocated object.
 //
+// only works with plain old data, no methods.
+// relies on the fact that wasm-bindgen emits only getters 
+// for accessing struct data.
+//
 // the assumes the given object is either:
 //  - a wasm-bindgen created object (e.g. with .ptr), or
 //  - a list of wasm-bindgen created objects.
@@ -92,7 +102,8 @@ function wasm_to_js<T>(obj: T): T {
         const ret: any = {};
         for (const [name, desc] of Object.entries(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(obj)))) {
             if (desc.get !== undefined) {
-                // is a getter
+                // wasm-bindgen emits only getters to access struct data.
+                // so we can ignore all other fields (constructor, free, etc.)
                 let v = obj_[name];
 
                 if (Object.hasOwnProperty.call(v, "ptr")) {
@@ -138,6 +149,7 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
     return pe;
 }
 
+
 async function amain() {
     await init();
     console.log("lancelot: version: ", Lancelot.version());
@@ -164,7 +176,7 @@ async function amain() {
     });
 }
 
-docReady(function () {
+Utils.docReady(function () {
     console.log("hello world");
     amain()
         .then(() => console.log("goodbye world"))
