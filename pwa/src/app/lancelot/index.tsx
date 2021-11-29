@@ -77,6 +77,12 @@ const AppPage = ({ version, buf, ws, pe }: any) => (
     </div>
 );
 
+// convert the given object from a wasm-allocated object to
+// a real JS object. then, free the wasm-allocated object.
+//
+// the assumes the given object is either:
+//  - a wasm-bindgen created object (e.g. with .ptr), or
+//  - a list of wasm-bindgen created objects.
 function to_js<T>(obj: T): T {
     if (Array.isArray(obj)) {
         const ret = obj.map(to_js);
@@ -98,6 +104,8 @@ function to_js<T>(obj: T): T {
                     v = to_js(v);
                 }
 
+                // TODO: handle lists
+
                 ret[name] = v;
             }
         }
@@ -114,6 +122,10 @@ function to_js<T>(obj: T): T {
 //
 // alternatively, we could have used serde to construct objects via JSON,
 // but u64 is translated to BigInt, which isn't supported by JSON.
+//
+// or, we could use #[wasm_bindgen(inspectable)] and .toJSON(),
+// but this doesn't apply recusively, see:
+// https://github.com/rustwasm/wasm-bindgen/issues/2292
 function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
     const proxy: any = {
         get: function(target: Lancelot.PE, prop: string) {
