@@ -139,3 +139,41 @@ export function get_timestamp(): string {
 export function has_property(object: Record<string, unknown>, key: string): boolean {
     return Object.prototype.hasOwnProperty.call(object, key);
 }
+
+const RENDERED_HEX: string[] = [];
+for (let i = 0; i < 0x100; i++) {
+    RENDERED_HEX.push(i.toString(0x10).padStart(2, "0"));
+}
+
+const RENDERED_ASCII: string[] = [];
+for (let i = 0; i < 0x100; i++) {
+    // " " to "~", which are all the printable ascii characters.
+    // does not include tab or newline (which may take more than one column).
+    if (i >= 0x20 && i <= 0x7F) {
+        RENDERED_ASCII.push(String.fromCharCode(i));
+    } else {
+        RENDERED_ASCII.push(".");
+    }
+}
+
+export function hexdump(buf: Uint8Array, address: bigint | number): string {
+    const ret = [];
+    for (let i = 0; i < buf.length; i += 0x10) {
+        const hex: string[] = [];
+        const ascii: string[] = [];
+
+        const temporary = buf.slice(i, i + 0x10);
+        for (const b of temporary) {
+            hex.push(RENDERED_HEX[b]);
+            ascii.push(RENDERED_ASCII[b]);
+        }
+
+        const addr_prefix = (BigInt(address) + BigInt(i)).toString(0x10).padStart(8, "0");
+        const hex_column = hex.join(" ");
+        const ascii_column = ascii.join("");
+
+        const line = `${addr_prefix}  ${hex_column}  ${ascii_column}`;
+        ret.push(line);
+    }
+    return ret.join("\n");
+}
