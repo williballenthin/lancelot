@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 
 use anyhow::Error;
 use lancelot::{
+    analysis::dis::{self, zydis},
     arch::Arch,
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
@@ -66,7 +67,13 @@ fn to_js_err(e: Error) -> JsError {
 #[wasm_bindgen]
 pub fn from_bytes(buf: Vec<u8>) -> Result<PE, JsError> {
     let pe = lPE::from_bytes(&buf).map_err(to_js_err)?;
-    Ok(PE { inner: pe })
+    let dec = dis::get_disassembler(&pe.module).map_err(to_js_err)?;
+    let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("valid formatter options");
+    Ok(PE {
+        inner: pe,
+        decoder: dec,
+        formatter,
+    })
 }
 
 #[wasm_bindgen]
@@ -124,8 +131,31 @@ impl From<&lancelot::module::Section> for Section {
 }
 
 #[wasm_bindgen]
+pub struct Instruction {
+    pub address: u64,
+    pub size:    u8,
+    bytes:       Vec<u8>,
+    string:      String,
+}
+
+#[wasm_bindgen]
+impl Instruction {
+    #[wasm_bindgen(getter)]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn string(&self) -> String {
+        self.string.to_string()
+    }
+}
+
+#[wasm_bindgen]
 pub struct PE {
-    inner: lPE,
+    inner:     lPE,
+    decoder:   zydis::Decoder,
+    formatter: zydis::Formatter,
 }
 
 #[wasm_bindgen]
@@ -179,5 +209,37 @@ impl PE {
     #[wasm_bindgen]
     pub fn read_bytes(&self, va: u64, size: usize) -> Result<Vec<u8>, JsError> {
         self.inner.module.address_space.read_bytes(va, size).map_err(to_js_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn read_insn(&self, va: u64) -> Result<Instruction, JsError> {
+        let mut insn_buf = [0u8; 16];
+        self.inner
+            .module
+            .address_space
+            .read_into(va, &mut insn_buf)
+            .map_err(to_js_err)?;
+
+        if let Ok(Some(insn)) = self.decoder.decode(&insn_buf) {
+            let mut out_buf = [0u8; 200];
+            let mut out_buf = zydis::OutputBuffer::new(&mut out_buf[..]);
+            self.formatter
+                .format_instruction(&insn, &mut out_buf, Some(va), None)
+                .map_err(|e| -> JsError {
+                    js_sys::Error::new(&format!("failed to format instruction: {}", e)).into()
+                })?;
+
+            Ok(Instruction {
+                address: va,
+                size:    insn.length,
+                bytes:   insn_buf[..insn.length as usize].to_vec(),
+                string:  out_buf
+                    .as_str()
+                    .expect("disassembly should always be utf-8")
+                    .to_string(),
+            })
+        } else {
+            Err(js_sys::Error::new("invalid instruction").into())
+        }
     }
 }
