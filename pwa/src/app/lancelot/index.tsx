@@ -1,10 +1,14 @@
+import * as React from "react";
+import { useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
-import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { Provider, useSelector, useDispatch } from "react-redux";
+import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
+import { HotkeysTarget2, HotkeysProvider } from "@blueprintjs/core";
 
 import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
 import * as Metrics from "../../components/metrics";
+import { LocationOmnibar, Location } from "../../components/omnibar";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
@@ -147,9 +151,6 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     );
 };
 
-import { useHotkeys } from "@blueprintjs/core";
-import { useMemo } from "react";
-
 function align(number: bigint, alignment: bigint): bigint {
     if (number % alignment !== BigInt(0x0)) {
         return number - (number % alignment);
@@ -166,6 +167,10 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
         dispatch(actions.set_address(ws.pe.base_address));
     }
 
+    const [show_omnibar, set_show_omnibar] = React.useState(false);
+    const open_omnibar = useCallback(() => set_show_omnibar(true), [set_show_omnibar]);
+    const close_omnibar = useCallback(() => set_show_omnibar(false), [set_show_omnibar]);
+
     const history = useSelector<AppState, address[]>((state) => state.address_history);
     const hotkeys = useMemo(
         () => [
@@ -175,81 +180,119 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                 label: "pop history",
                 onKeyDown: () => dispatch(actions.pop_history()),
             },
+            {
+                combo: "alt + g",
+                global: true,
+                label: "show go dialog",
+                onKeyDown: open_omnibar,
+                preventDefault: true,
+            },
         ],
-        [dispatch]
+        [dispatch, set_show_omnibar]
     );
-    const { handleKeyDown, handleKeyUp } = useHotkeys(hotkeys);
+
+    const locations: Location[] = [];
+    ws.functions.forEach((address) => {
+        locations.push({ type: "function", address: address as bigint });
+    });
+    ws.sections.forEach((section: Lancelot.Section) => {
+        locations.push({ type: "section", address: section.virtual_range.start as bigint, name: section.name });
+    });
+    // TODO: other types of names, like exports, imports, strings, ...
+
+    const onNavigateLocation = useCallback(
+        (loc: Location) => {
+            if (loc.address !== undefined) {
+                close_omnibar();
+                dispatch(actions.set_address(loc.address));
+            } else {
+                throw new Error("unimplemented: location always needs an address");
+            }
+        },
+        [close_omnibar, dispatch]
+    );
 
     return (
-        <div id="app">
-            <header style={{ padding: "8px" }}>
-                <nav>lancelot version: {version}</nav>
-            </header>
-            <div style={{ padding: "8px" }}>
-                <p>
-                    size: <Size size={ws.buf.length} />
-                </p>
+        <HotkeysProvider>
+            <HotkeysTarget2 hotkeys={hotkeys}>
+                <div id="app">
+                    <header style={{ padding: "8px" }}>
+                        <nav>lancelot version: {version}</nav>
+                    </header>
+                    <div style={{ padding: "8px" }}>
+                        <LocationOmnibar
+                            isOpen={show_omnibar}
+                            locations={locations}
+                            onClose={close_omnibar}
+                            onItemSelect={onNavigateLocation}
+                        />
 
-                <p>arch: {ws.arch}</p>
+                        <p>
+                            size: <Size size={ws.buf.length} />
+                        </p>
 
-                <p>history</p>
-                <ul>
-                    {history.map((address, i) => (
-                        <li key={i}>
-                            <Address address={address} dispatch={dispatch} />
-                        </li>
-                    ))}
-                </ul>
+                        <p>arch: {ws.arch}</p>
 
-                <HexView ws={ws} address={align(address as bigint, BigInt(0x10))} dispatch={dispatch} />
-                <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
+                        <p>history</p>
+                        <ul>
+                            {history.map((address, i) => (
+                                <li key={i}>
+                                    <Address address={address} dispatch={dispatch} />
+                                </li>
+                            ))}
+                        </ul>
 
-                <p>sections:</p>
+                        <HexView ws={ws} address={align(address as bigint, BigInt(0x10))} dispatch={dispatch} />
+                        <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
 
-                <table>
-                    <thead>
-                        <tr>
-                            <th>name</th>
-                            <th>start</th>
-                            <th>end</th>
-                            <th>size</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {Array.prototype.map.call(ws.sections, (section: Lancelot.Section) => (
-                            <tr key={section.name}>
-                                <td>
-                                    <NamedLocation
-                                        name={section.name}
-                                        address={section.virtual_range.start}
-                                        dispatch={dispatch}
-                                    />
-                                </td>
-                                <td>
-                                    <Address address={section.virtual_range.start} dispatch={dispatch} />
-                                </td>
-                                <td>
-                                    <Address address={section.virtual_range.end} dispatch={dispatch} />
-                                </td>
-                                <td>
-                                    <Size size={section.virtual_range.size} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        <p>sections:</p>
 
-                <p>functions:</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>name</th>
+                                    <th>start</th>
+                                    <th>end</th>
+                                    <th>size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Array.prototype.map.call(ws.sections, (section: Lancelot.Section) => (
+                                    <tr key={section.name}>
+                                        <td>
+                                            <NamedLocation
+                                                name={section.name}
+                                                address={section.virtual_range.start}
+                                                dispatch={dispatch}
+                                            />
+                                        </td>
+                                        <td>
+                                            <Address address={section.virtual_range.start} dispatch={dispatch} />
+                                        </td>
+                                        <td>
+                                            <Address address={section.virtual_range.end} dispatch={dispatch} />
+                                        </td>
+                                        <td>
+                                            <Size size={section.virtual_range.size} />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
 
-                <ul>
-                    {Array.prototype.map.call(ws.functions, (f: BigInt) => (
-                        <li key={f.toString()}>
-                            <Address address={f} dispatch={dispatch} />
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        </div>
+                        <p>functions:</p>
+
+                        <ul>
+                            {Array.prototype.map.call(ws.functions, (f: BigInt) => (
+                                <li key={f.toString()}>
+                                    <Address address={f} dispatch={dispatch} />
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </HotkeysTarget2>
+        </HotkeysProvider>
     );
 };
 
