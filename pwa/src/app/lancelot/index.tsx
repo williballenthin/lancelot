@@ -1,4 +1,3 @@
-import React, { useCallback, useState } from "react";
 import ReactDOM from "react-dom";
 import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { Provider, useSelector, useDispatch } from "react-redux";
@@ -151,6 +150,14 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
 import { useHotkeys } from "@blueprintjs/core";
 import { useMemo } from "react";
 
+function align(number: bigint, alignment: bigint): bigint {
+    if (number % alignment !== BigInt(0x0)) {
+        return number - (number % alignment);
+    } else {
+        return number;
+    }
+}
+
 const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
     let address = useSelector<AppState, address>((state) => state.address);
     const dispatch = useDispatch();
@@ -194,7 +201,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                     ))}
                 </ul>
 
-                <HexView ws={ws} address={address} dispatch={dispatch} />
+                <HexView ws={ws} address={align(address as bigint, BigInt(0x10))} dispatch={dispatch} />
                 <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
 
                 <p>sections:</p>
