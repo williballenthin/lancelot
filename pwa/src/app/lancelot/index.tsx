@@ -1,6 +1,5 @@
-import { useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import ReactDOM from "react-dom";
-import * as immer from "immer";
 import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { Provider, useSelector, useDispatch } from "react-redux";
 
@@ -60,7 +59,10 @@ const Size = ({ size }: { size: u64 | number }) => (
 
 // the name of a location for which the address is known.
 const NamedLocation = ({ name, address, dispatch }: { name: string; address: address } & Dispatches) => (
-    <a className="lancelot-named-location bp4-monospace-text" onDoubleClick={() => dispatch(actions.set_address(address))}>
+    <a
+        className="lancelot-named-location bp4-monospace-text"
+        onDoubleClick={() => dispatch(actions.set_address(address))}
+    >
         {name}
     </a>
 );
@@ -90,6 +92,54 @@ const HexView = (props: { ws: Workspace; address: address; size?: number } & Dis
     );
 };
 
+const DisassemblyView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
+    const { address, ws, size = 0x100 } = props;
+    const { dispatch } = props;
+
+    const insns = [];
+    let insn_address = address;
+    let error: any = null;
+    while (insn_address < (address as bigint) + BigInt(size)) {
+        try {
+            const insn = ws.pe.read_insn(insn_address);
+            insns.push(insn);
+
+            console.log(insn);
+
+            (insn_address as bigint) += BigInt(insn.size);
+        } catch (err) {
+            error = err;
+            break;
+        }
+    }
+
+    return (
+        <div className="lancelot-disassembly-view">
+            <p>
+                disassembly@
+                <Address address={address} dispatch={dispatch} />:
+            </p>
+            <div>
+                {insns.map((insn) => (
+                    <React.Fragment key={insn.address.toString()}>
+                        <span>
+                            <Address address={insn.address} dispatch={dispatch} />
+                            &nbsp; &nbsp;
+                            <code style={{ whiteSpace: "pre" }}>
+                                {Utils.hex(insn.bytes.slice(0, 8)).padEnd(24, " ")}
+                            </code>
+                            &nbsp; &nbsp;
+                            <code>{insn.string}</code>
+                        </span>
+                        <br />
+                    </React.Fragment>
+                ))}
+            </div>
+            {error !== null ? <p>{error.toString()}</p> : ""}
+        </div>
+    );
+};
+
 const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
     const address = useSelector<AppState, address>((state) => state.address);
     const dispatch = useDispatch();
@@ -107,9 +157,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                 <p>arch: {ws.arch}</p>
 
                 <HexView ws={ws} address={address} dispatch={dispatch} />
-
-                <p>header:</p>
-                <pre>{Utils.hexdump(ws.pe.read_bytes(BigInt(0x400000), 0x100), 0x400000)}</pre>
+                <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
 
                 <p>sections:</p>
 
@@ -215,6 +263,11 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
         get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
                 return wasm_to_js(target.sections);
+            } else if (prop === "read_insn") {
+                const orig = (target as any)[prop];
+                return function(...args: any) {
+                    return wasm_to_js(orig.apply(target, args));
+                }
             } else {
                 return (target as any)[prop];
             }
