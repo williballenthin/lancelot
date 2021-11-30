@@ -86,6 +86,7 @@ interface Workspace {
     arch: string;
     functions: address[];
     sections: Lancelot.Section[];
+    strings: Lancelot.String[];
     pe: Lancelot.PE;
 }
 
@@ -198,7 +199,14 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
     ws.sections.forEach((section: Lancelot.Section) => {
         locations.push({ type: "section", address: section.virtual_range.start as bigint, name: section.name });
     });
-    // TODO: other types of names, like exports, imports, strings, ...
+    ws.strings.forEach((string: Lancelot.String) => {
+        locations.push({
+            "type": "string/" + string.encoding,
+            "address": string.address as bigint,
+            "name": string.string.slice(0, 16),
+        })
+    });
+    // TODO: other types of names, like exports, imports, ...
 
     const onNavigateLocation = useCallback(
         (loc: Location) => {
@@ -233,6 +241,12 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
 
                         <p>arch: {ws.arch}</p>
 
+                        <p>help:
+                            <ul>
+                                <li><code>alt-g</code> to open the goto menu (functions, names, strings, etc.)</li>
+                            </ul>
+                        </p>
+
                         <p>history</p>
                         <ul>
                             {history.map((address, i) => (
@@ -257,7 +271,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {Array.prototype.map.call(ws.sections, (section: Lancelot.Section) => (
+                                {ws.sections.map((section: Lancelot.Section) => (
                                     <tr key={section.name}>
                                         <td>
                                             <NamedLocation
@@ -283,12 +297,41 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                         <p>functions:</p>
 
                         <ul>
-                            {Array.prototype.map.call(ws.functions, (f: BigInt) => (
+                            {ws.functions.map((f: BigInt) => (
                                 <li key={f.toString()}>
                                     <Address address={f} dispatch={dispatch} />
                                 </li>
                             ))}
                         </ul>
+
+                        <p>strings:</p>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>type</th>
+                                    <th>address</th>
+                                    <th>string</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {ws.strings.map((string: Lancelot.String) => (
+                                    <tr key={string.address.toString()}>
+                                        <td>
+                                            <Address address={string.address} dispatch={dispatch} />
+                                        </td>
+                                        <td className="bp4-monospace-text">
+                                            {string.encoding}
+                                        </td>
+                                        <td className="bp4-monospace-text">
+                                            {string.string}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+
                     </div>
                 </div>
             </HotkeysTarget2>
@@ -351,6 +394,11 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
         get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
                 return wasm_to_js(target.sections);
+            } else if (prop === "strings") {
+                const orig = (target as any)[prop];
+                return function (...args: any) {
+                    return wasm_to_js(orig.apply(target, args));
+                };
             } else if (prop === "read_insn") {
                 const orig = (target as any)[prop];
                 return function (...args: any) {
@@ -381,6 +429,7 @@ async function amain() {
         arch: pe.arch,
         functions: Array.prototype.map.call(pe.functions(), BigInt) as address[],
         sections: pe.sections,
+        strings: pe.strings(),
     };
 
     const app = (
