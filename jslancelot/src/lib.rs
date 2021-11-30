@@ -151,6 +151,39 @@ impl Instruction {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
+enum StringEncoding {
+    ASCII,
+    UTF16,
+}
+
+#[wasm_bindgen(js_name = "String")]
+pub struct EncodedString {
+    encoding:    StringEncoding,
+    pub address: u64,
+    pub size:    usize,
+    string:      String,
+}
+
+#[wasm_bindgen(js_class = "String")]
+impl EncodedString {
+    #[wasm_bindgen(getter, typescript_type = "string")]
+    pub fn encoding(&self) -> JsValue {
+        match self.encoding {
+            // we expect these strings may be returned many times,
+            // so we intern them for perf
+            // https://docs.rs/wasm-bindgen/0.2.78/wasm_bindgen/fn.intern.html
+            StringEncoding::ASCII => JsValue::from(wasm_bindgen::intern("ASCII")),
+            StringEncoding::UTF16 => JsValue::from(wasm_bindgen::intern("UTF-16")),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn string(&self) -> String {
+        self.string.to_string()
+    }
+}
+
 #[wasm_bindgen]
 pub struct PE {
     inner:     lPE,
@@ -160,7 +193,7 @@ pub struct PE {
 
 #[wasm_bindgen]
 impl PE {
-    #[wasm_bindgen(getter)]
+    #[wasm_bindgen(getter, typescript_type = "string")]
     pub fn arch(&self) -> JsValue {
         match self.inner.module.arch {
             // we expect these strings may be returned many times,
@@ -241,5 +274,36 @@ impl PE {
         } else {
             Err(js_sys::Error::new("invalid instruction").into())
         }
+    }
+
+    #[wasm_bindgen(typescript_type = "Array<EncodedString>")]
+    pub fn strings(&self) -> Vec<JsValue> {
+        let mut ret: Vec<EncodedString> = Default::default();
+
+        for (range, s) in lancelot::util::find_ascii_strings(&self.inner.buf) {
+            if let Ok(va) = self.inner.module.virtual_address(range.start as u64) {
+                ret.push(EncodedString {
+                    encoding: StringEncoding::ASCII,
+                    address:  va,
+                    size:     range.end - range.start,
+                    string:   s,
+                });
+            }
+        }
+
+        for (range, s) in lancelot::util::find_unicode_strings(&self.inner.buf) {
+            if let Ok(va) = self.inner.module.virtual_address(range.start as u64) {
+                ret.push(EncodedString {
+                    encoding: StringEncoding::UTF16,
+                    address:  va,
+                    size:     range.end - range.start,
+                    string:   s,
+                });
+            }
+        }
+
+        ret.sort_by_key(|string| string.address);
+
+        ret.into_iter().map(JsValue::from).collect()
     }
 }
