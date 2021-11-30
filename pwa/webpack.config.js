@@ -15,18 +15,10 @@ module.exports = {
                 test: /\.tsx?$/,
                 exclude: /node_modules/,
                 loader: "ts-loader",
-                /*
-                options: {
-                    getCustomTransformers: () => ({
-                        before: [require('react-refresh-typescript')()]
-                    }),
-                }
-                */
             },
             {
-                test: /\.yaml$/,
-                type: "json",
-                use: "yaml-loader",
+                test: /\.css$/i,
+                use: ["style-loader", "css-loader"],
             },
             {
                 test: /\.bin$/,

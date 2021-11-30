@@ -4,6 +4,8 @@ import ReactDOM from "react-dom";
 import { Provider, useSelector, useDispatch } from "react-redux";
 import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { HotkeysTarget2, HotkeysProvider } from "@blueprintjs/core";
+import { DockLayout, DockMode, LayoutData } from "rc-dock";
+import "rc-dock/dist/rc-dock.css";
 
 import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
@@ -152,6 +154,74 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     );
 };
 
+const SectionsView = ({ ws, dispatch }: { ws: Workspace } & Dispatches) => (
+    <table>
+        <thead>
+            <tr>
+                <th>name</th>
+                <th>start</th>
+                <th>end</th>
+                <th>size</th>
+            </tr>
+        </thead>
+        <tbody>
+            {ws.sections.map((section: Lancelot.Section) => (
+                <tr key={section.name}>
+                    <td>
+                        <NamedLocation name={section.name} address={section.virtual_range.start} dispatch={dispatch} />
+                    </td>
+                    <td>
+                        <Address address={section.virtual_range.start} dispatch={dispatch} />
+                    </td>
+                    <td>
+                        <Address address={section.virtual_range.end} dispatch={dispatch} />
+                    </td>
+                    <td>
+                        <Size size={section.virtual_range.size} />
+                    </td>
+                </tr>
+            ))}
+        </tbody>
+    </table>
+);
+
+const FunctionsView = ({ ws, dispatch }: { ws: Workspace } & Dispatches) => (
+    <div style={{ height: "100%", width: "100%", overflowY: "scroll", overflowX: "scroll" }}>
+        <ul>
+            {ws.functions.map((f: BigInt) => (
+                <li key={f.toString()}>
+                    <Address address={f} dispatch={dispatch} />
+                </li>
+            ))}
+        </ul>
+    </div>
+);
+
+const StringsView = ({ ws, dispatch }: { ws: Workspace } & Dispatches) => (
+    <div style={{ height: "100%", width: "100%", overflowY: "scroll", overflowX: "scroll", whiteSpace: "nowrap" }}>
+        <table>
+            <thead>
+                <tr>
+                    <th>type</th>
+                    <th>address</th>
+                    <th>string</th>
+                </tr>
+            </thead>
+            <tbody>
+                {ws.strings.map((string: Lancelot.String) => (
+                    <tr key={string.address.toString()}>
+                        <td>
+                            <Address address={string.address} dispatch={dispatch} />
+                        </td>
+                        <td className="bp4-monospace-text">{string.encoding}</td>
+                        <td className="bp4-monospace-text">{string.string}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
 function align(number: bigint, alignment: bigint): bigint {
     if (number % alignment !== BigInt(0x0)) {
         return number - (number % alignment);
@@ -159,6 +229,14 @@ function align(number: bigint, alignment: bigint): bigint {
         return number;
     }
 }
+
+interface IAppContext {
+    ws: Workspace;
+    address: address;
+    dispatch: any;
+}
+
+const AppContext = React.createContext({} as IAppContext);
 
 const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
     let address = useSelector<AppState, address>((state) => state.address);
@@ -201,10 +279,10 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
     });
     ws.strings.forEach((string: Lancelot.String) => {
         locations.push({
-            "type": "string/" + string.encoding,
-            "address": string.address as bigint,
-            "name": string.string.slice(0, 16),
-        })
+            type: "string/" + string.encoding,
+            address: string.address as bigint,
+            name: string.string.slice(0, 16),
+        });
     });
     // TODO: other types of names, like exports, imports, ...
 
@@ -220,122 +298,153 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
         [close_omnibar, dispatch]
     );
 
+    const defaultLayout = {
+        dockbox: {
+            mode: "horizontal" as DockMode,
+            children: [
+                {
+                    mode: "vertical" as DockMode,
+                    children: [
+                        {
+                            tabs: [
+                                {
+                                    id: "tab-functions",
+                                    title: "functions",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, dispatch }) => <FunctionsView ws={ws} dispatch={dispatch} />}
+                                        </AppContext.Consumer>
+                                    ),
+                                },
+                                //{id: 'tab-exports', title: 'exports', content: <div>exports</div>},
+                                //{id: 'tab-imports', title: 'imports', content: <div>imports</div>},
+                                {
+                                    id: "tab-strings",
+                                    title: "strings",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, dispatch }) => <StringsView ws={ws} dispatch={dispatch} />}
+                                        </AppContext.Consumer>
+                                    ),
+                                },
+                            ],
+                            size: 1000,
+                        },
+                        {
+                            tabs: [
+                                {
+                                    id: "tab-sections",
+                                    title: "sections",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, dispatch }) => <SectionsView ws={ws} dispatch={dispatch} />}
+                                        </AppContext.Consumer>
+                                    ),
+                                },
+                            ],
+                            size: 300,
+                        },
+                    ],
+                    size: 300,
+                },
+                {
+                    mode: "horizontal" as DockMode,
+                    children: [
+                        {
+                            panelLock: { panelStyle: "main" },
+                            tabs: [
+                                {
+                                    id: "tab-disassembly",
+                                    title: "disassembly",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, address, dispatch }) => (
+                                                <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
+                                            )}
+                                        </AppContext.Consumer>
+                                    ),
+                                },
+                            ],
+                        },
+                    ],
+                    size: 1000,
+                },
+                {
+                    mode: "horizontal" as DockMode,
+                    children: [
+                        {
+                            tabs: [
+                                {
+                                    id: "tab-hex",
+                                    title: "hex",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, address, dispatch }) => (
+                                                <HexView ws={ws} address={address} dispatch={dispatch} />
+                                            )}
+                                        </AppContext.Consumer>
+                                    ),
+                                    // HACK: random number
+                                    minWidth: 590,
+                                },
+                                {
+                                    id: "tab-help",
+                                    title: "help",
+                                    content: (
+                                        <ul>
+                                            <li>
+                                                <code>alt-g</code> to open the goto menu (functions, names, strings,
+                                                etc.)
+                                            </li>
+                                            <li>
+                                                <code>esc</code> to go back
+                                            </li>
+                                        </ul>
+                                    ),
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    };
+
     return (
-        <HotkeysProvider>
-            <HotkeysTarget2 hotkeys={hotkeys}>
-                <div id="app">
-                    <header style={{ padding: "8px" }}>
-                        <nav>lancelot version: {version}</nav>
-                    </header>
-                    <div style={{ padding: "8px" }}>
-                        <LocationOmnibar
-                            isOpen={show_omnibar}
-                            locations={locations}
-                            onClose={close_omnibar}
-                            onItemSelect={onNavigateLocation}
-                        />
+        <AppContext.Provider value={{ ws, address, dispatch }}>
+            <HotkeysProvider>
+                <HotkeysTarget2 hotkeys={hotkeys}>
+                    <div id="app">
+                        <div>
+                            <LocationOmnibar
+                                isOpen={show_omnibar}
+                                locations={locations}
+                                onClose={close_omnibar}
+                                onItemSelect={onNavigateLocation}
+                            />
 
-                        <p>
-                            size: <Size size={ws.buf.length} />
-                        </p>
+                            <p>
+                                lancelot version: {version} input size: <Size size={ws.buf.length} /> input arch:{" "}
+                                {ws.arch}
+                            </p>
 
-                        <p>arch: {ws.arch}</p>
-
-                        <p>help:
-                            <ul>
-                                <li><code>alt-g</code> to open the goto menu (functions, names, strings, etc.)</li>
-                            </ul>
-                        </p>
-
-                        <p>history</p>
-                        <ul>
-                            {history.map((address, i) => (
-                                <li key={i}>
-                                    <Address address={address} dispatch={dispatch} />
-                                </li>
-                            ))}
-                        </ul>
-
-                        <HexView ws={ws} address={align(address as bigint, BigInt(0x10))} dispatch={dispatch} />
-                        <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
-
-                        <p>sections:</p>
-
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>name</th>
-                                    <th>start</th>
-                                    <th>end</th>
-                                    <th>size</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {ws.sections.map((section: Lancelot.Section) => (
-                                    <tr key={section.name}>
-                                        <td>
-                                            <NamedLocation
-                                                name={section.name}
-                                                address={section.virtual_range.start}
-                                                dispatch={dispatch}
-                                            />
-                                        </td>
-                                        <td>
-                                            <Address address={section.virtual_range.start} dispatch={dispatch} />
-                                        </td>
-                                        <td>
-                                            <Address address={section.virtual_range.end} dispatch={dispatch} />
-                                        </td>
-                                        <td>
-                                            <Size size={section.virtual_range.size} />
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-
-                        <p>functions:</p>
-
-                        <ul>
-                            {ws.functions.map((f: BigInt) => (
-                                <li key={f.toString()}>
-                                    <Address address={f} dispatch={dispatch} />
-                                </li>
-                            ))}
-                        </ul>
-
-                        <p>strings:</p>
-
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>type</th>
-                                    <th>address</th>
-                                    <th>string</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {ws.strings.map((string: Lancelot.String) => (
-                                    <tr key={string.address.toString()}>
-                                        <td>
-                                            <Address address={string.address} dispatch={dispatch} />
-                                        </td>
-                                        <td className="bp4-monospace-text">
-                                            {string.encoding}
-                                        </td>
-                                        <td className="bp4-monospace-text">
-                                            {string.string}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-
-
+                            <div>
+                                <DockLayout
+                                    defaultLayout={defaultLayout}
+                                    style={{
+                                        position: "absolute",
+                                        top: "30px",
+                                        bottom: "5px",
+                                        left: "5px",
+                                        right: "5px",
+                                    }}
+                                />
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </HotkeysTarget2>
-        </HotkeysProvider>
+                </HotkeysTarget2>
+            </HotkeysProvider>
+        </AppContext.Provider>
     );
 };
 
@@ -434,7 +543,7 @@ async function amain() {
 
     const app = (
         <Provider store={store}>
-            <AppPage version={Lancelot.version()} ws={ws} />;
+            <AppPage version={Lancelot.version()} ws={ws} />
         </Provider>
     );
     ReactDOM.render(app, document.getElementById("app"));
