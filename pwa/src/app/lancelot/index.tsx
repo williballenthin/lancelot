@@ -23,16 +23,26 @@ type address = u64;
 
 interface AppState {
     address: address;
+    address_history: address[];
 }
 
 export const { actions, reducer } = createSlice({
     name: "app",
     initialState: {
-        address: BigInt(0x400000),
+        address: BigInt(0x0),
+        address_history: [],
     },
     reducers: {
-        set_address: (state, action) => {
+        set_address: (state: AppState, action) => {
+            // TODO: can't store BigInts in the store
             state.address = action.payload;
+            state.address_history.push(action.payload);
+        },
+        pop_history: (state: AppState) => {
+            if (state.address_history.length > 0) {
+                state.address = state.address_history[state.address_history.length - 1];
+                state.address_history.pop();
+            }
         },
     },
 });
@@ -76,6 +86,7 @@ interface Workspace {
     pe: Lancelot.PE;
 }
 
+// TODO: align this address
 const HexView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
     const { address, ws, size = 0x100 } = props;
     const { dispatch } = props;
@@ -103,9 +114,6 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
         try {
             const insn = ws.pe.read_insn(insn_address);
             insns.push(insn);
-
-            console.log(insn);
-
             (insn_address as bigint) += BigInt(insn.size);
         } catch (err) {
             error = err;
@@ -122,7 +130,7 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
             <div>
                 {insns.map((insn) => (
                     <React.Fragment key={insn.address.toString()}>
-                        <span>
+                        <span className="bp4-monospace-text">
                             <Address address={insn.address} dispatch={dispatch} />
                             &nbsp; &nbsp;
                             <code style={{ whiteSpace: "pre" }}>
@@ -140,9 +148,30 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     );
 };
 
+import { useHotkeys } from "@blueprintjs/core";
+import { useMemo } from "react";
+
 const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
-    const address = useSelector<AppState, address>((state) => state.address);
+    let address = useSelector<AppState, address>((state) => state.address);
     const dispatch = useDispatch();
+    if (address === BigInt(0)) {
+        address = ws.pe.base_address;
+        dispatch(actions.set_address(ws.pe.base_address));
+    }
+
+    const history = useSelector<AppState, address[]>((state) => state.address_history);
+    const hotkeys = useMemo(
+        () => [
+            {
+                combo: "escape",
+                global: true,
+                label: "pop history",
+                onKeyDown: () => dispatch(actions.pop_history()),
+            },
+        ],
+        [dispatch]
+    );
+    const { handleKeyDown, handleKeyUp } = useHotkeys(hotkeys);
 
     return (
         <div id="app">
@@ -155,6 +184,15 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                 </p>
 
                 <p>arch: {ws.arch}</p>
+
+                <p>history</p>
+                <ul>
+                    {history.map((address, i) => (
+                        <li key={i}>
+                            <Address address={address} dispatch={dispatch} />
+                        </li>
+                    ))}
+                </ul>
 
                 <HexView ws={ws} address={address} dispatch={dispatch} />
                 <DisassemblyView ws={ws} address={address} dispatch={dispatch} />
@@ -265,9 +303,9 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
                 return wasm_to_js(target.sections);
             } else if (prop === "read_insn") {
                 const orig = (target as any)[prop];
-                return function(...args: any) {
+                return function (...args: any) {
                     return wasm_to_js(orig.apply(target, args));
-                }
+                };
             } else {
                 return (target as any)[prop];
             }
