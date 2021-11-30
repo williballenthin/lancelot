@@ -177,3 +177,9 @@ export function hexdump(buf: Uint8Array, address: bigint | number): string {
     }
     return ret.join("\n");
 }
+
+export function hex(buf: Uint8Array, separator = " "): string {
+    const ret: string[] = [];
+    buf.forEach((b) => ret.push(RENDERED_HEX[b]));
+    return ret.join(separator);
+}
