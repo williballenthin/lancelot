@@ -140,12 +140,12 @@ export function has_property(object: Record<string, unknown>, key: string): bool
     return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-const RENDERED_HEX: string[] = [];
+export const RENDERED_HEX: string[] = [];
 for (let i = 0; i < 0x100; i++) {
     RENDERED_HEX.push(i.toString(0x10).padStart(2, "0"));
 }
 
-const RENDERED_ASCII: string[] = [];
+export const RENDERED_ASCII: string[] = [];
 for (let i = 0; i < 0x100; i++) {
     // " " to "~", which are all the printable ascii characters.
     // does not include tab or newline (which may take more than one column).
