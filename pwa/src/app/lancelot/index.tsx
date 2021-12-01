@@ -109,6 +109,60 @@ const HexView = (props: { ws: Workspace; address: address; size?: number } & Dis
     );
 };
 
+import { FixedSizeList as List } from "react-window";
+
+const HexViewRow = ({ index, style, data }: any) => {
+    const { ws, address, dispatch } = data;
+    const row_address = address + BigInt(0x10 * index);
+    const buf = ws.pe.read_bytes(row_address, 0x10);
+
+    const hex: string[] = [];
+    const ascii: string[] = [];
+
+    for (const b of buf) {
+        hex.push(Utils.RENDERED_HEX[b]);
+        ascii.push(Utils.RENDERED_ASCII[b]);
+    }
+
+    const addr_prefix = row_address.toString(0x10).padStart(8, "0");
+    const hex_column = hex.join(" ");
+    const ascii_column = ascii.join("");
+
+    return (
+        <div style={style} className="bp4-monospace-text">
+            <span>{addr_prefix}</span> <span>{hex_column}</span> <span>{ascii_column}</span>
+        </div>
+    );
+};
+
+const HexView2 = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
+    const { address, ws, size = 0x100 } = props;
+    const { dispatch } = props;
+
+    const max_address: bigint = ws.sections
+        .map((section) => section.virtual_range.end)
+        .sort()
+        .reverse()[0] as bigint;
+    console.log("max", max_address.toString(0x10));
+
+    const virtual_size = max_address - (ws.pe.base_address as bigint);
+    const row_count = virtual_size / BigInt(0x10);
+
+    return (
+        <div className="lancelot-hex-view">
+            <List
+                height={150}
+                width={590 /* empirical */}
+                itemSize={18 /* empirical */}
+                itemData={{ ws, address, dispatch }}
+                itemCount={Number(row_count)}
+            >
+                {HexViewRow}
+            </List>
+        </div>
+    );
+};
+
 const DisassemblyView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
     const { address, ws, size = 0x100 } = props;
     const { dispatch } = props;
@@ -374,6 +428,19 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                     children: [
                         {
                             tabs: [
+                                {
+                                    id: "tab-hex2",
+                                    title: "hex2",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, address, dispatch }) => (
+                                                <HexView2 ws={ws} address={address} dispatch={dispatch} />
+                                            )}
+                                        </AppContext.Consumer>
+                                    ),
+                                    // HACK: random number
+                                    minWidth: 590,
+                                },
                                 {
                                     id: "tab-hex",
                                     title: "hex",
