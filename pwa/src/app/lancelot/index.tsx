@@ -4,8 +4,10 @@ import ReactDOM from "react-dom";
 import { Provider, useSelector, useDispatch } from "react-redux";
 import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { HotkeysTarget2, HotkeysProvider } from "@blueprintjs/core";
-import { DockLayout, DockMode, LayoutData } from "rc-dock";
+import { DockLayout, DockMode } from "rc-dock";
 import "rc-dock/dist/rc-dock.css";
+import { FixedSizeList as List } from "react-window";
+import AutoSizer from "react-virtualized-auto-sizer";
 
 import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
@@ -92,28 +94,9 @@ interface Workspace {
     pe: Lancelot.PE;
 }
 
-// TODO: align this address
-const HexView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
-    const { address, ws, size = 0x100 } = props;
-    const { dispatch } = props;
-    const buf = ws.pe.read_bytes(address, size);
-
-    return (
-        <div className="lancelot-hex-view">
-            <p>
-                hex@
-                <Address address={address} dispatch={dispatch} />:
-            </p>
-            <pre>{Utils.hexdump(buf, address as bigint)}</pre>
-        </div>
-    );
-};
-
-import { FixedSizeList as List } from "react-window";
-
 const HexViewRow = ({ index, style, data }: any) => {
-    const { ws, address, dispatch } = data;
-    const row_address = address + BigInt(0x10 * index);
+    const { ws, dispatch } = data;
+    const row_address = ws.pe.base_address + BigInt(0x10 * index);
     const buf = ws.pe.read_bytes(row_address, 0x10);
 
     const hex: string[] = [];
@@ -124,44 +107,65 @@ const HexViewRow = ({ index, style, data }: any) => {
         ascii.push(Utils.RENDERED_ASCII[b]);
     }
 
-    const addr_prefix = row_address.toString(0x10).padStart(8, "0");
     const hex_column = hex.join(" ");
     const ascii_column = ascii.join("");
 
     return (
         <div style={style} className="bp4-monospace-text">
-            <span>{addr_prefix}</span> <span>{hex_column}</span> <span>{ascii_column}</span>
+            <Address address={row_address} dispatch={dispatch} /> <span>{hex_column}</span> <span>{ascii_column}</span>
         </div>
     );
 };
 
-const HexView2 = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
-    const { address, ws, size = 0x100 } = props;
-    const { dispatch } = props;
+class HexView extends React.Component<{ ws: Workspace; address: address } & Dispatches, any> {
+    ref: React.RefObject<any>;
 
-    const max_address: bigint = ws.sections
-        .map((section) => section.virtual_range.end)
-        .sort()
-        .reverse()[0] as bigint;
-    console.log("max", max_address.toString(0x10));
+    constructor(props: any) {
+        super(props);
+        this.ref = React.createRef();
+    }
 
-    const virtual_size = max_address - (ws.pe.base_address as bigint);
-    const row_count = virtual_size / BigInt(0x10);
+    render() {
+        const { address, ws } = this.props;
+        const { dispatch } = this.props;
 
-    return (
-        <div className="lancelot-hex-view">
-            <List
-                height={150}
-                width={590 /* empirical */}
-                itemSize={18 /* empirical */}
-                itemData={{ ws, address, dispatch }}
-                itemCount={Number(row_count)}
-            >
-                {HexViewRow}
-            </List>
-        </div>
-    );
-};
+        const max_address: bigint = ws.sections
+            .map((section: Lancelot.Section) => section.virtual_range.end)
+            .sort()
+            .reverse()[0] as bigint;
+
+        const virtual_size = max_address - (ws.pe.base_address as bigint);
+        const row_count = virtual_size / BigInt(0x10);
+
+        // TODO: memoize?
+
+        return (
+            <AutoSizer>
+                {({ height }: { height: number }) => (
+                    <div className="lancelot-hex-view">
+                        <List
+                            ref={this.ref}
+                            height={height}
+                            width={590 /* empirical */}
+                            itemSize={18 /* empirical */}
+                            itemData={{ ws, address, dispatch }}
+                            itemCount={Number(row_count)}
+                        >
+                            {HexViewRow}
+                        </List>
+                    </div>
+                )}
+            </AutoSizer>
+        );
+    }
+
+    componentDidUpdate() {
+        const { address, ws } = this.props;
+        const offset = (address as bigint) - (ws.pe.base_address as bigint);
+        const row_offset = offset / BigInt(0x10);
+        this.ref.current.scrollToItem(Number(row_offset), "start");
+    }
+}
 
 const DisassemblyView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
     const { address, ws, size = 0x100 } = props;
@@ -182,7 +186,10 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     }
 
     return (
-        <div className="lancelot-disassembly-view">
+        <div
+            className="lancelot-disassembly-view"
+            style={{ height: "100%", width: "100%", overflowY: "scroll", overflowX: "scroll", whiteSpace: "nowrap" }}
+        >
             <p>
                 disassembly@
                 <Address address={address} dispatch={dispatch} />:
@@ -429,19 +436,6 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                         {
                             tabs: [
                                 {
-                                    id: "tab-hex2",
-                                    title: "hex2",
-                                    content: (
-                                        <AppContext.Consumer>
-                                            {({ ws, address, dispatch }) => (
-                                                <HexView2 ws={ws} address={address} dispatch={dispatch} />
-                                            )}
-                                        </AppContext.Consumer>
-                                    ),
-                                    // HACK: random number
-                                    minWidth: 590,
-                                },
-                                {
                                     id: "tab-hex",
                                     title: "hex",
                                     content: (
@@ -451,7 +445,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                                             )}
                                         </AppContext.Consumer>
                                     ),
-                                    // HACK: random number
+                                    // HACK: empirical
                                     minWidth: 590,
                                 },
                                 {
