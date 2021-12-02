@@ -532,12 +532,14 @@ function wasm_to_js<T>(obj: T): T {
                 let v = obj_[name];
 
                 if (Object.hasOwnProperty.call(v, "ptr")) {
-                    // is a wasm-bindgen object
+                    // is a wasm-bindgen object.
+                    // recursively convert to JS.
+                    v = wasm_to_js(v);
+                } else if (Array.isArray(v) && v.length > 0 && Object.hasOwnProperty.call(v[0], "ptr")) {
+                    // is a list of wasm-bindgen objects.
                     // recursively convert to JS.
                     v = wasm_to_js(v);
                 }
-
-                // TODO: handle lists
 
                 ret[name] = v;
             }
