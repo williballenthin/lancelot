@@ -93,6 +93,10 @@ interface Workspace {
     strings: Lancelot.String[];
     layout: Lancelot.Layout;
     pe: Lancelot.PE;
+
+    bb_by_address: Map<bigint, Lancelot.BasicBlock>;
+    bbs_by_insn: Map<bigint, bigint[]>;
+    functions_by_bb: Map<bigint, bigint[]>;
 }
 
 const HexViewRow = ({ index, style, data }: any) => {
@@ -172,8 +176,21 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     const { address, ws, size = 0x100 } = props;
     const { dispatch } = props;
 
-    const insns = [];
     let insn_address = address;
+    const bbs = ws.bbs_by_insn.get(address as bigint);
+    if (bbs !== undefined) {
+        // TODO: assuming the first matching BB/function
+        const functions = ws.functions_by_bb.get(bbs[0]);
+        if (functions !== undefined) {
+            const fva = functions[0];
+            // when we find a containing function
+            // jump to that instead
+            // TODO: use better logic.
+            insn_address = fva;
+        }
+    }
+
+    const insns = [];
     let error: any = null;
     while (insn_address < (address as bigint) + BigInt(size)) {
         try {
@@ -594,6 +611,31 @@ async function amain() {
     const buf = Uint8Array.from(NOP.data);
     const pe = pe_from_bytes(buf);
 
+    const layout = pe.layout();
+
+    const bb_by_address: Map<bigint, Lancelot.BasicBlock> = new Map();
+    const bbs_by_insn: Map<bigint, bigint[]> = new Map();
+    const functions_by_bb: Map<bigint, bigint[]> = new Map();
+
+    for (const [fva, f] of layout.functions.entries()) {
+        for (const bb of f.basic_blocks) {
+            if (!functions_by_bb.has(bb.address)) {
+                functions_by_bb.set(bb.address, []);
+            }
+
+            functions_by_bb.get(bb.address)?.push(fva);
+            bb_by_address.set(bb.address, bb);
+
+            for (const insnva of bb.instructions) {
+                if (!bbs_by_insn.has(insnva)) {
+                    bbs_by_insn.set(insnva, []);
+                }
+
+                bbs_by_insn.get(insnva)?.push(bb.address);
+            }
+        }
+    }
+
     const ws: Workspace = {
         buf,
         pe,
@@ -601,7 +643,13 @@ async function amain() {
         functions: Array.prototype.map.call(pe.functions(), BigInt) as address[],
         sections: pe.sections,
         strings: pe.strings(),
-        layout: pe.layout(),
+        layout: layout,
+        // TODO: put call graph here
+
+        // TODO: maybe put this in layout
+        bb_by_address,
+        bbs_by_insn,
+        functions_by_bb,
     };
 
     const app = (
