@@ -91,6 +91,7 @@ interface Workspace {
     functions: address[];
     sections: Lancelot.Section[];
     strings: Lancelot.String[];
+    layout: Lancelot.Layout;
     pe: Lancelot.PE;
 }
 
@@ -566,15 +567,13 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
         get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
                 return wasm_to_js(target.sections);
-            } else if (prop === "strings") {
+            } else if (prop === "strings" || prop === "layout" || prop === "read_insn") {
                 const orig = (target as any)[prop];
                 return function (...args: any) {
-                    return wasm_to_js(orig.apply(target, args));
-                };
-            } else if (prop === "read_insn") {
-                const orig = (target as any)[prop];
-                return function (...args: any) {
-                    return wasm_to_js(orig.apply(target, args));
+                    // separated out here so we can log during dev.
+                    const v1 = orig.apply(target, args);
+                    const v2 = wasm_to_js(v1);
+                    return v2;
                 };
             } else {
                 return (target as any)[prop];
@@ -602,6 +601,7 @@ async function amain() {
         functions: Array.prototype.map.call(pe.functions(), BigInt) as address[],
         sections: pe.sections,
         strings: pe.strings(),
+        layout: pe.layout(),
     };
 
     const app = (
