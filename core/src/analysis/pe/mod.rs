@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::debug;
 
 #[cfg(feature = "disassembler")]
-use crate::analysis::{cfg, dis};
+use crate::analysis::dis;
 use crate::{
     aspace::AddressSpace,
     loader::pe::{
@@ -12,7 +12,7 @@ use crate::{
         imports::{read_best_thunk_data, IMAGE_THUNK_DATA},
         PE,
     },
-    RVA, VA,
+    util, RVA, VA,
 };
 #[cfg(feature = "disassembler")]
 use std::collections::HashSet;
@@ -125,7 +125,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
                     continue;
                 }
 
-                let op = cfg::get_first_operand(&insn).expect("JMP has no target");
+                let op = dis::get_first_operand(&insn).expect("JMP has no target");
 
                 if let zydis::OperandType::MEMORY = op.ty {
                     // 32-bit
@@ -162,7 +162,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
                         // that is: dst = *(rva + displacement + instruction len)
 
                         let ptr =
-                            match cfg::va_add_signed(function + insn.length as u64, op.mem.disp.displacement as i64) {
+                            match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement as i64) {
                                 None => continue,
                                 Some(ptr) => ptr,
                             };

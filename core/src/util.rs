@@ -7,6 +7,8 @@ use log::{debug, error};
 use regex::bytes::Regex;
 use thiserror::Error;
 
+use crate::VA;
+
 #[derive(Debug, Error)]
 pub enum UtilError {
     #[error("insufficient file access")]
@@ -224,4 +226,17 @@ pub fn find_unicode_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range
             s,
         )
     }))
+}
+
+pub fn va_add_signed(va: VA, rva: i64) -> Option<VA> {
+    if rva >= 0 {
+        va.checked_add(rva as u64)
+    } else if i64::abs(rva) as u64 > va {
+        // this would overflow, which:
+        //  1. we don't expect, and
+        //  2. we can't handle
+        None
+    } else {
+        Some(va - i64::abs(rva) as u64)
+    }
 }

@@ -34,14 +34,14 @@ pub fn get_call_import_xref(imports: &BTreeSet<VA>, va: VA, insn: &zydis::Decode
     assert!(matches!(insn.mnemonic, zydis::enums::Mnemonic::CALL));
 
     // calls always have a first operand
-    let op = crate::analysis::cfg::get_first_operand(insn).unwrap();
+    let op = crate::analysis::dis::get_first_operand(insn).unwrap();
 
     if !matches!(op.ty, zydis::OperandType::MEMORY) {
         // doesn't look like `call [...]`
         return None;
     }
 
-    if let Ok(Some(ptr)) = crate::analysis::cfg::get_memory_operand_ptr(va, insn, op) {
+    if let Ok(Some(ptr)) = crate::analysis::dis::get_memory_operand_ptr(va, insn, op) {
         if imports.contains(&ptr) {
             Some(ptr)
         } else {
