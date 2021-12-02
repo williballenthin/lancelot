@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use wasm_bindgen::prelude::*;
 
 use anyhow::Error;
@@ -185,6 +187,176 @@ impl EncodedString {
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
+pub struct Flow {
+    inner: lancelot::analysis::cfg::Flow,
+    /* type: String,
+     * target: u64, */
+}
+
+#[wasm_bindgen]
+impl Flow {
+    #[wasm_bindgen(getter, js_name = "type", typescript_type = "string")]
+    pub fn type_(&self) -> JsValue {
+        match self.inner {
+            // we expect these strings may be returned many times,
+            // so we intern them for perf
+            // https://docs.rs/wasm-bindgen/0.2.78/wasm_bindgen/fn.intern.html
+            lancelot::analysis::cfg::Flow::Call(_) => JsValue::from(wasm_bindgen::intern("call")),
+            lancelot::analysis::cfg::Flow::Fallthrough(_) => JsValue::from(wasm_bindgen::intern("fallthrough")),
+            lancelot::analysis::cfg::Flow::UnconditionalJump(_) => {
+                JsValue::from(wasm_bindgen::intern("unconditional jump"))
+            }
+            lancelot::analysis::cfg::Flow::ConditionalJump(_) => {
+                JsValue::from(wasm_bindgen::intern("conditional jump"))
+            }
+            lancelot::analysis::cfg::Flow::ConditionalMove(_) => {
+                JsValue::from(wasm_bindgen::intern("conditional move"))
+            }
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target(&self) -> u64 {
+        self.inner.va()
+    }
+}
+
+impl From<lancelot::analysis::cfg::Flow> for Flow {
+    fn from(other: lancelot::analysis::cfg::Flow) -> Flow {
+        Flow { inner: other }
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct BasicBlock {
+    pub address: u64,
+    pub size:    u64,
+
+    successors: Vec<lancelot::analysis::cfg::Flow>,
+
+    instructions: Vec<u64>,
+}
+
+#[wasm_bindgen]
+impl BasicBlock {
+    // Vec<Flow> cannot be serialized by wasm-bindgen
+    // so we have to manually convert to Vec<JsValue>
+    // and then annotate the TS type.
+    //
+    // NB: JS now owns the objects, must explicitly drop.
+    #[wasm_bindgen(getter, typescript_type = "Array<Flow>")]
+    pub fn successors(&self) -> Vec<JsValue> {
+        self.successors
+            .iter()
+            .cloned()
+            .map(Flow::from)
+            .map(JsValue::from)
+            .collect()
+    }
+
+    // Vec<u64> is not Copy so cannot be serialized by wasm-bindgen.
+    #[wasm_bindgen(getter)]
+    pub fn instructions(&self) -> Vec<u64> {
+        self.instructions.clone()
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct Function {
+    pub address:  u64,
+    basic_blocks: Vec<BasicBlock>,
+}
+
+#[wasm_bindgen]
+impl Function {
+    // Vec<BasicBlock> cannot be serialized by wasm-bindgen
+    // so we have to manually convert to Vec<JsValue>
+    // and then annotate the TS type.
+    //
+    // NB: JS now owns the objects, must explicitly drop.
+    #[wasm_bindgen(getter, typescript_type = "Array<BasicBlock>")]
+    pub fn basic_blocks(&self) -> Vec<JsValue> {
+        self.basic_blocks.iter().cloned().map(JsValue::from).collect()
+    }
+}
+
+// create a js Map<bigint, bigint[]> from a rust BTreeMap<u64, Vec<u64>>
+fn jsvalue_from_addresses_by_address(other: &BTreeMap<u64, Vec<u64>>) -> JsValue {
+    let ret = js_sys::Map::new();
+
+    for (&k, v) in other.iter() {
+        let l = js_sys::Array::new_with_length(v.len() as u32);
+        for (i, &vv) in v.iter().enumerate() {
+            l.set(i as u32, JsValue::from(vv));
+        }
+
+        ret.set(&JsValue::from(k), &JsValue::from(l));
+    }
+
+    ret.into()
+}
+
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct CallGraph {
+    calls_to:                   JsValue,
+    calls_from:                 JsValue,
+    function_call_instructions: JsValue,
+    call_instruction_functions: JsValue,
+}
+
+#[wasm_bindgen]
+impl CallGraph {
+    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
+    pub fn calls_to(&self) -> JsValue {
+        self.calls_to.clone()
+    }
+
+    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
+    pub fn calls_from(&self) -> JsValue {
+        self.calls_from.clone()
+    }
+
+    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
+    pub fn function_call_instructions(&self) -> JsValue {
+        self.function_call_instructions.clone()
+    }
+
+    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
+    pub fn call_instruction_functions(&self) -> JsValue {
+        self.call_instruction_functions.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub struct Layout {
+    functions:  Vec<Function>,
+    call_graph: CallGraph,
+}
+
+#[wasm_bindgen]
+impl Layout {
+    #[wasm_bindgen(getter, typescript_type = "Map<bigint, Function>")]
+    pub fn functions(&self) -> JsValue {
+        let ret = js_sys::Map::new();
+
+        for f in self.functions.iter().cloned() {
+            ret.set(&JsValue::from(f.address), &JsValue::from(f));
+        }
+
+        ret.into()
+    }
+
+    #[wasm_bindgen(getter, typescript_type = "CallGraph")]
+    pub fn call_graph(&self) -> JsValue {
+        JsValue::from(self.call_graph.clone())
+    }
+}
+
+#[wasm_bindgen]
 pub struct PE {
     inner:     lPE,
     decoder:   zydis::Decoder,
@@ -305,5 +477,79 @@ impl PE {
         ret.sort_by_key(|string| string.address);
 
         ret.into_iter().map(JsValue::from).collect()
+    }
+
+    #[wasm_bindgen]
+    pub fn layout(&self) -> Result<Layout, JsValue> {
+        use lancelot::{analysis::cfg::CFG, aspace::AddressSpace, VA};
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let mut cfgs: BTreeMap<VA, CFG> = Default::default();
+        for &function in lancelot::analysis::pe::find_function_starts(&self.inner)
+            .map_err(to_js_err)?
+            .iter()
+        {
+            if let Ok(cfg) = lancelot::analysis::cfg::build_cfg(&self.inner.module, function) {
+                cfgs.insert(function, cfg);
+            }
+        }
+
+        let imports: BTreeSet<VA> = lancelot::analysis::pe::get_imports(&self.inner)
+            .map_err(to_js_err)?
+            .keys()
+            .cloned()
+            .collect();
+        let cg =
+            lancelot::analysis::call_graph::build_call_graph(&self.inner.module, &cfgs, &imports).map_err(to_js_err)?;
+
+        let mut functions = Vec::with_capacity(cfgs.len());
+
+        for (&fva, cfg) in cfgs.iter() {
+            let mut basic_blocks = Vec::with_capacity(cfg.basic_blocks.len());
+
+            for (&bbva, bb) in cfg.basic_blocks.iter() {
+                // estimate each instruction is 2 bytes, which is probably too conservative,
+                // but enough to hint the allocation here.
+                //
+                // supported by here: https://ieeexplore.ieee.org/document/5645851
+                // > The results show that the average instruction size length is about 2 bytes.
+                let mut instructions = Vec::with_capacity((bb.length / 2) as usize);
+
+                let buf = self
+                    .inner
+                    .module
+                    .address_space
+                    .read_bytes(bb.address, bb.length as usize)
+                    .map_err(to_js_err)?;
+                for (offset, insn) in lancelot::analysis::dis::linear_disassemble(&self.decoder, &buf) {
+                    if let Ok(Some(_)) = insn {
+                        let insnva = bb.address + offset as u64;
+                        instructions.push(insnva);
+                    }
+                }
+
+                basic_blocks.push(BasicBlock {
+                    address: bbva,
+                    size: bb.length as u64,
+                    successors: bb.successors.to_vec(),
+                    instructions,
+                })
+            }
+
+            functions.push(Function {
+                address: fva,
+                basic_blocks,
+            });
+        }
+
+        Ok(Layout {
+            functions,
+            call_graph: CallGraph {
+                calls_to:                   jsvalue_from_addresses_by_address(&cg.calls_to),
+                calls_from:                 jsvalue_from_addresses_by_address(&cg.calls_from),
+                function_call_instructions: jsvalue_from_addresses_by_address(&cg.function_call_instructions),
+                call_instruction_functions: jsvalue_from_addresses_by_address(&cg.call_instruction_functions),
+            },
+        })
     }
 }
