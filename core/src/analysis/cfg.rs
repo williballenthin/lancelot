@@ -302,7 +302,7 @@ pub fn get_immediate_operand_xref(
     }
 }
 
-fn get_operand_xref(
+pub fn get_operand_xref(
     module: &Module,
     va: VA,
     insn: &zydis::DecodedInstruction,
