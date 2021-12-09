@@ -275,12 +275,16 @@ pub fn get_immediate_operand_xref(
     } else {
         // the operand is an immediate absolute address.
 
-        if op.imm.is_signed {
-            // obviously this isn't an address if negative.
-            return Ok(None);
-        }
-
-        let dst = op.imm.value;
+        let dst = if op.imm.is_signed {
+            let imm = util::u64_i64(op.imm.value);
+            if imm < 0 {
+                // obviously this isn't an address if negative.
+                return Ok(None);
+            }
+            imm as u64
+        } else {
+            op.imm.value
+        };
 
         // must be mapped
         if module.probe_va(dst, Permissions::RWX) {
