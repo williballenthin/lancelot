@@ -151,7 +151,7 @@ class HexView extends React.Component<{ ws: Workspace; address: address } & Disp
                         <List
                             ref={this.ref}
                             height={height}
-                            width={590 /* empirical */}
+                            width={640 /* empirical */}
                             itemSize={18 /* empirical */}
                             itemData={{ ws, address, dispatch }}
                             itemCount={Number(row_count)}
@@ -464,7 +464,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                                         </AppContext.Consumer>
                                     ),
                                     // HACK: empirical
-                                    minWidth: 590,
+                                    minWidth: 640,
                                 },
                                 {
                                     id: "tab-help",
