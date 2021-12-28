@@ -19,4 +19,11 @@ or during dev:
 [terminal 1]: caddy run --watch --config Caddyfile.dev
 ```
 
-and browse: https://localhost:8443/lancelot/
+and browse: https://localhost:8443/index.html
+
+
+or during dev (with hot reloading):
+```
+npm run start
+```
+ and browse: http://localhost:8080/index.html

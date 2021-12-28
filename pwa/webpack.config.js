@@ -46,15 +46,20 @@ module.exports = {
     output: {
         filename: "[name].bundle.js",
         path: path.resolve(__dirname, "public", "js"),
+        publicPath: "/js",
     },
     devtool: "source-map",
     optimization: {
         // will not emit the bundle in prod mode if *any* error is encountered.
         emitOnErrors: false,
     },
-    /*
     devServer: {
+        port: 8080,
         hot: true,
+        liveReload: true,
+        static: true,
+        devMiddleware: {
+            index: true,
+        },
     },
-    */
 };
