@@ -16,6 +16,7 @@ import { LocationOmnibar, Location } from "../../components/omnibar";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
+import { Canvas } from "../../components/canvas";
 
 export const APP = {
     set_theme: (name: string) => {
@@ -233,6 +234,19 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     );
 };
 
+const GraphView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
+    return (
+        <div
+            className="lancelot-graph-view"
+            style={{ height: "100%", width: "100%" }}
+        >
+            <Canvas>
+                <div style={{backgroundColor: "red", height: "100px", width: "100px", top: "200px", left: "200px", position: "relative"}}></div>
+            </Canvas>
+        </div>
+    );
+};
+
 const SectionsView = ({ ws, dispatch }: { ws: Workspace } & Dispatches) => (
     <table>
         <thead>
@@ -432,6 +446,18 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                         {
                             panelLock: { panelStyle: "main" },
                             tabs: [
+                                {
+                                    id: "tab-graph",
+                                    title: "graph",
+                                    content: (
+                                        <AppContext.Consumer>
+                                            {({ ws, address, dispatch }) => (
+                                                <GraphView ws={ws} address={address} dispatch={dispatch} />
+                                            )}
+                                        </AppContext.Consumer>
+                                    ),
+                                },
+ 
                                 {
                                     id: "tab-disassembly",
                                     title: "disassembly",
