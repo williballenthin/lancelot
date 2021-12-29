@@ -1,0 +1,8 @@
+#app {
+    font-family: "Fira Sans", sans-serif;
+}
+
+#app * .bp4-monospace-text,
+#app * code {
+    font-family: "Fira Mono", monospace;
+}
