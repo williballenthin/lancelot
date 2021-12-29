@@ -236,12 +236,18 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
 
 const GraphView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
     return (
-        <div
-            className="lancelot-graph-view"
-            style={{ height: "100%", width: "100%" }}
-        >
+        <div className="lancelot-graph-view" style={{ height: "100%", width: "100%" }}>
             <Canvas>
-                <div style={{backgroundColor: "red", height: "100px", width: "100px", top: "200px", left: "200px", position: "relative"}}></div>
+                <div
+                    style={{
+                        backgroundColor: "red",
+                        height: "100px",
+                        width: "100px",
+                        top: "200px",
+                        left: "200px",
+                        position: "relative",
+                    }}
+                ></div>
             </Canvas>
         </div>
     );
@@ -457,7 +463,7 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
                                         </AppContext.Consumer>
                                     ),
                                 },
- 
+
                                 {
                                     id: "tab-disassembly",
                                     title: "disassembly",

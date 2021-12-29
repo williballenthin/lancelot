@@ -1,6 +1,6 @@
 import React from "react";
 
-export class Canvas extends React.Component<{ children : JSX.Element | null }, any> {
+export class Canvas extends React.Component<{ children: JSX.Element | null }, any> {
     foreground_ref: React.RefObject<any>;
     background_ref: React.RefObject<any>;
 
@@ -16,12 +16,12 @@ export class Canvas extends React.Component<{ children : JSX.Element | null }, a
 
     render() {
         return (
-            <div ref={this.background_ref} style={{width: "100%", height: "100%", cursor: "grab"}}>
-                <div ref={this.foreground_ref} style={{width: "100%", height: "100%"}}>
-                    { this.props.children }
+            <div ref={this.background_ref} style={{ width: "100%", height: "100%", cursor: "grab" }}>
+                <div ref={this.foreground_ref} style={{ width: "100%", height: "100%" }}>
+                    {this.props.children}
                 </div>
             </div>
-        )
+        );
     }
 
     componentDidMount() {
@@ -40,10 +40,10 @@ export class Canvas extends React.Component<{ children : JSX.Element | null }, a
         let velX = 0;
         let velY = 0;
 
-        this.background_ref.current.addEventListener('mousedown', (e: MouseEvent) => {
+        this.background_ref.current.addEventListener("mousedown", (e: MouseEvent) => {
             isDown = true;
-            this.background_ref.current.classList.add('active');
-            this.background_ref.current.style.userSelect = 'none';
+            this.background_ref.current.classList.add("active");
+            this.background_ref.current.style.userSelect = "none";
             // TODO: style: set cursor: grabbing
 
             startX = e.pageX;
@@ -53,35 +53,35 @@ export class Canvas extends React.Component<{ children : JSX.Element | null }, a
 
         const finish_drag = (e: MouseEvent) => {
             isDown = false;
-            this.background_ref.current.classList.remove('active');
+            this.background_ref.current.classList.remove("active");
 
             const dx = e.pageX - startX;
             const dy = e.pageY - startY;
-            
+
             y = y + dy;
             x = x + dx;
-        }
-        
-        this.background_ref.current.addEventListener('mouseleave', (e: MouseEvent) => {
-            if(!isDown) {
+        };
+
+        this.background_ref.current.addEventListener("mouseleave", (e: MouseEvent) => {
+            if (!isDown) {
                 return;
             }
 
             finish_drag(e);
             beginMomentumTracking();
         });
-        
-        this.background_ref.current.addEventListener('mouseup', (e: MouseEvent) => {
+
+        this.background_ref.current.addEventListener("mouseup", (e: MouseEvent) => {
             finish_drag(e);
             beginMomentumTracking();
         });
 
         // the position of the cursor at the last mousemove event
         let lastX = 0;
-        let lastY = 0
+        let lastY = 0;
 
-        this.background_ref.current.addEventListener('mousemove', (e: MouseEvent) => {
-            if(!isDown) {
+        this.background_ref.current.addEventListener("mousemove", (e: MouseEvent) => {
+            if (!isDown) {
                 return;
             }
             e.preventDefault();
@@ -97,16 +97,16 @@ export class Canvas extends React.Component<{ children : JSX.Element | null }, a
             lastX = e.pageX;
             lastY = e.pageY;
         });
-        
-        // Momentum 
-        
+
+        // Momentum
+
         let momentumID = 0;
-        function beginMomentumTracking(){
+        function beginMomentumTracking() {
             cancelMomentumTracking();
             momentumID = requestAnimationFrame(momentumLoop);
         }
 
-        function cancelMomentumTracking(){
+        function cancelMomentumTracking() {
             cancelAnimationFrame(momentumID);
         }
 
@@ -116,13 +116,13 @@ export class Canvas extends React.Component<{ children : JSX.Element | null }, a
 
             this.foreground_ref.current.style.transform = `translateX(${x}px) translateY(${y}px)`;
 
-            velX *= 0.90; 
-            velY *= 0.90; 
+            velX *= 0.9;
+            velY *= 0.9;
 
-            if ((Math.abs(velX) > 0.5) || (Math.abs(velY) > 0.5)){
+            if (Math.abs(velX) > 0.5 || Math.abs(velY) > 0.5) {
                 momentumID = requestAnimationFrame(momentumLoop);
             }
-        }
+        };
     }
 
     componentWillUnmount() {
