@@ -16,7 +16,7 @@ import { LocationOmnibar, Location } from "../../components/omnibar";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
-import { Canvas } from "../../components/canvas";
+import { Canvas, layout_graph } from "../../components/canvas";
 
 export const APP = {
     set_theme: (name: string) => {
@@ -237,18 +237,7 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
 const GraphView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
     return (
         <div className="lancelot-graph-view" style={{ height: "100%", width: "100%" }}>
-            <Canvas>
-                <div
-                    style={{
-                        backgroundColor: "red",
-                        height: "100px",
-                        width: "100px",
-                        top: "200px",
-                        left: "200px",
-                        position: "relative",
-                    }}
-                ></div>
-            </Canvas>
+            <Canvas>{layout_graph()}</Canvas>
         </div>
     );
 };
