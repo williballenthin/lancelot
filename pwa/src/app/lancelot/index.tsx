@@ -561,6 +561,8 @@ const AppPage = ({ version, ws }: { version: string; ws: Workspace }) => {
 function wasm_to_js<T>(obj: T): T {
     if (Array.isArray(obj)) {
         return obj.map(wasm_to_js) as any as T;
+    } else if (obj instanceof Map) {
+        return new Map(Array.from(obj).map(([key, value]) => [key, wasm_to_js(value)])) as any as T;
     } else {
         const obj_ = obj as any;
         const ret: any = {};
@@ -605,7 +607,17 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
         get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
                 return wasm_to_js(target.sections);
-            } else if (prop === "strings" || prop === "layout" || prop === "read_insn") {
+            } else if (prop === "layout") {
+                const orig = (target as any)[prop];
+                return function (...args: any) {
+                    // separated out here so we can log during dev.
+                    const v1 = orig.apply(target, args);
+                    return {
+                        functions: wasm_to_js(v1.functions),
+                        call_graph: wasm_to_js(v1.call_graph),
+                    };
+                };
+            } else if (prop === "strings" || prop === "read_insn") {
                 const orig = (target as any)[prop];
                 return function (...args: any) {
                     // separated out here so we can log during dev.
