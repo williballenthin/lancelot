@@ -5,14 +5,10 @@ export class Canvas extends React.Component<{ children: JSX.Element | null }, an
     foreground_ref: React.RefObject<any>;
     background_ref: React.RefObject<any>;
 
-    is_mouse_down: boolean;
-
     constructor(props: any) {
         super(props);
         this.foreground_ref = React.createRef();
         this.background_ref = React.createRef();
-
-        this.is_mouse_down = false;
     }
 
     render() {
