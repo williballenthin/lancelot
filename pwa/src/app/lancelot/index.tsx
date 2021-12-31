@@ -148,7 +148,7 @@ class HexView extends React.Component<{ ws: Workspace; address: address } & Disp
         return (
             <AutoSizer>
                 {({ height }: { height: number }) => (
-                    <div className="lancelot-hex-view">
+                    <div className="lancelot-hex-view" style={{ marginLeft: "5px" }}>
                         <List
                             ref={this.ref}
                             height={height}
