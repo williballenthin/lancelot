@@ -13,7 +13,7 @@ export class Canvas extends React.Component<{ children: JSX.Element | null }, an
 
     render() {
         return (
-            <div ref={this.background_ref} style={{ width: "100%", height: "100%", cursor: "grab" }}>
+            <div ref={this.background_ref} style={{ width: "100%", height: "100%" }}>
                 <div ref={this.foreground_ref} style={{ width: "100%", height: "100%" }}>
                     {this.props.children}
                 </div>
@@ -36,6 +36,9 @@ export class Canvas extends React.Component<{ children: JSX.Element | null }, an
 
         let velX = 0;
         let velY = 0;
+
+        // TODO: enable scrolling
+        // TODO: enable touch interactions
 
         this.background_ref.current.addEventListener("mousedown", (e: MouseEvent) => {
             isDown = true;

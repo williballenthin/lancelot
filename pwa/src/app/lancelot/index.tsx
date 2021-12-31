@@ -312,7 +312,7 @@ const GraphView = (props: { ws: Workspace; address: address; size?: number } & D
                     .map((b) => Utils.RENDERED_HEX[b])
                     .join("")
                     .padEnd(max_insn_len * 2, " ");
-                return `0x${insn.address.toString(0x10)}  ${hex}  ${insn.string}`;
+                return `${insn.address.toString(0x10)}  ${hex}  ${insn.string}`;
             });
 
             console.log("width in columns", Math.max(...lines.map((line) => line.length)));
@@ -380,6 +380,10 @@ const GraphView = (props: { ws: Workspace; address: address; size?: number } & D
                         left: node.x - node.width / 2,
                         backgroundColor: "white",
                         border: "1px solid blue",
+                        boxShadow: "0px 0px 4px 2px rgba(128, 128, 128, .2)",
+
+                        // TODO: unaccounted for in size
+                        paddingLeft: "3px",
                     }}
                 >
                     {(node as any).insns.map((insn: Lancelot.Instruction, i: number) => (
