@@ -2,7 +2,6 @@ import * as React from "react";
 import { useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { Provider, useSelector, useDispatch } from "react-redux";
-import { configureStore, createSlice, Dispatch } from "@reduxjs/toolkit";
 import { HotkeysTarget2, HotkeysProvider } from "@blueprintjs/core";
 import { DockLayout, DockMode } from "rc-dock";
 import "rc-dock/dist/rc-dock.css";
@@ -13,10 +12,12 @@ import * as Utils from "../../components/utils";
 import * as Settings from "../../components/settings";
 import * as Metrics from "../../components/metrics";
 import { LocationOmnibar, Location } from "../../components/omnibar";
+import { address, Address, Size, NamedLocation, Workspace } from "../../components/common";
+import { Dispatches, AppState, actions, store } from "../../components/store";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
 import NOP from "./nop.bin";
-import { Canvas, layout_graph } from "../../components/canvas";
+import { GraphView } from "../../components/graphview";
 
 export const APP = {
     set_theme: (name: string) => {
@@ -24,81 +25,6 @@ export const APP = {
         Settings.set("theme", name);
     },
 };
-
-// helpers for jslancelot
-type u64 = bigint | BigInt;
-type address = u64;
-
-interface AppState {
-    address: address;
-    address_history: address[];
-}
-
-export const { actions, reducer } = createSlice({
-    name: "app",
-    initialState: {
-        address: BigInt(0x0),
-        address_history: [],
-    },
-    reducers: {
-        set_address: (state: AppState, action) => {
-            // TODO: can't store BigInts in the store
-            state.address = action.payload;
-            state.address_history.push(action.payload);
-        },
-        pop_history: (state: AppState) => {
-            if (state.address_history.length > 0) {
-                state.address = state.address_history[state.address_history.length - 1];
-                state.address_history.pop();
-            }
-        },
-    },
-});
-
-const store = configureStore({
-    reducer,
-});
-
-interface Dispatches {
-    dispatch: Dispatch<any>;
-}
-
-// an address that may be valid in this workspace.
-const Address = ({ address, dispatch }: { address: address } & Dispatches) => (
-    <a className="lancelot-address bp4-monospace-text" onDoubleClick={() => dispatch(actions.set_address(address))}>
-        0x{address.toString(0x10)}
-    </a>
-);
-
-// a size of an item or delta/difference between two addresses.
-const Size = ({ size }: { size: u64 | number }) => (
-    <span className="lancelot-size bp4-monospace-text">0x{size.toString(0x10)}</span>
-);
-
-// the name of a location for which the address is known.
-const NamedLocation = ({ name, address, dispatch }: { name: string; address: address } & Dispatches) => (
-    <a
-        className="lancelot-named-location bp4-monospace-text"
-        onDoubleClick={() => dispatch(actions.set_address(address))}
-    >
-        {name}
-    </a>
-);
-
-// these things should not change.
-interface Workspace {
-    buf: Uint8Array;
-    arch: string;
-    functions: address[];
-    sections: Lancelot.Section[];
-    strings: Lancelot.String[];
-    layout: Lancelot.Layout;
-    pe: Lancelot.PE;
-
-    bb_by_address: Map<bigint, Lancelot.BasicBlock>;
-    bbs_by_insn: Map<bigint, bigint[]>;
-    functions_by_bb: Map<bigint, bigint[]>;
-}
 
 const HexViewRow = ({ index, style, data }: any) => {
     const { ws, dispatch } = data;
@@ -232,224 +158,6 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
             {error !== null ? <p>{error.toString()}</p> : ""}
         </div>
     );
-};
-
-import * as dagre from "dagre";
-const GraphView = (props: { ws: Workspace; address: address; size?: number } & Dispatches) => {
-    const { address, ws, size = 0x100 } = props;
-    const { dispatch } = props;
-
-    let insn_address = address;
-    const bbs = ws.bbs_by_insn.get(address as bigint);
-    if (bbs !== undefined) {
-        // TODO: assuming the first matching BB/function
-        const functions = ws.functions_by_bb.get(bbs[0]);
-        if (functions !== undefined) {
-            const fva = functions[0];
-            // when we find a containing function
-            // jump to that instead
-            // TODO: use better logic.
-            insn_address = fva;
-        }
-    }
-
-    /* determined empirically, units: pixels */
-    const LINE_HEIGHT = 18;
-    const CHARACTER_WIDTH = 8.9;
-
-    const f: Lancelot.Function = ws.layout.functions.get(insn_address);
-    if (f !== undefined) {
-        const g = new dagre.graphlib.Graph();
-        g.setGraph({
-            // Direction for rank nodes.
-            // Can be TB, BT, LR, or RL, where T = top, B = bottom, L = left, and R = right.
-            // default: TB
-            rankdir: "TB",
-            // Alignment for rank nodes.
-            // Can be UL, UR, DL, or DR, where U = up, D = down, L = left, and R = right.
-            // default: undefined
-            align: "UL",
-            // Number of pixels that separate nodes horizontally in the layout.
-            // default: 50
-            nodesep: 50,
-            // Number of pixels that separate edges horizontally in the layout.
-            // default: 10
-            edgesep: 10,
-            // Number of pixels between each rank in the layout.
-            // default: 50
-            ranksep: 50,
-            // Number of pixels to use as a margin around the left and right of the graph.
-            // default: 0
-            marginx: 100,
-            // Number of pixels to use as a margin around the top and bottom of the graph.
-            // default: 0
-            marginy: 100,
-            // If set to greedy, uses a greedy heuristic for finding a feedback arc set for a graph.
-            // A feedback arc set is a set of edges that can be removed to make a graph acyclic.
-            // default: undefined
-            acyclicer: undefined,
-            // Type of algorithm to assigns a rank to each node in the input graph.
-            // Possible values: network-simplex, tight-tree or longest-path
-            // default: network-simplex
-            ranker: "network-simplex",
-        });
-
-        g.setDefaultEdgeLabel(function () {
-            return {};
-        });
-
-        f.basic_blocks.forEach((bb: Lancelot.BasicBlock) => {
-            console.log("height in columns", bb.instructions.length);
-
-            const insns: Lancelot.Instruction[] = Array.from(bb.instructions).map(ws.pe.read_insn);
-
-            // max instruction length in bytes
-            // used for computing padding of hex column
-            const max_insn_len = Math.max(...insns.map((insn) => insn.bytes.length));
-
-            const lines: string[] = insns.map((insn) => {
-                const hex = Array.from(insn.bytes)
-                    .map((b) => Utils.RENDERED_HEX[b])
-                    .join("")
-                    .padEnd(max_insn_len * 2, " ");
-                return `${insn.address.toString(0x10)}  ${hex}  ${insn.string}`;
-            });
-
-            console.log("width in columns", Math.max(...lines.map((line) => line.length)));
-
-            g.setNode(bb.address.toString(0x10), {
-                // node properties:
-                //
-                // width, default:0
-                // The width of the node in pixels.
-                //
-                // height, default: 0
-                // The height of the node in pixels.
-                height: bb.instructions.length * LINE_HEIGHT,
-                width: Math.max(...lines.map((line) => line.length)) * CHARACTER_WIDTH,
-
-                insns,
-                lines,
-            });
-
-            bb.successors.forEach((succ: Lancelot.Flow) => {
-                g.setEdge(bb.address.toString(0x10), succ.target.toString(0x10), {
-                    // edge properties:
-                    //
-                    // minlen, default: 1
-                    // The number of ranks to keep between the source and target of the edge.
-                    //
-                    // weight, default: 1
-                    // The weight to assign edges. Higher weight edges are generally made shorter and straighter than lower weight edges.
-                    //
-                    // width, default: 0
-                    // The width of the edge label in pixels.
-                    //
-                    // height, default: 0
-                    // The height of the edge label in pixels.
-                    //
-                    // labelpos, default: r
-                    // Where to place the label relative to the edge. l = left, c = center r = right.
-                    //
-                    // labeloffset, default: 10
-                    // How many pixels to move the label away from the edge. Applies only when labelpos is l or r.
-                    weight: succ.type === "fallthrough" ? 1 : 0.5,
-
-                    minlen: 1,
-                    width: 0,
-                    height: 0,
-                    labelpos: "r",
-                    labeloffset: 10,
-                });
-            });
-        });
-        dagre.layout(g);
-
-        const nodes: JSX.Element[] = [];
-
-        g.nodes().forEach(function (v) {
-            const node = g.node(v);
-
-            nodes.push(
-                <div
-                    style={{
-                        height: node.height + 1 /* border width */,
-                        width: node.width + 1 /* border width */,
-                        position: "absolute",
-                        top: node.y - node.height / 2,
-                        left: node.x - node.width / 2,
-                        backgroundColor: "white",
-                        border: "1px solid blue",
-                        boxShadow: "0px 0px 4px 2px rgba(128, 128, 128, .2)",
-
-                        // TODO: unaccounted for in size
-                        paddingLeft: "3px",
-                    }}
-                >
-                    {(node as any).insns.map((insn: Lancelot.Instruction, i: number) => (
-                        <span
-                            className="bp4-monospace-text"
-                            style={{ display: "inline-block", width: "100%", whiteSpace: "pre" }}
-                            key={insn.address.toString(0x10)}
-                        >
-                            {(node as any).lines[i]}
-                        </span>
-                    ))}
-                </div>
-            );
-        });
-
-        const edges: JSX.Element[] = [];
-
-        g.edges().forEach(function (e) {
-            const THICKNESS = 1;
-            const edge = g.edge(e);
-
-            for (let i = 0; i < edge.points.length - 1; i++) {
-                const p1 = edge.points[i];
-                const p2 = edge.points[i + 1];
-
-                const length = Math.sqrt((p2.x - p1.x) * (p2.x - p1.x) + (p2.y - p1.y) * (p2.y - p1.y));
-                const cx = (p1.x + p2.x) / 2 - length / 2;
-                const cy = (p1.y + p2.y) / 2 - THICKNESS / 2;
-                const angle = Math.atan2(p1.y - p2.y, p1.x - p2.x) * (180 / Math.PI);
-
-                edges.push(
-                    <div
-                        style={{
-                            padding: "0px",
-                            margin: "0px",
-                            height: `${THICKNESS}px`,
-                            backgroundColor: "gray",
-                            lineHeight: "1px",
-                            position: "absolute",
-                            left: `${cx}px`,
-                            top: `${cy}px`,
-                            width: `${length}px`,
-                            transform: `rotate(${angle}deg)`,
-                        }}
-                    ></div>
-                );
-            }
-        });
-
-        return (
-            <div className="lancelot-graph-view" style={{ height: "100%", width: "100%" }}>
-                <Canvas>
-                    <div>
-                        {...nodes}
-                        {...edges}
-                    </div>
-                </Canvas>
-            </div>
-        );
-    } else {
-        return (
-            <div className="lancelot-graph-view" style={{ height: "100%", width: "100%" }}>
-                <Canvas>{layout_graph()}</Canvas>
-            </div>
-        );
-    }
 };
 
 const SectionsView = ({ ws, dispatch }: { ws: Workspace } & Dispatches) => (

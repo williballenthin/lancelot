@@ -6,3 +6,24 @@
 #app * code {
     font-family: "Fira Mono", monospace;
 }
+
+#app * .dock-bar:focus {
+    /* fixup interaction between bp4 and rc-dock */
+    outline: 0px;
+}
+
+.edge {
+    background-color: black;
+}
+
+#app * .lancelot-graph-view * .edge.edge-fallthrough {
+    background-color: red;
+}
+
+#app * .lancelot-graph-view * .edge.edge-conditional-jump {
+    background-color: green;
+}
+
+#app * .lancelot-graph-view * .edge.edge-unconditional-jump {
+    background-color: blue;
+}
