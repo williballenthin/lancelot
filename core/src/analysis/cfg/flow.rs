@@ -50,6 +50,7 @@ impl Flow {
     /// create a new Flow with the va swapped out for the given va.
     /// useful when you have a flow edge that you want to reverse
     /// (e.g. from successor to predecessor).
+    #[must_use]
     pub fn swap(&self, va: VA) -> Flow {
         match *self {
             Flow::Fallthrough(_) => Flow::Fallthrough(va),
