@@ -8,6 +8,8 @@ use flow::Flows;
 mod local;
 pub use local::build_cfg;
 
+mod global;
+
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
     /// start VA of the basic block.
