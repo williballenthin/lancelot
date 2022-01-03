@@ -89,8 +89,8 @@ pub fn build_call_graph(module: &Module, cfgs: &BTreeMap<VA, cfg::CFG>, imports:
                             cg.calls_from.entry(va).or_default().push(import);
                             cg.calls_to.entry(import).or_default().push(va);
                         } else {
-                            for flow in cfg::get_call_insn_flow(module, va, &insn)?.iter() {
-                                if let cfg::Flow::Call(target) = *flow {
+                            for flow in cfg::flow::get_call_insn_flow(module, va, &insn)?.iter() {
+                                if let cfg::flow::Flow::Call(target) = *flow {
                                     cg.calls_from.entry(va).or_default().push(target);
                                     cg.calls_to.entry(target).or_default().push(va);
                                 }

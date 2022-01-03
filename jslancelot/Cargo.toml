@@ -24,7 +24,3 @@ console_error_panic_hook = "0.1"
 [features]
 # the default allocator is about 6k, wee_alloc is 1k
 default = ["wee_alloc"]
-
-[profile.release]
-lto = true
-
