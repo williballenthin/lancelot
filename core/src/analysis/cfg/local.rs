@@ -19,7 +19,7 @@ use crate::{
 };
 
 struct InstructionDescriptor {
-    length:     u64,
+    length:     u8,
     successors: Flows,
 }
 
@@ -68,7 +68,7 @@ fn read_insn_descriptors(module: &Module, va: VA) -> Result<BTreeMap<VA, Instruc
                 }
 
                 let desc = InstructionDescriptor {
-                    length: insn.length as u64,
+                    length: insn.length,
                     successors,
                 };
 
@@ -198,7 +198,7 @@ fn compute_basic_blocks(
             // if its the start of a basic block,
             // then the current basic block must end.
 
-            let next_va = va + insn.length;
+            let next_va = va + (insn.length as u64);
 
             // there is not a subsequent instruction, so end of bb.
             // this might be considered an analysis error.
@@ -219,7 +219,7 @@ fn compute_basic_blocks(
                 break;
             }
 
-            bb.length += insn.length;
+            bb.length += insn.length as u64;
 
             va = next_va;
             insn = &insns[&next_va];
@@ -227,7 +227,7 @@ fn compute_basic_blocks(
         // insn is the last instruction of the current basic block.
         // va is the address of the last instruction of the current basic block.
 
-        bb.length += insn.length;
+        bb.length += insn.length as u64;
         bb.successors = successors.get(&va).unwrap_or(&smallvec![]).clone();
 
         basic_blocks.insert(start, bb);
