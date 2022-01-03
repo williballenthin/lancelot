@@ -12,7 +12,7 @@ repository = "https://github.com/williballenthin/lancelot"
 
 [dependencies]
 log = "0.4"
-clap = "2"
+clap = "3"
 ansi_term = "0.12"
 hexyl = "0.9"
 fern = "0.6"

@@ -15,7 +15,7 @@ log = "0.4"
 nom = "7"
 regex = "1.3"
 bitvec = "0.22"
-clap = "2.33"
+clap = "3.0"
 fern = "0.6"
 chrono = { version = "0.4", features = ["std", "clock"], default-features = false }
 better-panic = "0.2"
