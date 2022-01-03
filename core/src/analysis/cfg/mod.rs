@@ -23,9 +23,16 @@ pub struct BasicBlock {
     pub successors: Flows,
 }
 
+#[derive(Default)]
 pub struct CFG {
     // we use a btree so that we can conveniently iterate in order.
     // alternative choice would be an FNV hash map,
     // because the keys are small.
     pub basic_blocks: BTreeMap<VA, BasicBlock>,
+}
+
+impl CFG {
+    pub fn len(&self) -> usize {
+        self.basic_blocks.len()
+    }
 }

@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// The type and destination of a control flow.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flow {
     // mov eax, eax
     // push ebp
