@@ -24,7 +24,8 @@ use log::debug;
 use crate::{aspace::AddressSpace, loader::pe::PE, module::Permissions, VA};
 
 pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
-    let mut candidates: Vec<VA> = vec![];
+    // list of candidates: (address of pointer, address pointed to)
+    let mut candidates: Vec<(VA, VA)> = vec![];
 
     let min_addr = pe.module.address_space.base_address;
     let max_addr = pe
@@ -54,9 +55,11 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                     // using windows for unaligned pointers
                     .windows(8)
                     .map(|b| byteorder::LittleEndian::read_u64(b) as VA)
+                    .enumerate()
                     // naive range filter that is very fast
-                    .filter(|&va| va >= min_addr && va < max_addr)
-                    .filter(|&va| pe.module.probe_va(va, Permissions::X)),
+                    .filter(|&(_, va)| va >= min_addr && va < max_addr)
+                    .filter(|&(_, va)| pe.module.probe_va(va, Permissions::X))
+                    .map(|(i, va)| (vstart + (i as u64), va)),
             )
         } else {
             candidates.extend(
@@ -64,9 +67,11 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                     // using windows for unaligned pointers
                     .windows(4)
                     .map(|b| byteorder::LittleEndian::read_u32(b) as VA)
+                    .enumerate()
                     // naive range filter that is very fast
-                    .filter(|&va| va >= min_addr && va < max_addr)
-                    .filter(|&va| pe.module.probe_va(va, Permissions::X)),
+                    .filter(|&(_, va)| va >= min_addr && va < max_addr)
+                    .filter(|&(_, va)| pe.module.probe_va(va, Permissions::X))
+                    .map(|(i, va)| (vstart + (i as u64), va)),
             )
         }
     }
@@ -87,9 +92,9 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
     // should not be an ASCII string (as seen in 32-bit kernel32)
     Ok(candidates
         .into_iter()
-        .filter(|&va| {
+        .filter(|&(src, dst)| {
             let mut buf = [0u8; 3];
-            if matches!(pe.module.address_space.read_into(va - 3, &mut buf), Ok(_)) {
+            if matches!(pe.module.address_space.read_into(dst - 3, &mut buf), Ok(_)) {
                 // va - 3
                 if buf[0] == RETN {
                     return true;
@@ -104,17 +109,20 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                     _ => (),
                 }
 
-                debug!("pointers: candidate does not follow ret/filler byte: {:#x}", va);
+                debug!(
+                    "pointers: candidate pointer {:#x}: pointed-to content at {:#x} does not follow ret/filler byte",
+                    src, dst
+                );
                 false
             } else {
                 true
             }
         })
-        .filter(|&va| {
-            if let Ok(ptr) = pe.module.read_va_at_va(va) {
+        .filter(|&(src, dst)| {
+            if let Ok(ptr) = pe.module.read_va_at_va(dst) {
                 // the candidate is valid pointer, so its probably not an instruction.
                 if pe.module.probe_va(ptr, Permissions::R) {
-                    debug!("pointers: candidate is a valid pointer: {:#x}", va);
+                    debug!("pointers: candidate pointer {:#x}: valid pointer to {:#x}", src, dst);
                     false
                 } else {
                     true
@@ -123,17 +131,53 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                 true
             }
         })
-        .filter(|&va| {
-            if matches!(pe.module.address_space.read_ascii(va, 4), Ok(_)) {
-                debug!("pointers: candidate is a string: {:#x}", va);
+        .filter(|&(src, dst)| {
+            if matches!(pe.module.address_space.read_ascii(dst, 4), Ok(_)) {
+                debug!(
+                    "pointers: candidate pointer {:#x}: points to a string at {:#x}",
+                    src, dst
+                );
                 false
             } else {
                 true
             }
         })
-        .map(|va| {
-            debug!("pointers: valid candidate: {:#x}", va);
-            va
+        .map(|(src, dst)| {
+            debug!(
+                "pointers: candidate pointer: {:#x} points to valid content at {:#x}",
+                src, dst
+            );
+            dst
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn mimi() -> Result<()> {
+        let buf = get_buf(Rsrc::MIMI);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let functions = super::find_pe_nonrelocated_executable_pointers(&pe)?;
+
+        // these are functions referenced via global vtable, like:
+        //
+        //     .rdata:00475438 off_475438      dd offset sub_45D028    ; DATA XREF:
+        // .rdata:00475478↓o     .rdata:0047543C                 dd offset
+        // aServer       ; "server"     .rdata:00475440                 db    0
+        //     .rdata:00475441                 db    0
+        //     .rdata:00475442                 db    0
+        //     .rdata:00475443                 db    0
+        //     .rdata:00475444                 dd offset sub_45D16A
+        //     .rdata:00475448                 dd offset aConnect      ; "connect"
+        //     .rdata:0047544C                 align 10h
+        assert!(functions.iter().find(|&&function| function == 0x45CC62).is_some());
+        assert!(functions.iter().find(|&&function| function == 0x45D028).is_some());
+        assert!(functions.iter().find(|&&function| function == 0x45D16A).is_some());
+
+        Ok(())
+    }
 }

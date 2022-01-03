@@ -170,32 +170,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn mimi() -> Result<()> {
-        let buf = get_buf(Rsrc::MIMI);
-        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
-        let imports: BTreeSet<VA> = crate::analysis::pe::get_imports(&pe)?.keys().cloned().collect();
-
-        let mut cfgs: BTreeMap<VA, CFG> = Default::default();
-        for &function in pe::find_function_starts(&pe)?.iter() {
-            if let Ok(cfg) = crate::analysis::cfg::build_cfg(&pe.module, function) {
-                cfgs.insert(function, cfg);
-            }
-        }
-
-        let cg = call_graph::build_call_graph(&pe.module, &cfgs, &imports)?;
-
-        assert!(cg.function_call_instructions.get(&0x45CC62).is_some());
-        assert!(cg.function_call_instructions.get(&0x45D028).is_some());
-        assert!(cg.function_call_instructions.get(&0x45D16A).is_some());
-
-        assert_eq!(cg.calls_to[&0x40B1F1].len(), 3);
-
-        assert!(cg.calls_to[&0x40B1F1].iter().find(|&&v| v == 0x45CC9D).is_some());
-        assert!(cg.calls_to[&0x40B1F1].iter().find(|&&v| v == 0x45D080).is_some());
-        assert!(cg.calls_to[&0x40B1F1].iter().find(|&&v| v == 0x45D1B7).is_some());
-
-        Ok(())
-    }
 }
