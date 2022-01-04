@@ -64,7 +64,7 @@ fn emu_insn_benchmark(c: &mut Criterion) {
 fn cfg_benchmark(c: &mut Criterion) {
     use lancelot::analysis::cfg::instruction_index::*;
 
-    c.bench_function("InstructionIndex.build_index", |b| {
+    c.bench_function("cfg::InstructionIndex::build_index", |b| {
         let buf = lancelot::rsrc::get_buf(lancelot::rsrc::Rsrc::K32);
         let pe = lancelot::loader::pe::PE::from_bytes(&buf).unwrap();
 
@@ -81,7 +81,7 @@ fn cfg_benchmark(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("CFG.from_instructions", |b| {
+    c.bench_function("cfg::CFG::from_instructions", |b| {
         let buf = lancelot::rsrc::get_buf(lancelot::rsrc::Rsrc::K32);
         let pe = lancelot::loader::pe::PE::from_bytes(&buf).unwrap();
 
