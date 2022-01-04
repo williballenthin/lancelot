@@ -10,6 +10,8 @@ pub use local::build_cfg;
 
 mod global;
 
+pub mod instruction_index;
+
 #[derive(Debug, Clone)]
 pub struct BasicBlock {
     /// start VA of the basic block.
