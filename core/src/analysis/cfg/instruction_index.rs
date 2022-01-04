@@ -10,7 +10,7 @@ use crate::{
         },
         dis,
     },
-    aspace::AddressSpace,
+    aspace::{AbsoluteAddressSpace, AddressSpace},
     module::Module,
     VA,
 };
@@ -26,16 +26,59 @@ pub struct InstructionIndex {
     pub insns_by_address: BTreeMap<VA, InstructionDescriptor>,
 }
 
+const PAGE_SIZE: usize = 0x1000;
+const PAGE_MASK: u64 = 0xFFF;
+
+struct CachingPageReader {
+    page:         [u8; PAGE_SIZE],
+    page_address: VA,
+}
+
+impl Default for CachingPageReader {
+    fn default() -> Self {
+        Self {
+            page:         [0u8; PAGE_SIZE],
+            // special, non-page aligned value indicates no pages have been read yet.
+            // this will never match the page-aligned page_address computed from a requested address.
+            page_address: 1,
+        }
+    }
+}
+
+impl CachingPageReader {
+    fn read(&mut self, address_space: &AbsoluteAddressSpace, va: VA) -> Result<&[u8; PAGE_SIZE]> {
+        // mask off the bottom 12 bits
+        let page_address = va & 0xFFFF_FFFF_FFFF_F000;
+
+        if page_address == self.page_address {
+            return Ok(&self.page);
+        }
+
+        address_space.read_into(page_address, &mut self.page)?;
+        self.page_address = page_address;
+
+        return Ok(&self.page);
+    }
+}
+
 impl InstructionIndex {
     pub fn build_index(&mut self, module: &Module, va: VA) -> Result<()> {
         let decoder = dis::get_disassembler(module)?;
-        let mut insn_buf = [0u8; 16];
+        // we prefer to read via a page cache,
+        // assuming that instruction fetches are often localized within one page.
+        let mut reader: CachingPageReader = Default::default();
 
+        // pop from the front of the queue.
+        // place localized work on the front, non-localized work at the back.
+        // that is:
+        //  - fallthrough at the very front,
+        //  - local jumps after fallthroughs at the front, and
+        //  - calls to the back.
         let mut queue: VecDeque<VA> = Default::default();
         queue.push_back(va);
 
         loop {
-            let va = match queue.pop_back() {
+            let va = match queue.pop_front() {
                 None => break,
                 Some(va) => va,
             };
@@ -44,23 +87,73 @@ impl InstructionIndex {
                 continue;
             }
 
-            // TODO: PERF: optimize here by re-using buffers.
-            if module.address_space.read_into(va, &mut insn_buf).is_ok() {
-                if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
-                    let successors: Flows = flow::get_insn_flow(module, va, &insn)?.into_iter().collect();
-
-                    for target in successors.iter() {
-                        queue.push_back(target.va());
+            let maybe_insn = if va & 0xFFFF_FFFF_FFFF_F000 <= (PAGE_SIZE - 0x10) as u64 {
+                // common case: instruction doesn't split two pages (max insn size: 0x10).
+                //
+                // so we read from the page cache, which we expect to be pretty fast.
+                let page = match reader.read(&module.address_space, va) {
+                    Ok(page) => page,
+                    Err(e) => {
+                        log::warn!("failed to read instruction: {:#x}: invalid page: {:#x?}", va, e);
+                        continue;
                     }
+                };
+                let insn_buf = &page[(va & PAGE_MASK) as usize..];
+                decoder.decode(&insn_buf)
+            } else {
+                // uncommon case: potentially valid instruction that splits two pages.
+                // so, we'll read 0x10 bytes across the two pages,
+                // and try to decode again.
+                //
+                // we expect this to be a bit slower, because:
+                //   1. we have read from two pages, and
+                //   2. we have to reach into the address space, which isn't free.
+                let mut insn_buf = [0u8; 0x10];
+                if let Err(e) = module.address_space.read_into(va, &mut insn_buf) {
+                    log::warn!("failed to read instruction: {:#x}: invalid address: {:#x?}", va, e);
+                    continue;
+                };
+                decoder.decode(&insn_buf)
+            };
 
-                    let desc = InstructionDescriptor {
-                        length: insn.length,
-                        successors,
-                    };
+            let insn = match maybe_insn {
+                Ok(Some(insn)) => {
+                    // common happy case: valid instruction that doesn't split two pages.
+                    insn
+                }
+                Err(e) => {
+                    // invalid instruction
+                    log::warn!("invalid instruction: {:#x}: {:#?}", va, e);
+                    continue;
+                }
+                Ok(None) => continue,
+            };
 
-                    self.insns_by_address.insert(va, desc);
+            let successors: Flows = flow::get_insn_flow(module, va, &insn)?;
+
+            // place fallthroughs at the very front (expecting: most local)
+            // then non-fallthroughs after fallthroughs.
+            // place calls at the back of the queue (expecting: least local)
+            for target in successors.iter() {
+                match target {
+                    Flow::Fallthrough(va) => queue.push_front(*va),
+                    _ => {}
                 }
             }
+            for target in successors.iter() {
+                match target {
+                    Flow::Fallthrough(_) => {}
+                    Flow::Call(va) => queue.push_back(*va),
+                    _ => queue.push_front(target.va()),
+                }
+            }
+
+            let desc = InstructionDescriptor {
+                length: insn.length,
+                successors,
+            };
+
+            self.insns_by_address.insert(va, desc);
         }
 
         Ok(())
@@ -263,8 +356,6 @@ impl BasicBlockIndex {
         let mut lasts = lasts.iter().peekable();
 
         for start in starts {
-            log::warn!("cfg: bb start: {:#x}", start);
-
             // drop all the lasts less than start.
             // because a basic block cannot end before it starts.
             //
@@ -512,6 +603,8 @@ mod tests {
 
     #[test]
     fn k32() -> Result<()> {
+        init_logging();
+
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
         let mut insns: InstructionIndex = Default::default();
