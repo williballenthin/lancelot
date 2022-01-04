@@ -167,6 +167,8 @@ impl BasicBlockIndex {
         //  1. instruction with nothing before it, or
         //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
         //  3. the prior instruction also branched elsewhere
+        //
+        // note: the resulting iterator is sorted by address.
         let starts = iter_insn_flows(insns, flows)
             .filter(|(_, _, preds, _)| {
                 if preds.len() == 0 {
@@ -197,6 +199,8 @@ impl BasicBlockIndex {
         //  1. instruction with nothing before it, or
         //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
         //  3. the prior instruction also branched elsewhere
+        //
+        // the resulting iterator is sorted by address.
         let lasts = iter_insn_flows(insns, flows)
             .filter(|(insnva, insn, _, succs)| {
                 if succs.len() == 0 {
@@ -251,7 +255,9 @@ impl BasicBlockIndex {
             .collect::<Vec<_>>();
 
         // we don't simplify the lasts directly to an iter above
-        // because below we'll create a bunch of clones of the iter.
+        // because below we'll create a bunch of clones of the iter,
+        // and the iterator is not Clone.
+        //
         // so, we realize `lasts` to a vec and then iter over that
         // (and clones should be cheap).
         let mut lasts = lasts.iter().peekable();
@@ -262,21 +268,15 @@ impl BasicBlockIndex {
             // drop all the lasts less than start.
             // because a basic block cannot end before it starts.
             //
+            // I think the only reason this would be the case should be
+            // overlapping instructions (and therefore, basic blocks).
+            //
             // precondition: starts is sorted.
             // precondition: lasts is sorted.
             //
             // postcondition: `lasts.next() >= start`
-            loop {
-                // there should always be a last for each start.
-                // or its a programming error, and the construction of `lasts` should be fixed.
-                let last = **lasts.peek().expect("missing bb last");
-
-                if last < start {
-                    lasts.next();
-                    continue;
-                } else {
-                    break;
-                }
+            while start > **lasts.peek().expect("missing bb last") {
+                lasts.next();
             }
 
             let mut length: u64 = 0;
@@ -289,8 +289,12 @@ impl BasicBlockIndex {
                 // step through lasts, seeing if the current instruction is there.
                 // short circuit when: current is found, or cannot exist.
                 // because lasts is sorted, we can stop when lasts.peek() > current.
-                let mut cursor = lasts.clone();
                 let is_last: bool;
+                // perf: this clone looks expensive, however, its not.
+                // I profiled an alternative implementation with a clone-per-start
+                // and there was not a measurable difference.
+                // I think this routine is more intuitive, so we keep this clone.
+                let mut cursor = lasts.clone();
                 'next_cursor: loop {
                     // same as above: there should always be a last for each start.
                     // otherwise, programming error.
