@@ -12,6 +12,7 @@ use crate::{
 pub enum Flow {
     // mov eax, eax
     // push ebp
+    // TODO: consider moving this single bit into the insn descriptor for a memory savings of 63 bits?
     Fallthrough(VA),
 
     // call [0x401000]

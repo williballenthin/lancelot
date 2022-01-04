@@ -189,7 +189,7 @@ impl EncodedString {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Flow {
-    inner: lancelot::analysis::cfg::Flow,
+    inner: lancelot::analysis::cfg::flow::Flow,
     /* type: String,
      * target: u64, */
 }
@@ -202,15 +202,15 @@ impl Flow {
             // we expect these strings may be returned many times,
             // so we intern them for perf
             // https://docs.rs/wasm-bindgen/0.2.78/wasm_bindgen/fn.intern.html
-            lancelot::analysis::cfg::Flow::Call(_) => JsValue::from(wasm_bindgen::intern("call")),
-            lancelot::analysis::cfg::Flow::Fallthrough(_) => JsValue::from(wasm_bindgen::intern("fallthrough")),
-            lancelot::analysis::cfg::Flow::UnconditionalJump(_) => {
+            lancelot::analysis::cfg::flow::Flow::Call(_) => JsValue::from(wasm_bindgen::intern("call")),
+            lancelot::analysis::cfg::flow::Flow::Fallthrough(_) => JsValue::from(wasm_bindgen::intern("fallthrough")),
+            lancelot::analysis::cfg::flow::Flow::UnconditionalJump(_) => {
                 JsValue::from(wasm_bindgen::intern("unconditional jump"))
             }
-            lancelot::analysis::cfg::Flow::ConditionalJump(_) => {
+            lancelot::analysis::cfg::flow::Flow::ConditionalJump(_) => {
                 JsValue::from(wasm_bindgen::intern("conditional jump"))
             }
-            lancelot::analysis::cfg::Flow::ConditionalMove(_) => {
+            lancelot::analysis::cfg::flow::Flow::ConditionalMove(_) => {
                 JsValue::from(wasm_bindgen::intern("conditional move"))
             }
         }
@@ -222,8 +222,8 @@ impl Flow {
     }
 }
 
-impl From<lancelot::analysis::cfg::Flow> for Flow {
-    fn from(other: lancelot::analysis::cfg::Flow) -> Flow {
+impl From<lancelot::analysis::cfg::flow::Flow> for Flow {
+    fn from(other: lancelot::analysis::cfg::flow::Flow) -> Flow {
         Flow { inner: other }
     }
 }
@@ -234,7 +234,7 @@ pub struct BasicBlock {
     pub address: u64,
     pub size:    u64,
 
-    successors: Vec<lancelot::analysis::cfg::Flow>,
+    successors: Vec<lancelot::analysis::cfg::flow::Flow>,
 
     instructions: Vec<u64>,
 }

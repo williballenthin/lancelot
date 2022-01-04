@@ -114,9 +114,9 @@ const FLOW_UNCONDITIONAL_JUMP: u8 = 2;
 const FLOW_CONDITIONAL_JUMP: u8 = 3;
 const FLOW_CONDITIONAL_MOVE: u8 = 4;
 
-fn flow_to_tuple(py: Python, flow: &lancelot::analysis::cfg::Flow) -> Py<PyTuple> {
+fn flow_to_tuple(py: Python, flow: &lancelot::analysis::cfg::flow::Flow) -> Py<PyTuple> {
     // we use a tuple for performance.
-    use lancelot::analysis::cfg::Flow;
+    use lancelot::analysis::cfg::flow::Flow;
     let pair: [u64; 2] = match flow {
         Flow::Fallthrough(va) => [*va, FLOW_FALLTHROUGH as u64],
         Flow::Call(va) => [*va, FLOW_CALL as u64],
