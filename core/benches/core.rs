@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 
-fn fetch_benchmark(c: &mut Criterion) {
+fn emu_fetch_benchmark(c: &mut Criterion) {
     // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
     let mut emu = lancelot::test::emu_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
     emu.reg.rip = 0x0;
@@ -18,7 +18,7 @@ fn fetch_benchmark(c: &mut Criterion) {
     });
 }
 
-fn insn_benchmark(c: &mut Criterion) {
+fn emu_insn_benchmark(c: &mut Criterion) {
     c.bench_function("mov rax, 0x1", |b| {
         // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
         let mut emu = lancelot::test::emu_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
@@ -61,6 +61,28 @@ fn insn_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(fetch, fetch_benchmark);
-criterion_group!(insn, insn_benchmark);
-criterion_main!(fetch, insn);
+fn cfg_recursive_descent_benchmark(c: &mut Criterion) {
+    use lancelot::analysis::cfg::instruction_index::*;
+
+    c.bench_function("InstructionIndex.build_index", |b| {
+        let buf = lancelot::rsrc::get_buf(lancelot::rsrc::Rsrc::K32);
+        let pe = lancelot::loader::pe::PE::from_bytes(&buf).unwrap();
+
+        let mut functions: Vec<_> = Default::default();
+        functions.extend(lancelot::analysis::pe::entrypoints::find_pe_entrypoint(&pe).unwrap());
+        functions.extend(lancelot::analysis::pe::exports::find_pe_exports(&pe).unwrap());
+
+        b.iter(|| {
+            let mut insns: InstructionIndex = Default::default();
+
+            for &function in functions.iter() {
+                insns.build_index(&pe.module, function).unwrap();
+            }
+        })
+    });
+}
+
+criterion_group!(cfg_recursive_descent, cfg_recursive_descent_benchmark);
+criterion_group!(emu_fetch, emu_fetch_benchmark);
+criterion_group!(emu_insn, emu_insn_benchmark);
+criterion_main!(emu_fetch, emu_insn, cfg_recursive_descent);

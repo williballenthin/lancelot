@@ -49,9 +49,9 @@ dynasm = "1.0.1"
 dynasmrt = "1.0.1"
 
 [[bench]]
-name = "emu"
+name = "core"
 harness = false
-required-features = ["emulator"]
+required-features = ["emulator", "flirt", "disassembler", "test"]
 
 [features]
 default = ["emulator", "flirt", "disassembler"]

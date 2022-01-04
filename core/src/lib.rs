@@ -16,9 +16,9 @@ pub mod module;
 pub mod pagemap;
 pub mod util;
 
-#[cfg(any(test, doctest, feature = "test"))]
+#[cfg(any(test, doctest, feature = "test", bench, feature = "bench"))]
 pub mod rsrc;
-#[cfg(all(any(test, doctest, feature = "test"), feature = "emulator"))]
+#[cfg(any(test, doctest, feature = "test", bench, feature = "bench"))]
 pub mod test;
 
 pub type VA = u64;

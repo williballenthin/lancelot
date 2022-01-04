@@ -8,5 +8,5 @@ $ cargo test
 
 ```
 $ cargo install cargo-criterion
-$ cargo criterion --bench emu --plotting-backend disabled
+$ cargo criterion --all-features --plotting-backend disabled [name of benchmark, eg. "fetch"]
 ```
