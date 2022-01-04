@@ -57,7 +57,7 @@ impl CachingPageReader {
         address_space.read_into(page_address, &mut self.page)?;
         self.page_address = page_address;
 
-        return Ok(&self.page);
+        Ok(&self.page)
     }
 }
 
@@ -99,7 +99,7 @@ impl InstructionIndex {
                     }
                 };
                 let insn_buf = &page[(va & PAGE_MASK) as usize..];
-                decoder.decode(&insn_buf)
+                decoder.decode(insn_buf)
             } else {
                 // uncommon case: potentially valid instruction that splits two pages.
                 // so, we'll read 0x10 bytes across the two pages,
@@ -135,9 +135,8 @@ impl InstructionIndex {
             // then non-fallthroughs after fallthroughs.
             // place calls at the back of the queue (expecting: least local)
             for target in successors.iter() {
-                match target {
-                    Flow::Fallthrough(va) => queue.push_front(*va),
-                    _ => {}
+                if let Flow::Fallthrough(va) = target {
+                    queue.push_front(*va)
                 }
             }
             for target in successors.iter() {
@@ -206,17 +205,17 @@ fn fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> 
 }
 
 fn non_fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| match flow {
-        // these aren't "edges"
-        Flow::Call(_) => false,
-        Flow::ConditionalMove(_) => false,
-
+    Box::new(flows.iter().filter(|flow| {
+        !matches!(
+            flow,
+            // these aren't "edges"
+            Flow::Call(_) |
+        Flow::ConditionalMove(_) |
         // skip fallthrough
-        Flow::Fallthrough(_) => false,
-
-        // everything else is ok
-        _ => true,
+        Flow::Fallthrough(_)
+        )
     }))
+    // everything else is ok
 }
 
 fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
@@ -241,9 +240,9 @@ fn iter_insn_flows<'a>(
             assert_eq!(insnva, va1);
             assert_eq!(insnva, va2);
 
-            return Some((insnva, insn, predecessors, successors));
+            Some((insnva, insn, predecessors, successors))
         } else {
-            return None;
+            None
         }
     });
 
@@ -264,7 +263,7 @@ impl BasicBlockIndex {
         // note: the resulting iterator is sorted by address.
         let starts = iter_insn_flows(insns, flows)
             .filter(|(_, _, preds, _)| {
-                if preds.len() == 0 {
+                if preds.is_empty() {
                     // its a root, which is a start, because nothing flows here.
                     return true;
                 }
@@ -296,7 +295,7 @@ impl BasicBlockIndex {
         // the resulting iterator is sorted by address.
         let lasts = iter_insn_flows(insns, flows)
             .filter(|(insnva, insn, _, succs)| {
-                if succs.len() == 0 {
+                if succs.is_empty() {
                     // its a last, because nothing flows from here.
                     return true;
                 }
@@ -391,22 +390,26 @@ impl BasicBlockIndex {
                     // otherwise, programming error.
                     let last = **cursor.peek().expect("missing bb last");
 
-                    if last < current {
-                        // least common case: an overlapping instruction ends a BB in the middle of this
-                        // instruction.
-                        cursor.next();
-                        continue 'next_cursor;
-                    } else if last == current {
-                        // common case: this instruction is the last in the basic block.
-                        // we'll break from all loops and insert the basic block.
-                        is_last = true;
-                        break 'next_cursor;
-                    } else if last > current {
-                        // most common case: this instruction does not end the basic block.
-                        // we'll break from this inner loop and step to the next instruction to try
-                        // again.
-                        is_last = false;
-                        break 'next_cursor;
+                    match last.cmp(&current) {
+                        std::cmp::Ordering::Less => {
+                            // least common case: an overlapping instruction ends a BB in the middle of this
+                            // instruction.
+                            cursor.next();
+                            continue 'next_cursor;
+                        }
+                        std::cmp::Ordering::Equal => {
+                            // common case: this instruction is the last in the basic block.
+                            // we'll break from all loops and insert the basic block.
+                            is_last = true;
+                            break 'next_cursor;
+                        }
+                        std::cmp::Ordering::Greater => {
+                            // most common case: this instruction does not end the basic block.
+                            // we'll break from this inner loop and step to the next instruction to try
+                            // again.
+                            is_last = false;
+                            break 'next_cursor;
+                        }
                     }
                 }
 

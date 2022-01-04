@@ -39,4 +39,8 @@ impl CFG {
     pub fn len(&self) -> usize {
         self.basic_blocks.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
