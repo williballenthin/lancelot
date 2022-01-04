@@ -61,7 +61,7 @@ fn emu_insn_benchmark(c: &mut Criterion) {
     });
 }
 
-fn cfg_recursive_descent_benchmark(c: &mut Criterion) {
+fn cfg_benchmark(c: &mut Criterion) {
     use lancelot::analysis::cfg::instruction_index::*;
 
     c.bench_function("InstructionIndex.build_index", |b| {
@@ -80,9 +80,25 @@ fn cfg_recursive_descent_benchmark(c: &mut Criterion) {
             }
         })
     });
+
+    c.bench_function("CFG.from_instructions", |b| {
+        let buf = lancelot::rsrc::get_buf(lancelot::rsrc::Rsrc::K32);
+        let pe = lancelot::loader::pe::PE::from_bytes(&buf).unwrap();
+
+        let mut functions: Vec<_> = Default::default();
+        functions.extend(lancelot::analysis::pe::entrypoints::find_pe_entrypoint(&pe).unwrap());
+        functions.extend(lancelot::analysis::pe::exports::find_pe_exports(&pe).unwrap());
+
+        let mut insns: InstructionIndex = Default::default();
+        for &function in functions.iter() {
+            insns.build_index(&pe.module, function).unwrap();
+        }
+
+        b.iter(|| CFG::from_instructions(insns.clone()))
+    });
 }
 
-criterion_group!(cfg_recursive_descent, cfg_recursive_descent_benchmark);
+criterion_group!(cfg, cfg_benchmark);
 criterion_group!(emu_fetch, emu_fetch_benchmark);
 criterion_group!(emu_insn, emu_insn_benchmark);
-criterion_main!(emu_fetch, emu_insn, cfg_recursive_descent);
+criterion_main!(emu_fetch, emu_insn, cfg);

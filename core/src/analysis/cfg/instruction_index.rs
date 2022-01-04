@@ -15,12 +15,13 @@ use crate::{
     VA,
 };
 
+#[derive(Clone)]
 pub struct InstructionDescriptor {
     pub length:     u8,
     pub successors: Flows,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InstructionIndex {
     pub insns_by_address: BTreeMap<VA, InstructionDescriptor>,
 }
@@ -43,7 +44,7 @@ impl InstructionIndex {
                 continue;
             }
 
-            // TODO: optimize here by re-using buffers.
+            // TODO: PERF: optimize here by re-using buffers.
             if module.address_space.read_into(va, &mut insn_buf).is_ok() {
                 if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
                     let successors: Flows = flow::get_insn_flow(module, va, &insn)?.into_iter().collect();
@@ -188,8 +189,7 @@ impl BasicBlockIndex {
 
                 false
             })
-            .map(|(insnva, _, _, _)| insnva)
-            .collect::<Vec<_>>();
+            .map(|(insnva, _, _, _)| insnva);
 
         // find all the basic block last addresses.
         //
@@ -250,18 +250,34 @@ impl BasicBlockIndex {
             .map(|(insnva, _, _, _)| insnva)
             .collect::<Vec<_>>();
 
-        log::info!("cfg: starts:");
-        for start in starts.iter() {
-            log::info!("  - {:#x}", start);
-        }
+        // we don't simplify the lasts directly to an iter above
+        // because below we'll create a bunch of clones of the iter.
+        // so, we realize `lasts` to a vec and then iter over that
+        // (and clones should be cheap).
+        let mut lasts = lasts.iter().peekable();
 
-        log::info!("cfg: lasts:");
-        for last in lasts.iter() {
-            log::info!("  - {:#x}", last);
-        }
-
-        for &start in starts.iter() {
+        for start in starts {
             log::warn!("cfg: bb start: {:#x}", start);
+
+            // drop all the lasts less than start.
+            // because a basic block cannot end before it starts.
+            //
+            // precondition: starts is sorted.
+            // precondition: lasts is sorted.
+            //
+            // postcondition: `lasts.next() >= start`
+            loop {
+                // there should always be a last for each start.
+                // or its a programming error, and the construction of `lasts` should be fixed.
+                let last = **lasts.peek().expect("missing bb last");
+
+                if last < start {
+                    lasts.next();
+                    continue;
+                } else {
+                    break;
+                }
+            }
 
             let mut length: u64 = 0;
             let mut current = start;
@@ -270,11 +286,42 @@ impl BasicBlockIndex {
                 let insn = &insns.insns_by_address[&current];
                 length += insn.length as u64;
 
-                // TODO: DANGER: this is n**2
-                if lasts.iter().find(|&&va| current == va).is_some() {
+                // step through lasts, seeing if the current instruction is there.
+                // short circuit when: current is found, or cannot exist.
+                // because lasts is sorted, we can stop when lasts.peek() > current.
+                let mut cursor = lasts.clone();
+                let is_last: bool;
+                'next_cursor: loop {
+                    // same as above: there should always be a last for each start.
+                    // otherwise, programming error.
+                    let last = **cursor.peek().expect("missing bb last");
+
+                    if last < current {
+                        // least common case: an overlapping instruction ends a BB in the middle of this
+                        // instruction.
+                        cursor.next();
+                        continue 'next_cursor;
+                    } else if last == current {
+                        // common case: this instruction is the last in the basic block.
+                        // we'll break from all loops and insert the basic block.
+                        is_last = true;
+                        break 'next_cursor;
+                    } else if last > current {
+                        // most common case: this instruction does not end the basic block.
+                        // we'll break from this inner loop and step to the next instruction to try
+                        // again.
+                        is_last = false;
+                        break 'next_cursor;
+                    }
+                }
+
+                if is_last {
                     break;
                 } else {
+                    // instruction did not end basic block.
+                    // step to next instruction and try again.
                     current += insn.length as u64;
+                    continue;
                 }
             }
             bbs_by_address.insert(
@@ -387,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_two_entry_points() -> Result<()> {
-        init_logging();
+        //init_logging();
 
         // 0:  c3                      ret  | BB1
         // 1:  00
@@ -402,6 +449,59 @@ mod tests {
 
         assert_eq!(cfg.insns.insns_by_address.len(), 2);
         assert_eq!(cfg.basic_blocks.bbs_by_address.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_overlapping_instructions() -> Result<()> {
+        // The instruction is jumping in the 2nd byte of itself:
+        //
+        // 00: EBFF    jmp $+1
+        // 02: C0C3C3  rol bl, 0xC3
+        // 05: C3      ret
+        //
+        // will actually be executed as
+        //
+        // 00: EBFF    jmp $+1
+        // 01: FFC0    inc eax
+        // 03: C3      retn
+        //
+        // via: https://reverseengineering.stackexchange.com/a/1661/17194
+        let module = load_shellcode32(b"\xEB\xFF\xC0\xC3\xC3\xC3");
+
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        // 00: EBFF    jmp $+1
+        // 01: FFC0    inc eax
+        // 03: C3      retn
+        assert_eq!(insns.insns_by_address.len(), 3);
+
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x2)?;
+        // 02: C0C3C3  rol bl, 0xC3
+        // 05: C3      ret
+        assert_eq!(insns.insns_by_address.len(), 2);
+
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        insns.build_index(&module, 0x2)?;
+        // jmp $+1
+        // -------
+        //         rol bl, 0xC3
+        //         ------------
+        //                     ret
+        //                     ----
+        //     inc eax
+        //     --------
+        //             ret
+        //             ----
+        // EB  FF  C0  C3  C3  C3
+        assert_eq!(insns.insns_by_address.len(), 5);
+        let cfg = CFG::from_instructions(insns)?;
+        // [jmp] -> [rol, ret]
+        // [inc, ret]
+        assert_eq!(cfg.basic_blocks.bbs_by_address.len(), 3);
 
         Ok(())
     }
