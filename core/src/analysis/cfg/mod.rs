@@ -461,6 +461,7 @@ impl CFG {
     }
 
     pub fn get_reachable_blocks<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+        log::debug!("reachable from: {:#x}", va);
         let mut seen: BTreeSet<VA> = Default::default();
 
         if !self.basic_blocks.blocks_by_address.contains_key(&va) {
@@ -472,16 +473,23 @@ impl CFG {
         queue.push_back(va);
 
         let iter = std::iter::from_fn(move || loop {
-            if let Some(va) = queue.pop_front() {
-                if seen.contains(&va) {
+            if let Some(bbva) = queue.pop_front() {
+                if seen.contains(&bbva) {
                     continue;
                 }
+                log::debug!("reachable from: {:#x}: basic block: {:#x}", va, bbva);
 
-                let bb = &self.basic_blocks.blocks_by_address[&va];
+                let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
                 for succ in succs.iter() {
                     if !matches!(succ, Flow::Call(_)) {
+                        log::debug!(
+                            "reachable from: {:#x}: basic block: {:#x}: successor: {:#x}",
+                            va,
+                            bbva,
+                            succ.va()
+                        );
                         queue.push_back(succ.va());
                     }
                 }
@@ -489,11 +497,17 @@ impl CFG {
                 let preds = &self.flows.flows_by_dst[&bb.address];
                 for pred in preds.iter() {
                     if !matches!(pred, Flow::Call(_)) {
+                        log::debug!(
+                            "reachable from: {:#x}: basic block: {:#x}: pred: {:#x}",
+                            va,
+                            bbva,
+                            pred.va()
+                        );
                         queue.push_back(self.basic_blocks.blocks_by_last_address[&pred.va()])
                     }
                 }
 
-                seen.insert(va);
+                seen.insert(bbva);
                 return Some(bb);
             } else {
                 return None;
