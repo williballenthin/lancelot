@@ -103,22 +103,9 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     const { address, ws, size = 0x100 } = props;
     const { dispatch } = props;
 
-    let insn_address = address;
-    const bbs = ws.bbs_by_insn.get(address as bigint);
-    if (bbs !== undefined) {
-        // TODO: assuming the first matching BB/function
-        const functions = ws.functions_by_bb.get(bbs[0]);
-        if (functions !== undefined) {
-            const fva = functions[0];
-            // when we find a containing function
-            // jump to that instead
-            // TODO: use better logic.
-            insn_address = fva;
-        }
-    }
-
     const insns = [];
     let error: any = null;
+    let insn_address = address;
     while (insn_address < (address as bigint) + BigInt(size)) {
         try {
             const insn = ws.pe.read_insn(insn_address);
@@ -525,15 +512,15 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
         get: function (target: Lancelot.PE, prop: string) {
             if (prop === "sections") {
                 return wasm_to_js(target.sections);
-            } else if (prop === "layout") {
+            } else if (prop === "cfg") {
                 const orig = (target as any)[prop];
                 return function (...args: any) {
                     // separated out here so we can log during dev.
                     const v1 = orig.apply(target, args);
                     return {
-                        functions: wasm_to_js(v1.functions),
-                        call_graph: wasm_to_js(v1.call_graph),
-                    };
+                        basic_blocks: wasm_to_js(v1.basic_blocks),
+                        get_reachable_blocks: v1.get_reachable_blocks.bind(v1),
+                    }
                 };
             } else if (prop === "strings" || prop === "read_insn") {
                 const orig = (target as any)[prop];
@@ -562,28 +549,13 @@ async function amain() {
     const buf = Uint8Array.from(NOP.data);
     const pe = pe_from_bytes(buf);
 
-    const layout = pe.layout();
-
-    const bb_by_address: Map<bigint, Lancelot.BasicBlock> = new Map();
-    const bbs_by_insn: Map<bigint, bigint[]> = new Map();
-    const functions_by_bb: Map<bigint, bigint[]> = new Map();
-
-    for (const [fva, f] of layout.functions.entries()) {
-        for (const bb of f.basic_blocks) {
-            if (!functions_by_bb.has(bb.address)) {
-                functions_by_bb.set(bb.address, []);
-            }
-
-            functions_by_bb.get(bb.address)?.push(fva);
-            bb_by_address.set(bb.address, bb);
-
-            for (const insnva of bb.instructions) {
-                if (!bbs_by_insn.has(insnva)) {
-                    bbs_by_insn.set(insnva, []);
-                }
-
-                bbs_by_insn.get(insnva)?.push(bb.address);
-            }
+    const cfg = pe.cfg();
+    const blocks_by_insn: Map<bigint, bigint> = new Map();
+    // TODO: need types from wasm-bindgen!
+    const basic_blocks = cfg.basic_blocks as Map<bigint, Lancelot.BasicBlock>;
+    for (const bb of basic_blocks.values()) {
+        for (const insnva of bb.instructions) {
+            blocks_by_insn.set(insnva, bb.address as bigint);
         }
     }
 
@@ -594,13 +566,9 @@ async function amain() {
         functions: Array.prototype.map.call(pe.functions(), BigInt) as address[],
         sections: pe.sections,
         strings: pe.strings(),
-        layout: layout,
-        // TODO: put call graph here
+        cfg: cfg,
 
-        // TODO: maybe put this in layout
-        bb_by_address,
-        bbs_by_insn,
-        functions_by_bb,
+        blocks_by_insn,
     };
 
     const app = (

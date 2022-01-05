@@ -34,10 +34,8 @@ export interface Workspace {
     functions: address[];
     sections: lancelot.Section[];
     strings: lancelot.String[];
-    layout: lancelot.Layout;
+    cfg: lancelot.CFG;
     pe: lancelot.PE;
 
-    bb_by_address: Map<bigint, lancelot.BasicBlock>;
-    bbs_by_insn: Map<bigint, bigint[]>;
-    functions_by_bb: Map<bigint, bigint[]>;
+    blocks_by_insn: Map<bigint, bigint>;
 }

@@ -250,12 +250,14 @@ function graph_add_edge(g: dagre.graphlib.Graph, bb: lancelot.BasicBlock, flow: 
     });
 }
 
-function graph_from_function(ws: Workspace, f: lancelot.Function): dagre.graphlib.Graph {
+function graph_from_blocks(ws: Workspace, basic_blocks: lancelot.BasicBlock[]): dagre.graphlib.Graph {
     const g = graph_with_defaults();
-    f.basic_blocks.forEach((bb: lancelot.BasicBlock) => {
+    basic_blocks.forEach((bb: lancelot.BasicBlock) => {
         graph_add_basic_block(ws, g, bb);
         bb.successors.forEach((succ: lancelot.Flow) => {
-            graph_add_edge(g, bb, succ);
+            if (succ.type !== "call") {
+                graph_add_edge(g, bb, succ);
+            }
         });
     });
     dagre.layout(g);
@@ -360,33 +362,26 @@ export const GraphView = (props: { ws: Workspace; address: address; size?: numbe
     const { address, ws } = props;
     const { dispatch } = props;
 
-    let insn_address = address;
-    const bbs = ws.bbs_by_insn.get(address as bigint);
-    if (bbs === undefined) {
+    const bbva = ws.blocks_by_insn.get(address as bigint);
+    if (bbva === undefined) {
+        console.log("block not found: " + address.toString(0x10));
         return INVALID_GRAPH;
     }
 
-    const functions = ws.functions_by_bb.get(bbs[0]);
-    if (functions === undefined) {
-        return INVALID_GRAPH;
-    }
-    // TODO: assuming the first matching BB/function
-    const fva = functions[0];
-    // when we find a containing function
-    // jump to that instead
-    // TODO: use better logic.
-    insn_address = fva;
+    const blocks = Array.from(ws.cfg.get_reachable_blocks(bbva)).map((bbva) => {
+        // TODO: better typing
+        return ws.cfg.basic_blocks.get(bbva) as lancelot.BasicBlock;
+    });
 
-    const f: lancelot.Function = ws.layout.functions.get(insn_address);
-    if (f === undefined) {
-        return INVALID_GRAPH;
-    }
-
-    const g = graph_from_function(ws, f);
+    const g = graph_from_blocks(ws, blocks);
     const elems: JSX.Element[] = [];
 
     g.nodes().forEach(function (v) {
-        elems.push(<Node node={g.node(v)} dispatch={dispatch} />);
+        if (g.node(v) === undefined) {
+            console.log("empty node", v)
+        } else {
+            elems.push(<Node node={g.node(v)} dispatch={dispatch} />);
+        }
     });
 
     g.edges().forEach(function (e) {
