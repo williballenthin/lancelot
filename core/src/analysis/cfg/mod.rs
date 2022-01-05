@@ -192,7 +192,7 @@ pub struct BasicBlock {
 }
 
 pub struct BasicBlockIndex {
-    pub blocks_by_address: BTreeMap<VA, BasicBlock>,
+    pub blocks_by_address:      BTreeMap<VA, BasicBlock>,
     // map from BasicBlock.address_of_last_insn to BasicBlock.address
     pub blocks_by_last_address: BTreeMap<VA, VA>,
 }
@@ -486,6 +486,13 @@ impl CFG {
                     }
                 }
 
+                let preds = &self.flows.flows_by_dst[&bb.address];
+                for pred in preds.iter() {
+                    if !matches!(pred, Flow::Call(_)) {
+                        queue.push_back(self.basic_blocks.blocks_by_last_address[&pred.va()])
+                    }
+                }
+
                 seen.insert(va);
                 return Some(bb);
             } else {
@@ -688,6 +695,14 @@ mod tests {
 
         assert_eq!(cfg.insns.insns_by_address.len(), 7);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 5);
+
+        // asking for reachable blocks from [7: ret]
+        // so it should traverse back to [0: mov, jne]
+        // and then back down to [8, mov, jne] and beyond
+        let mut blocks = cfg.get_reachable_blocks(0x7).map(|bb| bb.address).collect::<Vec<_>>();
+        blocks.sort();
+
+        assert_eq!(&blocks[..], [0x0, 0x7, 0x8, 0xF, 0x10]);
 
         Ok(())
     }
