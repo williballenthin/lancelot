@@ -61,8 +61,11 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
     insns.build_index(&pe.module, va)?;
     let cfg = CFG::from_instructions(insns)?;
 
-    info!("found {} basic blocks", cfg.basic_blocks.blocks_by_address.len());
-    for bb in cfg.basic_blocks.blocks_by_address.values() {
+    let mut blocks = cfg.get_reachable_blocks(va).collect::<Vec<_>>();
+    blocks.sort_unstable_by_key(|&bb| bb.address);
+    info!("found {} basic blocks", blocks.len());
+
+    for bb in blocks.into_iter() {
         // need to over-read the bb buffer, to account for the final instructions.
         let buf = pe
             .module
