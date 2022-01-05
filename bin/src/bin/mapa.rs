@@ -21,6 +21,7 @@ use clap::clap_app;
 use log::{debug, error};
 
 use lancelot::{
+    analysis::cfg::{InstructionIndex, CFG},
     aspace::{AbsoluteAddressSpace, AddressSpace},
     loader::pe::{
         imports::{get_import_directory, read_import_descriptors, read_thunks, IMAGE_THUNK_DATA},
@@ -575,30 +576,29 @@ fn insert_resource_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 /// add a range for each basic block. these won't be rendered, though.
 /// add a range for each function, from its start through all contiguous basic
 /// blocks. only the function start address will be rendered.
-fn insert_function_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
-    let functions = lancelot::analysis::pe::find_function_starts(pe)?;
-
+fn insert_function_ranges(ranges: &mut Ranges, pe: &PE, cfg: &CFG, functions: &[VA]) -> Result<()> {
     for &function in functions.iter() {
-        if let Ok(cfg) = lancelot::analysis::cfg::build_cfg(&pe.module, function) {
-            let mut end = function;
-            for bb in cfg.basic_blocks.values() {
-                if bb.address != end {
-                    break;
-                }
-                end += bb.length;
+        let mut blocks = cfg.get_reachable_blocks(function).collect::<Vec<_>>();
+        blocks.sort_unstable_by_key(|&bb| bb.address);
+
+        let mut end = function;
+        for bb in blocks.iter() {
+            if bb.address != end {
+                break;
             }
-
-            // TODO get function name
-
-            ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
-        } else {
-            debug!("failed to compute build CFG at 0x{:#x}", function);
+            end += bb.length;
         }
+        ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
     }
+
     Ok(())
 }
 
-fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
+fn insert_string_ranges(ranges: &mut Ranges, pe: &PE, cfg: &CFG, functions: &[VA]) -> Result<()> {
+    // create a copy of the module.
+    // for each basic block, zero out its region.
+    // then look for strings in the remaining data.
+
     let mut section_bufs: Vec<Vec<u8>> = pe
         .module
         .sections
@@ -610,11 +610,8 @@ fn insert_string_ranges(ranges: &mut Ranges, pe: &PE) -> Result<()> {
         })
         .collect();
 
-    for function in lancelot::analysis::pe::find_function_starts(pe)?.into_iter() {
-        // TODO: handle failure here gracefully.
-        let cfg = lancelot::analysis::cfg::build_cfg(&pe.module, function)?;
-
-        for bb in cfg.basic_blocks.values() {
+    for &function in functions.iter() {
+        for bb in cfg.get_reachable_blocks(function) {
             let (i, sec) = pe
                 .module
                 .sections
@@ -671,8 +668,16 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
     insert_data_directory_ranges(&mut ranges, pe)?;
     insert_imports_range(&mut ranges, pe)?;
     insert_resource_ranges(&mut ranges, pe)?;
-    insert_function_ranges(&mut ranges, pe)?;
-    insert_string_ranges(&mut ranges, pe)?;
+
+    let mut insns: InstructionIndex = Default::default();
+    let functions = lancelot::analysis::pe::find_function_starts(pe)?;
+    for function in functions.iter() {
+        insns.build_index(&pe.module, *function)?;
+    }
+    let cfg = CFG::from_instructions(insns)?;
+
+    insert_function_ranges(&mut ranges, pe, &cfg, &functions)?;
+    insert_string_ranges(&mut ranges, pe, &cfg, &functions)?;
 
     Ok(ranges)
 }

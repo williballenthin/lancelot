@@ -1,6 +1,4 @@
 #[cfg(feature = "disassembler")]
-pub mod call_graph;
-#[cfg(feature = "disassembler")]
 pub mod cfg;
 #[cfg(feature = "disassembler")]
 pub mod dis;

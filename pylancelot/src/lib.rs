@@ -80,34 +80,6 @@ pub struct CFG {
     pub basic_blocks: Py<PyDict>,
 }
 
-#[pyclass]
-pub struct CallGraph {
-    /// map from function start to the addresses that call here.
-    /// lookup via `call_instruction_functions` to figure out the functions that
-    /// call here.
-    /// type: Dict[int, List[int]]
-    #[pyo3(get)]
-    pub calls_to: Py<PyDict>,
-
-    /// map from an instruction to the addresses that it calls (usually one).
-    /// type: Dict[int, List[int]]
-    #[pyo3(get)]
-    pub calls_from: Py<PyDict>,
-
-    /// map from function start to the instructions in its CFG that call
-    /// elsewhere. lookup via `calls_to` to figoure out the functions that
-    /// elsewhere. lookup via `calls_to` to figoure out the functions that
-    /// type: Dict[int, List[int]]
-    #[pyo3(get)]
-    pub function_call_instructions: Py<PyDict>,
-
-    /// map from instruction to starts of functions whose CFGs contain the
-    /// instruction (usually one).
-    /// type: Dict[int, List[int]]
-    #[pyo3(get)]
-    pub call_instruction_functions: Py<PyDict>,
-}
-
 const FLOW_FALLTHROUGH: u8 = 0;
 const FLOW_CALL: u8 = 1;
 const FLOW_UNCONDITIONAL_JUMP: u8 = 2;
@@ -142,43 +114,9 @@ pub struct BasicBlock {
     #[pyo3(get)]
     pub length: u64,
 
-    /// list of tuples (virtual address, flow type) of basic blocks that flow to
-    /// this basic block. the virtual address can be used as an index into
-    /// the parent `CFG.basic_blocks`. the flow type is one of the
-    /// `FLOW_TYPE_*` constants, such as `FLOW_TYPE_CALL`.
-    /// use the `FLOW_(VA|TYPE)` constants to index into this tuple
-    /// type: List[Tuple[int, int]]
-    #[pyo3(get)]
-    pub predecessors: Py<PyList>,
-
-    /// list of tuples (virtual address, flow type) of basic blocks that flow
-    /// from this basic block. type: List[Tuple[int, int]]
+    /// list of successor Flow instances
     #[pyo3(get)]
     pub successors: Py<PyList>,
-}
-
-impl BasicBlock {
-    fn from_basic_block(py: Python, bb: &lancelot::analysis::cfg::BasicBlock) -> PyResult<BasicBlock> {
-        let predecessors = PyList::empty(py);
-        let successors = PyList::empty(py);
-
-        for pred in bb.predecessors.iter() {
-            let pair = flow_to_tuple(py, pred);
-            predecessors.append(pair)?;
-        }
-
-        for succ in bb.successors.iter() {
-            let pair = flow_to_tuple(py, succ);
-            successors.append(pair)?;
-        }
-
-        Ok(BasicBlock {
-            address:      bb.address,
-            length:       bb.length,
-            predecessors: predecessors.into(),
-            successors:   successors.into(),
-        })
-    }
 }
 
 #[pyproto]
@@ -418,59 +356,32 @@ impl PE {
     ///
     /// Returns: CFG
     pub fn build_cfg(&self, py: Python, va: VA) -> PyResult<CFG> {
-        let basic_blocks = PyDict::new(py);
-        let cfg = lancelot::analysis::cfg::build_cfg(&self.inner.module, va).map_err(to_py_err)?;
+        use lancelot::analysis::cfg;
 
-        for (bbva, bb) in cfg.basic_blocks.iter() {
-            let bb: PyObject = BasicBlock::from_basic_block(py, bb)?.into_py(py);
-            basic_blocks.set_item(bbva, bb)?;
+        let mut insns: cfg::InstructionIndex = Default::default();
+        insns.build_index(&self.inner.module, va).map_err(to_py_err)?;
+        let cfg = cfg::CFG::from_instructions(insns).map_err(to_py_err)?;
+
+        let basic_blocks = PyDict::new(py);
+        for (bbva, bb) in cfg.basic_blocks.blocks_by_address.iter() {
+            let succs = PyList::empty(py);
+            for succ in cfg.flows.flows_by_src[&bb.address_of_last_insn].iter() {
+                succs.append(flow_to_tuple(py, succ))?;
+            }
+
+            let pybb = BasicBlock {
+                address:    bb.address,
+                length:     bb.length,
+                successors: succs.into(),
+            }
+            .into_py(py);
+
+            basic_blocks.set_item(bbva, pybb)?;
         }
 
         Ok(CFG {
             address:      va,
             basic_blocks: basic_blocks.into(),
-        })
-    }
-
-    /// construct and index the call graph among instructions and functions.
-    /// this routine will implicitly find all functions and build a CFG for
-    /// each.
-    ///
-    /// Returns: CallGraph
-    pub fn build_call_graph(&self, py: Python) -> PyResult<CallGraph> {
-        use lancelot::analysis::{call_graph, cfg, pe};
-        use std::collections::{BTreeMap, BTreeSet};
-        let imports: BTreeSet<VA> = match pe::get_imports(&self.inner) {
-            Ok(imports) => imports.keys().cloned().collect(),
-            Err(_) => Default::default(),
-        };
-
-        let mut cfgs: BTreeMap<VA, cfg::CFG> = Default::default();
-        for &function in pe::find_function_starts(&self.inner).map_err(to_py_err)?.iter() {
-            if let Ok(cfg) = cfg::build_cfg(&self.inner.module, function) {
-                cfgs.insert(function, cfg);
-            }
-        }
-
-        let cg = call_graph::build_call_graph(&self.inner.module, &cfgs, &imports).map_err(to_py_err)?;
-
-        let calls_to: PyObject = cg.calls_to.into_py(py);
-        let calls_to: Py<PyDict> = calls_to.extract(py)?;
-
-        let calls_from: PyObject = cg.calls_from.into_py(py);
-        let calls_from: Py<PyDict> = calls_from.extract(py)?;
-
-        let function_call_instructions: PyObject = cg.function_call_instructions.into_py(py);
-        let function_call_instructions: Py<PyDict> = function_call_instructions.extract(py)?;
-
-        let call_instruction_functions: PyObject = cg.call_instruction_functions.into_py(py);
-        let call_instruction_functions: Py<PyDict> = call_instruction_functions.extract(py)?;
-
-        Ok(CallGraph {
-            calls_to,
-            calls_from,
-            function_call_instructions,
-            call_instruction_functions,
         })
     }
 

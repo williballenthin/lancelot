@@ -5,7 +5,11 @@ use clap::clap_app;
 use log::{debug, error, info};
 
 use lancelot::{
-    analysis::{dis, dis::zydis},
+    analysis::{
+        cfg::{InstructionIndex, CFG},
+        dis,
+        dis::zydis,
+    },
     aspace::AddressSpace,
     loader::pe::PE,
     util, RVA, VA,
@@ -52,11 +56,13 @@ fn render_insn(insn: &zydis::ffi::DecodedInstruction, va: VA) -> String {
 }
 
 fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
-    let cfg = lancelot::analysis::cfg::build_cfg(&pe.module, va)?;
     let decoder = dis::get_disassembler(&pe.module)?;
+    let mut insns: InstructionIndex = Default::default();
+    insns.build_index(&pe.module, va)?;
+    let cfg = CFG::from_instructions(insns)?;
 
-    info!("found {} basic blocks", cfg.basic_blocks.len());
-    for bb in cfg.basic_blocks.values() {
+    info!("found {} basic blocks", cfg.basic_blocks.blocks_by_address.len());
+    for bb in cfg.basic_blocks.blocks_by_address.values() {
         // need to over-read the bb buffer, to account for the final instructions.
         let buf = pe
             .module

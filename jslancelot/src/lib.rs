@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use wasm_bindgen::prelude::*;
 
 use anyhow::Error;
@@ -283,58 +281,9 @@ impl Function {
     }
 }
 
-// create a js Map<bigint, bigint[]> from a rust BTreeMap<u64, Vec<u64>>
-fn jsvalue_from_addresses_by_address(other: &BTreeMap<u64, Vec<u64>>) -> JsValue {
-    let ret = js_sys::Map::new();
-
-    for (&k, v) in other.iter() {
-        let l = js_sys::Array::new_with_length(v.len() as u32);
-        for (i, &vv) in v.iter().enumerate() {
-            l.set(i as u32, JsValue::from(vv));
-        }
-
-        ret.set(&JsValue::from(k), &JsValue::from(l));
-    }
-
-    ret.into()
-}
-
-#[wasm_bindgen]
-#[derive(Clone)]
-pub struct CallGraph {
-    calls_to:                   JsValue,
-    calls_from:                 JsValue,
-    function_call_instructions: JsValue,
-    call_instruction_functions: JsValue,
-}
-
-#[wasm_bindgen]
-impl CallGraph {
-    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
-    pub fn calls_to(&self) -> JsValue {
-        self.calls_to.clone()
-    }
-
-    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
-    pub fn calls_from(&self) -> JsValue {
-        self.calls_from.clone()
-    }
-
-    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
-    pub fn function_call_instructions(&self) -> JsValue {
-        self.function_call_instructions.clone()
-    }
-
-    #[wasm_bindgen(getter, typescript_type = "Map<bigint, bigint[]>")]
-    pub fn call_instruction_functions(&self) -> JsValue {
-        self.call_instruction_functions.clone()
-    }
-}
-
 #[wasm_bindgen]
 pub struct Layout {
-    functions:  Vec<Function>,
-    call_graph: CallGraph,
+    functions: Vec<Function>,
 }
 
 #[wasm_bindgen]
@@ -348,11 +297,6 @@ impl Layout {
         }
 
         ret.into()
-    }
-
-    #[wasm_bindgen(getter, typescript_type = "CallGraph")]
-    pub fn call_graph(&self) -> JsValue {
-        JsValue::from(self.call_graph.clone())
     }
 }
 
@@ -481,75 +425,60 @@ impl PE {
 
     #[wasm_bindgen]
     pub fn layout(&self) -> Result<Layout, JsValue> {
-        use lancelot::{analysis::cfg::CFG, aspace::AddressSpace, VA};
-        use std::collections::{BTreeMap, BTreeSet};
+        use lancelot::{
+            analysis::cfg::{InstructionIndex, CFG},
+            aspace::AddressSpace,
+        };
 
-        let mut cfgs: BTreeMap<VA, CFG> = Default::default();
-        for &function in lancelot::analysis::pe::find_function_starts(&self.inner)
-            .map_err(to_js_err)?
-            .iter()
-        {
-            if let Ok(cfg) = lancelot::analysis::cfg::build_cfg(&self.inner.module, function) {
-                cfgs.insert(function, cfg);
-            }
+        let mut insns: InstructionIndex = Default::default();
+        let functions = lancelot::analysis::pe::find_function_starts(&self.inner).map_err(to_js_err)?;
+        for function in functions.iter() {
+            insns.build_index(&self.inner.module, *function).map_err(to_js_err)?;
         }
+        let cfg = CFG::from_instructions(insns).map_err(to_js_err)?;
 
-        let imports: BTreeSet<VA> = lancelot::analysis::pe::get_imports(&self.inner)
-            .map_err(to_js_err)?
-            .keys()
-            .cloned()
-            .collect();
-        let cg =
-            lancelot::analysis::call_graph::build_call_graph(&self.inner.module, &cfgs, &imports).map_err(to_js_err)?;
+        let functions = functions
+            .into_iter()
+            .map(|fva| {
+                let mut basic_blocks = Vec::new();
 
-        let mut functions = Vec::with_capacity(cfgs.len());
+                for bb in cfg.get_reachable_blocks(fva) {
+                    // estimate each instruction is 2 bytes, which is probably too conservative,
+                    // but enough to hint the allocation here.
+                    //
+                    // supported by here: https://ieeexplore.ieee.org/document/5645851
+                    // > The results show that the average instruction size length is about 2 bytes.
+                    let mut instructions = Vec::with_capacity((bb.length / 2) as usize);
 
-        for (&fva, cfg) in cfgs.iter() {
-            let mut basic_blocks = Vec::with_capacity(cfg.basic_blocks.len());
-
-            for (&bbva, bb) in cfg.basic_blocks.iter() {
-                // estimate each instruction is 2 bytes, which is probably too conservative,
-                // but enough to hint the allocation here.
-                //
-                // supported by here: https://ieeexplore.ieee.org/document/5645851
-                // > The results show that the average instruction size length is about 2 bytes.
-                let mut instructions = Vec::with_capacity((bb.length / 2) as usize);
-
-                let buf = self
-                    .inner
-                    .module
-                    .address_space
-                    .read_bytes(bb.address, bb.length as usize)
-                    .map_err(to_js_err)?;
-                for (offset, insn) in lancelot::analysis::dis::linear_disassemble(&self.decoder, &buf) {
-                    if let Ok(Some(_)) = insn {
-                        let insnva = bb.address + offset as u64;
-                        instructions.push(insnva);
+                    let buf = self
+                        .inner
+                        .module
+                        .address_space
+                        .read_bytes(bb.address, bb.length as usize)
+                        // programming error: this BB range must exist.
+                        .expect("failed to read bb range");
+                    for (offset, insn) in lancelot::analysis::dis::linear_disassemble(&self.decoder, &buf) {
+                        if let Ok(Some(_)) = insn {
+                            let insnva = bb.address + offset as u64;
+                            instructions.push(insnva);
+                        }
                     }
+
+                    basic_blocks.push(BasicBlock {
+                        address: bb.address,
+                        size: bb.length,
+                        successors: cfg.flows.flows_by_src[&bb.address_of_last_insn].to_vec(),
+                        instructions,
+                    })
                 }
 
-                basic_blocks.push(BasicBlock {
-                    address: bbva,
-                    size: bb.length as u64,
-                    successors: bb.successors.to_vec(),
-                    instructions,
-                })
-            }
+                Function {
+                    address: fva,
+                    basic_blocks,
+                }
+            })
+            .collect();
 
-            functions.push(Function {
-                address: fva,
-                basic_blocks,
-            });
-        }
-
-        Ok(Layout {
-            functions,
-            call_graph: CallGraph {
-                calls_to:                   jsvalue_from_addresses_by_address(&cg.calls_to),
-                calls_from:                 jsvalue_from_addresses_by_address(&cg.calls_from),
-                function_call_instructions: jsvalue_from_addresses_by_address(&cg.function_call_instructions),
-                call_instruction_functions: jsvalue_from_addresses_by_address(&cg.call_instruction_functions),
-            },
-        })
+        Ok(Layout { functions })
     }
 }
