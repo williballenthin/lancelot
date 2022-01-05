@@ -593,8 +593,6 @@ mod tests {
 
     #[test]
     fn test_two_entry_points() -> Result<()> {
-        //init_logging();
-
         // 0:  c3                      ret  | BB1
         // 1:  00
         // 2:  c3                      ret  | BB2
@@ -689,8 +687,6 @@ mod tests {
 
     #[test]
     fn reachable_blocks() -> Result<()> {
-        init_logging();
-
         // 0:  b8 01 00 00 00          mov    eax,0x1   | BB1
         // 5:  75 01                   jne    8 <B>     | BB1
         // 7:  c3                      ret               | BB2
