@@ -2,7 +2,10 @@ use wasm_bindgen::prelude::*;
 
 use anyhow::Error;
 use lancelot::{
-    analysis::dis::{self, zydis},
+    analysis::{
+        cfg,
+        dis::{self, zydis},
+    },
     arch::Arch,
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
@@ -262,41 +265,21 @@ impl BasicBlock {
 }
 
 #[wasm_bindgen]
-#[derive(Clone)]
-pub struct Function {
-    pub address:  u64,
-    basic_blocks: Vec<BasicBlock>,
+pub struct CFG {
+    basic_blocks: JsValue,
+    inner:        cfg::CFG,
 }
 
 #[wasm_bindgen]
-impl Function {
-    // Vec<BasicBlock> cannot be serialized by wasm-bindgen
-    // so we have to manually convert to Vec<JsValue>
-    // and then annotate the TS type.
-    //
-    // NB: JS now owns the objects, must explicitly drop.
-    #[wasm_bindgen(getter, typescript_type = "Array<BasicBlock>")]
-    pub fn basic_blocks(&self) -> Vec<JsValue> {
-        self.basic_blocks.iter().cloned().map(JsValue::from).collect()
+impl CFG {
+    #[wasm_bindgen(getter, typescript_type = "Map<BigInt, BasicBlock>")]
+    pub fn basic_blocks(&self) -> JsValue {
+        // ugh double copy
+        self.basic_blocks.clone()
     }
-}
 
-#[wasm_bindgen]
-pub struct Layout {
-    functions: Vec<Function>,
-}
-
-#[wasm_bindgen]
-impl Layout {
-    #[wasm_bindgen(getter, typescript_type = "Map<bigint, Function>")]
-    pub fn functions(&self) -> JsValue {
-        let ret = js_sys::Map::new();
-
-        for f in self.functions.iter().cloned() {
-            ret.set(&JsValue::from(f.address), &JsValue::from(f));
-        }
-
-        ret.into()
+    pub fn get_reachable_blocks(&self, va: u64) -> Vec<u64> {
+        self.inner.get_reachable_blocks(va).map(|bb| bb.address).collect()
     }
 }
 
@@ -424,61 +407,53 @@ impl PE {
     }
 
     #[wasm_bindgen]
-    pub fn layout(&self) -> Result<Layout, JsValue> {
-        use lancelot::{
-            analysis::cfg::{InstructionIndex, CFG},
-            aspace::AddressSpace,
-        };
+    pub fn cfg(&self) -> Result<CFG, JsValue> {
+        use lancelot::aspace::AddressSpace;
+        let ret = js_sys::Map::new();
 
-        let mut insns: InstructionIndex = Default::default();
+        let mut insns: cfg::InstructionIndex = Default::default();
         let functions = lancelot::analysis::pe::find_function_starts(&self.inner).map_err(to_js_err)?;
         for function in functions.iter() {
             insns.build_index(&self.inner.module, *function).map_err(to_js_err)?;
         }
-        let cfg = CFG::from_instructions(insns).map_err(to_js_err)?;
+        let cfg = cfg::CFG::from_instructions(insns).map_err(to_js_err)?;
 
-        let functions = functions
-            .into_iter()
-            .map(|fva| {
-                let mut basic_blocks = Vec::new();
+        for bb in cfg.basic_blocks.blocks_by_address.values() {
+            // estimate each instruction is 2 bytes, which is probably too conservative,
+            // but enough to hint the allocation here.
+            //
+            // supported by here: https://ieeexplore.ieee.org/document/5645851
+            // > The results show that the average instruction size length is about 2 bytes.
+            let mut instructions = Vec::with_capacity((bb.length / 2) as usize);
 
-                for bb in cfg.get_reachable_blocks(fva) {
-                    // estimate each instruction is 2 bytes, which is probably too conservative,
-                    // but enough to hint the allocation here.
-                    //
-                    // supported by here: https://ieeexplore.ieee.org/document/5645851
-                    // > The results show that the average instruction size length is about 2 bytes.
-                    let mut instructions = Vec::with_capacity((bb.length / 2) as usize);
-
-                    let buf = self
-                        .inner
-                        .module
-                        .address_space
-                        .read_bytes(bb.address, bb.length as usize)
-                        // programming error: this BB range must exist.
-                        .expect("failed to read bb range");
-                    for (offset, insn) in lancelot::analysis::dis::linear_disassemble(&self.decoder, &buf) {
-                        if let Ok(Some(_)) = insn {
-                            let insnva = bb.address + offset as u64;
-                            instructions.push(insnva);
-                        }
-                    }
-
-                    basic_blocks.push(BasicBlock {
-                        address: bb.address,
-                        size: bb.length,
-                        successors: cfg.flows.flows_by_src[&bb.address_of_last_insn].to_vec(),
-                        instructions,
-                    })
+            let buf = self
+                .inner
+                .module
+                .address_space
+                .read_bytes(bb.address, bb.length as usize)
+                // programming error: this BB range must exist.
+                .expect("failed to read bb range");
+            for (offset, insn) in lancelot::analysis::dis::linear_disassemble(&self.decoder, &buf) {
+                if let Ok(Some(_)) = insn {
+                    let insnva = bb.address + offset as u64;
+                    instructions.push(insnva);
                 }
+            }
 
-                Function {
-                    address: fva,
-                    basic_blocks,
-                }
-            })
-            .collect();
+            ret.set(
+                &JsValue::from(bb.address),
+                &JsValue::from(BasicBlock {
+                    address: bb.address,
+                    size: bb.length,
+                    successors: cfg.flows.flows_by_src[&bb.address_of_last_insn].to_vec(),
+                    instructions,
+                }),
+            );
+        }
 
-        Ok(Layout { functions })
+        Ok(CFG {
+            inner:        cfg,
+            basic_blocks: ret.into(),
+        })
     }
 }
