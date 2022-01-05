@@ -193,6 +193,8 @@ pub struct BasicBlock {
 
 pub struct BasicBlockIndex {
     pub blocks_by_address: BTreeMap<VA, BasicBlock>,
+    // map from BasicBlock.address_of_last_insn to BasicBlock.address
+    pub blocks_by_last_address: BTreeMap<VA, VA>,
 }
 
 // "edge" helpers.
@@ -250,7 +252,8 @@ fn iter_insn_flows<'a>(
 
 impl BasicBlockIndex {
     fn build_index(insns: &InstructionIndex, flows: &FlowIndex) -> Result<BasicBlockIndex> {
-        let mut bbs_by_address: BTreeMap<VA, BasicBlock> = Default::default();
+        let mut blocks_by_address: BTreeMap<VA, BasicBlock> = Default::default();
+        let mut blocks_by_last_address: BTreeMap<VA, VA> = Default::default();
 
         // find all the basic block start addresses.
         //
@@ -421,7 +424,7 @@ impl BasicBlockIndex {
                     continue;
                 }
             }
-            bbs_by_address.insert(
+            blocks_by_address.insert(
                 start,
                 BasicBlock {
                     address: start,
@@ -429,10 +432,12 @@ impl BasicBlockIndex {
                     address_of_last_insn: current,
                 },
             );
+            blocks_by_last_address.insert(current, start);
         }
 
         Ok(BasicBlockIndex {
-            blocks_by_address: bbs_by_address,
+            blocks_by_address,
+            blocks_by_last_address,
         })
     }
 }
@@ -473,6 +478,7 @@ impl CFG {
                 }
 
                 let bb = &self.basic_blocks.blocks_by_address[&va];
+
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
                 for succ in succs.iter() {
                     if !matches!(succ, Flow::Call(_)) {
