@@ -201,22 +201,20 @@ pub struct BasicBlockIndex {
 // lets call an "edge" a flow that you'd see in IDA;
 // that is, not a call flow or cmov, but a jump/fallthrough/etc.
 
+fn edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
+    Box::new(
+        flows
+            .iter()
+            .filter(|flow| !matches!(flow, Flow::Call(_) | Flow::ConditionalMove(_))),
+    )
+}
+
 fn fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| matches!(flow, Flow::Fallthrough(_))))
+    Box::new(edges(flows).filter(|flow| matches!(flow, Flow::Fallthrough(_))))
 }
 
 fn non_fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| {
-        !matches!(
-            flow,
-            // these aren't "edges"
-            Flow::Call(_) |
-        Flow::ConditionalMove(_) |
-        // skip fallthrough
-        Flow::Fallthrough(_)
-        )
-    }))
-    // everything else is ok
+    Box::new(edges(flows).filter(|flow| !matches!(flow, Flow::Fallthrough(_))))
 }
 
 fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
