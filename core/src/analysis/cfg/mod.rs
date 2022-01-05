@@ -263,7 +263,7 @@ impl BasicBlockIndex {
         // note: the resulting iterator is sorted by address.
         let starts = iter_insn_flows(insns, flows)
             .filter(|(_, _, preds, _)| {
-                if preds.is_empty() {
+                if empty(edges(preds)) {
                     // its a root, which is a start, because nothing flows here.
                     return true;
                 }
