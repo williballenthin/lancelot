@@ -678,7 +678,7 @@ mod tests {
         let cfg = CFG::from_instructions(insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 84369);
-        assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 17145);
+        assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 17858);
 
         Ok(())
     }
