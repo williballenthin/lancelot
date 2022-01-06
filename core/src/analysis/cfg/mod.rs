@@ -273,6 +273,12 @@ impl BasicBlockIndex {
                     return true;
                 }
 
+                // multiple instructions fallthrough here (they must be overlapping).
+                // so its a bb start.
+                if fallthrough_edges(preds).count() > 1 {
+                    return true;
+                }
+
                 // its a bb start, because the instruction that fallthrough here
                 // also branched somewhere else.
                 for pred in fallthrough_edges(preds) {
@@ -325,6 +331,12 @@ impl BasicBlockIndex {
                     // the next instruction is not part of this bb.
                     // for example, the target of a fallthrough AND a jump from elsewhere.
                     if !empty(non_fallthrough_edges(next_preds)) {
+                        return true;
+                    }
+
+                    // next instruction has multiple fallthroughs to it.
+                    // (this instruction must overlap with another).
+                    if fallthrough_edges(next_preds).count() > 1 {
                         return true;
                     }
                 } else {
@@ -480,29 +492,15 @@ impl CFG {
                 let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
-                for succ in succs.iter() {
-                    if !matches!(succ, Flow::Call(_)) {
-                        log::debug!(
-                            "reachable from: {:#x}: basic block: {:#x}: successor: {:#x}",
-                            va,
-                            bbva,
-                            succ.va()
-                        );
-                        queue.push_back(succ.va());
-                    }
+                for succ in edges(succs).map(|flow| flow.va()) {
+                    log::debug!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
+                    queue.push_back(succ);
                 }
 
                 let preds = &self.flows.flows_by_dst[&bb.address];
-                for pred in preds.iter() {
-                    if !matches!(pred, Flow::Call(_)) {
-                        log::debug!(
-                            "reachable from: {:#x}: basic block: {:#x}: pred: {:#x}",
-                            va,
-                            bbva,
-                            pred.va()
-                        );
-                        queue.push_back(self.basic_blocks.blocks_by_last_address[&pred.va()])
-                    }
+                for pred in edges(preds).map(|flow| self.basic_blocks.blocks_by_last_address[&flow.va()]) {
+                    log::debug!("reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
+                    queue.push_back(pred);
                 }
 
                 seen.insert(bbva);
@@ -711,6 +709,40 @@ mod tests {
         blocks.sort();
 
         assert_eq!(&blocks[..], [0x0, 0x7, 0x8, 0xF, 0x10]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn reachable_blocks_overlapping() -> Result<()> {
+        // b8 ff c0 ff c0 c3
+        // ---------------
+        // mov eax, 0xC0FFC0FF
+        //    ------
+        //    inc eax
+        //          ------
+        //          inc eax
+        //                ----
+        //                ret
+        let module = load_shellcode32(b"\xB8\xFF\xC0\xFF\xC0\xC3");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        insns.build_index(&module, 0x1)?;
+        let cfg = CFG::from_instructions(insns)?;
+
+        assert_eq!(cfg.insns.insns_by_address.len(), 4);
+        // [0: mov] -> [5: ret]
+        // [1: inc, inc] -> [5: ret]
+        assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
+
+        // asking for reachable blocks from [5: ret]
+        // so it should traverse back to [0: mov]
+        // and also to [1: inc, inc].
+        // both via fallthrough flows.
+        let mut blocks = cfg.get_reachable_blocks(0x5).map(|bb| bb.address).collect::<Vec<_>>();
+        blocks.sort();
+
+        assert_eq!(&blocks[..], [0x0, 0x1, 0x5]);
 
         Ok(())
     }
