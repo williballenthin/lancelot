@@ -2,7 +2,7 @@ use anyhow::Result;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    analysis::dis,
+    analysis::{dis, dis::Target},
     module::{Module, Permissions},
     VA,
 };
@@ -15,39 +15,24 @@ pub enum Flow {
     // TODO: consider moving this single bit into the insn descriptor for a memory savings of 63 bits?
     Fallthrough(VA),
 
+    // call $+5
     // call [0x401000]
-    Call(VA),
-
-    // call [eax]
-    //IndirectCall { src: Rva },
+    Call(Target),
 
     // jmp 0x401000
-    UnconditionalJump(VA),
+    // jmp [table + eax*4]
+    UnconditionalJump(Target),
 
-    // jmp eax
-    //UnconditionalIndirectJump { src: Rva, dst: Rva },
-
+    // in x86, all conditional jumps are direct.
     // jnz 0x401000
+    //
+    // there are no conditional indirect jumps,
+    // https://www.felixcloutier.com/x86/jmp
+    // https://www.felixcloutier.com/x86/jcc
     ConditionalJump(VA),
-
-    // jnz eax
-    //ConditionalIndirectJump { src: Rva },
-
-    // cmov 0x1
-    ConditionalMove(VA),
 }
 
 impl Flow {
-    pub fn va(&self) -> VA {
-        match *self {
-            Flow::Fallthrough(va) => va,
-            Flow::Call(va) => va,
-            Flow::UnconditionalJump(va) => va,
-            Flow::ConditionalJump(va) => va,
-            Flow::ConditionalMove(va) => va,
-        }
-    }
-
     /// create a new Flow with the va swapped out for the given va.
     /// useful when you have a flow edge that you want to reverse
     /// (e.g. from successor to predecessor).
@@ -55,10 +40,11 @@ impl Flow {
     pub fn swap(&self, va: VA) -> Flow {
         match *self {
             Flow::Fallthrough(_) => Flow::Fallthrough(va),
-            Flow::Call(_) => Flow::Call(va),
-            Flow::UnconditionalJump(_) => Flow::UnconditionalJump(va),
+            Flow::Call(Target::Direct(_)) => Flow::Call(Target::Direct(va)),
+            Flow::Call(Target::Indirect(_)) => Flow::Call(Target::Indirect(va)),
+            Flow::UnconditionalJump(Target::Direct(_)) => Flow::UnconditionalJump(Target::Direct(va)),
+            Flow::UnconditionalJump(Target::Indirect(_)) => Flow::UnconditionalJump(Target::Indirect(va)),
             Flow::ConditionalJump(_) => Flow::ConditionalJump(va),
-            Flow::ConditionalMove(_) => Flow::ConditionalMove(va),
         }
     }
 }
@@ -75,9 +61,22 @@ pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     // all CALLs should have an operand.
     let op = dis::get_first_operand(insn).expect("CALL has no operand");
 
-    if let Ok(Some(dst)) = dis::get_operand_xref(module, va, insn, op) {
-        if is_executable(module, dst) {
-            return Ok(smallvec![Flow::Call(dst)]);
+    if let Ok(Some(target)) = dis::get_operand_xref(module, va, insn, op) {
+        match target {
+            Target::Direct(va) => {
+                if is_executable(module, va) {
+                    return Ok(smallvec![Flow::Call(target)]);
+                } else {
+                    // direct call to a non-executable part of the file,
+                    // which doesn't make sense.
+                    return Ok(smallvec![]);
+                }
+            }
+            Target::Indirect(_) => {
+                // indirect call ptr can be in non-executable region,
+                // such as the import table.
+                return Ok(smallvec![Flow::Call(target)]);
+            }
         }
     }
     Ok(smallvec![])
@@ -88,23 +87,25 @@ pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstructi
     // all JMPs should have an operand.
     let op = dis::get_first_operand(insn).expect("JMP has no target");
 
-    if op.ty == zydis::OperandType::MEMORY
-        && op.mem.scale == 0x4
-        && op.mem.base == zydis::Register::NONE
-        && op.mem.disp.has_displacement
-    {
-        // this looks like a switch table, e.g. `JMP [0x1000+ecx*4]`
-        // it should probably be solved via emulation.
-        // see analysis/pe/pointers.rs for some experiments looking at pointer tables.
-        Ok(smallvec![])
-    } else {
-        if let Ok(Some(dst)) = dis::get_operand_xref(module, va, insn, op) {
-            if is_executable(module, dst) {
-                return Ok(smallvec![Flow::UnconditionalJump(dst)]);
+    if let Ok(Some(target)) = dis::get_operand_xref(module, va, insn, op) {
+        match target {
+            Target::Direct(va) => {
+                if is_executable(module, va) {
+                    return Ok(smallvec![Flow::UnconditionalJump(target)]);
+                } else {
+                    // direct jump to a non-executable part of the file,
+                    // which doesn't make sense.
+                    return Ok(smallvec![]);
+                }
+            }
+            Target::Indirect(_) => {
+                // indirect jmp ptr can be in non-executable region,
+                // such as switch table.
+                return Ok(smallvec![Flow::UnconditionalJump(target)]);
             }
         }
-        Ok(smallvec![])
     }
+    Ok(smallvec![])
 }
 
 pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
@@ -112,17 +113,16 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     // all conditional jumps should have an operand.
     let op = dis::get_first_operand(insn).expect("CJMP has no target");
 
-    if let Ok(Some(dst)) = dis::get_operand_xref(module, va, insn, op) {
+    if let Ok(Some(Target::Direct(dst))) = dis::get_operand_xref(module, va, insn, op) {
         if is_executable(module, dst) {
             return Ok(smallvec![Flow::ConditionalJump(dst)]);
+        } else {
+            // conditional jump to a non-executable part of the file,
+            // which doesn't make sense.
+            return Ok(smallvec![]);
         }
     }
     Ok(smallvec![])
-}
-
-pub fn get_cmov_insn_flow(va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
-    let next = va + insn.length as u64;
-    Ok(smallvec![Flow::ConditionalMove(next)])
 }
 
 pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
@@ -170,7 +170,7 @@ pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) 
         | zydis::Mnemonic::CMOVO
         | zydis::Mnemonic::CMOVP
         | zydis::Mnemonic::CMOVS
-        | zydis::Mnemonic::CMOVZ => get_cmov_insn_flow(va, insn)?,
+        | zydis::Mnemonic::CMOVZ => smallvec![],
 
         // TODO: syscall, sysexit, sysret, vmcall, vmmcall
         _ => smallvec![],
@@ -193,8 +193,16 @@ mod tests {
         // 90              NOP
         let module = load_shellcode32(b"\xE8\x00\x00\x00\x00\x90");
         let insn = read_insn(&module, 0x0);
+
         let flows = get_call_insn_flow(&module, 0x0, &insn).unwrap();
-        assert_eq!(flows[0].va(), 0x5);
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::Call(Target::Direct(0x5)));
+
+        let flows = get_insn_flow(&module, 0x0, &insn).unwrap();
+        // two flows: call and fallthrough
+        assert_eq!(flows.len(), 2);
+        assert_eq!(flows[0], Flow::Call(Target::Direct(0x5)));
+        assert_eq!(flows[1], Flow::Fallthrough(0x5));
     }
 
     #[test]
@@ -203,19 +211,34 @@ mod tests {
         // 90              NOP
         let module = load_shellcode32(b"\xE9\x00\x00\x00\x00\x90");
         let insn = read_insn(&module, 0x0);
+
         let flows = get_jmp_insn_flow(&module, 0x0, &insn).unwrap();
-        assert_eq!(flows[0].va(), 0x5);
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::UnconditionalJump(Target::Direct(0x5)));
+
+        let flows = get_insn_flow(&module, 0x0, &insn).unwrap();
+        // one flow: jmp
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::UnconditionalJump(Target::Direct(0x5)));
     }
 
     #[test]
     fn test_get_cjmp_insn_flow() {
-        // 75 01 JNZ $+1
+        // 75 01 JNZ $+3
         // CC    BREAK
         // 90    NOP
         let module = load_shellcode32(b"\x75\x01\xCC\x90");
         let insn = read_insn(&module, 0x0);
+
         let flows = get_cjmp_insn_flow(&module, 0x0, &insn).unwrap();
-        assert_eq!(flows[0].va(), 0x3);
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::ConditionalJump(0x3));
+
+        let flows = get_insn_flow(&module, 0x0, &insn).unwrap();
+        // two flows: fallthrough and conditional jump
+        assert_eq!(flows.len(), 2);
+        assert_eq!(flows[0], Flow::ConditionalJump(0x3));
+        assert_eq!(flows[1], Flow::Fallthrough(0x2));
     }
 
     #[test]
@@ -224,7 +247,9 @@ mod tests {
         // 90        NOP
         let module = load_shellcode32(b"\x0F\x44\xC3\x90");
         let insn = read_insn(&module, 0x0);
-        let flows = get_cmov_insn_flow(0x0, &insn).unwrap();
-        assert_eq!(flows[0].va(), 0x3);
+
+        let flows = get_insn_flow(&module, 0x0, &insn).unwrap();
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::Fallthrough(0x3));
     }
 }

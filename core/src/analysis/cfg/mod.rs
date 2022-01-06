@@ -8,9 +8,10 @@ use crate::{
     analysis::{
         cfg::flow::{Flow, Flows},
         dis,
+        dis::Target,
     },
     aspace::{AbsoluteAddressSpace, AddressSpace},
-    module::Module,
+    module::{Module, Permissions},
     VA,
 };
 
@@ -140,9 +141,17 @@ impl InstructionIndex {
             }
             for target in successors.iter() {
                 match target {
+                    // fallthroughs went at the front
                     Flow::Fallthrough(_) => {}
-                    Flow::Call(va) => queue.push_back(*va),
-                    _ => queue.push_front(target.va()),
+
+                    // explore across direct flows
+                    Flow::Call(Target::Direct(va)) => queue.push_back(*va),
+                    Flow::UnconditionalJump(Target::Direct(va)) => queue.push_back(*va),
+                    Flow::ConditionalJump(va) => queue.push_back(*va),
+
+                    // but we can't resolve indirect flows
+                    Flow::Call(Target::Indirect(_)) => {}
+                    Flow::UnconditionalJump(Target::Indirect(_)) => {}
                 }
             }
 
@@ -164,7 +173,7 @@ pub struct FlowIndex {
 }
 
 impl FlowIndex {
-    fn build_index(insns: &InstructionIndex) -> Result<FlowIndex> {
+    fn build_index(module: &Module, insns: &InstructionIndex) -> Result<FlowIndex> {
         let mut idx = FlowIndex {
             // each of these maps is guaranteed to have an entry for each of the given instructions.
             flows_by_src: Default::default(),
@@ -176,8 +185,26 @@ impl FlowIndex {
             idx.flows_by_dst.entry(src).or_default();
 
             for succ in insn.successors.iter() {
-                let dst = succ.va();
-                idx.flows_by_dst.entry(dst).or_default().push(succ.swap(src));
+                let dst = match succ {
+                    // direct flows
+                    Flow::Fallthrough(va) => va,
+                    Flow::Call(Target::Direct(va)) => va,
+                    Flow::UnconditionalJump(Target::Direct(va)) => va,
+                    Flow::ConditionalJump(va) => va,
+
+                    // indirect flows
+                    Flow::Call(Target::Indirect(ptr)) | Flow::UnconditionalJump(Target::Indirect(ptr)) => {
+                        if module.probe_va(*ptr, Permissions::RWX) {
+                            ptr
+                        } else {
+                            // the pointer is not present in this address space,
+                            // so don't consider it a pointer.
+                            continue;
+                        }
+                    }
+                };
+
+                idx.flows_by_dst.entry(*dst).or_default().push(succ.swap(src));
             }
         }
 
@@ -202,11 +229,7 @@ pub struct BasicBlockIndex {
 // that is, not a call flow or cmov, but a jump/fallthrough/etc.
 
 fn edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(
-        flows
-            .iter()
-            .filter(|flow| !matches!(flow, Flow::Call(_) | Flow::ConditionalMove(_))),
-    )
+    Box::new(flows.iter().filter(|flow| !matches!(flow, Flow::Call(_))))
 }
 
 fn fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
@@ -217,12 +240,39 @@ fn non_fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Fl
     Box::new(edges(flows).filter(|flow| !matches!(flow, Flow::Fallthrough(_))))
 }
 
+fn direct_edges<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
+    Box::new(i.filter(|f| match f {
+        // direct
+        Flow::Fallthrough(_) => true,
+        Flow::Call(Target::Direct(_)) => true,
+        Flow::UnconditionalJump(Target::Direct(_)) => true,
+        Flow::ConditionalJump(_) => true,
+        // indirect
+        Flow::Call(Target::Indirect(_)) => false,
+        Flow::UnconditionalJump(Target::Indirect(_)) => false,
+    }))
+}
+
+// careful, don't treat direct and indirect edges the same!
+// probably filter to direct or indirect edges first.
+fn edge_targets<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Iterator<Item = VA> + 'a> {
+    Box::new(i.map(|f| match f {
+        // direct
+        Flow::Fallthrough(va) => *va,
+        Flow::Call(Target::Direct(va)) => *va,
+        Flow::UnconditionalJump(Target::Direct(va)) => *va,
+        Flow::ConditionalJump(va) => *va,
+        // indirect
+        Flow::Call(Target::Indirect(ptr)) => *ptr,
+        Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
+    }))
+}
+
 fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
     i.next().is_none()
 }
 
-// given instructions and flows, iterate over the tuples (va, insn, preds,
-// succs)
+// iterate over the tuples (va, insn, preds, succs)
 fn iter_insn_flows<'a>(
     insns: &'a InstructionIndex,
     flows: &'a FlowIndex,
@@ -236,6 +286,7 @@ fn iter_insn_flows<'a>(
             let (&va1, successors) = flows_by_src_iter.next().expect("flow index (src) out of sync");
             let (&va2, predecessors) = flows_by_dst_iter.next().expect("flow index (dst) out of sync");
 
+            // TODO: this needs work as there can now be flows to non-insns
             assert_eq!(insnva, va1);
             assert_eq!(insnva, va2);
 
@@ -281,8 +332,8 @@ impl BasicBlockIndex {
 
                 // its a bb start, because the instruction that fallthrough here
                 // also branched somewhere else.
-                for pred in fallthrough_edges(preds) {
-                    if !empty(non_fallthrough_edges(&flows.flows_by_src[&pred.va()])) {
+                for pred in edge_targets(fallthrough_edges(preds)) {
+                    if !empty(non_fallthrough_edges(&flows.flows_by_src[&pred])) {
                         return true;
                     }
                 }
@@ -459,8 +510,8 @@ pub struct CFG {
 }
 
 impl CFG {
-    pub fn from_instructions(insns: InstructionIndex) -> Result<CFG> {
-        let flows = FlowIndex::build_index(&insns)?;
+    pub fn from_instructions(module: &Module, insns: InstructionIndex) -> Result<CFG> {
+        let flows = FlowIndex::build_index(module, &insns)?;
         let basic_blocks = BasicBlockIndex::build_index(&insns, &flows)?;
 
         Ok(CFG {
@@ -492,13 +543,15 @@ impl CFG {
                 let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
-                for succ in edges(succs).map(|flow| flow.va()) {
+                for succ in edge_targets(direct_edges(edges(succs))) {
                     log::debug!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
                     queue.push_back(succ);
                 }
 
                 let preds = &self.flows.flows_by_dst[&bb.address];
-                for pred in edges(preds).map(|flow| self.basic_blocks.blocks_by_last_address[&flow.va()]) {
+                for pred in
+                    edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
+                {
                     log::debug!("reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
                     queue.push_back(pred);
                 }
@@ -528,7 +581,7 @@ mod tests {
 
         insns.build_index(&module, 0x0)?;
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 1);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 1);
@@ -545,7 +598,7 @@ mod tests {
 
         insns.build_index(&module, 0x0)?;
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 2);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 1);
@@ -564,7 +617,7 @@ mod tests {
 
         insns.build_index(&module, 0x0)?;
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 3);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
@@ -581,7 +634,7 @@ mod tests {
 
         insns.build_index(&module, 0x0)?;
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 2);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 1);
@@ -600,7 +653,7 @@ mod tests {
         insns.build_index(&module, 0x0)?;
         insns.build_index(&module, 0x2)?;
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 2);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 2);
@@ -653,7 +706,7 @@ mod tests {
         //             ----
         // EB  FF  C0  C3  C3  C3
         assert_eq!(insns.insns_by_address.len(), 5);
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
         // [jmp] -> [rol, ret]
         // [inc, ret]
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
@@ -675,10 +728,10 @@ mod tests {
             insns.build_index(&pe.module, exp)?;
         }
 
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&pe.module, insns)?;
 
-        assert_eq!(cfg.insns.insns_by_address.len(), 84369);
-        assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 17858);
+        assert_eq!(cfg.insns.insns_by_address.len(), 84368);
+        assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 17857);
 
         Ok(())
     }
@@ -697,7 +750,7 @@ mod tests {
         let module = load_shellcode32(b"\xB8\x01\x00\x00\x00\x75\x01\xC3\xB8\x02\x00\x00\x00\x75\x01\xC3\xC3");
         let mut insns: InstructionIndex = Default::default();
         insns.build_index(&module, 0x0)?;
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 7);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 5);
@@ -728,7 +781,7 @@ mod tests {
         let mut insns: InstructionIndex = Default::default();
         insns.build_index(&module, 0x0)?;
         insns.build_index(&module, 0x1)?;
-        let cfg = CFG::from_instructions(insns)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
 
         assert_eq!(cfg.insns.insns_by_address.len(), 4);
         // [0: mov] -> [5: ret]

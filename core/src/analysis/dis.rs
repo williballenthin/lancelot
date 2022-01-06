@@ -139,6 +139,19 @@ pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::Dec
         .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    // if direct, the address of the destination.
+    Direct(VA),
+    // if indirect, the VA is the address of the pointer.
+    // e.g. 0x401000 in call [0x401000]
+    // this may very well be zero or other junk.
+    // this value might be useful to lookup against:
+    //   - imports
+    //   - jump tables
+    Indirect(VA),
+}
+
 // for a memory operand, like `mov eax, [0x401000]`
 // fetch the pointer, rather than the dest,
 // so like `0x401000`.
@@ -230,7 +243,7 @@ pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>
     // ref: https://c9x.me/x86/html/file_module_x86_id_147.html
     //
     // > Far Jumps in Real-Address or Virtual-8086 Mode.
-    // > When executing a far jump in realaddress or virtual-8086 mode,
+    // > When executing a far jump in real address or virtual-8086 mode,
     // > the processor jumps to the code segment and offset specified with the
     // > target operand. Here the target operand specifies an absolute far
     // > address either directly with a pointer (ptr16:16 or ptr16:32) or
@@ -301,24 +314,36 @@ pub fn get_operand_xref(
     va: VA,
     insn: &zydis::DecodedInstruction,
     op: &zydis::DecodedOperand,
-) -> Result<Option<VA>> {
+) -> Result<Option<Target>> {
     match op.ty {
         // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
         //           0x0000000000001041:                       call    [0x0000000000079980]
-        zydis::OperandType::MEMORY => get_memory_operand_xref(module, va, insn, op),
+        zydis::OperandType::MEMORY => match get_memory_operand_ptr(va, insn, op) {
+            Ok(Some(ptr)) => Ok(Some(Target::Indirect(ptr))),
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        },
 
         // like: EA 33 D2 B9 60 80 40  jmp  far ptr 4080h:60B9D233h
         // "ptr": {
         //    "segment": 16512,
         //    "offset": 1622790707
         // },
-        zydis::OperandType::POINTER => get_pointer_operand_xref(op),
+        zydis::OperandType::POINTER => match get_pointer_operand_xref(op) {
+            Ok(Some(ptr)) => Ok(Some(Target::Indirect(ptr))),
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        },
 
-        zydis::OperandType::IMMEDIATE => get_immediate_operand_xref(module, va, insn, op),
+        zydis::OperandType::IMMEDIATE => match get_immediate_operand_xref(module, va, insn, op) {
+            Ok(Some(va)) => Ok(Some(Target::Direct(va))),
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        },
 
-        // like: CALL rax
+        // like: CALL [rax]
         // which cannot be resolved without emulation.
-        zydis::OperandType::REGISTER => Ok(None),
+        zydis::OperandType::REGISTER => Ok(Some(Target::Indirect(0x0))),
 
         zydis::OperandType::UNUSED => Ok(None),
     }
