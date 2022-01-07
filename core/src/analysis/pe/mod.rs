@@ -30,7 +30,7 @@ pub mod safeseh;
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ImportedSymbol {
     Ordinal(u32),
-    Name(smol_str::SmolStr),
+    Name(String),
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -38,7 +38,7 @@ pub struct Import {
     /// the address of the First Thunk.
     /// that is, the thing that will be referenced by code.
     pub address: VA,
-    pub dll:     smol_str::SmolStr,
+    pub dll:     String,
     pub symbol:  ImportedSymbol,
 }
 
@@ -73,7 +73,12 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
         let psize = pe.module.arch.pointer_size();
 
         for import_descriptor in imports::read_import_descriptors(pe, import_directory) {
-            let dll = smol_str::SmolStr::new(pe.module.address_space.relative.read_ascii(import_descriptor.name, 1)?);
+            let dll = pe
+                .module
+                .address_space
+                .relative
+                .read_ascii(import_descriptor.name, 1)?
+                .to_lowercase();
             debug!("imports: {}", dll);
 
             for i in 0.. {
@@ -90,7 +95,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                         // asciiz name
                         let name = pe.module.address_space.relative.read_ascii(name_rva + 2, 1)?;
                         debug!("imports: {}!{}", dll, name);
-                        ImportedSymbol::Name(smol_str::SmolStr::new(name))
+                        ImportedSymbol::Name(name)
                     }
                     IMAGE_THUNK_DATA::Ordinal(ord) => {
                         debug!("imports: {}!#{}", dll, ord);
@@ -102,7 +107,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                     ft,
                     Import {
                         address: ft,
-                        dll: dll.clone(),
+                        dll: dll.to_string(),
                         symbol,
                     },
                 );
