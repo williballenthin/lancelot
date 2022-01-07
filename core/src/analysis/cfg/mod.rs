@@ -565,16 +565,71 @@ impl CFG {
 
         Box::new(iter)
     }
+}
 
-    // NB: the caller must rebuild the CFG after calling this.
-    // TODO: factor this out into a RAII/txn/etc. to enforce it.
-    pub fn prune_flow(&mut self, va: VA, flow: &Flow) {
+// routines for modifying a CFG.
+//
+// three steps:
+// 1. create batch,
+// 2. operate on batch, queueing up operations,
+// 3. commit batch, applying changes.
+//
+// this lets us collect a bunch of operations and apply them together,
+// rebuilding the basic blocks as a finalization step (we expect to be
+// semi-expensive).
+//
+//
+//     let mut batch: ChangeBatch = Default::default();
+//     batch.prune_notret_call(0x401000);
+//     batch.prune_notret_call(0x401103);
+//     batch.prune_notret_call(0x401205);
+//     cfg.commit(batch);
+//
+impl CFG {
+    //
+    // private implementations of change handling.
+    //
+    // these map to the members of the enum `Change`,
+    // and are dispatched to within `ChangeBatch.commit()`.
+    //
+
+    // remove a flow from a given address.
+    // this affects:
+    //   - cfg.insn.insns_by_address[va].flows
+    //   - cfg.flows.flows_by_src[va]
+    //   - cfg.flows.flows_by_dst[target]
+    //
+    // if the target is then unreferenced by flows
+    // (no flows to it), recursively remove its flows,
+    // and remove that instruction.
+    //
+    // this is useful in cases like:
+    //
+    //     0: clc
+    //     1: jnz 100
+    //     2: int3
+    //
+    // and we know the jump will always be taken.
+    // so we can remove the flow from 0x1 to 0x2,
+    // which, because the instruction at 0x2 has a single flow to it,
+    // will remove the instruction at 0x2 and onwards, recursively.
+    //
+    // note, this removes flows recursively "downwards",
+    // that is, following flows from src to dst.
+    // it does not remove flows "upwards".
+    fn prune_flow(&mut self, va: VA, flow: &Flow) {
         // remove flow from insn[va].flows
         // remove flow from flows.flows_by_src[va]
         // remove flow from flows.flows_by_dst[va]
         // if the target is now unreferenced:
         //   - recurse prune target instruction flows, and
         //   - remove target instruction
+        //
+        // at the moment, it removes flows recursively "downwards",
+        // that is, following flows from src to dst.
+        //
+        // it does not remove flows "upwards".
+        // this might be interesting, but not considered here.
 
         log::info!("prune: {:x?} at {:#x}", flow, va);
 
@@ -645,8 +700,17 @@ impl CFG {
     // prune fallthrough flows from the given call instruction,
     // leaving the call flow intact.
     //
-    // NB: the caller must rebuild the CFG after calling this.
-    pub fn prune_noret_call(&mut self, va: VA) {
+    // this is useful in cases like:
+    //
+    //   1: push 0
+    //   2: call [ExitProcess]
+    //   3: int3
+    //
+    // here, we should not consider the instructions at 0x3 (int3) and beyond.
+    // so, call `prune_noret_call` at 0x2 to remove the fallthrough
+    // (and ending the basic block)
+    // while maintaining the flow to ExitProcess.
+    fn prune_noret_call(&mut self, va: VA) {
         // va should be a call instruction.
         // it should have two flows:
         //   - call func
@@ -664,10 +728,41 @@ impl CFG {
         }
     }
 
-    pub fn rebuild(&mut self) {
+    fn rebuild(&mut self) {
         // this should never fail: database inconsistency: programmer error
         self.basic_blocks =
             BasicBlockIndex::build_index(&self.insns, &self.flows).expect("failed to rebuild CFG index");
+    }
+
+    pub fn commit(&mut self, batch: ChangeBatch) {
+        for change in batch.changes.into_iter() {
+            match change {
+                Change::PruneFlow { va, flow } => self.prune_flow(va, &flow),
+                Change::PruneNoretCall { va } => self.prune_noret_call(va),
+            }
+        }
+
+        self.rebuild();
+    }
+}
+
+enum Change {
+    PruneFlow { va: VA, flow: Flow },
+    PruneNoretCall { va: VA },
+}
+
+#[derive(Default)]
+pub struct ChangeBatch {
+    changes: Vec<Change>,
+}
+
+impl ChangeBatch {
+    pub fn prune_flow(&mut self, va: VA, flow: Flow) {
+        self.changes.push(Change::PruneFlow { va, flow });
+    }
+
+    pub fn prune_noret_call(&mut self, va: VA) {
+        self.changes.push(Change::PruneNoretCall { va });
     }
 }
 
@@ -927,8 +1022,9 @@ mod tests {
             let mut cfg = CFG::from_instructions(&module, insns)?;
 
             let fallthrough = cfg.flows.flows_by_src[&0x1][0].clone();
-            cfg.prune_flow(0x1, &fallthrough);
-            cfg.rebuild();
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x1, fallthrough);
+            cfg.commit(batch);
 
             // 0: 90 nop
             // |
@@ -975,8 +1071,9 @@ mod tests {
             // but not any of the instructions.
 
             let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x7]).next().unwrap().clone();
-            cfg.prune_flow(0x7, &fallthrough);
-            cfg.rebuild();
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x7, fallthrough);
+            cfg.commit(batch);
 
             //    ┌─────────────────────────────────┐
             //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
@@ -1007,8 +1104,9 @@ mod tests {
             // and also the basic block at 0x7 (mov eax, 0x2).
 
             let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x5]).next().unwrap().clone();
-            cfg.prune_flow(0x5, &fallthrough);
-            cfg.rebuild();
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x5, fallthrough);
+            cfg.commit(batch);
 
             //    ┌─────────────────────────────────┐
             //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
