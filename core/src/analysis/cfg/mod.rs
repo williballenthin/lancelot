@@ -565,6 +565,82 @@ impl CFG {
 
         Box::new(iter)
     }
+
+    pub fn get_reaches_from<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+        log::debug!("reaches from: {:#x}", va);
+        let mut seen: BTreeSet<VA> = Default::default();
+
+        if !self.basic_blocks.blocks_by_address.contains_key(&va) {
+            log::warn!("reaches from: address is not a basic block: {:#x}", va);
+            return Box::new(std::iter::empty());
+        }
+
+        let mut queue: VecDeque<VA> = Default::default();
+        queue.push_back(va);
+
+        let iter = std::iter::from_fn(move || loop {
+            if let Some(bbva) = queue.pop_front() {
+                if seen.contains(&bbva) {
+                    continue;
+                }
+                log::debug!("reaches from: {:#x}: basic block: {:#x}", va, bbva);
+
+                let bb = &self.basic_blocks.blocks_by_address[&bbva];
+
+                let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
+                for succ in edge_targets(direct_edges(edges(succs))) {
+                    log::debug!("reaches from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
+                    queue.push_back(succ);
+                }
+
+                seen.insert(bbva);
+                return Some(bb);
+            } else {
+                return None;
+            }
+        });
+
+        Box::new(iter)
+    }
+
+    pub fn get_reaches_to<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+        log::debug!("reaches to: {:#x}", va);
+        let mut seen: BTreeSet<VA> = Default::default();
+
+        if !self.basic_blocks.blocks_by_address.contains_key(&va) {
+            log::warn!("reaches to: address is not a basic block: {:#x}", va);
+            return Box::new(std::iter::empty());
+        }
+
+        let mut queue: VecDeque<VA> = Default::default();
+        queue.push_back(va);
+
+        let iter = std::iter::from_fn(move || loop {
+            if let Some(bbva) = queue.pop_front() {
+                if seen.contains(&bbva) {
+                    continue;
+                }
+                log::debug!("reaches to: {:#x}: basic block: {:#x}", va, bbva);
+
+                let bb = &self.basic_blocks.blocks_by_address[&bbva];
+
+                let preds = &self.flows.flows_by_dst[&bb.address];
+                for pred in
+                    edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
+                {
+                    log::debug!("reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
+                    queue.push_back(pred);
+                }
+
+                seen.insert(bbva);
+                return Some(bb);
+            } else {
+                return None;
+            }
+        });
+
+        Box::new(iter)
+    }
 }
 
 // routines for modifying a CFG.
