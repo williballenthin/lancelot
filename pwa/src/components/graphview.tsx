@@ -219,7 +219,7 @@ function graph_add_basic_block(ws: Workspace, g: dagre.graphlib.Graph, bb: lance
 }
 
 function graph_add_edge(g: dagre.graphlib.Graph, bb: lancelot.BasicBlock, flow: lancelot.Flow) {
-    g.setEdge(bb.address.toString(0x10), flow.target.toString(0x10), {
+    g.setEdge(bb.address.toString(0x10), flow.target[1].toString(0x10), {
         // edge properties:
         //
         // minlen, default: 1
