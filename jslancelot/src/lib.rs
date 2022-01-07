@@ -211,15 +211,30 @@ impl Flow {
             lancelot::analysis::cfg::flow::Flow::ConditionalJump(_) => {
                 JsValue::from(wasm_bindgen::intern("conditional jump"))
             }
-            lancelot::analysis::cfg::flow::Flow::ConditionalMove(_) => {
-                JsValue::from(wasm_bindgen::intern("conditional move"))
-            }
         }
     }
 
     #[wasm_bindgen(getter)]
-    pub fn target(&self) -> u64 {
-        self.inner.va()
+    pub fn target(&self) -> Vec<JsValue> {
+        use lancelot::analysis::{cfg::flow, dis::Target};
+        match self.inner {
+            flow::Flow::Fallthrough(va) => Vec::from([JsValue::from(wasm_bindgen::intern("direct")), va.into()]),
+            flow::Flow::ConditionalJump(va) => Vec::from([JsValue::from(wasm_bindgen::intern("direct")), va.into()]),
+
+            flow::Flow::Call(Target::Direct(va)) => {
+                Vec::from([JsValue::from(wasm_bindgen::intern("direct")), va.into()])
+            }
+            flow::Flow::Call(Target::Indirect(ptr)) => {
+                Vec::from([JsValue::from(wasm_bindgen::intern("indirect")), ptr.into()])
+            }
+
+            flow::Flow::UnconditionalJump(Target::Direct(va)) => {
+                Vec::from([JsValue::from(wasm_bindgen::intern("direct")), va.into()])
+            }
+            flow::Flow::UnconditionalJump(Target::Indirect(ptr)) => {
+                Vec::from([JsValue::from(wasm_bindgen::intern("indirect")), ptr.into()])
+            }
+        }
     }
 }
 
@@ -416,7 +431,9 @@ impl PE {
         for function in functions.iter() {
             insns.build_index(&self.inner.module, *function).map_err(to_js_err)?;
         }
-        let cfg = cfg::CFG::from_instructions(insns).map_err(to_js_err)?;
+        let mut cfg = cfg::CFG::from_instructions(&self.inner.module, insns).map_err(to_js_err)?;
+
+        lancelot::analysis::pe::noret_imports::cfg_prune_noret_imports(&self.inner, &mut cfg).map_err(to_js_err)?;
 
         for bb in cfg.basic_blocks.blocks_by_address.values() {
             // estimate each instruction is 2 bytes, which is probably too conservative,
