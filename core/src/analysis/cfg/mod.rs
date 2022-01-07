@@ -4,6 +4,8 @@ use anyhow::Result;
 
 pub mod flow;
 
+pub mod noret;
+
 use crate::{
     analysis::{
         cfg::flow::{Flow, Flows},

@@ -4,8 +4,7 @@ use anyhow::Result;
 
 use crate::{
     analysis::{
-        cfg::{flow::Flow, ChangeBatch, CFG},
-        dis::Target,
+        cfg::CFG,
         pe::{self, ImportedSymbol},
     },
     loader::pe::PE,
@@ -22,34 +21,10 @@ pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<()> {
         .map(|imp| imp.address)
         .collect::<BTreeSet<_>>();
 
-    let mut batch: ChangeBatch = Default::default();
-    for impva in noret.iter() {
-        for flow in cfg
-            .flows
-            .flows_by_dst
-            .get(impva)
-            .unwrap_or(&Default::default())
-            .clone()
-            .iter()
-        {
-            let insn = match flow {
-                // references to the import table should all be indirect,
-                // like: call [CreateProcess]
-                // and never like: call CreateProcess
-
-                // indirect: what we want.
-                Flow::Call(Target::Indirect(ptr)) => ptr,
-                Flow::UnconditionalJump(Target::Indirect(ptr)) => ptr,
-
-                // direct: shouldn't see this.
-                _ => continue,
-            };
-
-            log::info!("call from {:#x} to noret import {:#x}", insn, impva);
-            batch.prune_noret_call(*insn);
-        }
+    for &noret_import in noret.iter() {
+        log::info!("noret import {:#x}", noret_import);
+        crate::analysis::cfg::noret::cfg_mark_noret(&pe.module, cfg, noret_import)?;
     }
-    cfg.commit(batch);
 
     Ok(())
 }
@@ -109,6 +84,33 @@ mod tests {
 
         assert!(cfg.insns.insns_by_address.contains_key(&0x402D6B));
         assert!(cfg.insns.insns_by_address.contains_key(&0x402D71).not());
+
+        // _report_failure is part of __security_check_cookie (tail call),
+        // which is not noret.
+        //
+        // ___crtExitProcess is noret:
+        //
+        //    .text:00401C4E ; =============== S U B R O U T I N E
+        // =======================================    .text:00401C4E
+        //    .text:00401C4E ; Attributes: library function noreturn
+        //    .text:00401C4E
+        //    .text:00401C4E ; void __cdecl __noreturn __crtExitProcess(UINT uExitCode)
+        //    .text:00401C4E ___crtExitProcess proc near             ; CODE XREF:
+        // start+EA↑p    .text:00401C4E
+        // ; _doexit+BA↓p
+        //
+        // which has a call to it like:
+        //
+        //     .text:00401161                 call    __NMSG_WRITE
+        //     .text:00401166                 push    0FFh            ; uExitCode
+        //     .text:0040116B                 call    ___crtExitProcess
+        //     .text:00401170 ;
+        // ---------------------------------------------------------------------------
+        //     .text:00401170                 db  59h ; Y
+        //     .text:00401171                 db  59h ; Y
+
+        assert!(cfg.insns.insns_by_address.contains_key(&0x40116B));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x401170).not());
 
         Ok(())
     }
