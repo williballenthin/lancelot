@@ -27,6 +27,9 @@ pub mod pointers;
 pub mod runtime_functions;
 pub mod safeseh;
 
+#[cfg(feature = "disassembler")]
+pub mod noret_imports;
+
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ImportedSymbol {
     Ordinal(u32),
