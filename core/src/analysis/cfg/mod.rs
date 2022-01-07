@@ -15,7 +15,7 @@ use crate::{
     VA,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InstructionDescriptor {
     pub length:     u8,
     pub successors: Flows,
@@ -565,6 +565,110 @@ impl CFG {
 
         Box::new(iter)
     }
+
+    // NB: the caller must rebuild the CFG after calling this.
+    // TODO: factor this out into a RAII/txn/etc. to enforce it.
+    pub fn prune_flow(&mut self, va: VA, flow: &Flow) {
+        // remove flow from insn[va].flows
+        // remove flow from flows.flows_by_src[va]
+        // remove flow from flows.flows_by_dst[va]
+        // if the target is now unreferenced:
+        //   - recurse prune target instruction flows, and
+        //   - remove target instruction
+
+        log::info!("prune: {:x?} at {:#x}", flow, va);
+
+        self.insns.insns_by_address.entry(va).and_modify(|insn| {
+            insn.successors = insn.successors.clone().into_iter().filter(|s| s != flow).collect();
+            log::info!("prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
+        });
+
+        self.flows.flows_by_src.entry(va).and_modify(|succs| {
+            *succs = succs.clone().into_iter().filter(|s| s != flow).collect();
+            log::info!("prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
+        });
+
+        let target = match flow {
+            Flow::Fallthrough(va) => *va,
+            Flow::Call(Target::Direct(va)) => *va,
+            Flow::UnconditionalJump(Target::Direct(va)) => *va,
+            Flow::ConditionalJump(va) => *va,
+            Flow::Call(Target::Indirect(ptr)) => *ptr,
+            Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
+        };
+        log::info!("prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
+
+        self.flows.flows_by_dst.entry(target).and_modify(|preds| {
+            *preds = preds.clone().into_iter().filter(|s| s != &flow.swap(va)).collect();
+            log::info!(
+                "prune: {:x?} at {:#x}: target: {:#x} preds: {:x?}",
+                flow,
+                va,
+                target,
+                preds
+            );
+        });
+
+        match flow {
+            // direct: potentially recurse prune target insn
+            Flow::Fallthrough(_) => {}
+            Flow::Call(Target::Direct(_)) => {}
+            Flow::UnconditionalJump(Target::Direct(_)) => {}
+            Flow::ConditionalJump(_) => {}
+
+            // indirect: we're good, no recurse necessary.
+            Flow::Call(Target::Indirect(_)) => {
+                return;
+            }
+            Flow::UnconditionalJump(Target::Indirect(_)) => {
+                return;
+            }
+        };
+
+        // target has no flows pointing to it,
+        // so its no longer an instruction.
+        // remove it, and recurse any flows from it.
+        if self.flows.flows_by_dst[&target].len() == 0 {
+            log::info!("prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
+            for flow in self.flows.flows_by_src[&target].clone().iter() {
+                self.prune_flow(target, flow);
+            }
+
+            self.insns.insns_by_address.remove(&target);
+            self.flows.flows_by_src.remove(&target);
+            self.flows.flows_by_dst.remove(&target);
+            // TODO: this won't break a cycle/loop. but that sounds generally
+            // hard.
+        }
+    }
+
+    // prune fallthrough flows from the given call instruction,
+    // leaving the call flow intact.
+    //
+    // NB: the caller must rebuild the CFG after calling this.
+    pub fn prune_noret_call(&mut self, va: VA) {
+        // va should be a call instruction.
+        // it should have two flows:
+        //   - call func
+        //   - fallthrough
+        // keep the call, prune the fallthrough
+
+        // ensure this is an instruction
+        // or programming error.
+        assert!(self.insns.insns_by_address.contains_key(&va));
+
+        // use a copy so we can modify the indices.
+        let succs = self.flows.flows_by_src[&va].clone();
+        for fallthrough in fallthrough_edges(&succs) {
+            self.prune_flow(va, fallthrough);
+        }
+    }
+
+    pub fn rebuild(&mut self) {
+        // this should never fail: database inconsistency: programmer error
+        self.basic_blocks =
+            BasicBlockIndex::build_index(&self.insns, &self.flows).expect("failed to rebuild CFG index");
+    }
 }
 
 #[cfg(test)]
@@ -798,5 +902,140 @@ mod tests {
         assert_eq!(&blocks[..], [0x0, 0x1, 0x5]);
 
         Ok(())
+    }
+
+    mod prune {
+        use std::ops::Not;
+
+        use super::*;
+
+        #[test]
+        fn prune_flow_simple_bb() -> Result<()> {
+            // 0: 90 nop
+            // |
+            // V fallthrough
+            // 1: 90 nop
+            // |
+            // V fallthrough
+            // 2: 90 nop
+            // |
+            // V fallthrough
+            // 3: C3 ret
+            let module = load_shellcode32(b"\x90\x90\x90\xC3");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            let fallthrough = cfg.flows.flows_by_src[&0x1][0].clone();
+            cfg.prune_flow(0x1, &fallthrough);
+            cfg.rebuild();
+
+            // 0: 90 nop
+            // |
+            // V fallthrough
+            // 1: 90 nop
+            //
+            // db 90 c3
+            assert_eq!(cfg.insns.insns_by_address.len(), 2);
+            assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 1);
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0].length, 2);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x1));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x2).not());
+            assert!(cfg.insns.insns_by_address.contains_key(&0x3).not());
+
+            Ok(())
+        }
+
+        #[test]
+        fn prune_flow_few_bbs() -> Result<()> {
+            //    ┌─────────────────────────────────┐
+            //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
+            //    │ 5: 75 05           jne      C   │
+            //    └─────────────┬─┬─────────────────┘
+            //      fallthrough │ │
+            //                  │ └────────────────────┐
+            //                  ▼                      │
+            //    ┌─────────────────────────────────┐  │ cond jump
+            //    │ 7: B8 02 00 00 00  mov eax, 02  │  │
+            //    └─────────────┬───────────────────┘  │
+            //      fallthrough │                      │
+            //                  │ ┌────────────────────┘
+            //                  ▼ ▼
+            //    ┌─────────────────────────────────┐
+            //    │ C: C3              ret          │
+            //    └─────────────────────────────────┘
+            let module = load_shellcode32(b"\xB8\x01\x00\x00\x00\x75\x05\xB8\x02\x00\x00\x00\xC3");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            // cut second fallthrough, which should remove the edge,
+            // but not any of the instructions.
+
+            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x7]).next().unwrap().clone();
+            cfg.prune_flow(0x7, &fallthrough);
+            cfg.rebuild();
+
+            //    ┌─────────────────────────────────┐
+            //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
+            //    │ 5: 75 05           jne      C   │
+            //    └─────────────┬─┬─────────────────┘
+            //      fallthrough │ │
+            //                  │ └────────────────────┐
+            //                  ▼                      │
+            //    ┌─────────────────────────────────┐  │ cond jump
+            //    │ 7: B8 02 00 00 00  mov eax, 02  │  │
+            //    └─────────────────────────────────┘  │
+            //                                         │
+            //                    ┌────────────────────┘
+            //                    ▼
+            //    ┌─────────────────────────────────┐
+            //    │ C: C3              ret          │
+            //    └─────────────────────────────────┘
+
+            assert_eq!(cfg.insns.insns_by_address.len(), 4);
+            assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x5));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x7));
+            assert!(cfg.insns.insns_by_address.contains_key(&0xC));
+
+            // cut the first fallthrough, which should remove the edge,
+            // and also the basic block at 0x7 (mov eax, 0x2).
+
+            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x5]).next().unwrap().clone();
+            cfg.prune_flow(0x5, &fallthrough);
+            cfg.rebuild();
+
+            //    ┌─────────────────────────────────┐
+            //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
+            //    │ 5: 75 05           jne      C   │
+            //    └───────────────┬─────────────────┘
+            //                    │
+            //                    └────────────────────┐
+            //                                         │
+            //    ┌─────────────────────────────────┐  │ cond jump
+            //    │ 7: B8 02 00 00 00               │  │
+            //    └─────────────────────────────────┘  │
+            //                                         │
+            //                    ┌────────────────────┘
+            //                    ▼
+            //    ┌─────────────────────────────────┐
+            //    │ C: C3              ret          │
+            //    └─────────────────────────────────┘
+
+            assert_eq!(cfg.insns.insns_by_address.len(), 3);
+            assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 2);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x5));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x7).not());
+            assert!(cfg.insns.insns_by_address.contains_key(&0xC));
+
+            Ok(())
+        }
     }
 }
