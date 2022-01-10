@@ -433,4 +433,115 @@ mod tests {
 
         assert_eq!(xref.is_some(), false, "does not have immediate operand");
     }
+
+    #[test]
+    fn test_format_insn() {
+        use crate::analysis::dis::zydis;
+
+        let buf = get_buf(Rsrc::K32);
+        let pe = crate::loader::pe::PE::from_bytes(&buf).unwrap();
+
+        let mut formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
+
+        struct UserData {
+            names:                  std::collections::BTreeMap<VA, String>,
+            orig_print_address_abs: Option<zydis::Hook>,
+        }
+
+        let mut userdata = Box::new(UserData {
+            names:                  Default::default(),
+            orig_print_address_abs: None,
+        });
+
+        let orig = formatter
+            .set_print_address_abs(Box::new(
+                |formatter: &zydis::Formatter,
+                 buf: &mut zydis::FormatterBuffer,
+                 ctx: &mut zydis::FormatterContext,
+                 userdata: Option<&mut dyn core::any::Any>|
+                 -> zydis::Result<()> {
+                    // programming error: userdata must be provided.
+                    // TODO: enforce via types.
+                    let userdata = userdata.expect("no userdata");
+
+                    // programming error: userdata must be a Box<UserData>.
+                    // TODO: enforce via types.
+                    let userdata = userdata.downcast_ref::<Box<UserData>>().expect("incorrect userdata");
+
+                    let absolute_address = unsafe {
+                        // safety: the insn and operands come from zydis, so we assume they contain
+                        // valid data.
+                        let insn: &zydis::DecodedInstruction = &*ctx.instruction;
+                        let op: &zydis::DecodedOperand = &*ctx.operand;
+                        insn.calc_absolute_address(ctx.runtime_address, op)
+                            .expect("failed to calculate absolute address")
+                    };
+
+                    if let Some(name) = userdata.names.get(&absolute_address) {
+                        // name is found in map, use that.
+                        return buf.get_string()?.append(name);
+                    } else {
+                        // name is not found, use original formatter.
+
+                        // programming error: the original hook must be recorded.
+                        // TODO: enforce via types.
+                        let orig = userdata.orig_print_address_abs.as_ref().expect("no original hook");
+
+                        if let zydis::Hook::PrintAddressAbs(Some(f)) = orig {
+                            // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
+                            // here: https://docs.rs/zydis/3.1.2/src/zydis/formatter.rs.html#306
+                            let status =
+                                unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
+                            if status.is_error() {
+                                return Err(status);
+                            } else {
+                                return Ok(());
+                            }
+                        } else {
+                            // I'm not sure how this could ever be the case, as zydis initializes the hook
+                            // with a default. I suppose if you explicitly set
+                            // the callback to NULL/None? Which we don't do here.
+                            panic!("unexpected original hook");
+                        }
+                    }
+                },
+            ))
+            .unwrap();
+        userdata.orig_print_address_abs = Some(orig);
+
+        // format a global address (KernelBaseGetGlobalData).
+        //
+        // call to KernelBaseGetGlobalData:
+        //     .text:00000001800134D0 48 83 EC 48                             sub
+        // rsp, 48h     .text:00000001800134D4 FF 15 16 3F 06 00
+        // call    cs:KernelBaseGetGlobalData  ; .idata:00000001800773F0
+        //     .text:00000001800134DA 0F 10 50 40                             movups
+        // xmm2, xmmword ptr [rax+40h]
+        userdata
+            .names
+            .insert(0x1800773F0, String::from("KernelBaseGetGlobalData"));
+        let mut buffer = [0u8; 200];
+        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+        let insn = read_insn(&pe.module, 0x1800134D4);
+        formatter
+            .format_instruction(&insn, &mut buffer, Some(0x1800134D4), Some(&mut userdata))
+            .unwrap();
+        assert_eq!(buffer.as_str().unwrap(), "call [KernelBaseGetGlobalData]");
+
+        // but fall-back to the original formatter if symbol is not present.
+        //
+        // call to BaseFormatObjectAttributes:
+        //     .text:000000018001995E 45 33 C0                                xor
+        // r8d, r8d     .text:0000000180019961 FF 15 D1 D7 05 00
+        // call    cs:BaseFormatObjectAttributes_0  ; .idata:0000000180077138
+        //     .text:0000000180019967 85 C0                                   test
+        // eax, eax
+        let mut buffer = [0u8; 200];
+        let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
+        let insn = read_insn(&pe.module, 0x180019961);
+        formatter
+            .format_instruction(&insn, &mut buffer, Some(0x180019961), Some(&mut userdata))
+            .unwrap();
+        assert_eq!(buffer.as_str().unwrap(), "call [0x0000000180077138]");
+    }
 }
