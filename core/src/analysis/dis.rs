@@ -512,11 +512,11 @@ mod tests {
         // format a global address (KernelBaseGetGlobalData).
         //
         // call to KernelBaseGetGlobalData:
-        //     .text:00000001800134D0 48 83 EC 48                             sub
-        // rsp, 48h     .text:00000001800134D4 FF 15 16 3F 06 00
-        // call    cs:KernelBaseGetGlobalData  ; .idata:00000001800773F0
-        //     .text:00000001800134DA 0F 10 50 40                             movups
-        // xmm2, xmmword ptr [rax+40h]
+        // ```
+        //     .text:00000001800134D0 48 83 EC 48        sub    rsp, 48h
+        //     .text:00000001800134D4 FF 15 16 3F 06 00  call   cs:KernelBaseGetGlobalData  ; .idata:00000001800773F0
+        //     .text:00000001800134DA 0F 10 50 40        movups xmm2, xmmword ptr [rax+40h]
+        // ```
         userdata
             .names
             .insert(0x1800773F0, String::from("KernelBaseGetGlobalData"));
@@ -531,11 +531,11 @@ mod tests {
         // but fall-back to the original formatter if symbol is not present.
         //
         // call to BaseFormatObjectAttributes:
-        //     .text:000000018001995E 45 33 C0                                xor
-        // r8d, r8d     .text:0000000180019961 FF 15 D1 D7 05 00
-        // call    cs:BaseFormatObjectAttributes_0  ; .idata:0000000180077138
-        //     .text:0000000180019967 85 C0                                   test
-        // eax, eax
+        // ```
+        //     .text:000000018001995E 45 33 C0           xor  r8d, r8d
+        //     .text:0000000180019961 FF 15 D1 D7 05 00  call cs:BaseFormatObjectAttributes_0  ; .idata:0000000180077138
+        //     .text:0000000180019967 85 C0              test eax, eax
+        // ```
         let mut buffer = [0u8; 200];
         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
         let insn = read_insn(&pe.module, 0x180019961);
