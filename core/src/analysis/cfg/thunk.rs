@@ -15,15 +15,10 @@ where
     let mut thunks: BTreeSet<VA> = Default::default();
 
     for &function in functions {
-        println!("is thunk: {:#x}", function);
-
         if let Some(succs) = cfg.flows.flows_by_src.get(&function) {
             if succs.len() != 1 {
-                println!("succs: {}", succs.len());
                 continue;
             }
-
-            println!("succ: {:x?}", succs[0]);
 
             if let Flow::UnconditionalJump(_) = succs[0] {
                 thunks.insert(function);
