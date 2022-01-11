@@ -45,6 +45,8 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
         let src = match flow {
             Flow::Call(Target::Direct(src)) => src,
             Flow::Call(Target::Indirect(src)) => src,
+            // tail call
+            Flow::UnconditionalJump(Target::Direct(src)) => src,
             _ => continue,
         };
 
