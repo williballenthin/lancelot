@@ -5,6 +5,7 @@ use anyhow::Result;
 pub mod flow;
 
 pub mod noret;
+pub mod thunk;
 
 use crate::{
     analysis::{

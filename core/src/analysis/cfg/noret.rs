@@ -14,6 +14,9 @@ use crate::{
     VA,
 };
 
+// TODO: add cfg_check_noret(module, cfg, va) that optionally marks as noret, if
+// valid.
+
 // with the given function address,
 // either as the target of a direct or indirect call,
 // consider it to be non-returning (such as ExitProcess).
