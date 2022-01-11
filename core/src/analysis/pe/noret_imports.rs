@@ -8,10 +8,11 @@ use crate::{
         pe::{self, ImportedSymbol},
     },
     loader::pe::PE,
+    VA,
 };
 
-pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<()> {
-    let noret = pe::get_imports(&pe)?
+pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
+    let mut noret = pe::get_imports(&pe)?
         .values()
         .filter(|imp| match (&*imp.dll, &imp.symbol) {
             ("kernel32.dll", ImportedSymbol::Name(symbol)) if symbol == "ExitProcess" => true,
@@ -21,12 +22,16 @@ pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<()> {
         .map(|imp| imp.address)
         .collect::<BTreeSet<_>>();
 
-    for &noret_import in noret.iter() {
+    for &noret_import in noret.clone().iter() {
         log::info!("noret import {:#x}", noret_import);
-        crate::analysis::cfg::noret::cfg_mark_noret(&pe.module, cfg, noret_import)?;
+        noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(
+            &pe.module,
+            cfg,
+            noret_import,
+        )?);
     }
 
-    Ok(())
+    Ok(noret)
 }
 
 #[cfg(test)]
