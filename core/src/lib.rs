@@ -15,6 +15,7 @@ pub mod loader;
 pub mod module;
 pub mod pagemap;
 pub mod util;
+pub mod workspace;
 
 #[cfg(any(test, doctest, feature = "test", bench, feature = "bench"))]
 pub mod rsrc;
