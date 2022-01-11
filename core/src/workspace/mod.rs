@@ -12,9 +12,10 @@ use crate::{
         pe::{Import, ImportedSymbol},
     },
     loader::pe::PE,
-    module::Module,
     VA,
 };
+
+pub mod formatter;
 
 bitflags! {
     pub struct FunctionFlags: u8 {
@@ -98,9 +99,6 @@ impl PEWorkspace {
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
 
         let noret = crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg)?;
-        for va in noret.iter() {
-            println!("noret: {:#x}", va);
-        }
 
         let mut function_starts = function_starts
             .into_iter()
@@ -168,13 +166,8 @@ impl PEWorkspace {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Not;
-
     use super::*;
-    use crate::{
-        analysis::cfg::{InstructionIndex, CFG},
-        rsrc::*,
-    };
+    use crate::rsrc::*;
     use anyhow::Result;
 
     #[test]
@@ -213,6 +206,20 @@ mod tests {
         //     .text:00405F42  RtlUnwind       endp
         // ```
         assert!(ws.analysis.functions[&0x405F42].flags.intersects(FunctionFlags::THUNK));
+
+        use crate::analysis::dis::zydis;
+        let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
+
+        let mut buffer = [0u8; 200];
+        let insn = crate::test::read_insn(&ws.pe.module, 0x401000);
+
+        let tokens = formatter.tokenize_instruction(&insn, &mut buffer, Some(0x401000), None)?;
+
+        for (token, s) in tokens {
+            println!("{}\t{}", s, token);
+        }
+
+        assert!(false);
 
         Ok(())
     }
