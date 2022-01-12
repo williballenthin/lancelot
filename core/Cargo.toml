@@ -24,6 +24,7 @@ regex = "1"
 smallvec = "1"
 widestring = "0.5"
 smol_str = "0.1"
+ansi_term = "0.12"
 
 # chrono, bitvec, and fern are only needed by tests, but because of the need for a feature named
 # test, they also have to be optional dependencies as well.
