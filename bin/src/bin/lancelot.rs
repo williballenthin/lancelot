@@ -12,62 +12,32 @@ use lancelot::{
     },
     aspace::AddressSpace,
     loader::pe::PE,
-    util, RVA, VA,
+    util,
+    workspace::{formatter::Formatter, PEWorkspace},
+    RVA, VA,
 };
 
-fn handle_functions(pe: &PE) -> Result<()> {
-    let functions = lancelot::analysis::pe::find_function_starts(pe)?;
-
-    info!("found {} functions", functions.len());
-    for va in functions.iter() {
+fn handle_functions(ws: &PEWorkspace) -> Result<()> {
+    info!("found {} functions", ws.analysis.functions.len());
+    for va in ws.analysis.functions.keys() {
         println!("{:#x}", va);
     }
 
     Ok(())
 }
 
-fn render_insn_buf(buf: &[u8], width: usize) -> String {
-    let mut out = String::new();
-    for (i, c) in hex::encode(buf).chars().enumerate() {
-        out.push(c);
-
-        if i % 2 == 1 {
-            out.push(' ');
-        }
-    }
-
-    let out = out.trim_end_matches(' ').to_string();
-    if out.len() > width {
-        out[..width].to_string()
-    } else {
-        out
-    }
-}
-
-fn render_insn(insn: &zydis::ffi::DecodedInstruction, va: VA) -> String {
-    let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("formatter");
-    let mut buffer = [0u8; 200];
-    let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
-
-    formatter
-        .format_instruction(insn, &mut buffer, Some(va), None)
-        .expect("format");
-    format!("{}", buffer)
-}
-
-fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
-    let decoder = dis::get_disassembler(&pe.module)?;
-    let mut insns: InstructionIndex = Default::default();
-    insns.build_index(&pe.module, va)?;
-    let cfg = CFG::from_instructions(insns)?;
-
-    let mut blocks = cfg.get_reachable_blocks(va).collect::<Vec<_>>();
+fn handle_disassemble(ws: &PEWorkspace, va: VA) -> Result<()> {
+    let mut blocks = ws.cfg.get_reachable_blocks(va).collect::<Vec<_>>();
     blocks.sort_unstable_by_key(|&bb| bb.address);
     info!("found {} basic blocks", blocks.len());
 
+    let decoder = dis::get_disassembler(&ws.pe.module).unwrap();
+    let fmt = Formatter::new().with_colors(true).build();
+
     for bb in blocks.into_iter() {
         // need to over-read the bb buffer, to account for the final instructions.
-        let buf = pe
+        let buf = ws
+            .pe
             .module
             .address_space
             .read_bytes(bb.address, bb.length as usize + 0x10)?;
@@ -78,28 +48,9 @@ fn handle_disassemble(pe: &PE, va: VA) -> Result<()> {
                 break;
             }
 
-            let va = bb.address + offset as RVA;
-
-            let name = &pe
-                .module
-                .sections
-                .iter()
-                .find(|sec| sec.virtual_range.contains(&va))
-                .unwrap()
-                .name;
-
             if let Ok(Some(insn)) = insn {
-                let insn_buf = &buf[offset..offset + insn.length as usize];
-                println!(
-                    "{}:{:016x}  {:15}  {}",
-                    name,
-                    va,
-                    render_insn_buf(insn_buf, 15),
-                    render_insn(&insn, va)
-                );
-            } else {
-                println!("  {}:{:#x}: INVALID", name, va);
-                break;
+                let va = bb.address + offset as RVA;
+                println!("{}", fmt.format_instruction(ws, &insn, va)?);
             }
         }
         println!();
@@ -166,6 +117,11 @@ fn _main() -> Result<()> {
         .apply()
         .expect("failed to configure logging");
 
+    // Enable ANSI support for Windows
+    // via: https://github.com/sharkdp/hexyl/blob/d1ae68585fe743d225bb39361bd383cb925b61f7/src/bin/hexyl.rs#L261
+    #[cfg(windows)]
+    let _ = ansi_term::enable_ansi_support();
+
     if let Some(matches) = matches.subcommand_matches("functions") {
         debug!("mode: find functions");
 
@@ -174,8 +130,9 @@ fn _main() -> Result<()> {
 
         let buf = util::read_file(filename)?;
         let pe = PE::from_bytes(&buf)?;
+        let ws = PEWorkspace::from_pe(pe)?;
 
-        handle_functions(&pe)
+        handle_functions(&ws)
     } else if let Some(matches) = matches.subcommand_matches("disassemble") {
         debug!("mode: disassemble");
 
@@ -186,8 +143,9 @@ fn _main() -> Result<()> {
 
         let buf = util::read_file(filename)?;
         let pe = PE::from_bytes(&buf)?;
+        let ws = PEWorkspace::from_pe(pe)?;
 
-        handle_disassemble(&pe, va)
+        handle_disassemble(&ws, va)
     } else {
         Err(anyhow!("SUBCOMMAND required"))
     }

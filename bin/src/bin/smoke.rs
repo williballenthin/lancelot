@@ -64,7 +64,7 @@ fn _main() -> Result<()> {
     }
     info!("found {} instructions", insns.insns_by_address.len());
 
-    let cfg = cfg::CFG::from_instructions(insns)?;
+    let cfg = cfg::CFG::from_instructions(&pe.module, insns)?;
     info!("found {} basic blocks", cfg.basic_blocks.blocks_by_address.len());
 
     Ok(())

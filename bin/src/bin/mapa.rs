@@ -674,7 +674,7 @@ fn compute_ranges(buf: &[u8], pe: &PE) -> Result<Ranges> {
     for function in functions.iter() {
         insns.build_index(&pe.module, *function)?;
     }
-    let cfg = CFG::from_instructions(insns)?;
+    let cfg = CFG::from_instructions(&pe.module, insns)?;
 
     insert_function_ranges(&mut ranges, pe, &cfg, &functions)?;
     insert_string_ranges(&mut ranges, pe, &cfg, &functions)?;
