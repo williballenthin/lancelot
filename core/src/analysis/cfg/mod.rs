@@ -710,16 +710,16 @@ impl CFG {
         // it does not remove flows "upwards".
         // this might be interesting, but not considered here.
 
-        log::info!("prune: {:x?} at {:#x}", flow, va);
+        log::debug!("prune: {:x?} at {:#x}", flow, va);
 
         self.insns.insns_by_address.entry(va).and_modify(|insn| {
             insn.successors = insn.successors.clone().into_iter().filter(|s| s != flow).collect();
-            log::info!("prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
+            log::debug!("prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
         });
 
         self.flows.flows_by_src.entry(va).and_modify(|succs| {
             *succs = succs.clone().into_iter().filter(|s| s != flow).collect();
-            log::info!("prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
+            log::debug!("prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
         });
 
         let target = match flow {
@@ -730,11 +730,11 @@ impl CFG {
             Flow::Call(Target::Indirect(ptr)) => *ptr,
             Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
         };
-        log::info!("prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
+        log::debug!("prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
 
         self.flows.flows_by_dst.entry(target).and_modify(|preds| {
             *preds = preds.clone().into_iter().filter(|s| s != &flow.swap(va)).collect();
-            log::info!(
+            log::debug!(
                 "prune: {:x?} at {:#x}: target: {:#x} preds: {:x?}",
                 flow,
                 va,
@@ -763,7 +763,7 @@ impl CFG {
         // so its no longer an instruction.
         // remove it, and recurse any flows from it.
         if self.flows.flows_by_dst[&target].len() == 0 {
-            log::info!("prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
+            log::debug!("prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
             for flow in self.flows.flows_by_src[&target].clone().iter() {
                 self.prune_flow(target, flow);
             }

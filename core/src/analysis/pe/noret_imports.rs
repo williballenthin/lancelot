@@ -23,7 +23,7 @@ pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
         .collect::<BTreeSet<_>>();
 
     for &noret_import in noret.clone().iter() {
-        log::info!("noret import {:#x}", noret_import);
+        log::debug!("noret import {:#x}", noret_import);
         noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(
             &pe.module,
             cfg,
