@@ -43,32 +43,26 @@ pub struct Formatter {
 pub const TOKEN_USER_SYMBOLNAME: zydis::Token = zydis::Token(zydis::TOKEN_USER.0 + 1);
 
 impl Formatter {
-    const COLOR_ADDRESS_ABS: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_ADDRESS_REL: ansi_term::Color = ansi_term::Color::Blue;
-    // grey
-    const COLOR_DECORATOR: ansi_term::Color = ansi_term::Color::Fixed(242);
-    // grey
-    const COLOR_DELIMITER: ansi_term::Color = ansi_term::Color::Fixed(242);
-    const COLOR_DISPLACEMENT: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_IMMEDIATE: ansi_term::Color = ansi_term::Color::Blue;
     // default theme
     // TODO: move this to a struct that can be configured
+    const COLOR_ADDRESS_ABS: ansi_term::Color = ansi_term::Color::Blue;
+    const COLOR_ADDRESS_REL: ansi_term::Color = ansi_term::Color::Blue;
+    const COLOR_DECORATOR: ansi_term::Color = Formatter::GREY;
+    const COLOR_DELIMITER: ansi_term::Color = Formatter::GREY;
+    const COLOR_DISPLACEMENT: ansi_term::Color = ansi_term::Color::Blue;
+    const COLOR_IMMEDIATE: ansi_term::Color = ansi_term::Color::Blue;
     const COLOR_INVALID: ansi_term::Color = ansi_term::Color::Red;
     const COLOR_MNEMONIC: ansi_term::Color = ansi_term::Color::Green;
-    // grey
-    const COLOR_PARENTHESIS_CLOSE: ansi_term::Color = ansi_term::Color::Fixed(242);
-    // grey
-    const COLOR_PARENTHESIS_OPEN: ansi_term::Color = ansi_term::Color::Fixed(242);
-    // grey
-    const COLOR_PREFIX: ansi_term::Color = ansi_term::Color::Fixed(242);
+    const COLOR_PARENTHESIS_CLOSE: ansi_term::Color = Formatter::GREY;
+    const COLOR_PARENTHESIS_OPEN: ansi_term::Color = Formatter::GREY;
+    const COLOR_PREFIX: ansi_term::Color = Formatter::GREY;
     const COLOR_REGISTER: ansi_term::Color = ansi_term::Color::Yellow;
-    // grey
-    const COLOR_SYMBOL: ansi_term::Color = ansi_term::Color::Fixed(242);
+    const COLOR_SYMBOL: ansi_term::Color = Formatter::GREY;
     const COLOR_SYMBOLNAME: ansi_term::Color = ansi_term::Color::Purple;
-    // grey
-    const COLOR_TYPECAST: ansi_term::Color = ansi_term::Color::Fixed(242);
-    const COLOR_USER: ansi_term::Color = ansi_term::Color::Fixed(242);
+    const COLOR_TYPECAST: ansi_term::Color = Formatter::GREY;
+    const COLOR_USER: ansi_term::Color = Formatter::GREY;
     const COLOR_WHITESPACE: ansi_term::Color = ansi_term::Color::Black;
+    const GREY: ansi_term::Color = ansi_term::Color::Fixed(242);
 
     pub fn new() -> FormatterBuilder {
         FormatterBuilder {
