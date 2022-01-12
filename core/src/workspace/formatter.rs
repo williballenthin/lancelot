@@ -1,42 +1,42 @@
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 
-use crate::{analysis::dis::zydis, VA};
+use crate::{analysis::dis::zydis, workspace::PEWorkspace, VA};
+
+#[derive(Default, Clone)]
+struct OriginalHooks {
+    print_address_abs: Option<zydis::Hook>,
+}
 
 struct UserData<'a> {
-    names:                  &'a BTreeMap<VA, String>,
-    orig_print_address_abs: Option<zydis::Hook>,
+    ws:   &'a PEWorkspace,
+    orig: OriginalHooks,
 }
 
-pub struct Formatter<'a> {
+pub struct Formatter {
     inner: zydis::Formatter,
-    ud:    Box<UserData<'a>>,
+    orig:  OriginalHooks,
 }
 
-impl<'a> Formatter<'a> {
-    pub fn new(names: &'a BTreeMap<VA, String>) -> Formatter {
-        let mut ud = Box::new(UserData {
-            names,
-            orig_print_address_abs: None,
-        });
-
+impl Formatter {
+    pub fn new() -> Formatter {
         let mut inner = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
 
-        let orig = inner
+        let mut orig: OriginalHooks = Default::default();
+
+        let f = inner
             .set_print_address_abs(Box::new(
                 |formatter: &zydis::Formatter,
                  buf: &mut zydis::FormatterBuffer,
                  ctx: &mut zydis::FormatterContext,
                  userdata: Option<&mut dyn core::any::Any>|
                  -> zydis::Result<()> {
-                    // programming error: userdata must be provided.
-                    // TODO: enforce via types.
+                    // programming error: userdata must be provided. this is guaranteed within
+                    // Formatter.
                     let userdata = userdata.expect("no userdata");
 
-                    // programming error: userdata must be a Box<UserData>.
-                    // TODO: enforce via types.
-                    let userdata = userdata.downcast_ref::<Box<UserData>>().expect("incorrect userdata");
+                    // programming error: userdata must be a Box<UserData>. this is guaranteed
+                    // within Formatter.
+                    let userdata = userdata.downcast_ref::<UserData>().expect("incorrect userdata");
 
                     let absolute_address = unsafe {
                         // safety: the insn and operands come from zydis, so we assume they contain
@@ -47,15 +47,15 @@ impl<'a> Formatter<'a> {
                             .expect("failed to calculate absolute address")
                     };
 
-                    if let Some(name) = userdata.names.get(&absolute_address) {
+                    if let Some(name) = userdata.ws.analysis.names.names_by_address.get(&absolute_address) {
                         // name is found in map, use that.
                         return buf.get_string()?.append(name);
                     } else {
                         // name is not found, use original formatter.
 
-                        // programming error: the original hook must be recorded.
-                        // TODO: enforce via types.
-                        let orig = userdata.orig_print_address_abs.as_ref().expect("no original hook");
+                        // programming error: the original hook must be recorded. this is guaranteed
+                        // within Formatter.
+                        let orig = userdata.orig.print_address_abs.as_ref().expect("no original hook");
 
                         if let zydis::Hook::PrintAddressAbs(Some(f)) = orig {
                             // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
@@ -77,43 +77,49 @@ impl<'a> Formatter<'a> {
                 },
             ))
             .unwrap();
-        ud.orig_print_address_abs = Some(orig);
+        orig.print_address_abs = Some(f);
 
-        Formatter { inner, ud }
+        Formatter { inner, orig }
     }
 
-    pub fn format_instruction(&'a mut self, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
+    pub fn format_instruction(&self, ws: &PEWorkspace, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
         let mut buffer = [0u8; 200];
         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
 
-        match self {
-            Formatter { inner, ud } => {
-                // we pass our userdata to ZydisFormatterFormatInstruction.
-                // but to make it work, we have to play games with the lifetimes:
-                // we need to convince the compiler that the userdata pointer lives long enough
-                // to by used by the callbacks.
-                //
-                // we do this by extending the lifetime from 'a (from names: &'a BTreeMap<VA,
-                // String>) to 'static.
-                //
-                // userdata is passed into ZydisFormatterFormatInstruction,
-                // which passes userdata to each of the formatter callbacks.
-                // those read strictly from insn/ctx/userdata and write strictly to output
-                // buffer. there is no state maintained within these routines.
-                //
-                // therefore, i believe its safe to extend the lifetime here to work with zydis.
-                let x = unsafe { std::mem::transmute::<&mut Box<UserData<'a>>, &mut Box<UserData<'static>>>(ud) };
+        // we pass our userdata to ZydisFormatterFormatInstruction.
+        // but to make it work, we have to play games with the lifetimes:
+        // we need to convince the compiler that the userdata pointer lives long enough
+        // to by used by the callbacks.
+        //
+        // we do this by extending the CFG lifetime from '_ to 'static.
+        //
+        // userdata is passed into ZydisFormatterFormatInstruction,
+        // which passes userdata to each of the formatter callbacks.
+        // those read strictly from insn/ctx/userdata and write strictly to output
+        // buffer. there is no state maintained within these routines.
+        // the callbacks won't be invoked beyond the call into FormatInstruction.
+        //
+        // therefore, i believe its safe to extend the lifetime here to work with zydis.
+        let x = unsafe { std::mem::transmute::<&'_ PEWorkspace, &'static PEWorkspace>(ws) };
 
-                inner.format_instruction(&insn, &mut buffer, Some(va), Some(x))?;
-            }
+        let mut ud = UserData {
+            orig: self.orig.clone(),
+            ws:   x,
         };
+
+        self.inner
+            .format_instruction(&insn, &mut buffer, Some(va), Some(&mut ud))?;
+
+        //self.inner.tokenize_instruction(&insn, &mut bufer, Some(va), Some(&mut ud))?;
 
         Ok(buffer.as_str()?.to_string())
     }
 
+    /*
     pub fn from_workspace(ws: &crate::workspace::PEWorkspace) -> Formatter {
         Formatter::new(&ws.analysis.names.names_by_address)
     }
+    */
 }
 
 #[cfg(test)]
@@ -129,23 +135,18 @@ mod tests {
 
         let ws = PEWorkspace::from_pe(pe)?;
 
-        {
-            let mut fmt = Formatter::from_workspace(&ws);
-            let insn = crate::test::read_insn(&ws.pe.module, 0x1800134D4);
-            assert_eq!(
-                fmt.format_instruction(&insn, 0x1800134D4)?,
-                "call [kernelbase.dll!KernelBaseGetGlobalData]"
-            );
-        }
+        let fmt = Formatter::new();
+        let insn = crate::test::read_insn(&ws.pe.module, 0x1800134D4);
+        assert_eq!(
+            fmt.format_instruction(&ws, &insn, 0x1800134D4)?,
+            "call [kernelbase.dll!KernelBaseGetGlobalData]"
+        );
 
-        {
-            let mut fmt = Formatter::from_workspace(&ws);
-            let insn = crate::test::read_insn(&ws.pe.module, 0x180019961);
-            assert_eq!(
-                fmt.format_instruction(&insn, 0x180019961)?,
-                "call [kernelbase.dll!BaseFormatObjectAttributes]"
-            );
-        }
+        let insn = crate::test::read_insn(&ws.pe.module, 0x180019961);
+        assert_eq!(
+            fmt.format_instruction(&ws, &insn, 0x180019961)?,
+            "call [kernelbase.dll!BaseFormatObjectAttributes]"
+        );
 
         Ok(())
     }
