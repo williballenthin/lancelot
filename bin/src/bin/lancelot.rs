@@ -5,11 +5,7 @@ use clap::clap_app;
 use log::{debug, error, info};
 
 use lancelot::{
-    analysis::{
-        cfg::{InstructionIndex, CFG},
-        dis,
-        dis::zydis,
-    },
+    analysis::dis,
     aspace::AddressSpace,
     loader::pe::PE,
     util,
