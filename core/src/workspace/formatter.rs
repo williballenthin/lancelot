@@ -1,22 +1,41 @@
-use std::fmt::Write;
+use std::{cmp::min, fmt::Write};
 
 use anyhow::Result;
 
-use crate::{analysis::dis::zydis, arch::Arch, workspace::PEWorkspace, VA};
+use crate::{analysis::dis::zydis, arch::Arch, aspace::AddressSpace, workspace::PEWorkspace, VA};
 
 #[derive(Default, Clone)]
 struct OriginalHooks {
     print_address_abs: Option<zydis::Hook>,
+    print_mnemonic:    Option<zydis::Hook>,
     pre_instruction:   Option<zydis::Hook>,
 }
 
-struct UserData<'a> {
-    ws:   &'a PEWorkspace,
-    orig: OriginalHooks,
+#[derive(Clone, Copy)]
+pub struct FormatterOptions {
+    colors:          bool,
+    /// show up to the given number of bytes for each instruction,
+    /// or ... (ellipsis) when truncated.
+    /// use zero to disable this column.
+    ///
+    /// unit: bytes
+    /// default: 8
+    /// max: 16
+    hex_column_size: usize,
+
+    /// pad mnemonics to at least the given width.
+    /// won't truncate longer instructions, just wont be nicely aligned.
+    /// you probably don't need to touch this unless you want to.
+    ///
+    /// unit: characters
+    /// default: 7
+    mnemonic_width: usize,
 }
 
-pub struct FormatterOptions {
-    colors: bool,
+struct UserData<'a> {
+    ws:      &'a PEWorkspace,
+    orig:    OriginalHooks,
+    options: FormatterOptions,
 }
 
 pub struct FormatterBuilder {
@@ -32,6 +51,12 @@ impl FormatterBuilder {
         self.options.colors = colors;
         self
     }
+
+    pub fn with_hex_column_size(mut self, hex_column_size: usize) -> FormatterBuilder {
+        // 0x10: max instruction length
+        self.options.hex_column_size = min(hex_column_size, 0x10);
+        self
+    }
 }
 
 pub struct Formatter {
@@ -41,6 +66,7 @@ pub struct Formatter {
 }
 
 pub const TOKEN_USER_SYMBOLNAME: zydis::Token = zydis::Token(zydis::TOKEN_USER.0 + 1);
+pub const TOKEN_USER_HEX: zydis::Token = zydis::Token(zydis::TOKEN_USER.0 + 2);
 
 impl Formatter {
     // default theme
@@ -50,6 +76,7 @@ impl Formatter {
     const COLOR_DECORATOR: ansi_term::Color = Formatter::GREY;
     const COLOR_DELIMITER: ansi_term::Color = Formatter::GREY;
     const COLOR_DISPLACEMENT: ansi_term::Color = ansi_term::Color::Blue;
+    const COLOR_HEX: ansi_term::Color = ansi_term::Color::Cyan;
     const COLOR_IMMEDIATE: ansi_term::Color = ansi_term::Color::Blue;
     const COLOR_INVALID: ansi_term::Color = ansi_term::Color::Red;
     const COLOR_MNEMONIC: ansi_term::Color = ansi_term::Color::Green;
@@ -66,7 +93,11 @@ impl Formatter {
 
     pub fn new() -> FormatterBuilder {
         FormatterBuilder {
-            options: FormatterOptions { colors: true },
+            options: FormatterOptions {
+                colors:          true,
+                hex_column_size: 7,
+                mnemonic_width:  7,
+            },
         }
     }
 
@@ -74,8 +105,6 @@ impl Formatter {
         let mut inner = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
 
         let mut orig: OriginalHooks = Default::default();
-
-        // TODO: align mnemonic
 
         let f = inner
             .set_pre_instruction(Box::new(
@@ -111,8 +140,6 @@ impl Formatter {
                     buf.append(zydis::TOKEN_DELIMITER)?;
                     buf.get_string()?.append(":")?;
 
-                    // TODO: insn bytes
-
                     buf.append(zydis::TOKEN_ADDRESS_ABS)?;
                     match userdata.ws.pe.module.arch {
                         Arch::X32 => {
@@ -125,6 +152,48 @@ impl Formatter {
 
                     buf.append(zydis::TOKEN_WHITESPACE)?;
                     buf.get_string()?.append("  ")?;
+
+                    if userdata.options.hex_column_size > 0 {
+                        let mut insn_buf = [0u8; 0x10];
+                        let insn_len = (unsafe { &*ctx.instruction }).length as usize;
+                        let col_count = userdata.options.hex_column_size;
+                        userdata
+                            .ws
+                            .pe
+                            .module
+                            .address_space
+                            .read_into(va, &mut insn_buf[..insn_len])
+                            .expect("failed to read instruction");
+
+                        let mut hex = String::new();
+                        for i in 0..col_count {
+                            if insn_len > col_count && i == col_count - 1 {
+                                // instruction is larger than reserved space,
+                                // and this is the final spot for hex,
+                                // which is 3 characters wide,
+                                // so show "..." instead of the last byte.
+                                hex.write_str("...").unwrap();
+                            } else if i < insn_len {
+                                // most common case: bytes of the instruction
+
+                                if i != 0 {
+                                    hex.write_str(" ").unwrap();
+                                }
+
+                                hex.write_str(&format!("{:02X}", insn_buf[i])).unwrap();
+                            } else {
+                                // common case, insn is smaller than reserved space,
+                                // so fill with spaces.
+                                hex.write_str("   ").unwrap();
+                            }
+                        }
+
+                        buf.append(TOKEN_USER_HEX)?;
+                        buf.get_string()?.append(&hex)?;
+
+                        buf.append(zydis::TOKEN_WHITESPACE)?;
+                        buf.get_string()?.append("  ")?;
+                    }
 
                     Ok(())
                 },
@@ -189,10 +258,58 @@ impl Formatter {
             .unwrap();
         orig.print_address_abs = Some(f);
 
+        let f = inner
+            .set_print_mnemonic(Box::new(
+                |formatter: &zydis::Formatter,
+                 buf: &mut zydis::FormatterBuffer,
+                 ctx: &mut zydis::FormatterContext,
+                 userdata: Option<&mut dyn core::any::Any>|
+                 -> zydis::Result<()> {
+                    // programming error: userdata must be provided. this is guaranteed within
+                    // Formatter.
+                    let userdata = userdata.expect("no userdata");
+
+                    // programming error: userdata must be a Box<UserData>. this is guaranteed
+                    // within Formatter.
+                    let userdata = userdata.downcast_ref::<UserData>().expect("incorrect userdata");
+
+                    let orig = userdata.orig.print_mnemonic.as_ref().expect("no original hook");
+
+                    if let zydis::Hook::PrintMnemonic(Some(f)) = orig {
+                        // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
+                        // here: https://docs.rs/zydis/3.1.2/src/zydis/formatter.rs.html#306
+                        let status = unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
+                        if status.is_error() {
+                            return Err(status);
+                        } else {
+                            let (_, mnemonic) = buf.get_token()?.get_value()?;
+
+                            if mnemonic.len() < userdata.options.mnemonic_width {
+                                let mut padding = String::new();
+
+                                for _ in 0..userdata.options.mnemonic_width - mnemonic.len() {
+                                    padding.write_str(" ").unwrap();
+                                }
+
+                                buf.append(zydis::TOKEN_WHITESPACE)?;
+                                buf.get_string()?.append(&padding)?;
+                            }
+
+                            return Ok(());
+                        }
+                    } else {
+                        // I'm not sure how this could ever be the case, as zydis initializes the hook
+                        // with a default. I suppose if you explicitly set
+                        // the callback to NULL/None? Which we don't do here.
+                        panic!("unexpected original hook");
+                    }
+                },
+            ))
+            .unwrap();
+        orig.print_mnemonic = Some(f);
+
         Formatter { options, inner, orig }
     }
-
-    // grey
 
     fn get_token_color(token: zydis::Token) -> ansi_term::Color {
         match token {
@@ -213,6 +330,7 @@ impl Formatter {
             zydis::TOKEN_SYMBOL => Formatter::COLOR_SYMBOL,
             zydis::TOKEN_USER => Formatter::COLOR_USER,
             TOKEN_USER_SYMBOLNAME => Formatter::COLOR_SYMBOLNAME,
+            TOKEN_USER_HEX => Formatter::COLOR_HEX,
             _ => unimplemented!("token: {}", token),
         }
     }
@@ -247,8 +365,9 @@ impl Formatter {
         let x = unsafe { std::mem::transmute::<&'_ PEWorkspace, &'static PEWorkspace>(ws) };
 
         let mut ud = UserData {
-            orig: self.orig.clone(),
-            ws:   x,
+            orig:    self.orig.clone(),
+            ws:      x,
+            options: self.options,
         };
 
         let mut out = String::new();
