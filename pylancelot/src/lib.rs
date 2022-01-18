@@ -364,7 +364,7 @@ impl PE {
 
         let mut insns: cfg::InstructionIndex = Default::default();
         insns.build_index(&self.inner.module, va).map_err(to_py_err)?;
-        let cfg = cfg::CFG::from_instructions(insns).map_err(to_py_err)?;
+        let cfg = cfg::CFG::from_instructions(&self.inner.module, insns).map_err(to_py_err)?;
 
         let basic_blocks = PyDict::new(py);
         for (bbva, bb) in cfg.basic_blocks.blocks_by_address.iter() {
