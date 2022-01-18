@@ -11,5 +11,5 @@ members = [
 
 [profile.release]
 # temporarily disabled due to: https://github.com/zyantific/zydis-rs/issues/29
-#lto = "fat"
-#codegen-units = 1
+lto = "fat"
+codegen-units = 1
