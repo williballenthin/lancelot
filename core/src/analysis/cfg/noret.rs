@@ -112,6 +112,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
     for &caller in ret.clone().iter() {
         ret.extend(cfg_mark_noret(module, cfg, caller)?);
     }
+    ret.insert(va);
 
     Ok(ret)
 }
