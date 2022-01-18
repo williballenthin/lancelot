@@ -1,7 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use anyhow::{anyhow, Result};
-use clap::clap_app;
 use log::{debug, error, info};
 
 use lancelot::{
@@ -67,19 +66,42 @@ fn parse_va(s: &str) -> Result<VA> {
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::clap_app!(lancelot =>
-        (author: "Willi Ballenthin <william.ballenthin@mandiant.com>")
-        (about: "Binary analysis framework")
-        (@arg verbose: -v --verbose +multiple "log verbose messages")
-        (@arg quiet: -q --quiet "disable informational messages")
-        (@subcommand functions =>
-            (about: "find functions")
-            (@arg input: +required "path to file to analyze"))
-        (@subcommand disassemble =>
-            (about: "disassemble function")
-            (@arg input: +required "path to file to analyze")
-            (@arg va: +required "VA of function")))
-    .get_matches();
+    let matches = clap::App::new("lancelot")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
+        .about("Binary analysis framework")
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .multiple_occurrences(true)
+                .help("log verbose messages"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .help("disable informational messages"),
+        )
+        .subcommand(
+            clap::App::new("functions").about("find functions").arg(
+                clap::Arg::new("input")
+                    .required(true)
+                    .index(1)
+                    .help("path to file to analyze"),
+            ),
+        )
+        .subcommand(
+            clap::App::new("disassemble")
+                .about("disassemble function")
+                .arg(
+                    clap::Arg::new("input")
+                        .required(true)
+                        .index(1)
+                        .help("path to file to analyze"),
+                )
+                .arg(clap::Arg::new("va").required(true).index(2).help("VA of function")),
+        )
+        .get_matches();
 
     // --quiet overrides --verbose
     let log_level = if matches.is_present("quiet") {

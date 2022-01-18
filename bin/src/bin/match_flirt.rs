@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use clap::clap_app;
 use log::{debug, error, info};
 
 use lancelot::{loader::pe::PE, util, VA};
@@ -12,14 +11,36 @@ use lancelot_flirt::*;
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::clap_app!(lancelot =>
-        (author: "Willi Ballenthin <william.ballenthin@mandiant.com>")
-        (about: "Binary analysis framework")
-        (@arg verbose: -v --verbose +multiple "log verbose messages")
-        (@arg quiet: -q --quiet "disable informational messages")
-        (@arg input: +required "path to file to analyze")
-        (@arg sig: +required +multiple "path to FLIRT sig/pat"))
-    .get_matches();
+    let matches = clap::App::new("match_flirt")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
+        .about("Show FLIRT matches in the given file")
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .multiple_occurrences(true)
+                .help("log verbose messages"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .help("disable informational messages"),
+        )
+        .arg(
+            clap::Arg::new("input")
+                .required(true)
+                .index(1)
+                .help("path to file to analyze"),
+        )
+        .arg(
+            clap::Arg::new("sig")
+                .required(true)
+                .index(2)
+                .multiple_values(true)
+                .help("path to file to analyze"),
+        )
+        .get_matches();
 
     // --quiet overrides --verbose
     let log_level = if matches.is_present("quiet") {

@@ -1,7 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use anyhow::Result;
-use clap::clap_app;
 use log::{debug, error, info};
 
 use lancelot::{analysis::cfg, loader::pe::PE, util};
@@ -9,13 +8,29 @@ use lancelot::{analysis::cfg, loader::pe::PE, util};
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::clap_app!(lancelot =>
-        (author: "Willi Ballenthin <william.ballenthin@mandiant.com>")
-        (about: "Binary analysis framework")
-        (@arg verbose: -v --verbose +multiple "log verbose messages")
-        (@arg quiet: -q --quiet "disable informational messages")
-        (@arg input: +required "path to file to analyze"))
-    .get_matches();
+    let matches = clap::App::new("lancelot")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
+        .about("smoke test lancelot against the given binary")
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .multiple_occurrences(true)
+                .help("log verbose messages"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .help("disable informational messages"),
+        )
+        .arg(
+            clap::Arg::new("input")
+                .required(true)
+                .index(1)
+                .help("path to file to analyze"),
+        )
+        .get_matches();
 
     // --quiet overrides --verbose
     let log_level = if matches.is_present("quiet") {

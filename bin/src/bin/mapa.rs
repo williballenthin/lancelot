@@ -17,7 +17,6 @@ use std::collections::BTreeMap;
 
 use ansi_term::Colour as Color;
 use anyhow::{anyhow, Result};
-use clap::clap_app;
 use log::{debug, error};
 
 use lancelot::{
@@ -846,14 +845,30 @@ fn render(address_space: &AbsoluteAddressSpace, ranges: &Ranges) -> Result<()> {
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::clap_app!(lancelot =>
-        (author: "Willi Ballenthin <william.ballenthin@mandiant.com>")
-        (about: "Somewhere between strings.exe and PEView")
-        (@arg verbose: -v --verbose +multiple "log verbose messages")
-        (@arg quiet: -q --quiet "disable informational messages")
-        (@arg va: --va "output addresses as mapped into memory")
-        (@arg input: +required "path to file to analyze"))
-    .get_matches();
+    let matches = clap::App::new("mapa")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
+        .about("Somewhere between strings.exe and PEView")
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .multiple_occurrences(true)
+                .help("log verbose messages"),
+        )
+        .arg(
+            clap::Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .help("disable informational messages"),
+        )
+        .arg(clap::Arg::new("va").help("output addresses as mapped into memory"))
+        .arg(
+            clap::Arg::new("input")
+                .required(true)
+                .index(1)
+                .help("path to file to analyze"),
+        )
+        .get_matches();
 
     // --quiet overrides --verbose
     let log_level = if matches.is_present("quiet") {

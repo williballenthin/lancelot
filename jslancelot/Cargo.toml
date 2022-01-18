@@ -1,7 +1,7 @@
 [package]
 name = "jslancelot"
 version = "0.7.0"
-authors = ["Willi Ballenthin <wilbal1087@gmail.com>"]
+authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
 repository = "https://github.com/williballenthin/lancelot"

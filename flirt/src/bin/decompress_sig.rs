@@ -12,27 +12,19 @@ fn run(sig_path: &str, output_path: &str) -> Result<()> {
 fn main() {
     better_panic::install();
 
-    // while the macro form of clap is more readable,
-    // it doesn't seem to allow us to use dynamically-generated values,
-    // such as the defaults pulled from env vars, etc.
-    let matches = clap::App::new("sig2pat")
-        .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
+    let matches = clap::App::new("decompress_sig")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("decompress a FLIRT .sig file with compression into one without compression")
         .arg(
-            clap::Arg::with_name("verbose")
-                .short("v")
+            clap::Arg::new("verbose")
+                .short('v')
                 .long("verbose")
-                .multiple(true)
+                .multiple_occurrences(true)
                 .help("log verbose messages"),
         )
+        .arg(clap::Arg::new("sig").required(true).index(1).help("path to .sig file"))
         .arg(
-            clap::Arg::with_name("sig")
-                .required(true)
-                .index(1)
-                .help("path to .sig file"),
-        )
-        .arg(
-            clap::Arg::with_name("output")
+            clap::Arg::new("output")
                 .required(true)
                 .index(2)
                 .help("path to output file"),

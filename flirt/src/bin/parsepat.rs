@@ -13,25 +13,17 @@ fn run(pat_path: &str) -> Result<()> {
 fn main() {
     better_panic::install();
 
-    // while the macro form of clap is more readable,
-    // it doesn't seem to allow us to use dynamically-generated values,
-    // such as the defaults pulled from env vars, etc.
     let matches = clap::App::new("parsepat")
-        .author("Willi Ballenthin <willi.ballenthin@gmail.com>")
+        .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("parse a .pat file and... do nothing.")
         .arg(
-            clap::Arg::with_name("verbose")
-                .short("v")
+            clap::Arg::new("verbose")
+                .short('v')
                 .long("verbose")
-                .multiple(true)
+                .multiple_occurrences(true)
                 .help("log verbose messages"),
         )
-        .arg(
-            clap::Arg::with_name("pat")
-                .required(true)
-                .index(1)
-                .help("path to .pat file"),
-        )
+        .arg(clap::Arg::new("pat").required(true).index(1).help("path to .pat file"))
         .get_matches();
 
     let log_level = match matches.occurrences_of("verbose") {
