@@ -207,20 +207,6 @@ mod tests {
         // ```
         assert!(ws.analysis.functions[&0x405F42].flags.intersects(FunctionFlags::THUNK));
 
-        use crate::analysis::dis::zydis;
-        let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
-
-        let mut buffer = [0u8; 200];
-        let insn = crate::test::read_insn(&ws.pe.module, 0x401000);
-
-        let tokens = formatter.tokenize_instruction(&insn, &mut buffer, Some(0x401000), None)?;
-
-        for (token, s) in tokens {
-            println!("{}\t{}", s, token);
-        }
-
-        assert!(false);
-
         Ok(())
     }
 }

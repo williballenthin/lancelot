@@ -440,7 +440,10 @@ mod tests {
 
         let ws = PEWorkspace::from_pe(pe)?;
 
-        let fmt = Formatter::with_options().with_colors(false).build();
+        let fmt = Formatter::with_options()
+            .with_colors(false)
+            .with_hex_column_size(0)
+            .build();
 
         // ```
         //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"
@@ -450,7 +453,42 @@ mod tests {
         let insn = crate::test::read_insn(&ws.pe.module, 0x401C53);
         assert_eq!(
             fmt.format_instruction(&ws, &insn, 0x401C53)?,
-            "call [kernel32.dll!GetModuleHandleA]"
+            ".text:00401c53  call    [kernel32.dll!GetModuleHandleA]"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn hex() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+
+        let ws = PEWorkspace::from_pe(pe)?;
+
+        // ```
+        //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"
+        //     .text:00401C53 004 FF 15 00 60 40 00       call    ds:GetModuleHandleA
+        //     .text:00401C59 000 85 C0                   test    eax, eax
+        // ```
+        let insn = crate::test::read_insn(&ws.pe.module, 0x401C53);
+
+        let fmt = Formatter::with_options()
+            .with_colors(false)
+            .with_hex_column_size(0)
+            .build();
+        assert_eq!(
+            fmt.format_instruction(&ws, &insn, 0x401C53)?,
+            ".text:00401c53  call    [kernel32.dll!GetModuleHandleA]"
+        );
+
+        let fmt = Formatter::with_options()
+            .with_colors(false)
+            .with_hex_column_size(7)
+            .build();
+        assert_eq!(
+            fmt.format_instruction(&ws, &insn, 0x401C53)?,
+            ".text:00401c53  FF 15 00 60 40 00     call    [kernel32.dll!GetModuleHandleA]"
         );
 
         Ok(())
