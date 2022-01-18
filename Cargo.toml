@@ -13,3 +13,12 @@ members = [
 # temporarily disabled due to: https://github.com/zyantific/zydis-rs/issues/29
 lto = "fat"
 codegen-units = 1
+incremental = true
+
+[profile.test]
+# flirt is quite slow, and particularly slow without optimizations.
+# e.g. 10s to load the typical rule set.
+# therefore, enable optimizations to help make tests go faster.
+# but hopefully this isn't as painful due to incremental being enabled.
+opt-level = 3
+incremental = true
