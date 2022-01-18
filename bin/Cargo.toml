@@ -19,7 +19,7 @@ fern = "0.6"
 chrono = "0.4"
 anyhow = "1"
 thiserror = "1"
-better-panic = "0.2"
+better-panic = "0.3"
 goblin = "0.4"
 hex = "0.4"
 
