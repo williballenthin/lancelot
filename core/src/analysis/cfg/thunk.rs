@@ -26,7 +26,7 @@ where
         }
     }
 
-    return thunks;
+    thunks
 }
 
 #[cfg(test)]

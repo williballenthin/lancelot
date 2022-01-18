@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
-    let mut noret = pe::get_imports(&pe)?
+    let mut noret = pe::get_imports(pe)?
         .values()
         .filter(|imp| match (&*imp.dll, &imp.symbol) {
             ("kernel32.dll", ImportedSymbol::Name(symbol)) if symbol == "ExitProcess" => true,

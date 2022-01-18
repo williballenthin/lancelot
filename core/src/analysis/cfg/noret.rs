@@ -80,14 +80,13 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
             // this is a function that flows to the block ending with a noret call.
             if cfg.flows.flows_by_dst[&head.address]
                 .iter()
-                .find(|flow| matches!(flow, Flow::Call(_)))
-                .is_some()
+                .any(|flow| matches!(flow, Flow::Call(_)))
             {
                 // are there any other exit points from this function?
                 let is_noret = cfg
                     .get_reaches_from(head.address)
                     .filter(|block| cfg::empty(cfg::edges(&cfg.flows.flows_by_src[&block.address_of_last_insn])))
-                    .find(|block| {
+                    .any(|block| {
                         let mut insn_buf = [0u8; 16];
                         module
                             .address_space
@@ -98,8 +97,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
                             .expect("invalid instruction")
                             .expect("missing instruction");
                         matches!(insn.mnemonic, zydis::Mnemonic::RET)
-                    })
-                    .is_none();
+                    });
 
                 if is_noret {
                     log::debug!("noret function: {:#x}", head.address);
@@ -113,5 +111,5 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
         ret.extend(cfg_mark_noret(module, cfg, caller)?);
     }
 
-    return Ok(ret);
+    Ok(ret)
 }

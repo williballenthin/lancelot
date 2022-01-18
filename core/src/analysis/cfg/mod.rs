@@ -762,7 +762,7 @@ impl CFG {
         // target has no flows pointing to it,
         // so its no longer an instruction.
         // remove it, and recurse any flows from it.
-        if self.flows.flows_by_dst[&target].len() == 0 {
+        if self.flows.flows_by_dst[&target].is_empty() {
             log::debug!("prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
             for flow in self.flows.flows_by_src[&target].clone().iter() {
                 self.prune_flow(target, flow);

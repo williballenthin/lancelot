@@ -44,7 +44,7 @@ impl NameIndex {
         return self.names_by_address.get(&va).is_some();
     }
 
-    pub fn contains_name(&self, name: &String) -> bool {
+    pub fn contains_name(&self, name: &str) -> bool {
         return self.addresses_by_name.get(name).is_some();
     }
 }

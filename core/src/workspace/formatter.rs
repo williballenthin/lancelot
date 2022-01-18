@@ -43,15 +43,18 @@ pub struct FormatterBuilder {
 }
 
 impl FormatterBuilder {
+    #[must_use]
     pub fn build(self) -> Formatter {
         Formatter::from_options(self.options)
     }
 
+    #[must_use]
     pub fn with_colors(mut self, colors: bool) -> FormatterBuilder {
         self.options.colors = colors;
         self
     }
 
+    #[must_use]
     pub fn with_hex_column_size(mut self, hex_column_size: usize) -> FormatterBuilder {
         // 0x10: max instruction length
         self.options.hex_column_size = min(hex_column_size, 0x10);
@@ -91,7 +94,20 @@ impl Formatter {
     const COLOR_WHITESPACE: ansi_term::Color = ansi_term::Color::Black;
     const GREY: ansi_term::Color = ansi_term::Color::Fixed(242);
 
-    pub fn new() -> FormatterBuilder {
+    #[must_use]
+    pub fn new() -> Formatter {
+        FormatterBuilder {
+            options: FormatterOptions {
+                colors:          true,
+                hex_column_size: 7,
+                mnemonic_width:  7,
+            },
+        }
+        .build()
+    }
+
+    #[must_use]
+    pub fn with_options() -> FormatterBuilder {
         FormatterBuilder {
             options: FormatterOptions {
                 colors:          true,
@@ -166,7 +182,7 @@ impl Formatter {
                             .expect("failed to read instruction");
 
                         let mut hex = String::new();
-                        for i in 0..col_count {
+                        for (i, b) in insn_buf.iter().enumerate().take(col_count) {
                             if insn_len > col_count && i == col_count - 1 {
                                 // instruction is larger than reserved space,
                                 // and this is the final spot for hex,
@@ -180,7 +196,7 @@ impl Formatter {
                                     hex.write_str(" ").unwrap();
                                 }
 
-                                hex.write_str(&format!("{:02X}", insn_buf[i])).unwrap();
+                                hex.write_str(&format!("{:02X}", b)).unwrap();
                             } else {
                                 // common case, insn is smaller than reserved space,
                                 // so fill with spaces.
@@ -242,9 +258,9 @@ impl Formatter {
                             let status =
                                 unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
                             if status.is_error() {
-                                return Err(status);
+                                Err(status)
                             } else {
-                                return Ok(());
+                                Ok(())
                             }
                         } else {
                             // I'm not sure how this could ever be the case, as zydis initializes the hook
@@ -281,22 +297,22 @@ impl Formatter {
                         let status = unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
                         if status.is_error() {
                             return Err(status);
-                        } else {
-                            let (_, mnemonic) = buf.get_token()?.get_value()?;
+                        }
 
-                            if mnemonic.len() < userdata.options.mnemonic_width {
-                                let mut padding = String::new();
+                        let (_, mnemonic) = buf.get_token()?.get_value()?;
 
-                                for _ in 0..userdata.options.mnemonic_width - mnemonic.len() {
-                                    padding.write_str(" ").unwrap();
-                                }
+                        if mnemonic.len() < userdata.options.mnemonic_width {
+                            let mut padding = String::new();
 
-                                buf.append(zydis::TOKEN_WHITESPACE)?;
-                                buf.get_string()?.append(&padding)?;
+                            for _ in 0..userdata.options.mnemonic_width - mnemonic.len() {
+                                padding.write_str(" ").unwrap();
                             }
 
-                            return Ok(());
+                            buf.append(zydis::TOKEN_WHITESPACE)?;
+                            buf.get_string()?.append(&padding)?;
                         }
+
+                        Ok(())
                     } else {
                         // I'm not sure how this could ever be the case, as zydis initializes the hook
                         // with a default. I suppose if you explicitly set
@@ -373,12 +389,18 @@ impl Formatter {
         let mut out = String::new();
         for (token, s) in self
             .inner
-            .tokenize_instruction(&insn, &mut buffer, Some(va), Some(&mut ud))?
+            .tokenize_instruction(insn, &mut buffer, Some(va), Some(&mut ud))?
         {
             self.render_token(&mut out, token, s)?;
         }
 
         Ok(out)
+    }
+}
+
+impl Default for Formatter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -395,7 +417,7 @@ mod tests {
 
         let ws = PEWorkspace::from_pe(pe)?;
 
-        let fmt = Formatter::new().with_colors(true).build();
+        let fmt = Formatter::with_options().with_colors(true).build();
 
         // ```
         //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"
@@ -418,7 +440,7 @@ mod tests {
 
         let ws = PEWorkspace::from_pe(pe)?;
 
-        let fmt = Formatter::new().with_colors(false).build();
+        let fmt = Formatter::with_options().with_colors(false).build();
 
         // ```
         //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"

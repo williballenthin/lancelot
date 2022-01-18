@@ -28,7 +28,7 @@ fn handle_disassemble(ws: &PEWorkspace, va: VA) -> Result<()> {
     info!("found {} basic blocks", blocks.len());
 
     let decoder = dis::get_disassembler(&ws.pe.module).unwrap();
-    let fmt = Formatter::new().with_colors(true).build();
+    let fmt = Formatter::new();
 
     for bb in blocks.into_iter() {
         // need to over-read the bb buffer, to account for the final instructions.
