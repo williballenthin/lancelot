@@ -15,6 +15,7 @@ use crate::{
     VA,
 };
 
+pub mod cfg;
 pub mod formatter;
 
 bitflags! {
@@ -69,13 +70,14 @@ pub struct WorkspaceAnalysis {
 }
 
 pub struct PEWorkspace {
+    pub config:   Box<dyn cfg::Configuration>,
     pub pe:       PE,
     pub cfg:      CFG,
     pub analysis: WorkspaceAnalysis,
 }
 
 impl PEWorkspace {
-    pub fn from_pe(pe: PE) -> Result<PEWorkspace> {
+    pub fn from_pe(config: Box<dyn cfg::Configuration>, pe: PE) -> Result<PEWorkspace> {
         let mut insns: InstructionIndex = Default::default();
 
         let mut function_starts: BTreeSet<VA> = Default::default();
@@ -98,7 +100,7 @@ impl PEWorkspace {
         }
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
 
-        let noret = crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg)?;
+        let mut noret = crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg)?;
 
         let mut function_starts = function_starts
             .into_iter()
@@ -129,6 +131,48 @@ impl PEWorkspace {
             names.insert(import.address, name);
         }
 
+        let sigs = config.get_sigs()?;
+        for &function in function_starts.iter() {
+            let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, function)?;
+
+            match matches.len().cmp(&1) {
+                std::cmp::Ordering::Less => {
+                    // no matches
+                    continue;
+                }
+                std::cmp::Ordering::Equal => {
+                    // exactly one match: perfect.
+                    if let Some(name) = matches[0].get_name() {
+                        log::info!("FLIRT match: {:#x}: {}", function, name);
+                        names.insert(function, name.to_string());
+                    } else {
+                        // no associated name, just know its a library function
+                        continue;
+                    }
+                }
+                std::cmp::Ordering::Greater => {
+                    // colliding matches, can't determine the name.
+                    // TODO: maybe check for special case that all names are the same?
+                    log::info!("FLIRT match: {:#x}: {} collisions", function, matches.len());
+                    continue;
+                }
+            }
+        }
+
+        for name in [
+            "kernel32.dll!ExitProcess",
+            "kernel32.dll!ExitThread",
+            "exit",
+            "_exit",
+            "__exit",
+            "__amsg_exit",
+        ] {
+            if let Some(&va) = names.addresses_by_name.get(name) {
+                log::info!("noret via name: {}: {:#x}", name, va);
+                noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(&pe.module, &mut cfg, va)?);
+            }
+        }
+
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
         let mut functions: BTreeMap<VA, FunctionAnalysis> = Default::default();
@@ -153,6 +197,7 @@ impl PEWorkspace {
         }
 
         Ok(PEWorkspace {
+            config,
             pe,
             cfg,
             analysis: WorkspaceAnalysis {
@@ -172,10 +217,13 @@ mod tests {
 
     #[test]
     fn nop() -> Result<()> {
+        crate::test::init_logging();
+
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let config = get_config();
 
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         // entry point
         assert!(ws.analysis.functions.contains_key(&0x401081));
@@ -206,6 +254,11 @@ mod tests {
         //     .text:00405F42  RtlUnwind       endp
         // ```
         assert!(ws.analysis.functions[&0x405F42].flags.intersects(FunctionFlags::THUNK));
+
+        // via FLIRT 0x401da9: _exit
+        assert!(ws.analysis.functions.contains_key(&0x401da9));
+        assert!(ws.analysis.names.contains_name(&String::from("_exit")));
+        assert!(ws.analysis.functions[&0x401da9].flags.intersects(FunctionFlags::NORET));
 
         Ok(())
     }

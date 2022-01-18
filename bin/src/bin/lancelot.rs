@@ -14,10 +14,23 @@ use lancelot::{
 
 fn handle_functions(ws: &PEWorkspace) -> Result<()> {
     info!("found {} functions", ws.analysis.functions.len());
-    for va in ws.analysis.functions.keys() {
-        println!("{:#x}", va);
-    }
+    for (va, md) in ws.analysis.functions.iter() {
+        print!("{:#x}", va);
 
+        if md.flags.intersects(lancelot::workspace::FunctionFlags::NORET) {
+            print!(" noret")
+        }
+
+        if md.flags.intersects(lancelot::workspace::FunctionFlags::THUNK) {
+            print!(" thunk")
+        }
+
+        if let Some(name) = ws.analysis.names.names_by_address.get(va) {
+            print!(" {}", name);
+        }
+
+        print!("\n");
+    }
     Ok(())
 }
 
@@ -82,6 +95,12 @@ fn _main() -> Result<()> {
                 .long("quiet")
                 .help("disable informational messages"),
         )
+        .arg(
+            clap::Arg::new("configuration")
+                .long("config")
+                .takes_value(true)
+                .help("path to configuration directory"),
+        )
         .subcommand(
             clap::App::new("functions").about("find functions").arg(
                 clap::Arg::new("input")
@@ -140,6 +159,17 @@ fn _main() -> Result<()> {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
 
+    let config = if matches.is_present("configuration") {
+        let path = matches.value_of("configuration").unwrap();
+        log::info!("configuration: {}", path);
+        Box::new(lancelot::workspace::cfg::FileSystemConfiguration::from_path(
+            &std::path::PathBuf::from(path),
+        ))
+    } else {
+        log::info!("using default, empty configuration");
+        lancelot::workspace::cfg::empty()
+    };
+
     if let Some(matches) = matches.subcommand_matches("functions") {
         debug!("mode: find functions");
 
@@ -148,7 +178,7 @@ fn _main() -> Result<()> {
 
         let buf = util::read_file(filename)?;
         let pe = PE::from_bytes(&buf)?;
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         handle_functions(&ws)
     } else if let Some(matches) = matches.subcommand_matches("disassemble") {
@@ -161,7 +191,7 @@ fn _main() -> Result<()> {
 
         let buf = util::read_file(filename)?;
         let pe = PE::from_bytes(&buf)?;
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         handle_disassemble(&ws, va)
     } else {

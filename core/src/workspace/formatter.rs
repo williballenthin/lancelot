@@ -414,8 +414,9 @@ mod tests {
     fn with_colors() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let config = cfg::empty();
 
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         let fmt = Formatter::with_options().with_colors(true).build();
 
@@ -437,8 +438,9 @@ mod tests {
     fn no_colors() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let config = cfg::empty();
 
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         let fmt = Formatter::with_options()
             .with_colors(false)
@@ -463,8 +465,9 @@ mod tests {
     fn hex() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let config = cfg::empty();
 
-        let ws = PEWorkspace::from_pe(pe)?;
+        let ws = PEWorkspace::from_pe(config, pe)?;
 
         // ```
         //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"
