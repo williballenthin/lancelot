@@ -60,62 +60,74 @@ mod tests {
         }
 
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
+        let norets = cfg_prune_noret_imports(&pe, &mut cfg)?;
 
-        cfg_prune_noret_imports(&pe, &mut cfg)?;
+        const EXIT_PROCESS: VA = 0x40600C;
+        assert!(norets.contains(&EXIT_PROCESS));
 
-        // there are two calls to ExitProcess:
+        // there are two calls to ExitProcess().
+        //
+        // *************************
+        // First call to ExitProcess
+        // *************************
         //
         //     .text:00401C73                 push    [esp+uExitCode] ; uExitCode
         //     .text:00401C77                 call    ds:ExitProcess
-        //     .text:00401C77 ___crtExitProcess endp
-        //     .text:00401C77
-        //     .text:00401C77 ;
-        // ---------------------------------------------------------------------------
-        //     .text:00401C7D                 align 2
-
+        //     .text:00401C7D  CC             align 2
+        //
         assert!(cfg.insns.insns_by_address.contains_key(&0x401C77));
         assert!(cfg.insns.insns_by_address.contains_key(&0x401C7D).not());
-
-        // and:
         //
-        //     .text:00402D69                 push    3               ; uExitCode
-        //     .text:00402D6B                 call    ds:ExitProcess
-        //     .text:00402D6B ; } // starts at 402D41
-        //     .text:00402D6B _report_failure endp
-        //     .text:00402D6B
-        //     .text:00402D6B ;
-        // ---------------------------------------------------------------------------
-        //     .text:00402D71                 align 2
-
-        assert!(cfg.insns.insns_by_address.contains_key(&0x402D6B));
-        assert!(cfg.insns.insns_by_address.contains_key(&0x402D71).not());
-
-        // _report_failure is part of __security_check_cookie (tail call),
-        // which is not noret.
+        // this is the end of ___crtExitProcess().
+        // and IDA detects this function as:
         //
-        // ___crtExitProcess is noret:
-        //
-        //    .text:00401C4E ; =============== S U B R O U T I N E
-        // =======================================    .text:00401C4E
         //    .text:00401C4E ; Attributes: library function noreturn
-        //    .text:00401C4E
         //    .text:00401C4E ; void __cdecl __noreturn __crtExitProcess(UINT uExitCode)
-        //    .text:00401C4E ___crtExitProcess proc near             ; CODE XREF:
-        // start+EA↑p    .text:00401C4E
-        // ; _doexit+BA↓p
         //
-        // which has a call to it like:
+        // this is a noret function because it terminates with a call to ExitProcess.
+        assert!(norets.contains(&0x401C4E));
+        // ___crtExitProcess() has a call to it like:
         //
         //     .text:00401161                 call    __NMSG_WRITE
         //     .text:00401166                 push    0FFh            ; uExitCode
         //     .text:0040116B                 call    ___crtExitProcess
-        //     .text:00401170 ;
-        // ---------------------------------------------------------------------------
         //     .text:00401170                 db  59h ; Y
         //     .text:00401171                 db  59h ; Y
-
+        //
+        // this is part of start():
+        //
+        //     .text:00401081                             ; int start()
+        //     .text:00401081                             public start
+        //     .text:00401081                             start proc near
+        //
+        // note start() is *not* noret
+        assert!(norets.contains(&0x401081).not());
+        //
+        // however, this leaf BB is terminated by the noret call.
         assert!(cfg.insns.insns_by_address.contains_key(&0x40116B));
         assert!(cfg.insns.insns_by_address.contains_key(&0x401170).not());
+
+        // **************************
+        // Second call to ExitProcess
+        // **************************
+        //
+        //     .text:00402D69                 push    3               ; uExitCode
+        //     .text:00402D6B                 call    ds:ExitProcess
+        //     .text:00402D71  CC             align 2
+        //
+        // this is part of _report_failure (0x402D41)
+        // which is part of __security_check_cookie (0x402D72) that tailcalls to
+        // _report_failure. IDA detects it as such:
+        //
+        //     .text:00402D72  ; Attributes: library function
+        //     .text:00402D72  ; void __fastcall __security_check_cookie(uintptr_t)
+        //
+        // while _report_failure is noret, __security_check_cookie is *not* noret.
+        assert!(norets.contains(&0x402D72).not());
+        //
+        // however, this leaf BB is terminated by the noret call.
+        assert!(cfg.insns.insns_by_address.contains_key(&0x402D6B));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x402D71).not());
 
         Ok(())
     }

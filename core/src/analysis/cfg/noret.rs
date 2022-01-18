@@ -27,6 +27,7 @@ use crate::{
 //
 // returns the set of functions newly recognized as noret.
 pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet<VA>> {
+    log::debug!("mark noret: {:#x}", va);
     let mut ret: BTreeSet<VA> = Default::default();
     let mut batch: ChangeBatch = Default::default();
 
@@ -49,6 +50,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
             Flow::UnconditionalJump(Target::Direct(src)) => src,
             _ => continue,
         };
+        log::debug!("mark noret: {:#x}: caller: {:#x}", va, src);
 
         batch.prune_noret_call(src);
         callers.push(src);
@@ -83,7 +85,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
                 .any(|flow| matches!(flow, Flow::Call(_)))
             {
                 // are there any other exit points from this function?
-                let is_noret = cfg
+                let is_ret = cfg
                     .get_reaches_from(head.address)
                     .filter(|block| cfg::empty(cfg::edges(&cfg.flows.flows_by_src[&block.address_of_last_insn])))
                     .any(|block| {
@@ -99,7 +101,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
                         matches!(insn.mnemonic, zydis::Mnemonic::RET)
                     });
 
-                if is_noret {
+                if !is_ret {
                     log::debug!("noret function: {:#x}", head.address);
                     ret.insert(head.address);
                 }
