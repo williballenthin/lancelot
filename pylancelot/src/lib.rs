@@ -3,7 +3,7 @@
 
 use anyhow::Error;
 use lancelot::{
-    analysis::dis::zydis,
+    analysis::dis::{zydis, Target},
     arch::Arch,
     aspace::AddressSpace,
     loader::pe::{PEError, PE as lPE},
@@ -80,6 +80,9 @@ pub struct CFG {
     pub basic_blocks: Py<PyDict>,
 }
 
+const TARGET_DIRECT: u8 = 0;
+const TARGET_INDIRECT: u8 = 1;
+
 const FLOW_FALLTHROUGH: u8 = 0;
 const FLOW_CALL: u8 = 1;
 const FLOW_UNCONDITIONAL_JUMP: u8 = 2;
@@ -89,15 +92,16 @@ const FLOW_CONDITIONAL_MOVE: u8 = 4;
 fn flow_to_tuple(py: Python, flow: &lancelot::analysis::cfg::flow::Flow) -> Py<PyTuple> {
     // we use a tuple for performance.
     use lancelot::analysis::cfg::flow::Flow;
-    let pair: [u64; 2] = match flow {
-        Flow::Fallthrough(va) => [*va, FLOW_FALLTHROUGH as u64],
-        Flow::Call(va) => [*va, FLOW_CALL as u64],
-        Flow::UnconditionalJump(va) => [*va, FLOW_UNCONDITIONAL_JUMP as u64],
-        Flow::ConditionalJump(va) => [*va, FLOW_CONDITIONAL_JUMP as u64],
-        Flow::ConditionalMove(va) => [*va, FLOW_CONDITIONAL_MOVE as u64],
+    let triple: [u64; 3] = match flow {
+        Flow::Fallthrough(va) => [*va, TARGET_DIRECT as u64, FLOW_FALLTHROUGH as u64],
+        Flow::Call(Target::Direct(va)) => [*va, TARGET_DIRECT as u64, FLOW_CALL as u64],
+        Flow::Call(Target::Indirect(va)) => [*va, TARGET_INDIRECT as u64, FLOW_CALL as u64],
+        Flow::UnconditionalJump(Target::Direct(va)) => [*va, TARGET_DIRECT as u64, FLOW_UNCONDITIONAL_JUMP as u64],
+        Flow::UnconditionalJump(Target::Indirect(va)) => [*va, TARGET_INDIRECT as u64, FLOW_UNCONDITIONAL_JUMP as u64],
+        Flow::ConditionalJump(va) => [*va, TARGET_DIRECT as u64, FLOW_CONDITIONAL_JUMP as u64],
     };
-    let pair = PyTuple::new(py, pair.iter());
-    pair.into()
+    let triple = PyTuple::new(py, triple.iter());
+    triple.into()
 }
 
 /// A basic block is a region of non-branching instructions (nor target of
@@ -490,7 +494,13 @@ fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
 
     // indices into a flow tuple
     m.add("FLOW_VA", 0)?;
-    m.add("FLOW_TYPE", 1)?;
+    m.add("FLOW_TARGET", 1)?;
+    m.add("FLOW_TYPE", 2)?;
+
+    // flow types
+    // we use int constants for performance
+    m.add("TARGET_DIRECT", TARGET_DIRECT)?;
+    m.add("TARGET_INDIRECT", TARGET_INDIRECT)?;
 
     // flow types
     // we use int constants for performance
