@@ -570,11 +570,9 @@ impl CFG {
     }
 
     pub fn get_reaches_from<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
-        log::debug!("reaches from: {:#x}", va);
         let mut seen: BTreeSet<VA> = Default::default();
 
         if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            log::warn!("reaches from: address is not a basic block: {:#x}", va);
             return Box::new(std::iter::empty());
         }
 
@@ -586,13 +584,11 @@ impl CFG {
                 if seen.contains(&bbva) {
                     continue;
                 }
-                log::debug!("reaches from: {:#x}: basic block: {:#x}", va, bbva);
 
                 let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
                 for succ in edge_targets(direct_edges(edges(succs))) {
-                    log::debug!("reaches from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
                     queue.push_back(succ);
                 }
 
@@ -607,11 +603,9 @@ impl CFG {
     }
 
     pub fn get_reaches_to<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
-        log::debug!("reaches to: {:#x}", va);
         let mut seen: BTreeSet<VA> = Default::default();
 
         if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            log::warn!("reaches to: address is not a basic block: {:#x}", va);
             return Box::new(std::iter::empty());
         }
 
@@ -623,7 +617,6 @@ impl CFG {
                 if seen.contains(&bbva) {
                     continue;
                 }
-                log::debug!("reaches to: {:#x}: basic block: {:#x}", va, bbva);
 
                 let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
@@ -631,7 +624,6 @@ impl CFG {
                 for pred in
                     edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
                 {
-                    log::debug!("reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
                     queue.push_back(pred);
                 }
 
