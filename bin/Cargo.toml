@@ -20,7 +20,7 @@ chrono = "0.4"
 anyhow = "1"
 thiserror = "1"
 better-panic = "0.3"
-goblin = "0.4"
+goblin = "0.5"
 hex = "0.4"
 
 lancelot = { path = "../core", version = "0.7.0" }
