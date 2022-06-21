@@ -22,7 +22,7 @@ anyhow = "1"
 thiserror = "1"
 regex = "1"
 smallvec = "1"
-widestring = "0.5"
+widestring = "1.0"
 smol_str = "0.1"
 ansi_term = "0.12"
 
