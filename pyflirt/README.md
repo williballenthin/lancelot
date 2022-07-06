@@ -108,3 +108,4 @@ You should not redistribute FLIRT signatures distributed by Hex-Rays; however, t
 
   - https://github.com/fireeye/siglib/
   - https://github.com/Maktm/FLIRTDB
+  - https://github.com/rizinorg/sigdb
