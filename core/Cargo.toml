@@ -13,7 +13,7 @@ travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch
 
 [dependencies]
 log = "0.4"
-goblin = { version = "0.5", features = ["std", "pe32"], default-features = false }
+goblin = { version = "0.6", features = ["std", "pe32"], default-features = false }
 zydis = { git = "https://github.com/williballenthin/zydis-rs", branch = "nightly/wasm", features = ["wasm", "serialization"], optional = true }
 byteorder = "1"
 bitflags = "1"
