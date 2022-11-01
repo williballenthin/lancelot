@@ -1,0 +1,46 @@
+[project]
+name = "python-lancelot"
+version = "0.7.0"
+description = "Intel x86(-64) code analysis library that reconstructs control flow"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE.txt"}
+keywords = ["flirt"]
+authors = [
+  {email = "william.ballenthin@mandiant.com", name = "Willi Ballenthin"},
+]
+maintainers = [
+  {email = "william.ballenthin@mandiant.com", name = "Willi Ballenthin"},
+]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Topic :: Security",
+  "Topic :: Software Development :: Disassemblers", 
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Rust"
+]
+
+dependencies = ["pefile"]
+
+[project.optional-dependencies]
+dev = [
+  "maturin",
+
+  "pytest==7.1.3",
+  "pytest-sugar==0.9.4",
+  "pytest-instafail==0.4.2",
+  "pytest-cov==4.0.0",
+  "pycodestyle==2.9.1",
+  "black==22.10.0",
+  "isort==5.10.1",
+  "mypy==0.982",
+]
+
+[project.urls]
+repository = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
+
+[build-system]
+requires = ["maturin>=0.13,<0.14"]
+build-backend = "maturin"

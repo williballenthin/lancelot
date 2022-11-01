@@ -21,12 +21,14 @@ $ pushd flirt; cargo test; popd
 $ pushd bin; cargo test; popd
 
 $ pushd pylancelot
-$   maturin develop
+$   # install maturin if necessary
+$   maturin develop --extras dev
 $   pytest
 $ popd
 
 $ pushd pyflirt
-$   maturin develop
+$   # install maturin if necessary
+$   maturin develop  --extras dev
 $   pytest
 $ popd
 ```

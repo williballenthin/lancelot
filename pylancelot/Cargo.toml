@@ -18,15 +18,3 @@ anyhow = "1"
 [features]
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
-
-[package.metadata.maturin]
-requires-dist = ["pefile"]
-classifier = [
-  "Programming Language :: Rust",
-  "Development Status :: 3 - Alpha",
-  "License :: OSI Approved :: Apache Software License",
-  "Natural Language :: English",
-  "Operating System :: OS Independent",
-  "Topic :: Security",
-  "Topic :: Software Development :: Disassemblers",
-]

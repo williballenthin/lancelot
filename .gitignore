@@ -59,3 +59,5 @@ resources/evaluation/SoK/.ipynb_checkpoints
 resources/evaluation/SoK/binaries.txt
 .vscode
 */target/
+.direnv
+.envrc
