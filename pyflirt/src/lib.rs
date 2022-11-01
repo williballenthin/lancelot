@@ -3,7 +3,7 @@
 
 use anyhow::Error;
 use lancelot_flirt::{pat, sig};
-use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyObjectProtocol};
+use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
@@ -71,10 +71,7 @@ impl FlirtSignature {
             })
             .collect()
     }
-}
 
-#[pyproto]
-impl PyObjectProtocol for FlirtSignature {
     fn __str__(&self) -> PyResult<String> {
         use lancelot_flirt::Symbol;
         if let Some(Symbol::Public(name)) = self.inner.names.iter().find(|name| matches!(name, Symbol::Public(_))) {

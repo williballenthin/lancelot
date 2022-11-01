@@ -2,7 +2,7 @@
 #![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
 
 use anyhow::Error;
-use lancelot::{
+use ::lancelot::{
     analysis::dis::{zydis, Target},
     arch::Arch,
     aspace::AddressSpace,
@@ -12,7 +12,7 @@ use lancelot::{
     util::UtilError,
     VA,
 };
-use pyo3::{self, prelude::*, types::*, wrap_pyfunction, PyNumberProtocol, PyObjectProtocol};
+use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
@@ -55,7 +55,7 @@ fn to_py_err(e: Error) -> PyErr {
 /// Returns: PE
 #[pyfunction]
 pub fn from_bytes(buf: &PyBytes) -> PyResult<PE> {
-    use lancelot::analysis::dis;
+    use ::lancelot::analysis::dis;
     let pe = lPE::from_bytes(buf.as_bytes()).map_err(to_py_err)?;
     let dec = dis::get_disassembler(&pe.module).map_err(to_py_err)?;
     Ok(PE {
@@ -89,9 +89,9 @@ const FLOW_UNCONDITIONAL_JUMP: u8 = 2;
 const FLOW_CONDITIONAL_JUMP: u8 = 3;
 const FLOW_CONDITIONAL_MOVE: u8 = 4;
 
-fn flow_to_tuple(py: Python, flow: &lancelot::analysis::cfg::flow::Flow) -> Py<PyTuple> {
+fn flow_to_tuple(py: Python, flow: &::lancelot::analysis::cfg::flow::Flow) -> Py<PyTuple> {
     // we use a tuple for performance.
-    use lancelot::analysis::cfg::flow::Flow;
+    use ::lancelot::analysis::cfg::flow::Flow;
     let triple: [u64; 3] = match flow {
         Flow::Fallthrough(va) => [*va, TARGET_DIRECT as u64, FLOW_FALLTHROUGH as u64],
         Flow::Call(Target::Direct(va)) => [*va, TARGET_DIRECT as u64, FLOW_CALL as u64],
@@ -123,8 +123,8 @@ pub struct BasicBlock {
     pub successors: Py<PyList>,
 }
 
-#[pyproto]
-impl PyNumberProtocol for BasicBlock {
+#[pymethods]
+impl BasicBlock {
     fn __int__(&self) -> PyResult<u64> {
         Ok(self.address)
     }
@@ -184,7 +184,7 @@ fn operand_to_tuple(py: Python, operand: &zydis::DecodedOperand) -> Py<PyTuple> 
         zydis::enums::OperandType::IMMEDIATE => {
             ret.push(operand.imm.is_relative.into_py(py));
             let value = if operand.imm.is_signed {
-                lancelot::util::u64_i64(operand.imm.value) as i128
+                ::lancelot::util::u64_i64(operand.imm.value) as i128
             } else {
                 operand.imm.value as i128
             };
@@ -256,10 +256,7 @@ impl Instruction {
 
         PyTuple::new(py, ret.iter()).into()
     }
-}
 
-#[pyproto]
-impl PyObjectProtocol for Instruction {
     fn __str__(&self) -> PyResult<String> {
         let formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).expect("formatter");
         let mut buffer = [0u8; 200];
@@ -270,10 +267,7 @@ impl PyObjectProtocol for Instruction {
             .expect("format");
         Ok(format!("{:#x}: {}", self.address, buffer))
     }
-}
 
-#[pyproto]
-impl PyNumberProtocol for Instruction {
     fn __int__(&self) -> PyResult<u64> {
         Ok(self.address)
     }
@@ -324,24 +318,26 @@ impl PE {
     ///
     /// Returns: List[int]
     pub fn get_functions(&self) -> PyResult<Vec<u64>> {
-        Ok(lancelot::analysis::pe::find_functions(&self.inner)
+        use ::lancelot::analysis::pe;
+        Ok(pe::find_functions(&self.inner)
             .map_err(to_py_err)?
             .into_iter()
-            .filter(|f| matches!(f, lancelot::analysis::pe::Function::Local(_)))
+            .filter(|f| matches!(f, pe::Function::Local(_)))
             .map(|f| match f {
-                lancelot::analysis::pe::Function::Local(va) => va,
+                pe::Function::Local(va) => va,
                 _ => unreachable!(),
             })
             .collect())
     }
 
     pub fn get_thunks(&self) -> PyResult<Vec<u64>> {
-        Ok(lancelot::analysis::pe::find_functions(&self.inner)
+        use ::lancelot::analysis::pe;
+        Ok(pe::find_functions(&self.inner)
             .map_err(to_py_err)?
             .into_iter()
-            .filter(|f| matches!(f, lancelot::analysis::pe::Function::Thunk(_)))
+            .filter(|f| matches!(f, pe::Function::Thunk(_)))
             .map(|f| match f {
-                lancelot::analysis::pe::Function::Thunk(thunk) => thunk.address,
+                pe::Function::Thunk(thunk) => thunk.address,
                 _ => unreachable!(),
             })
             .collect())
@@ -360,7 +356,7 @@ impl PE {
     ///
     /// Returns: CFG
     pub fn build_cfg(&self, py: Python, va: VA) -> PyResult<CFG> {
-        use lancelot::analysis::cfg;
+        use ::lancelot::analysis::cfg;
 
         let mut insns: cfg::InstructionIndex = Default::default();
         insns.build_index(&self.inner.module, va).map_err(to_py_err)?;
