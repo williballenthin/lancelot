@@ -753,7 +753,7 @@ fn format_range_hex(address_space: &AbsoluteAddressSpace, range: &Range) -> Stri
         .read_bytes(range.start, (range.end - range.start) as usize)
         .unwrap();
     let b = &buf[..];
-    let mut h = hexyl::Printer::new(&mut ostream, true, hexyl::BorderStyle::None, true);
+    let mut h = hexyl::Printer::new(&mut ostream, true, true, true, hexyl::BorderStyle::None, true);
     h.display_offset(range.start as u64);
     h.print_all(b).unwrap();
     let hex = String::from_utf8(ostream).unwrap();
