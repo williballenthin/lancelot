@@ -101,7 +101,7 @@ pub fn emu_from_shellcode32(code: &[u8]) -> crate::emu::Emulator {
 #[cfg(test)]
 pub mod uc {
     use byteorder::{ByteOrder, LittleEndian};
-    use unicorn::Cpu;
+    use unicorn_engine::unicorn_const::{Arch, Mode, Permission, uc_error};
 
     use super::load_shellcode64;
     use crate::{
@@ -110,15 +110,15 @@ pub mod uc {
         module::{Module, Permissions},
     };
 
-    pub struct Uc {
-        emu: unicorn::CpuX86,
+    pub struct Uc<'a> {
+        emu: unicorn_engine::Unicorn<'a, ()>,
     }
 
-    impl Uc {
-        pub fn from_module(m: &Module) -> Uc {
-            let emu = match m.arch {
-                crate::arch::Arch::X32 => unicorn::CpuX86::new(unicorn::Mode::MODE_32).unwrap(),
-                crate::arch::Arch::X64 => unicorn::CpuX86::new(unicorn::Mode::MODE_64).unwrap(),
+    impl<'a> Uc<'a> {
+        pub fn from_module<'b>(m: &'b Module) -> Uc<'a> {
+            let mut emu = match m.arch {
+                crate::arch::Arch::X32 => unicorn_engine::Unicorn::new(Arch::X86, Mode::MODE_32).unwrap(),
+                crate::arch::Arch::X64 => unicorn_engine::Unicorn::new(Arch::X86, Mode::MODE_64).unwrap(),
             };
 
             for section in m.sections.iter() {
@@ -128,7 +128,7 @@ pub mod uc {
                 emu.mem_map(
                     section.virtual_range.start,
                     crate::util::align(section_size, PAGE_SIZE as u64) as usize,
-                    unicorn::PROT_WRITE,
+                    Permission::WRITE,
                 )
                 .unwrap();
 
@@ -147,15 +147,15 @@ pub mod uc {
                     page_addr += PAGE_SIZE as u64;
                 }
 
-                let mut prot = unicorn::PROT_NONE;
+                let mut prot = Permission::NONE;
                 if section.permissions.intersects(Permissions::W) {
-                    prot.insert(unicorn::PROT_WRITE);
+                    prot.insert(Permission::WRITE);
                 }
                 if section.permissions.intersects(Permissions::R) {
-                    prot.insert(unicorn::PROT_READ);
+                    prot.insert(Permission::READ);
                 }
                 if section.permissions.intersects(Permissions::X) {
-                    prot.insert(unicorn::PROT_EXEC);
+                    prot.insert(Permission::EXEC);
                 }
 
                 emu.mem_protect(
@@ -169,19 +169,20 @@ pub mod uc {
             Uc { emu }
         }
 
-        pub fn step(&mut self) -> Result<(), unicorn::Error> {
-            let rip = self.emu.reg_read(unicorn::RegisterX86::RIP).unwrap();
+        pub fn step(&mut self) -> Result<(), uc_error> {
+            let rip = self.emu.reg_read(unicorn_engine::RegisterX86::RIP).unwrap();
             self.emu.emu_start(rip, u64::MAX, 0, 1)
         }
 
-        pub fn mem_read_u64(&self, addr: u64) -> Result<u64, unicorn::Error> {
-            let buf = self.emu.mem_read(addr, 8)?;
+        pub fn mem_read_u64(&self, addr: u64) -> Result<u64, uc_error> {
+            let mut buf = [0u8; 8];
+            self.emu.mem_read(addr, &mut buf)?;
             Ok(LittleEndian::read_u64(&buf))
         }
 
         /// panics if the given emulator does have the same state as this.
         pub fn check(&self, other: &crate::emu::Emulator) {
-            use unicorn::RegisterX86::*;
+            use unicorn_engine::RegisterX86::*;
 
             assert_eq!(
                 self.emu.reg_read(RIP).unwrap(),
@@ -290,12 +291,12 @@ pub mod uc {
         let mut uc = Uc::from_module(&m);
 
         uc.emu
-            .reg_write(unicorn::RegisterX86::RIP, m.address_space.base_address)
+            .reg_write(unicorn_engine::RegisterX86::RIP, m.address_space.base_address)
             .unwrap(); // 0x0
 
-        uc.emu.mem_map(0x5000, 0x2000, unicorn::PROT_ALL).unwrap();
-        uc.emu.reg_write(unicorn::RegisterX86::RSP, 0x6000).unwrap();
-        uc.emu.reg_write(unicorn::RegisterX86::RBP, 0x6000).unwrap();
+        uc.emu.mem_map(0x5000, 0x2000, Permission::ALL).unwrap();
+        uc.emu.reg_write(unicorn_engine::RegisterX86::RSP, 0x6000).unwrap();
+        uc.emu.reg_write(unicorn_engine::RegisterX86::RBP, 0x6000).unwrap();
 
         uc
     }
