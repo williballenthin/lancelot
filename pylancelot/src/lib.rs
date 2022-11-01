@@ -1,7 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
 
-use anyhow::Error;
 use ::lancelot::{
     analysis::dis::{zydis, Target},
     arch::Arch,
@@ -12,6 +11,7 @@ use ::lancelot::{
     util::UtilError,
     VA,
 };
+use anyhow::Error;
 use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
 
 /// ValueError -> "you're doing something wrong"

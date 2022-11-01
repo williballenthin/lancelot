@@ -1,3 +1,6 @@
+// clippy complains about `wasm_bindgen(typescript_type = ...)`
+#![allow(unused_variables)]
+
 use wasm_bindgen::prelude::*;
 
 use anyhow::Error;

@@ -101,7 +101,7 @@ pub fn emu_from_shellcode32(code: &[u8]) -> crate::emu::Emulator {
 #[cfg(test)]
 pub mod uc {
     use byteorder::{ByteOrder, LittleEndian};
-    use unicorn_engine::unicorn_const::{Arch, Mode, Permission, uc_error};
+    use unicorn_engine::unicorn_const::{uc_error, Arch, Mode, Permission};
 
     use super::load_shellcode64;
     use crate::{

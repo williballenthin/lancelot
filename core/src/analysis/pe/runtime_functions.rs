@@ -1,7 +1,7 @@
 #![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
 
 /// > Table-based exception handling requires a table entry for all functions
-/// >  that allocate stack space or call another function (for example, nonleaf
+/// > that allocate stack space or call another function (for example, nonleaf
 /// functions). > The RUNTIME_FUNCTION structure must be DWORD aligned in
 /// memory. > All addresses are image relative, that is, they're 32-bit offsets
 /// from > the starting address of the image that contains the function table
