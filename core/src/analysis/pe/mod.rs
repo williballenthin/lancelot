@@ -169,11 +169,10 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
                         // it works like a relative immediate,
                         // that is: dst = *(rva + displacement + instruction len)
 
-                        let ptr =
-                            match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement) {
-                                None => continue,
-                                Some(ptr) => ptr,
-                            };
+                        let ptr = match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement) {
+                            None => continue,
+                            Some(ptr) => ptr,
+                        };
 
                         if let Some(import) = imports.get(&ptr) {
                             let thunk = Thunk {

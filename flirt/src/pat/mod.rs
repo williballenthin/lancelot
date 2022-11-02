@@ -221,13 +221,7 @@ fn tail_byte(input: &str) -> IResult<&str, TailByte> {
     let (input, value) = hex_byte(input)?;
     let (input, _) = tag(")")(input)?;
 
-    Ok((
-        input,
-        TailByte {
-            offset,
-            value,
-        },
-    ))
+    Ok((input, TailByte { offset, value }))
 }
 
 fn tail_bytes(input: &str) -> IResult<&str, Vec<TailByte>> {
