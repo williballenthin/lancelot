@@ -46,7 +46,7 @@ pub trait AddressSpace<T> {
     fn read_pointer(&self, arch: Arch, offset: T) -> Result<u64> {
         match arch {
             Arch::X32 => Ok(self.read_u32(offset)? as u64),
-            Arch::X64 => Ok(self.read_u64(offset)? as u64),
+            Arch::X64 => Ok(self.read_u64(offset)?),
         }
     }
 

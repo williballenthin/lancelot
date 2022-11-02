@@ -92,7 +92,7 @@ pub fn find_pe_cfguard_functions(pe: &PE) -> Result<Vec<VA>> {
 
             let cfg_table_count = match pe.module.arch {
                 Arch::X32 => load_config.read_u32(0x54)? as u64,
-                Arch::X64 => load_config.read_u64(0x88)? as u64,
+                Arch::X64 => load_config.read_u64(0x88)?,
             };
             debug!("CF Guard table count: {:#x}", cfg_table_count);
 

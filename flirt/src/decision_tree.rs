@@ -76,7 +76,7 @@ impl std::fmt::Display for Pattern {
 }
 
 fn is_hex_digit(c: char) -> bool {
-    c.is_digit(16)
+    c.is_ascii_hexdigit()
 }
 
 fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
@@ -343,11 +343,11 @@ impl Node {
     fn get_child(&self, b: u8) -> Option<&Node> {
         if let Node::Branch { choices, other, .. } = self {
             if let Some(node) = choices.get(&b) {
-                return Some(&*node);
+                return Some(node);
             }
 
             if let Some(node) = other {
-                return Some(&*node);
+                return Some(node);
             }
         }
 
@@ -363,7 +363,7 @@ impl Node {
                 Node::Branch { index, .. } => {
                     if let Some(b) = buf.get(*index as usize) {
                         if let Some(next) = node.get_child(*b) {
-                            node = &*next;
+                            node = next;
                             continue;
                         }
 
@@ -488,7 +488,7 @@ impl std::fmt::Debug for DecisionTree {
                         write_indent(f, indent + 1)?;
                         writeln!(f, "choice ..")?;
 
-                        rec(f, patterns, bucket, indent + 2, &*other)?;
+                        rec(f, patterns, bucket, indent + 2, other)?;
                     }
                 }
             }

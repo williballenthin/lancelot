@@ -170,7 +170,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
                         // that is: dst = *(rva + displacement + instruction len)
 
                         let ptr =
-                            match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement as i64) {
+                            match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement) {
                                 None => continue,
                                 Some(ptr) => ptr,
                             };

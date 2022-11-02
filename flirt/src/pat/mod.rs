@@ -58,7 +58,7 @@ fn is_not_newline(c: char) -> bool {
 }
 
 fn is_hex_digit(c: char) -> bool {
-    c.is_digit(16)
+    c.is_ascii_hexdigit()
 }
 
 fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
@@ -224,7 +224,7 @@ fn tail_byte(input: &str) -> IResult<&str, TailByte> {
     Ok((
         input,
         TailByte {
-            offset: offset as u64,
+            offset,
             value,
         },
     ))
@@ -278,7 +278,7 @@ fn pat_signature(input: &str) -> IResult<&str, FlirtSignature> {
             byte_sig,
             size_of_bytes_crc16,
             crc16,
-            size_of_function: size_of_function as u64,
+            size_of_function,
             names,
             footer,
             tail_bytes,

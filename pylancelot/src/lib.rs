@@ -229,7 +229,7 @@ impl Instruction {
     /// the length in bytes of the instruction.
     #[getter]
     pub fn length(&self) -> u8 {
-        self.inner.length as u8
+        self.inner.length
     }
 
     #[getter]

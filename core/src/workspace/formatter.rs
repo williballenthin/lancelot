@@ -353,7 +353,7 @@ impl Formatter {
 
     fn render_token<T: Write>(&self, o: &mut T, token: zydis::Token, s: &str) -> Result<()> {
         if self.options.colors {
-            o.write_str(&Formatter::get_token_color(token).paint(s).to_string())?;
+            o.write_str(&Formatter::get_token_color(token).paint(s))?;
         } else {
             o.write_str(s)?;
         }

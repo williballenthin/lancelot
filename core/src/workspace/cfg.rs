@@ -42,16 +42,14 @@ impl Configuration for FileSystemConfiguration {
         let mut path = self.path.clone();
         path.push("sigs");
 
-        for path in path.read_dir()? {
-            if let Ok(entry) = path {
-                if let Ok(filename) = entry.file_name().into_string() {
-                    if filename.ends_with(".sig") {
-                        let buf = std::fs::read(entry.path())?;
-                        sigs.extend(lancelot_flirt::sig::parse(&buf)?);
-                    } else if filename.ends_with(".pat") {
-                        let buf = String::from_utf8(std::fs::read(entry.path())?)?;
-                        sigs.extend(lancelot_flirt::pat::parse(&buf)?);
-                    }
+        for entry in path.read_dir()?.flatten() {
+            if let Ok(filename) = entry.file_name().into_string() {
+                if filename.ends_with(".sig") {
+                    let buf = std::fs::read(entry.path())?;
+                    sigs.extend(lancelot_flirt::sig::parse(&buf)?);
+                } else if filename.ends_with(".pat") {
+                    let buf = String::from_utf8(std::fs::read(entry.path())?)?;
+                    sigs.extend(lancelot_flirt::pat::parse(&buf)?);
                 }
             }
         }

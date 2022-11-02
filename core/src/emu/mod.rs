@@ -758,7 +758,7 @@ impl Emulator {
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
                         let result = m.wrapping_sub(n);
-                        (result, 63, n as u64 > m as u64)
+                        (result, 63, n > m)
                     }
                     32 => {
                         let result = (m as u32).wrapping_sub(n as u32) as u64;
@@ -841,12 +841,12 @@ impl Emulator {
 
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
-                        let result = (n as u64) as u128 + (m as u64) as u128;
-                        (result as u64 & u64::MAX as u64, 63, result > u64::MAX as u128)
+                        let result = n as u128 + m as u128;
+                        (result as u64 & u64::MAX, 63, result > u64::MAX as u128)
                     }
                     32 => {
                         let result = (n as u32) as u64 + (m as u32) as u64;
-                        (result as u64 & u32::MAX as u64, 31, result > u32::MAX as u64)
+                        (result & u32::MAX as u64, 31, result > u32::MAX as u64)
                     }
                     16 => {
                         let result = (n as u16) as u32 + (m as u16) as u32;
@@ -913,7 +913,7 @@ impl Emulator {
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
                         let result = m.wrapping_sub(n);
-                        (result, 63, n as u64 > m as u64)
+                        (result, 63, n > m)
                     }
                     32 => {
                         let result = (m as u32).wrapping_sub(n as u32) as u64;
@@ -980,7 +980,7 @@ impl Emulator {
                 let (result, msb_index, cf) = match dst.size {
                     64 => {
                         let result = m.wrapping_sub(n);
-                        (result, 63, n as u64 > m as u64)
+                        (result, 63, n > m)
                     }
                     32 => {
                         let result = (m as u32).wrapping_sub(n as u32) as u64;

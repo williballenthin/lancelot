@@ -29,7 +29,7 @@ fn handle_functions(ws: &PEWorkspace) -> Result<()> {
             print!(" {}", name);
         }
 
-        print!("\n");
+        println!();
     }
     Ok(())
 }

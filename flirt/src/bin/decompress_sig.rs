@@ -4,7 +4,7 @@ fn run(sig_path: &str, output_path: &str) -> Result<()> {
     let buf = std::fs::read(sig_path)?;
     let buf = lancelot_flirt::sig::unpack_sig(&buf)?;
 
-    std::fs::write(output_path, &buf)?;
+    std::fs::write(output_path, buf)?;
 
     Ok(())
 }

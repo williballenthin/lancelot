@@ -225,7 +225,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
 
     let mut sections = vec![load_pe_header(buf, &pe, base_address)?];
     for section in pe.sections.iter() {
-        sections.push(load_pe_section(base_address, section_alignment as u64, section)?);
+        sections.push(load_pe_section(base_address, section_alignment, section)?);
     }
 
     let max_address = sections.iter().map(|sec| sec.virtual_range.end).max().unwrap();
@@ -254,7 +254,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
 
         if vsize as usize >= psize {
             // vsize > psize, so there will be NULL bytes padding the physical data.
-            let dest = &mut vbuf[0..psize as usize];
+            let dest = &mut vbuf[0..psize];
             dest.copy_from_slice(pbuf);
         } else {
             // psize > vsize, but vsize wins, so we only read a subset of physical data.

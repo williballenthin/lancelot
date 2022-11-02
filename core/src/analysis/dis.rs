@@ -191,7 +191,7 @@ pub fn get_memory_operand_ptr(
         // it works like a relative immediate,
         // that is: dst = *(rva + displacement + instruction len)
 
-        match util::va_add_signed(va + insn.length as u64, op.mem.disp.displacement as i64) {
+        match util::va_add_signed(va + insn.length as u64, op.mem.disp.displacement) {
             None => Ok(None),
             Some(ptr) => Ok(Some(ptr)),
         }

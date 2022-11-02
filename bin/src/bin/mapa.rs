@@ -201,7 +201,7 @@ fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
     };
 
     for ((file_offset, end), v) in src.map.into_iter() {
-        if let Ok(va) = pe.module.virtual_address(file_offset as u64) {
+        if let Ok(va) = pe.module.virtual_address(file_offset) {
             // need to fixup the file structure, to encompass the complete module range,
             // not just file sizes.
             let end = if let Structure::File = v.structure {
@@ -517,7 +517,7 @@ fn insert_imports_range(ranges: &mut Ranges, pe: &PE) -> Result<()> {
 
 fn insert_resource_ranges_inner(
     ranges: &mut Ranges,
-    pe: &PE,
+    _pe: &PE,
     rsrc: &ResourceSectionData,
     prefix: String,
     node: NodeChild,
@@ -555,7 +555,7 @@ fn insert_resource_ranges_inner(
                     }
                 };
 
-                insert_resource_ranges_inner(ranges, pe, rsrc, prefix, child)?;
+                insert_resource_ranges_inner(ranges, _pe, rsrc, prefix, child)?;
             }
         }
     }
@@ -754,7 +754,7 @@ fn format_range_hex(address_space: &AbsoluteAddressSpace, range: &Range) -> Stri
         .unwrap();
     let b = &buf[..];
     let mut h = hexyl::Printer::new(&mut ostream, true, true, true, hexyl::BorderStyle::None, true);
-    h.display_offset(range.start as u64);
+    h.display_offset(range.start);
     h.print_all(b).unwrap();
     let hex = String::from_utf8(ostream).unwrap();
     //let hex = lancelot::util::hexdump(&buf[range.start as usize..range.end as

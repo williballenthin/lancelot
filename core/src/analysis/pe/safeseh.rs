@@ -61,14 +61,14 @@ pub fn find_pe_safeseh_handlers(pe: &PE) -> Result<Vec<VA>> {
 
         let sehandler_table_count = match pe.module.arch {
             Arch::X32 => pe.module.address_space.read_u32(load_config_directory.address + 0x44)? as u64,
-            Arch::X64 => pe.module.address_space.read_u64(load_config_directory.address + 0x68)? as u64,
+            Arch::X64 => pe.module.address_space.read_u64(load_config_directory.address + 0x68)?,
         };
         debug!("SafeSEH table count: {:#x}", sehandler_table_count);
 
         let mut offset = sehandler_table_va;
         for _ in 0..sehandler_table_count {
             let target = pe.module.read_rva_at_va(offset)?;
-            let target = target as u64 + pe.module.address_space.base_address;
+            let target = target + pe.module.address_space.base_address;
 
             if pe.module.probe_va(target, Permissions::X) {
                 ret.push(target);

@@ -66,7 +66,7 @@ pub fn link_imports(emu: &mut Emulator, pe: &PE) -> Result<BTreeMap<VA, String>>
                         emu.mem.poke_u32(first_thunk_addr, original_thunk_addr as u32)?;
                     }
                     Arch::X64 => {
-                        emu.mem.poke_u64(first_thunk_addr, original_thunk_addr as u64)?;
+                        emu.mem.poke_u64(first_thunk_addr, original_thunk_addr)?;
                     }
                 }
             }
