@@ -16,6 +16,9 @@ jobs:
           toolchain: nightly
           override: true
           components: rustfmt, clippy
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'           
       - name: check
         uses: actions-rs/cargo@v1
         with:
