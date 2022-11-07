@@ -62,8 +62,6 @@ def test_cfg(k32):
     cfg = ws.build_cfg(0x1800202B0)
 
     assert cfg.address == 0x1800202B0
-    assert len(cfg.basic_blocks) == 4
-
     assert 0x1800202B0 in cfg.basic_blocks
     assert 0x180020334 in cfg.basic_blocks
     assert 0x1800202F3 in cfg.basic_blocks
@@ -72,20 +70,6 @@ def test_cfg(k32):
     bb0 = cfg.basic_blocks[0x1800202B0]
     assert 0x180020334 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
     assert 0x1800202F3 in map(lambda flow: flow[lancelot.FLOW_VA], bb0.successors)
-
-
-def test_call_graph(k32):
-    ws = lancelot.from_bytes(k32)
-
-    assert "Returns: CallGraph" in ws.build_call_graph.__doc__
-
-    cg = ws.build_call_graph()
-    assert len(cg.calls_to[0x180001068]) == 2
-    assert 0x18000F775 in cg.calls_to[0x180001068]
-    assert 0x180060504 in cg.calls_to[0x180001068]
-    assert 0x180001068 in cg.calls_from[0x180060504]
-    assert 0x1800602C0 in cg.call_instruction_functions[0x180060504]
-    assert 0x180060504 in cg.function_call_instructions[0x1800602C0]
 
 
 def test_read_insn(k32):
