@@ -194,7 +194,7 @@ impl Ranges {
     }
 }
 
-/// convert a Ranges<FileOffset> to Ranges<VA> using a PE
+/// convert a `Ranges<FileOffset>` to `Ranges<VA>` using a PE
 fn fo_to_va_ranges(pe: &PE, src: Ranges) -> Ranges {
     let mut dst: Ranges = Ranges {
         map: Default::default(),
