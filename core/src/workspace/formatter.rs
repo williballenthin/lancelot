@@ -2,7 +2,9 @@ use std::{cmp::min, fmt::Write};
 
 use anyhow::Result;
 
-use crate::{analysis::dis::zydis, arch::Arch, aspace::AddressSpace, workspace::PEWorkspace, VA};
+use crate::{analysis::dis::zydis, arch::Arch, aspace::AddressSpace, VA};
+
+use super::Workspace;
 
 #[derive(Default, Clone)]
 struct OriginalHooks {
@@ -33,7 +35,7 @@ pub struct FormatterOptions {
 }
 
 struct UserData<'a> {
-    ws:      &'a PEWorkspace,
+    ws:      &'a dyn Workspace,
     orig:    OriginalHooks,
     options: FormatterOptions,
 }
@@ -141,8 +143,7 @@ impl Formatter {
 
                     if let Some(sec) = userdata
                         .ws
-                        .pe
-                        .module
+                        .module()
                         .sections
                         .iter()
                         .find(|&sec| sec.virtual_range.contains(&va))
@@ -157,7 +158,7 @@ impl Formatter {
                     buf.get_string()?.append(":")?;
 
                     buf.append(zydis::TOKEN_ADDRESS_ABS)?;
-                    match userdata.ws.pe.module.arch {
+                    match userdata.ws.module().arch {
                         Arch::X32 => {
                             buf.get_string()?.append(&format!("{:08x}", va))?;
                         }
@@ -175,8 +176,7 @@ impl Formatter {
                         let col_count = userdata.options.hex_column_size;
                         userdata
                             .ws
-                            .pe
-                            .module
+                            .module()
                             .address_space
                             .read_into(va, &mut insn_buf[..insn_len])
                             .expect("failed to read instruction");
@@ -241,7 +241,7 @@ impl Formatter {
                             .expect("failed to calculate absolute address")
                     };
 
-                    if let Some(name) = userdata.ws.analysis.names.names_by_address.get(&absolute_address) {
+                    if let Some(name) = userdata.ws.analysis().names.names_by_address.get(&absolute_address) {
                         // name is found in map, use that.
                         buf.append(TOKEN_USER_SYMBOLNAME)?;
                         return buf.get_string()?.append(name);
@@ -367,7 +367,7 @@ impl Formatter {
         Ok(())
     }
 
-    pub fn format_instruction(&self, ws: &PEWorkspace, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
+    pub fn format_instruction(&self, ws: &dyn Workspace, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
         let mut buffer = [0u8; 200];
 
         // we pass our userdata to ZydisFormatterFormatInstruction.
@@ -375,7 +375,7 @@ impl Formatter {
         // we need to convince the compiler that the userdata pointer lives long enough
         // to by used by the callbacks.
         //
-        // we do this by extending the CFG lifetime from '_ to 'static.
+        // we do this by extending the workspace lifetime from '_ to 'static.
         //
         // userdata is passed into ZydisFormatterFormatInstruction,
         // which passes userdata to each of the formatter callbacks.
@@ -384,7 +384,11 @@ impl Formatter {
         // the callbacks won't be invoked beyond the call into FormatInstruction.
         //
         // therefore, i believe its safe to extend the lifetime here to work with zydis.
-        let x = unsafe { std::mem::transmute::<&'_ PEWorkspace, &'static PEWorkspace>(ws) };
+        //let x = unsafe { std::mem::transmute::<&'_ PEWorkspace, &'static
+        // PEWorkspace>(ws) };
+        let x = unsafe { std::mem::transmute::<&'_ dyn Workspace, &'static dyn Workspace>(ws) };
+
+        //ws:      Box<&'a dyn Workspace>,
 
         let mut ud = UserData {
             orig:    self.orig.clone(),
