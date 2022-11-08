@@ -528,11 +528,11 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
 mod tests {
     use anyhow::Result;
 
-    use crate::{arch, aspace::AddressSpace, rsrc::*};
+    use crate::{arch, aspace::AddressSpace, emu::mmu::PAGE_SIZE, rsrc::*};
 
     #[test]
     fn base_address() -> Result<()> {
-        crate::test::init_logging();
+        //crate::test::init_logging();
 
         let buf = get_buf(Rsrc::ALTSVC);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
@@ -574,6 +574,78 @@ mod tests {
                 .read_bytes(start, size as usize)
                 .expect(&format!("read section {} {:#x} {:#x}", section.name, start, size));
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn symbols() -> Result<()> {
+        let buf = get_buf(Rsrc::ALTSVC);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        assert_eq!(
+            coff.symbols.by_name.get("Curl_alpnid2str").unwrap().address,
+            coff.module.address_space.base_address
+        );
+        assert_eq!(
+            coff.symbols.by_name.get("Curl_altsvc_cleanup").unwrap().address,
+            coff.module.address_space.base_address + PAGE_SIZE as u64
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn relocs() -> Result<()> {
+        let buf = get_buf(Rsrc::ALTSVC);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        // .text$mn:0000000000000000                         Curl_alpnid2str proc near
+        // .text$mn:0000000000000000 83 F9 08                cmp     ecx, 8
+        // .text$mn:0000000000000003 74 23                   jz      short loc_28
+        // .text$mn:0000000000000005 83 F9 10                cmp     ecx, 10h
+        // .text$mn:0000000000000008 74 16                   jz      short loc_20
+        // .text$mn:000000000000000A 83 F9 20                cmp     ecx, 20h ; ' '
+        // .text$mn:000000000000000D 48 8D 15 84 1D 00 00    lea     rdx,
+        // ??_C@_00CNPNBAHC@@ ; `string' .text$mn:0000000000000014 48 8D 05 75
+        // 1D 00 00    lea     rax, ??_C@_02LCBBNJEF@h3@ ; `string'
+        // .text$mn:000000000000001B 48 0F 45 C2             cmovnz  rax, rdx
+        // .text$mn:000000000000001F C3                      retn
+
+        let a1 = coff.symbols.by_name.get("??_C@_00CNPNBAHC@@").unwrap().address;
+        assert_eq!(coff.module.address_space.relative.read_u32(0x10).unwrap() as u64, a1);
+
+        let a2 = coff.symbols.by_name.get("??_C@_02LCBBNJEF@h3@").unwrap().address;
+        assert_eq!(coff.module.address_space.relative.read_u32(0x17).unwrap() as u64, a2);
+
+        // .pdata:0000000000001D70
+        // _pdata          segment dword public 'DATA' use64
+        // .pdata:0000000000001D70
+        // assume cs:_pdata .pdata:0000000000001D70
+        // ;org 1D70h .pdata:0000000000001D70
+        // ; COMDAT (pick associative to section at 1200)
+        // .pdata:0000000000001D70 DB 12 00 00 F0 12 00 00 60 1D 00 00
+        // $pdata$2$altsvc_flush RUNTIME_FUNCTION <rva loc_12DB, rva locret_12EF+1, \
+        // .pdata:0000000000001D70
+        // rva $chain$2$altsvc_flush> .pdata:0000000000001D7C ?? ?? ?? ??
+        // align 20h .pdata:0000000000001D7C
+        // _pdata          ends
+
+        let pdata = coff.symbols.by_name.get("$pdata$2$altsvc_flush").unwrap().address;
+        let altsvc_flush = coff.symbols.by_name.get("altsvc_flush").unwrap().address;
+        assert_eq!(
+            coff.module.address_space.read_u32(pdata).unwrap() as u64,
+            altsvc_flush + 0xDB
+        );
+
+        // altsvc_flush+0xDB
+        // .text$mn:00000000000012DB 48 8B 74 24 50
+        // mov     rsi, [rsp+38h+arg_10] .text$mn:00000000000012E0 48 8B 7C 24
+        // 58                                                  mov     rdi,
+        // [rsp+38h+arg_18] .text$mn:00000000000012E5 48 83 C4 20
+        // add     rsp, 20h .text$mn:00000000000012E9 41 5F
+        // pop     r15 .text$mn:00000000000012EB 41 5E
+        // pop     r14 .text$mn:00000000000012ED 41 5C
 
         Ok(())
     }
