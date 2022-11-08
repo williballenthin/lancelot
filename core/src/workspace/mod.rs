@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::Result;
 use bitflags::bitflags;
+use thiserror::Error;
 
 use crate::{
     analysis::{
@@ -23,6 +24,12 @@ use crate::{
 
 pub mod cfg;
 pub mod formatter;
+
+#[derive(Error, Debug)]
+pub enum WorkspaceError {
+    #[error("format not supported")]
+    FormatNotSupported,
+}
 
 bitflags! {
     pub struct FunctionFlags: u8 {
@@ -361,6 +368,10 @@ impl Workspace for COFFWorkspace {
 }
 
 pub fn workspace_from_bytes(config: Box<dyn cfg::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
+    if buf.len() < 2 {
+        return Err(WorkspaceError::FormatNotSupported.into());
+    }
+
     // TODO: move this tasting to the loaders?
     if buf[0] == 0x4D && buf[1] == 0x5A {
         let pe = crate::loader::pe::PE::from_bytes(buf)?;
@@ -370,7 +381,7 @@ pub fn workspace_from_bytes(config: Box<dyn cfg::Configuration>, buf: &[u8]) -> 
         let coff = crate::loader::coff::COFF::from_bytes(buf)?;
         Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
     } else {
-        unimplemented!("error handling")
+        return Err(WorkspaceError::FormatNotSupported.into());
     }
 }
 
