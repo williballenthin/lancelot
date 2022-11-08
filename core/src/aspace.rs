@@ -69,6 +69,10 @@ pub trait AddressSpace<T> {
     fn read_ascii(&self, offset: T, minimum_length: usize) -> Result<String>;
 }
 
+pub trait WritableAddressSpace<T> {
+    fn write_u32(&mut self, offset: T, v: u32) -> Result<()>;
+}
+
 /// An AddressSpace in which data is mapped at or near after a base address,
 /// and addressed using positive offsets from this base address.
 ///
@@ -140,6 +144,40 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
     }
 }
 
+impl WritableAddressSpace<RVA> for RelativeAddressSpace {
+    fn write_u32(&mut self, offset: RVA, v: u32) -> Result<()> {
+        const PAGE_SIZE: u64 = 0x1000;
+
+        let (page_address, page_offset) = if offset % PAGE_SIZE != 0 {
+            (
+                crate::util::align(offset, PAGE_SIZE) - PAGE_SIZE,
+                (offset % PAGE_SIZE) as usize,
+            )
+        } else {
+            (offset, 0x0usize)
+        };
+
+        if page_offset >= PAGE_SIZE as usize - std::mem::size_of::<u32>() {
+            panic!("cannot split write");
+        }
+
+        // compute the byte-wise u32 representation
+        let mut src = [0u8; std::mem::size_of::<u32>()];
+        LittleEndian::write_u32(&mut src, v);
+
+        // get the existing page
+        let mut page = [0u8; PAGE_SIZE as usize];
+        self.map.slice_into(page_address, &mut page[..])?;
+
+        // update the page
+        let dst = &mut page[page_offset..page_offset + std::mem::size_of::<u32>()];
+        dst.copy_from_slice(&src[..]);
+
+        // write back
+        self.map.write(page_address, &page)
+    }
+}
+
 // its annoying that we have to do this.
 // but because in order to `.slice` we need a reference to the inner aspace,
 // then aspace references must also implement aspace.
@@ -154,6 +192,12 @@ impl AddressSpace<RVA> for &RelativeAddressSpace {
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
         (*self).slice(offset)
+    }
+}
+
+impl WritableAddressSpace<RVA> for &mut RelativeAddressSpace {
+    fn write_u32(&mut self, offset: RVA, v: u32) -> Result<()> {
+        (*self).write_u32(offset, v)
     }
 }
 
@@ -210,6 +254,16 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
     }
 }
 
+impl WritableAddressSpace<VA> for AbsoluteAddressSpace {
+    fn write_u32(&mut self, offset: VA, v: u32) -> Result<()> {
+        if offset < self.base_address {
+            return Err(PageMapError::NotMapped.into());
+        }
+
+        self.relative.write_u32((offset - self.base_address) as RVA, v)
+    }
+}
+
 impl AddressSpace<VA> for &AbsoluteAddressSpace {
     fn read_into(&self, offset: VA, buf: &mut [u8]) -> Result<()> {
         (*self).read_into(offset, buf)
@@ -221,6 +275,12 @@ impl AddressSpace<VA> for &AbsoluteAddressSpace {
 
     fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
         (*self).slice(offset)
+    }
+}
+
+impl WritableAddressSpace<VA> for &mut AbsoluteAddressSpace {
+    fn write_u32(&mut self, offset: VA, v: u32) -> Result<()> {
+        (*self).write_u32(offset, v)
     }
 }
 
@@ -249,12 +309,14 @@ impl<'a> AddressSpace<RVA> for AddressSpaceSlice<'a> {
     }
 }
 
+// note that slices don't support writing at the moment
+
 impl<'a> AddressSpace<RVA> for &AddressSpaceSlice<'a> {
-    fn read_into(&self, offset: VA, buf: &mut [u8]) -> Result<()> {
+    fn read_into(&self, offset: RVA, buf: &mut [u8]) -> Result<()> {
         (*self).read_into(offset, buf)
     }
 
-    fn read_ascii(&self, offset: VA, minimum_length: usize) -> Result<String> {
+    fn read_ascii(&self, offset: RVA, minimum_length: usize) -> Result<String> {
         (*self).read_ascii(offset, minimum_length)
     }
 
