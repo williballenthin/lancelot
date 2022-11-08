@@ -13,7 +13,11 @@ use crate::{
         cfg::{flow::Flow, InstructionIndex, CFG},
         pe::{Import, ImportedSymbol},
     },
-    loader::{pe::PE, coff::{COFF, SymbolKind}},
+    loader::{
+        coff::{SymbolKind, COFF},
+        pe::PE,
+    },
+    module::Module,
     VA,
 };
 
@@ -75,6 +79,7 @@ pub trait Workspace {
     fn config(&self) -> &Box<dyn cfg::Configuration>;
     fn cfg(&self) -> &CFG;
     fn analysis(&self) -> &WorkspaceAnalysis;
+    fn module(&self) -> &Module;
 }
 
 pub struct PEWorkspace {
@@ -229,8 +234,11 @@ impl Workspace for PEWorkspace {
     fn analysis(&self) -> &WorkspaceAnalysis {
         &self.analysis
     }
-}
 
+    fn module(&self) -> &Module {
+        &self.pe.module
+    }
+}
 
 pub struct COFFWorkspace {
     pub config:   Box<dyn cfg::Configuration>,
@@ -346,6 +354,10 @@ impl Workspace for COFFWorkspace {
     fn analysis(&self) -> &WorkspaceAnalysis {
         &self.analysis
     }
+
+    fn module(&self) -> &Module {
+        &self.coff.module
+    }
 }
 
 pub fn workspace_from_bytes(config: Box<dyn cfg::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
@@ -433,7 +445,10 @@ mod tests {
         let config = get_config();
         let ws = workspace_from_bytes(config, &buf)?;
 
-        assert_eq!(ws.analysis().names.addresses_by_name.get("Curl_alpnid2str").unwrap(), &0x2000_0000u64);
+        assert_eq!(
+            ws.analysis().names.addresses_by_name.get("Curl_alpnid2str").unwrap(),
+            &0x2000_0000u64
+        );
 
         Ok(())
     }
