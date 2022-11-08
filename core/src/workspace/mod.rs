@@ -38,6 +38,7 @@ bitflags! {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct FunctionAnalysis {
     pub flags: FunctionFlags,
 }
