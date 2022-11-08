@@ -15,6 +15,8 @@ pub enum Rsrc {
     NOP,
     /// from: https://github.com/gentilkiwi/mimikatz/releases/tag/2.2.0-20190512
     MIMI,
+    /// COFF file from libcurl
+    ALTSVC,
 }
 
 /// Fetch the file system name of the given resource.
@@ -24,6 +26,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::TINY => String::from("tiny.exe"),
         Rsrc::NOP => String::from("nop.exe"),
         Rsrc::MIMI => String::from("mimikatz.exe_"),
+        Rsrc::ALTSVC => String::from("altsvc.c.obj"),
     }
 }
 
@@ -52,6 +55,9 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
             // pass
         }
         Rsrc::MIMI => {
+            // pass
+        }
+        Rsrc::ALTSVC => {
             // pass
         }
     }
