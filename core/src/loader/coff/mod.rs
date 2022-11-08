@@ -606,11 +606,19 @@ mod tests {
         let buf = get_buf(Rsrc::ALTSVC);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
 
-        // .text$mn:000000002000000d  48 8D 15 EC 2F 07 00  lea     rdx, [??_C@_00CNPNBAHC@@]                                                          │ 3772 user        20   0  595M 41808 11748 S
-        // .text$mn:0000000020000014  48 8D 05 E5 1F 07 00  lea     rax, [??_C@_02LCBBNJEF@h3@]
-        // relative relocations
-        assert_eq!(coff.module.address_space.relative.read_u32(0x10).unwrap() as u64, 0x00072FEC);
-        assert_eq!(coff.module.address_space.relative.read_u32(0x17).unwrap() as u64, 0x00071FE5);
+        // .text$mn:000000002000000d  48 8D 15 EC 2F 07 00  lea     rdx,
+        // [??_C@_00CNPNBAHC@@]
+        // │ 3772 user        20   0  595M 41808 11748 S
+        // .text$mn:0000000020000014  48 8D 05 E5 1F 07 00  lea     rax,
+        // [??_C@_02LCBBNJEF@h3@] relative relocations
+        assert_eq!(
+            coff.module.address_space.relative.read_u32(0x10).unwrap() as u64,
+            0x00072FEC
+        );
+        assert_eq!(
+            coff.module.address_space.relative.read_u32(0x17).unwrap() as u64,
+            0x00071FE5
+        );
 
         // image relocation
         let pdata = coff.symbols.by_name.get("$pdata$2$altsvc_flush").unwrap().address;
