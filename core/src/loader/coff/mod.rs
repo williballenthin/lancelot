@@ -7,7 +7,7 @@ use crate::{
     arch::Arch,
     aspace::RelativeAddressSpace,
     module::{Module, Permissions, Section},
-    VA,
+    util, VA,
 };
 
 #[derive(Error, Debug)]
@@ -39,6 +39,13 @@ impl COFF {
 //     - requires map from physical range -> virtual range
 //   - apply relocations to link references to symbols/functions
 
+/// The section will not become part of the image. This is valid only for object
+/// files.
+const IMAGE_SCN_LNK_REMOVE: u32 = 0x800;
+
+/// The section can be discarded as needed.
+const IMAGE_SCN_MEM_DISCARDABLE: u32 = 0x200_0000;
+
 /// The section can be executed as code.
 const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
 
@@ -48,13 +55,13 @@ const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
+const PAGE_SIZE: u64 = 0x1000;
+
 /// translate the given COFF section into a section.
-/// blindly map the physical address to the virtual address.
-fn load_coff_section(base_address: VA, section: &object::read::Section) -> Result<Section> {
-    let section_name = String::from_utf8_lossy(&section.name_bytes()?[..]).into_owned();
-
+/// the section should be mapped starting at `vstart`.
+fn load_coff_section(section: &object::read::Section, vstart: VA) -> Result<Section> {
+    let section_name = String::from_utf8_lossy(section.name_bytes()?).into_owned();
     let trimmed_name = section_name.trim_end_matches('\u{0}').trim_end();
-
     let name = trimmed_name
         .split_once('\u{0}')
         .map(|(name, _)| name)
@@ -73,6 +80,8 @@ fn load_coff_section(base_address: VA, section: &object::read::Section) -> Resul
         if characteristics & IMAGE_SCN_MEM_EXECUTE > 0 {
             perms.insert(Permissions::X);
         }
+    } else {
+        panic!("unexpected flags type");
     }
 
     // virtual address is zero for the sample data i'm working with right
@@ -80,9 +89,16 @@ fn load_coff_section(base_address: VA, section: &object::read::Section) -> Resul
     // mappings.
     assert_eq!(section.address(), 0);
 
-    // object parses the physical size as virtual size?
-    // im not exactly sure where this comes from, but we cannot do the following:
-    // assert_eq!(section.size(), 0);
+    let vsize = if section.align() > 1 {
+        util::align(section.size(), section.align())
+    } else {
+        section.size()
+    };
+
+    let virtual_range = std::ops::Range {
+        start: vstart,
+        end:   vstart + vsize,
+    };
 
     let physical_range = if let Some((start, size)) = section.file_range() {
         std::ops::Range {
@@ -93,13 +109,11 @@ fn load_coff_section(base_address: VA, section: &object::read::Section) -> Resul
         std::ops::Range { start: 0, end: 0 }
     };
 
-    debug!("coff: section: {} at {:#x}", name, base_address + physical_range.start);
+    debug!("coff: section: {} at {:#x}", name, virtual_range.start);
 
     Ok(Section {
-        physical_range: physical_range.clone(),
-        // map the physical range to the virtual range.
-        // since virtual mapping is zero'd out.
-        virtual_range: physical_range,
+        physical_range,
+        virtual_range,
         permissions: perms,
         name,
     })
@@ -131,32 +145,91 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
     };
     debug!("coff: arch: {:?}", arch);
 
-    // always 0
-    let base_address = obj.relative_address_base();
-
+    // object file COFF base address is always 0:
+    //
+    //    let base_address = obj.relative_address_base();
+    //
+    // so let's pick something non-zero to find bugs.
+    let base_address = 0x2000_0000u64;
     debug!("coff: base address: {:#x}", base_address);
 
+    let mut vstart = base_address;
     let mut sections = Vec::new();
     for section in obj.sections() {
-        sections.push(load_coff_section(base_address, &section)?);
+        if let object::SectionFlags::Coff { characteristics } = section.flags() {
+            // these sections should be ignored while loading.
+            // ref: https://github.com/ghc/ghc/blob/3c0e379322965aa87b14923f6d8e1ef5cd677925/rts/linker/PEi386.c#L1468-L1469
+
+            if characteristics & IMAGE_SCN_LNK_REMOVE > 0 {
+                // sections like .drectve or .chks64
+                continue;
+            }
+
+            if characteristics & IMAGE_SCN_MEM_DISCARDABLE > 0 {
+                // sections like .debug$T or .debug$S
+                continue;
+            }
+        } else {
+            panic!("unexpected flags type");
+        }
+
+        let section = load_coff_section(&section, vstart)?;
+
+        vstart = util::align(section.virtual_range.end, PAGE_SIZE);
+
+        sections.push(section);
     }
+    let max_address = sections
+        .iter()
+        .map(|section| util::align(section.virtual_range.end, PAGE_SIZE))
+        .max();
 
-    let max_address = base_address + buf.len() as u64;
-    let mut address_space = RelativeAddressSpace::with_capacity(max_address);
-    debug!("coff: address space: capacity: {:#x}", max_address);
+    let module = if let Some(max_address) = max_address {
+        let mut address_space = RelativeAddressSpace::with_capacity(max_address);
 
-    address_space.map.writezx(base_address, buf)?;
+        for section in sections.iter() {
+            let vstart = section.virtual_range.start;
+            let vend = section.virtual_range.end;
+            let vsize = vend - vstart;
 
-    // TODO: don't load REMOVE/DISCARDABLE sections
-    // ref: https://github.com/ghc/ghc/blob/3c0e379322965aa87b14923f6d8e1ef5cd677925/rts/linker/PEi386.c#L1468-L1469
+            let pstart = section.physical_range.start as usize;
+            let pend = section.physical_range.end as usize;
+            let psize = pend - pstart;
+            // if virtual size is less than physical size, truncate.
+            let psize = std::cmp::min(psize, vsize as usize);
+            let pbuf = &buf[pstart..pstart + psize];
+
+            // the section range contains VAs,
+            // while we're writing to the RelativeAddressSpace.
+            // so shift down by `base_address`.
+            let rstart = vstart - base_address;
+
+            let mut vbuf = vec![0u8; vsize as usize];
+            let dest = &mut vbuf[0..psize];
+            dest.copy_from_slice(pbuf);
+
+            address_space.map.writezx(rstart, &vbuf)?;
+
+            debug!(
+                "pe: address space: mapped {:#x} - {:#x} {:?}",
+                vstart, vend, section.permissions
+            );
+        }
+
+        Module {
+            arch,
+            sections,
+            address_space: address_space.into_absolute(base_address)?,
+        }
+    } else {
+        Module {
+            arch,
+            sections: vec![],
+            address_space: RelativeAddressSpace::with_capacity(0x0).into_absolute(base_address)?,
+        }
+    };
 
     // TODO: apply relocations
-
-    let module = Module {
-        arch,
-        sections,
-        address_space: address_space.into_absolute(base_address)?,
-    };
 
     debug!("coff: loaded");
     Ok(COFF {
@@ -178,7 +251,7 @@ mod tests {
         let buf = get_buf(Rsrc::ALTSVC);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
 
-        assert_eq!(0x0, coff.module.address_space.base_address);
+        assert_eq!(0x2000_0000, coff.module.address_space.base_address);
 
         Ok(())
     }
@@ -193,9 +266,9 @@ mod tests {
         // .text$mn:0000000000000000                         public Curl_alpnid2str
         // .text$mn:0000000000000000                         Curl_alpnid2str proc near
         // .text$mn:0000000000000000 83 F9 08                cmp     ecx, 8
-        assert_eq!(0x83, coff.module.address_space.relative.read_u8(0x9243)?);
-        assert_eq!(0xF9, coff.module.address_space.relative.read_u8(0x9244)?);
-        assert_eq!(0x08, coff.module.address_space.relative.read_u8(0x9245)?);
+        assert_eq!(0x83, coff.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0xF9, coff.module.address_space.relative.read_u8(0x1)?);
+        assert_eq!(0x08, coff.module.address_space.relative.read_u8(0x2)?);
 
         Ok(())
     }

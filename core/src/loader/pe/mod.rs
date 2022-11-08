@@ -152,6 +152,8 @@ const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
 /// The section can be written to.
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
 
+const PAGE_SIZE: u64 = 0x1000;
+
 #[allow(clippy::unnecessary_wraps)]
 fn load_pe_section(
     base_address: VA,
@@ -218,7 +220,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
         ),
         _ => {
             debug!("pe: base address: using default: 0x40:000");
-            (0x40_0000, 0x1000)
+            (0x40_0000, PAGE_SIZE)
         }
     };
     debug!("pe: base address: {:#x}", base_address);
@@ -229,7 +231,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
     }
 
     let max_address = sections.iter().map(|sec| sec.virtual_range.end).max().unwrap();
-    let max_page_address = util::align(max_address, 0x1000) - base_address;
+    let max_page_address = util::align(max_address, PAGE_SIZE) - base_address;
     debug!("pe: address space: capacity: {:#x}", max_page_address);
 
     let mut address_space = RelativeAddressSpace::with_capacity(max_page_address);
