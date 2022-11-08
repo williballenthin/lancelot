@@ -286,12 +286,17 @@ fn iter_insn_flows<'a>(
 
     let iter = std::iter::from_fn(move || {
         if let Some((&insnva, insn)) = insns_iter.next() {
-            let (&va1, successors) = flows_by_src_iter.next().expect("flow index (src) out of sync");
-            let (&va2, predecessors) = flows_by_dst_iter.next().expect("flow index (dst) out of sync");
+            let (mut va1, mut successors) = flows_by_src_iter.next().expect("flow index (src) out of sync");
+            while insnva > *va1 {
+                (va1, successors) = flows_by_src_iter.next().expect("flow index (src) out of sync");
+            }
 
-            // TODO: this needs work as there can now be flows to non-insns
-            assert_eq!(insnva, va1);
-            assert_eq!(insnva, va2);
+            let (mut va2, mut predecessors) = flows_by_dst_iter.next().expect("flow index (dst) out of sync");
+            while insnva > *va2 {
+                (va2, predecessors) = flows_by_dst_iter.next().expect("flow index (dst) out of sync");
+            }
+
+            // hint: if there are issues above, its because insns can now flow to non-code.
 
             Some((insnva, insn, predecessors, successors))
         } else {
