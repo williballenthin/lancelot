@@ -1,11 +1,12 @@
 use anyhow::Result;
 use log::debug;
-use object::{Object, ObjectSection};
+use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::{
     arch::Arch,
-    aspace::RelativeAddressSpace,
+    aspace::{AddressSpace, RelativeAddressSpace, WritableAddressSpace},
     module::{Module, Permissions, Section},
     util, VA,
 };
@@ -19,12 +20,41 @@ pub enum COFFError {
     MalformedCOFFFile(String),
 }
 
+// duplicated from object
+#[derive(Clone, Copy, Debug)]
+pub enum SymbolKind {
+    Unknown,
+    Null,
+    Text,
+    Data,
+    Section,
+    File,
+    Label,
+    Tls,
+}
+
+#[derive(Clone, Debug)]
+pub struct Symbol {
+    pub name:    String,
+    pub address: VA,
+    pub kind:    SymbolKind,
+}
+
+#[derive(Default)]
+pub struct Symbols {
+    pub by_name:    BTreeMap<String, Symbol>,
+    pub by_address: BTreeMap<VA, Vec<Symbol>>,
+}
+
 /// A parsed and loaded COFF file.
 /// The `buf` field contains the raw data.
 /// The `module` field contains an address space as the COFF would be loaded.
 pub struct COFF {
-    pub buf:    Vec<u8>,
-    pub module: Module,
+    pub buf:               Vec<u8>,
+    pub module:            Module,
+    pub symbols:           Symbols,
+    // all the unresolved references that aren't found in this object file.
+    pub undefined_symbols: BTreeMap<String, Vec<VA>>,
 }
 
 impl COFF {
@@ -32,12 +62,6 @@ impl COFF {
         load_coff(buf)
     }
 }
-
-// TODO:
-//   - only load sections that aren't SCN_LNK_REMOVE nor SCN_MEM_DISCARDABLE
-//   - place these sections into their own pages
-//     - requires map from physical range -> virtual range
-//   - apply relocations to link references to symbols/functions
 
 /// The section will not become part of the image. This is valid only for object
 /// files.
@@ -109,8 +133,6 @@ fn load_coff_section(section: &object::read::Section, vstart: VA) -> Result<Sect
         std::ops::Range { start: 0, end: 0 }
     };
 
-    debug!("coff: section: {} at {:#x}", name, virtual_range.start);
-
     Ok(Section {
         physical_range,
         virtual_range,
@@ -150,6 +172,7 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
     //    let base_address = obj.relative_address_base();
     //
     // so let's pick something non-zero to find bugs.
+    // note: COFF is only 32-bit, so don't pick an address too high here.
     let base_address = 0x2000_0000u64;
     debug!("coff: base address: {:#x}", base_address);
 
@@ -184,7 +207,7 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         .map(|section| util::align(section.virtual_range.end, PAGE_SIZE))
         .max();
 
-    let module = if let Some(max_address) = max_address {
+    let mut module = if let Some(max_address) = max_address {
         let mut address_space = RelativeAddressSpace::with_capacity(max_address);
 
         for section in sections.iter() {
@@ -211,8 +234,8 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
             address_space.map.writezx(rstart, &vbuf)?;
 
             debug!(
-                "pe: address space: mapped {:#x} - {:#x} {:?}",
-                vstart, vend, section.permissions
+                "coff: address space: mapped {:#x} - {:#x} {:?} {}",
+                vstart, vend, section.permissions, section.name
             );
         }
 
@@ -229,12 +252,275 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         }
     };
 
-    // TODO: apply relocations
+    let mut symbols: Symbols = Default::default();
+
+    if let Some(symtab) = obj.symbol_table() {
+        for symbol in symtab.symbols() {
+            let name = match symbol.name() {
+                Ok(name) => name,
+                Err(_) => {
+                    continue;
+                }
+            };
+
+            let secindex = match symbol.section() {
+                object::SymbolSection::Section(secindex @ object::SectionIndex(_)) => secindex,
+                _ => {
+                    continue;
+                }
+            };
+
+            let target_section = obj.section_by_index(secindex).expect("invalid section index");
+
+            let mapped_section = match module
+                .sections
+                .iter()
+                .find(|s| s.physical_range.start == target_section.file_range().unwrap_or_default().0)
+            {
+                Some(mapped_section) => mapped_section,
+                None => {
+                    continue;
+                }
+            };
+
+            let address = mapped_section.virtual_range.start + symbol.address();
+
+            let s = Symbol {
+                address,
+                name: name.to_string(),
+                kind: match symbol.kind() {
+                    object::SymbolKind::Unknown => SymbolKind::Unknown,
+                    object::SymbolKind::Null => SymbolKind::Null,
+                    object::SymbolKind::Text => SymbolKind::Text,
+                    object::SymbolKind::Data => SymbolKind::Data,
+                    object::SymbolKind::Section => SymbolKind::Section,
+                    object::SymbolKind::File => SymbolKind::File,
+                    object::SymbolKind::Label => SymbolKind::Label,
+                    object::SymbolKind::Tls => SymbolKind::Tls,
+                    _ => panic!("unexpected symbol type"),
+                },
+            };
+
+            symbols.by_address.entry(address).or_default().push(s.clone());
+            symbols.by_name.insert(name.to_string(), s.clone());
+        }
+    }
+
+    let mut undefined_symbols: BTreeMap<String, Vec<VA>> = Default::default();
+
+    if let Some(symtab) = obj.symbol_table() {
+        // we're only able to apply relocations if we can resolve symbols.
+
+        // operation to be performed on the module.
+        // add the `addend` to the u32 fetched from `address`, writing it back to
+        // `address`. we only support u32 fixups at the moment (all thats needed
+        // for COFF?).
+        struct RelocationFixup {
+            address: VA,
+            addend:  u32,
+        }
+
+        // all the collected fixups that we need to perform.
+        let mut operations: Vec<RelocationFixup> = Default::default();
+
+        for (i, section) in obj.sections().enumerate() {
+            if let Some(mapped_section) = module
+                .sections
+                .iter()
+                .find(|s| s.physical_range.start == section.file_range().unwrap_or_default().0)
+            {
+                for (location_offset, reloc) in section.relocations() {
+                    // virtual address of the place that needs to be fixed up.
+                    let vlocation: VA = mapped_section.virtual_range.start + location_offset;
+
+                    match (
+                        reloc.kind(),
+                        reloc.encoding(),
+                        reloc.size(),
+                        reloc.target(),
+                        reloc.addend(),
+                        reloc.has_implicit_addend(),
+                    ) {
+                        (
+                            object::RelocationKind::Relative,
+                            object::RelocationEncoding::Generic,
+                            32,
+                            object::RelocationTarget::Symbol(symindex @ object::SymbolIndex(_)),
+                            -4,
+                            true,
+                        ) => {
+                            let symbol = symtab.symbol_by_index(symindex)?;
+
+                            match (symbol.kind(), symbol.section(), symbol.flags()) {
+                                (
+                                    object::SymbolKind::Data | object::SymbolKind::Text | object::SymbolKind::Label,
+                                    object::SymbolSection::Section(secindex @ object::SectionIndex(_)),
+                                    object::SymbolFlags::None,
+                                ) => {
+                                    let target_section = obj.section_by_index(secindex)?;
+                                    let target_section = module
+                                        .sections
+                                        .iter()
+                                        .find(|s| {
+                                            s.physical_range.start == target_section.file_range().unwrap_or_default().0
+                                        })
+                                        .expect("target section not mapped");
+
+                                    debug!(
+                                        "coff: reloc: relative: {}([{}])+0x{:02x}: 0x{:08x} -> {}",
+                                        mapped_section.name,
+                                        i,
+                                        location_offset,
+                                        target_section.virtual_range.start,
+                                        symbol.name()?,
+                                    );
+
+                                    // the amount to increment the fixup location.
+                                    let addend = target_section
+                                        .virtual_range
+                                        .start
+                                        .try_into()
+                                        .expect("64-bit section address");
+
+                                    operations.push(RelocationFixup {
+                                        address: vlocation,
+                                        addend,
+                                    })
+                                }
+                                (
+                                    object::SymbolKind::Data | object::SymbolKind::Text,
+                                    object::SymbolSection::Undefined | object::SymbolSection::Common,
+                                    object::SymbolFlags::None,
+                                ) => {
+                                    debug!(
+                                        "coff: reloc: relative: {}([{}])+0x{:02x}: [extern]   -> {}",
+                                        mapped_section.name,
+                                        i,
+                                        location_offset,
+                                        symbol.name()?
+                                    );
+
+                                    undefined_symbols
+                                        .entry(mapped_section.name.clone())
+                                        .or_default()
+                                        .push(vlocation);
+                                }
+                                _ => {
+                                    panic!("unsupported symbol: {:?}", symbol);
+                                }
+                            }
+                        }
+                        (
+                            object::RelocationKind::ImageOffset,
+                            object::RelocationEncoding::Generic,
+                            32,
+                            object::RelocationTarget::Symbol(symindex @ object::SymbolIndex(_)),
+                            0,
+                            true,
+                        ) => {
+                            let symbol = symtab.symbol_by_index(symindex)?;
+
+                            match (symbol.kind(), symbol.section(), symbol.flags()) {
+                                (
+                                    object::SymbolKind::Data | object::SymbolKind::Text | object::SymbolKind::Label,
+                                    object::SymbolSection::Section(secindex @ object::SectionIndex(_)),
+                                    object::SymbolFlags::None,
+                                ) => {
+                                    let target_section = obj.section_by_index(secindex)?;
+                                    let target_section = module
+                                        .sections
+                                        .iter()
+                                        .find(|s| {
+                                            s.physical_range.start == target_section.file_range().unwrap_or_default().0
+                                        })
+                                        .expect("target section not mapped");
+
+                                    debug!(
+                                        "coff: reloc: image offset: {}([{}])+0x{:02x}: 0x{:08x} -> {}",
+                                        mapped_section.name,
+                                        i,
+                                        location_offset,
+                                        target_section.virtual_range.start,
+                                        symbol.name()?,
+                                    );
+
+                                    // the amount to increment the fixup location.
+                                    let addend = target_section
+                                        .virtual_range
+                                        .start
+                                        .try_into()
+                                        .expect("64-bit section address");
+
+                                    operations.push(RelocationFixup {
+                                        address: vlocation,
+                                        addend,
+                                    })
+                                }
+                                (
+                                    object::SymbolKind::Data | object::SymbolKind::Text,
+                                    object::SymbolSection::Undefined | object::SymbolSection::Common,
+                                    object::SymbolFlags::None,
+                                ) => {
+                                    debug!(
+                                        "coff: reloc: image offset: {}([{}])+0x{:02x}: [extern]   -> {}",
+                                        mapped_section.name,
+                                        i,
+                                        location_offset,
+                                        symbol.name()?
+                                    );
+
+                                    undefined_symbols
+                                        .entry(mapped_section.name.clone())
+                                        .or_default()
+                                        .push(vlocation);
+                                }
+                                _ => {
+                                    panic!("unsupported symbol: {:?}", symbol);
+                                }
+                            }
+                        }
+                        _ => {
+                            panic!("unsupported relocation: {:?}", reloc);
+                        }
+                    }
+                }
+            }
+        }
+
+        for operation in operations.iter() {
+            debug!(
+                "coff: fixup: *0x{:08x} += 0x{:08x}",
+                operation.address, operation.addend
+            );
+
+            let symbol_address = operation.addend as u64;
+            if let Some(symbols) = symbols.by_address.get(&symbol_address) {
+                for symbol in symbols.iter() {
+                    if matches!(symbol.kind, SymbolKind::Text | SymbolKind::Data) {
+                        debug!("                         += &{}", symbol.name)
+                    }
+                }
+            }
+
+            let existing = module.address_space.read_u32(operation.address)?;
+            module
+                .address_space
+                .write_u32(operation.address, existing + operation.addend)?;
+
+            debug!(
+                "              0x{:08x} -> 0x{:08x}",
+                existing,
+                existing + operation.addend
+            );
+        }
+    }
 
     debug!("coff: loaded");
     Ok(COFF {
         buf: buf.to_vec(),
         module,
+        symbols,
+        undefined_symbols,
     })
 }
 
@@ -246,7 +532,7 @@ mod tests {
 
     #[test]
     fn base_address() -> Result<()> {
-        //crate::test::init_logging();
+        crate::test::init_logging();
 
         let buf = get_buf(Rsrc::ALTSVC);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
