@@ -75,7 +75,7 @@ pub struct WorkspaceAnalysis {
     pub names: NameIndex,
 }
 
-pub trait Workspace {
+pub trait Workspace: Send {
     fn config(&self) -> &Box<dyn cfg::Configuration>;
     fn cfg(&self) -> &CFG;
     fn analysis(&self) -> &WorkspaceAnalysis;

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use lancelot_flirt::{FlirtSignature, FlirtSignatureSet};
 
-pub trait Configuration {
+pub trait Configuration: Send {
     fn get_sigs(&self) -> Result<FlirtSignatureSet>;
 }
 
