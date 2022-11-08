@@ -6,15 +6,14 @@ use log::{debug, error, info};
 use lancelot::{
     analysis::dis,
     aspace::AddressSpace,
-    loader::pe::PE,
     util,
-    workspace::{formatter::Formatter, PEWorkspace},
+    workspace::{formatter::Formatter, workspace_from_bytes, Workspace},
     RVA, VA,
 };
 
-fn handle_functions(ws: &PEWorkspace) -> Result<()> {
-    info!("found {} functions", ws.analysis.functions.len());
-    for (va, md) in ws.analysis.functions.iter() {
+fn handle_functions(ws: &dyn Workspace) -> Result<()> {
+    info!("found {} functions", ws.analysis().functions.len());
+    for (va, md) in ws.analysis().functions.iter() {
         print!("{:#x}", va);
 
         if md.flags.intersects(lancelot::workspace::FunctionFlags::NORET) {
@@ -25,7 +24,7 @@ fn handle_functions(ws: &PEWorkspace) -> Result<()> {
             print!(" thunk")
         }
 
-        if let Some(name) = ws.analysis.names.names_by_address.get(va) {
+        if let Some(name) = ws.analysis().names.names_by_address.get(va) {
             print!(" {}", name);
         }
 
@@ -34,19 +33,18 @@ fn handle_functions(ws: &PEWorkspace) -> Result<()> {
     Ok(())
 }
 
-fn handle_disassemble(ws: &PEWorkspace, va: VA) -> Result<()> {
-    let mut blocks = ws.cfg.get_reachable_blocks(va).collect::<Vec<_>>();
+fn handle_disassemble(ws: &dyn Workspace, va: VA) -> Result<()> {
+    let mut blocks = ws.cfg().get_reachable_blocks(va).collect::<Vec<_>>();
     blocks.sort_unstable_by_key(|&bb| bb.address);
     info!("found {} basic blocks", blocks.len());
 
-    let decoder = dis::get_disassembler(&ws.pe.module).unwrap();
+    let decoder = dis::get_disassembler(ws.module()).unwrap();
     let fmt = Formatter::new();
 
     for bb in blocks.into_iter() {
         // need to over-read the bb buffer, to account for the final instructions.
         let buf = ws
-            .pe
-            .module
+            .module()
             .address_space
             .read_bytes(bb.address, bb.length as usize + 0x10)?;
         for (offset, insn) in dis::linear_disassemble(&decoder, &buf) {
@@ -177,10 +175,9 @@ fn _main() -> Result<()> {
         debug!("input: {}", filename);
 
         let buf = util::read_file(filename)?;
-        let pe = PE::from_bytes(&buf)?;
-        let ws = PEWorkspace::from_pe(config, pe)?;
+        let ws = workspace_from_bytes(config, &buf)?;
 
-        handle_functions(&ws)
+        handle_functions(&*ws)
     } else if let Some(matches) = matches.subcommand_matches("disassemble") {
         debug!("mode: disassemble");
 
@@ -190,10 +187,9 @@ fn _main() -> Result<()> {
         let va = parse_va(matches.value_of("va").unwrap())?;
 
         let buf = util::read_file(filename)?;
-        let pe = PE::from_bytes(&buf)?;
-        let ws = PEWorkspace::from_pe(config, pe)?;
+        let ws = workspace_from_bytes(config, &buf)?;
 
-        handle_disassemble(&ws, va)
+        handle_disassemble(&*ws, va)
     } else {
         Err(anyhow!("SUBCOMMAND required"))
     }
