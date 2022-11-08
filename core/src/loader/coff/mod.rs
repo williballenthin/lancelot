@@ -317,7 +317,7 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         // for COFF?).
         struct RelocationFixup {
             address: VA,
-            addend:  u32,
+            addend:  i32,
         }
 
         // all the collected fixups that we need to perform.
@@ -376,11 +376,17 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                                     );
 
                                     // the amount to increment the fixup location.
-                                    let addend = target_section
+                                    let addend: i32 = target_section
                                         .virtual_range
                                         .start
                                         .try_into()
                                         .expect("64-bit section address");
+
+                                    // TODO: wrapping
+                                    // TODO: u64 truncation
+
+                                    // 4: reloc.has_implicit_addend() == true; reloc.addend() == 0x4
+                                    let addend: i32 = addend - vlocation as i32 - 4;
 
                                     operations.push(RelocationFixup {
                                         address: vlocation,
@@ -505,12 +511,12 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
             let existing = module.address_space.read_u32(operation.address)?;
             module
                 .address_space
-                .write_u32(operation.address, existing + operation.addend)?;
+                .write_u32(operation.address, (existing as i32 + operation.addend) as u32)?;
 
             debug!(
                 "              0x{:08x} -> 0x{:08x}",
                 existing,
-                existing + operation.addend
+                (existing as i32 + operation.addend) as u32
             );
         }
     }
