@@ -22,15 +22,19 @@ def test_load_pe(k32):
     lancelot.from_bytes(k32)
 
 
+def test_load_coff(altsvc):
+    lancelot.from_bytes(altsvc)
+
+
 def test_arch(k32):
     ws = lancelot.from_bytes(k32)
-    assert "Returns: str" in lancelot.PE.arch.__doc__
+    assert "Returns: str" in lancelot.Workspace.arch.__doc__
     assert ws.arch == "x64"
 
 
 def test_base_address(k32):
     ws = lancelot.from_bytes(k32)
-    assert "Returns: int" in lancelot.PE.base_address.__doc__
+    assert "Returns: int" in lancelot.Workspace.base_address.__doc__
     assert ws.base_address == 0x180000000
 
 

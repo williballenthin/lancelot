@@ -1,14 +1,17 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
 
+use std::ops::Not;
+
 use ::lancelot::{
     analysis::dis::{zydis, Target},
     arch::Arch,
     aspace::AddressSpace,
-    loader::pe::{PEError, PE as lPE},
+    loader::{coff::COFFError, pe::PEError},
     module::{ModuleError, Permissions},
     pagemap::PageMapError,
     util::UtilError,
+    workspace::{Workspace as lWorkspace, WorkspaceError},
     VA,
 };
 use anyhow::Error;
@@ -20,9 +23,21 @@ fn to_value_error(e: anyhow::Error) -> PyErr {
 }
 
 fn to_py_err(e: Error) -> PyErr {
+    #[allow(clippy::single_match)]
+    match e.downcast_ref::<WorkspaceError>() {
+        Some(WorkspaceError::FormatNotSupported) => return to_value_error(e),
+        None => (),
+    };
+
     match e.downcast_ref::<PEError>() {
         Some(PEError::FormatNotSupported(_)) => return to_value_error(e),
         Some(PEError::MalformedPEFile(_)) => return to_value_error(e),
+        None => (),
+    };
+
+    match e.downcast_ref::<COFFError>() {
+        Some(COFFError::FormatNotSupported(_)) => return to_value_error(e),
+        Some(COFFError::MalformedCOFFFile(_)) => return to_value_error(e),
         None => (),
     };
 
@@ -47,19 +62,22 @@ fn to_py_err(e: Error) -> PyErr {
     to_value_error(e)
 }
 
-/// parse and construct a PE instance from the given bytes.
+/// parse and construct a Workspace instance from the given bytes.
 ///
 /// Args:
-///   buf (bytes): the raw bytes of a PE file.
+///   buf (bytes): the raw bytes of a supported file (e.g., PE or COFF)
 ///
-/// Returns: PE
+/// Returns: Workspace
 #[pyfunction]
-pub fn from_bytes(buf: &PyBytes) -> PyResult<PE> {
+pub fn from_bytes(buf: &PyBytes) -> PyResult<Workspace> {
     use ::lancelot::analysis::dis;
-    let pe = lPE::from_bytes(buf.as_bytes()).map_err(to_py_err)?;
-    let dec = dis::get_disassembler(&pe.module).map_err(to_py_err)?;
-    Ok(PE {
-        inner:   pe,
+
+    let config = ::lancelot::workspace::cfg::empty();
+
+    let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
+    let dec = dis::get_disassembler(ws.module()).map_err(to_py_err)?;
+    Ok(Workspace {
+        inner:   ws,
         decoder: dec,
     })
 }
@@ -278,20 +296,20 @@ const PERMISSION_WRITE: u8 = 0b010;
 const PERMISSION_EXECUTE: u8 = 0b100;
 
 #[pyclass]
-pub struct PE {
-    inner:   lPE,
+pub struct Workspace {
+    inner:   Box<dyn lWorkspace>,
     decoder: zydis::Decoder,
 }
 
 #[pymethods]
-impl PE {
+impl Workspace {
     /// fetch the architecture of the PE file as a string.
     /// either "x32" or "x64"
     ///
     /// Returns: str
     #[getter]
     pub fn arch(&self) -> &'static str {
-        match self.inner.module.arch {
+        match self.inner.module().arch {
             Arch::X32 => "x32",
             Arch::X64 => "x64",
         }
@@ -302,7 +320,7 @@ impl PE {
     /// Returns: int
     #[getter]
     pub fn base_address(&self) -> u64 {
-        self.inner.module.address_space.base_address
+        self.inner.module().address_space.base_address
     }
 
     /// use a collection of heuristics to identify potential function start
@@ -318,35 +336,33 @@ impl PE {
     ///
     /// Returns: List[int]
     pub fn get_functions(&self) -> PyResult<Vec<u64>> {
-        use ::lancelot::analysis::pe;
-        Ok(pe::find_functions(&self.inner)
-            .map_err(to_py_err)?
-            .into_iter()
-            .filter(|f| matches!(f, pe::Function::Local(_)))
-            .map(|f| match f {
-                pe::Function::Local(va) => va,
-                _ => unreachable!(),
-            })
+        Ok(self
+            .inner
+            .analysis()
+            .functions
+            .iter()
+            .filter(|(_, f)| f.flags.contains(::lancelot::workspace::FunctionFlags::THUNK).not())
+            .map(|(va, _)| va)
+            .cloned()
             .collect())
     }
 
     pub fn get_thunks(&self) -> PyResult<Vec<u64>> {
-        use ::lancelot::analysis::pe;
-        Ok(pe::find_functions(&self.inner)
-            .map_err(to_py_err)?
-            .into_iter()
-            .filter(|f| matches!(f, pe::Function::Thunk(_)))
-            .map(|f| match f {
-                pe::Function::Thunk(thunk) => thunk.address,
-                _ => unreachable!(),
-            })
+        Ok(self
+            .inner
+            .analysis()
+            .functions
+            .iter()
+            .filter(|(_, f)| f.flags.contains(::lancelot::workspace::FunctionFlags::THUNK))
+            .map(|(va, _)| va)
+            .cloned()
             .collect())
     }
 
     /// disassemble from the given virtual address,
     /// collecting ranges of non-branching instructions ("basic blocks").
-    /// typically, you'd invoke `PE.build_cfg` on the address of a function
-    /// start, such as returned by `PE.get_functions`.
+    /// typically, you'd invoke `Workspace.build_cfg` on the address of a
+    /// function start, such as returned by `Workspace.get_functions`.
     ///
     /// does follow jumps, but
     /// does not follow call instructions.
@@ -359,8 +375,8 @@ impl PE {
         use ::lancelot::analysis::cfg;
 
         let mut insns: cfg::InstructionIndex = Default::default();
-        insns.build_index(&self.inner.module, va).map_err(to_py_err)?;
-        let cfg = cfg::CFG::from_instructions(&self.inner.module, insns).map_err(to_py_err)?;
+        insns.build_index(self.inner.module(), va).map_err(to_py_err)?;
+        let cfg = cfg::CFG::from_instructions(self.inner.module(), insns).map_err(to_py_err)?;
 
         let basic_blocks = PyDict::new(py);
         for (bbva, bb) in cfg.basic_blocks.blocks_by_address.iter() {
@@ -397,7 +413,7 @@ impl PE {
     /// Returns: bytes
     pub fn read_bytes(&self, py: Python, va: VA, length: usize) -> PyResult<Py<PyBytes>> {
         self.inner
-            .module
+            .module()
             .address_space
             .read_bytes(va, length)
             .map(|buf| PyBytes::new(py, &buf).into())
@@ -416,7 +432,7 @@ impl PE {
     pub fn read_insn(&self, va: VA) -> PyResult<Instruction> {
         let mut insn_buf = [0u8; 16];
         self.inner
-            .module
+            .module()
             .address_space
             .read_into(va, &mut insn_buf)
             .map_err(to_py_err)?;
@@ -441,7 +457,7 @@ impl PE {
     ///
     /// Returns: int
     pub fn read_pointer(&self, va: VA) -> PyResult<u64> {
-        self.inner.module.read_va_at_va(va).map_err(to_py_err)
+        self.inner.module().read_va_at_va(va).map_err(to_py_err)
     }
 
     pub fn probe(&self, va: i128) -> u8 {
@@ -458,7 +474,7 @@ impl PE {
 
         match self
             .inner
-            .module
+            .module()
             .sections
             .iter()
             .find(|section| section.virtual_range.contains(&va))
@@ -486,7 +502,7 @@ impl PE {
 #[pymodule]
 fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(from_bytes, m)?)?;
-    m.add_class::<PE>()?;
+    m.add_class::<Workspace>()?;
 
     // indices into a flow tuple
     m.add("FLOW_VA", 0)?;
