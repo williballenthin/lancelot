@@ -11,7 +11,7 @@ use crate::{
         cfg::{flow::Flow, InstructionIndex, CFG},
         pe::{Import, ImportedSymbol},
     },
-    loader::pe::PE,
+    loader::{pe::PE, coff::{COFF, SymbolKind}},
     VA,
 };
 
@@ -67,6 +67,12 @@ pub struct WorkspaceAnalysis {
     //  - imported symbols
     //  - flirt sigs
     pub names: NameIndex,
+}
+
+pub trait Workspace {
+    fn config(&self) -> &Box<dyn cfg::Configuration>;
+    fn cfg(&self) -> &CFG;
+    fn analysis(&self) -> &WorkspaceAnalysis;
 }
 
 pub struct PEWorkspace {
@@ -209,6 +215,151 @@ impl PEWorkspace {
     }
 }
 
+impl Workspace for PEWorkspace {
+    fn config(&self) -> &Box<dyn cfg::Configuration> {
+        &self.config
+    }
+
+    fn cfg(&self) -> &CFG {
+        &self.cfg
+    }
+
+    fn analysis(&self) -> &WorkspaceAnalysis {
+        &self.analysis
+    }
+}
+
+
+pub struct COFFWorkspace {
+    pub config:   Box<dyn cfg::Configuration>,
+    pub coff:     COFF,
+    pub cfg:      CFG,
+    pub analysis: WorkspaceAnalysis,
+}
+
+impl COFFWorkspace {
+    pub fn from_coff(config: Box<dyn cfg::Configuration>, coff: COFF) -> Result<COFFWorkspace> {
+        let mut insns: InstructionIndex = Default::default();
+
+        let mut function_starts: BTreeSet<VA> = Default::default();
+
+        let mut names: NameIndex = Default::default();
+        for (name, symbol) in coff.symbols.by_name.iter() {
+            if let SymbolKind::Text = symbol.kind {
+                function_starts.insert(symbol.address);
+                names.insert(symbol.address, name.clone());
+            }
+        }
+        // each address may have multiple associated names.
+        // so prefer function names, and then fill  in anything else.
+        for (name, symbol) in coff.symbols.by_name.iter() {
+            if names.contains_address(symbol.address).not() {
+                names.insert(symbol.address, name.clone());
+            }
+        }
+
+        for &function in function_starts.iter() {
+            insns.build_index(&coff.module, function)?;
+        }
+        let mut cfg = CFG::from_instructions(&coff.module, insns)?;
+
+        let mut function_starts = function_starts
+            .into_iter()
+            .filter(|va| cfg.insns.insns_by_address.contains_key(va))
+            .collect::<BTreeSet<VA>>();
+        let call_targets = cfg
+            .basic_blocks
+            .blocks_by_address
+            .keys()
+            .cloned()
+            .filter(|bb| {
+                cfg.flows.flows_by_dst[bb]
+                    .iter()
+                    .any(|flow| matches!(flow, Flow::Call(_)))
+            })
+            .collect::<BTreeSet<VA>>();
+        function_starts.extend(call_targets);
+
+        let mut noret: BTreeSet<VA> = Default::default();
+
+        for name in [
+            "kernel32.dll!ExitProcess",
+            "kernel32.dll!ExitThread",
+            "exit",
+            "_exit",
+            "__exit",
+            "__amsg_exit",
+        ] {
+            if let Some(&va) = names.addresses_by_name.get(name) {
+                log::info!("noret via name: {}: {:#x}", name, va);
+                noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(&coff.module, &mut cfg, va)?);
+            }
+        }
+
+        let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
+
+        let mut functions: BTreeMap<VA, FunctionAnalysis> = Default::default();
+        for va in function_starts {
+            let mut flags = FunctionFlags::empty();
+
+            if noret.contains(&va) {
+                flags.set(FunctionFlags::NORET, true);
+            }
+
+            if thunks.contains(&va) {
+                flags.set(FunctionFlags::THUNK, true);
+            }
+
+            functions.insert(va, FunctionAnalysis { flags });
+        }
+
+        for &function in functions.keys() {
+            if names.contains_address(function).not() {
+                names.insert(function, format!("sub_{:x}", function));
+            }
+        }
+
+        Ok(COFFWorkspace {
+            config,
+            coff,
+            cfg,
+            analysis: WorkspaceAnalysis {
+                functions,
+                imports: Default::default(),
+                names,
+            },
+        })
+    }
+}
+
+impl Workspace for COFFWorkspace {
+    fn config(&self) -> &Box<dyn cfg::Configuration> {
+        &self.config
+    }
+
+    fn cfg(&self) -> &CFG {
+        &self.cfg
+    }
+
+    fn analysis(&self) -> &WorkspaceAnalysis {
+        &self.analysis
+    }
+}
+
+pub fn workspace_from_bytes(config: Box<dyn cfg::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
+    // TODO: move this tasting to the loaders?
+    if buf[0] == 0x4D && buf[1] == 0x5A {
+        let pe = crate::loader::pe::PE::from_bytes(buf)?;
+        Ok(Box::new(PEWorkspace::from_pe(config, pe)?))
+    } else if buf[0] == 0x64 && buf[1] == 0x86 {
+        // TODO: support other COFF magic
+        let coff = crate::loader::coff::COFF::from_bytes(buf)?;
+        Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
+    } else {
+        unimplemented!("error handling")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,7 +368,7 @@ mod tests {
 
     #[test]
     fn nop() -> Result<()> {
-        crate::test::init_logging();
+        //crate::test::init_logging();
 
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
@@ -259,6 +410,28 @@ mod tests {
         assert!(ws.analysis.functions.contains_key(&0x401da9));
         assert!(ws.analysis.names.contains_name(&String::from("_exit")));
         assert!(ws.analysis.functions[&0x401da9].flags.intersects(FunctionFlags::NORET));
+
+        Ok(())
+    }
+
+    #[test]
+    fn pe() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let config = get_config();
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert!(ws.analysis().functions.contains_key(&0x401081));
+
+        Ok(())
+    }
+
+    #[test]
+    fn coff() -> Result<()> {
+        let buf = get_buf(Rsrc::ALTSVC);
+        let config = get_config();
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert_eq!(ws.analysis().names.addresses_by_name.get("Curl_alpnid2str").unwrap(), &0x2000_0000u64);
 
         Ok(())
     }
