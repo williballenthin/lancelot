@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::debug;
 use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use crate::{
@@ -50,11 +50,10 @@ pub struct Symbols {
 /// The `buf` field contains the raw data.
 /// The `module` field contains an address space as the COFF would be loaded.
 pub struct COFF {
-    pub buf:               Vec<u8>,
-    pub module:            Module,
-    pub symbols:           Symbols,
-    // all the unresolved references that aren't found in this object file.
-    pub undefined_symbols: BTreeMap<String, Vec<VA>>,
+    pub buf:     Vec<u8>,
+    pub module:  Module,
+    pub symbols: Symbols,
+    pub externs: BTreeMap<String, VA>,
 }
 
 impl COFF {
@@ -208,7 +207,8 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         .max();
 
     let mut module = if let Some(max_address) = max_address {
-        let mut address_space = RelativeAddressSpace::with_capacity(max_address);
+        // +1 for the UNDEF/externs page
+        let mut address_space = RelativeAddressSpace::with_capacity(max_address + PAGE_SIZE);
 
         for section in sections.iter() {
             let vstart = section.virtual_range.start;
@@ -306,7 +306,71 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         }
     }
 
-    let mut undefined_symbols: BTreeMap<String, Vec<VA>> = Default::default();
+    // symbols not defined within this module.
+    let mut externs: BTreeSet<String> = Default::default();
+
+    if let Some(symtab) = obj.symbol_table() {
+        for section in obj.sections() {
+            for (_, reloc) in section.relocations() {
+                let object::RelocationEncoding::Generic = reloc.encoding() else {
+                    continue;
+                };
+
+                let object::RelocationTarget::Symbol(symindex @ object::SymbolIndex(_)) = reloc.target() else {
+                    continue;
+                };
+
+                let Ok(symbol) = symtab.symbol_by_index(symindex) else {
+                    continue;
+                };
+
+                let (object::SymbolKind::Data | object::SymbolKind::Text) = symbol.kind() else {
+                    continue;
+                };
+
+                let (object::SymbolSection::Undefined | object::SymbolSection::Common) = symbol.section() else {
+                    continue;
+                };
+
+                let name = match symbol.name() {
+                    Ok(name) => name,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+
+                if let object::RelocationKind::Relative = reloc.kind() {
+                    // relative offset to extern
+                    externs.insert(name.to_string());
+                } else if let object::RelocationKind::ImageOffset = reloc.kind() {
+                    // absolute offset to extern
+                    externs.insert(name.to_string());
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+
+    let extern_section_size = util::align((externs.len() * std::mem::size_of::<u32>()) as u64, PAGE_SIZE);
+    assert!(extern_section_size <= PAGE_SIZE);
+
+    // extern section found directly after section data
+    let extern_section_va = max_address.expect("no sections");
+
+    let mut extern_page = [0u8; PAGE_SIZE as usize];
+    for i in 0..externs.len() {
+        let entry_offset = i * std::mem::size_of::<u32>();
+        let entry_va = extern_section_va + entry_offset as u64;
+        extern_page[entry_offset..entry_offset + std::mem::size_of::<u32>()]
+            .copy_from_slice(&(entry_va as u32).to_le_bytes());
+    }
+
+    let externs = externs
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| (name, extern_section_va + i as u64 * std::mem::size_of::<u32>() as u64))
+        .collect::<BTreeMap<String, VA>>();
 
     if let Some(symtab) = obj.symbol_table() {
         // we're only able to apply relocations if we can resolve symbols.
@@ -382,9 +446,6 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                                         .try_into()
                                         .expect("64-bit section address");
 
-                                    // TODO: wrapping
-                                    // TODO: u64 truncation
-
                                     // 4: reloc.has_implicit_addend() == true; reloc.addend() == 0x4
                                     let addend: i32 = addend - vlocation as i32 - 4;
 
@@ -406,10 +467,18 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                                         symbol.name()?
                                     );
 
-                                    undefined_symbols
-                                        .entry(mapped_section.name.clone())
-                                        .or_default()
-                                        .push(vlocation);
+                                    let Ok(name) = symbol.name() else {
+                                        continue;
+                                    };
+
+                                    let &extern_va = externs.get(name).expect("extern not found");
+
+                                    let addend: i32 = extern_va as i32 - vlocation as i32 - 4;
+
+                                    operations.push(RelocationFixup {
+                                        address: vlocation,
+                                        addend,
+                                    })
                                 }
                                 _ => {
                                     panic!("unsupported symbol: {:?}", symbol);
@@ -475,10 +544,16 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                                         symbol.name()?
                                     );
 
-                                    undefined_symbols
-                                        .entry(mapped_section.name.clone())
-                                        .or_default()
-                                        .push(vlocation);
+                                    let Ok(name) = symbol.name() else {
+                                        continue;
+                                    };
+
+                                    let &extern_va = externs.get(name).expect("extern not found");
+
+                                    operations.push(RelocationFixup {
+                                        address: vlocation,
+                                        addend:  extern_va as i32,
+                                    });
                                 }
                                 _ => {
                                     panic!("unsupported symbol: {:?}", symbol);
@@ -526,7 +601,7 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
         buf: buf.to_vec(),
         module,
         symbols,
-        undefined_symbols,
+        externs,
     })
 }
 
