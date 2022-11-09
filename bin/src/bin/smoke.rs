@@ -3,7 +3,11 @@
 use anyhow::Result;
 use log::{debug, error, info};
 
-use lancelot::{analysis::cfg, util, workspace::{workspace_from_bytes, config::empty}};
+use lancelot::{
+    analysis::cfg,
+    util,
+    workspace::{config::empty, workspace_from_bytes},
+};
 
 fn _main() -> Result<()> {
     better_panic::install();
@@ -75,7 +79,7 @@ fn _main() -> Result<()> {
 
     let mut insns: cfg::InstructionIndex = Default::default();
     for &va in ws.analysis().functions.keys() {
-        insns.build_index(&ws.module(), va)?;
+        insns.build_index(ws.module(), va)?;
     }
     info!("found {} instructions", insns.insns_by_address.len());
 
