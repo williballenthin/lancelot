@@ -368,7 +368,7 @@ impl Formatter {
     }
 
     pub fn format_instruction(&self, ws: &dyn Workspace, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
-        let mut buffer = [0u8; 200];
+        let mut buffer = [0u8; 400];
 
         // we pass our userdata to ZydisFormatterFormatInstruction.
         // but to make it work, we have to play games with the lifetimes:
@@ -387,8 +387,6 @@ impl Formatter {
         //let x = unsafe { std::mem::transmute::<&'_ PEWorkspace, &'static
         // PEWorkspace>(ws) };
         let x = unsafe { std::mem::transmute::<&'_ dyn Workspace, &'static dyn Workspace>(ws) };
-
-        //ws:      Box<&'a dyn Workspace>,
 
         let mut ud = UserData {
             orig:    self.orig.clone(),
