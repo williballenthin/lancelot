@@ -64,13 +64,13 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
     buf
 }
 
-pub fn get_config() -> Box<dyn crate::workspace::cfg::Configuration> {
+pub fn get_config() -> Box<dyn crate::workspace::config::Configuration> {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
     path.push("test");
     path.push("cfg");
 
-    Box::new(crate::workspace::cfg::FileSystemConfiguration::from_path(&path))
+    Box::new(crate::workspace::config::FileSystemConfiguration::from_path(&path))
 }
 
 #[cfg(test)]

@@ -22,7 +22,7 @@ use crate::{
     VA,
 };
 
-pub mod cfg;
+pub mod config;
 pub mod formatter;
 
 #[derive(Error, Debug)]
@@ -84,21 +84,21 @@ pub struct WorkspaceAnalysis {
 }
 
 pub trait Workspace: Send {
-    fn config(&self) -> &Box<dyn cfg::Configuration>;
+    fn config(&self) -> &Box<dyn config::Configuration>;
     fn cfg(&self) -> &CFG;
     fn analysis(&self) -> &WorkspaceAnalysis;
     fn module(&self) -> &Module;
 }
 
 pub struct PEWorkspace {
-    pub config:   Box<dyn cfg::Configuration>,
+    pub config:   Box<dyn config::Configuration>,
     pub pe:       PE,
     pub cfg:      CFG,
     pub analysis: WorkspaceAnalysis,
 }
 
 impl PEWorkspace {
-    pub fn from_pe(config: Box<dyn cfg::Configuration>, pe: PE) -> Result<PEWorkspace> {
+    pub fn from_pe(config: Box<dyn config::Configuration>, pe: PE) -> Result<PEWorkspace> {
         let mut insns: InstructionIndex = Default::default();
 
         let mut function_starts: BTreeSet<VA> = Default::default();
@@ -231,7 +231,7 @@ impl PEWorkspace {
 }
 
 impl Workspace for PEWorkspace {
-    fn config(&self) -> &Box<dyn cfg::Configuration> {
+    fn config(&self) -> &Box<dyn config::Configuration> {
         &self.config
     }
 
@@ -249,14 +249,14 @@ impl Workspace for PEWorkspace {
 }
 
 pub struct COFFWorkspace {
-    pub config:   Box<dyn cfg::Configuration>,
+    pub config:   Box<dyn config::Configuration>,
     pub coff:     COFF,
     pub cfg:      CFG,
     pub analysis: WorkspaceAnalysis,
 }
 
 impl COFFWorkspace {
-    pub fn from_coff(config: Box<dyn cfg::Configuration>, coff: COFF) -> Result<COFFWorkspace> {
+    pub fn from_coff(config: Box<dyn config::Configuration>, coff: COFF) -> Result<COFFWorkspace> {
         let mut insns: InstructionIndex = Default::default();
 
         let mut function_starts: BTreeSet<VA> = Default::default();
@@ -351,7 +351,7 @@ impl COFFWorkspace {
 }
 
 impl Workspace for COFFWorkspace {
-    fn config(&self) -> &Box<dyn cfg::Configuration> {
+    fn config(&self) -> &Box<dyn config::Configuration> {
         &self.config
     }
 
@@ -368,7 +368,7 @@ impl Workspace for COFFWorkspace {
     }
 }
 
-pub fn workspace_from_bytes(config: Box<dyn cfg::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
+pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
     if buf.len() < 2 {
         return Err(WorkspaceError::FormatNotSupported.into());
     }

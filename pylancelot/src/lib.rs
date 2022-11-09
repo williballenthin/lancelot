@@ -72,7 +72,7 @@ fn to_py_err(e: Error) -> PyErr {
 pub fn from_bytes(buf: &PyBytes) -> PyResult<Workspace> {
     use ::lancelot::analysis::dis;
 
-    let config = ::lancelot::workspace::cfg::empty();
+    let config = ::lancelot::workspace::config::empty();
 
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let dec = dis::get_disassembler(ws.module()).map_err(to_py_err)?;

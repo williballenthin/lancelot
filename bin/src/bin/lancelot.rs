@@ -160,12 +160,12 @@ fn _main() -> Result<()> {
     let config = if matches.is_present("configuration") {
         let path = matches.value_of("configuration").unwrap();
         log::info!("configuration: {}", path);
-        Box::new(lancelot::workspace::cfg::FileSystemConfiguration::from_path(
+        Box::new(lancelot::workspace::config::FileSystemConfiguration::from_path(
             &std::path::PathBuf::from(path),
         ))
     } else {
         log::info!("using default, empty configuration");
-        lancelot::workspace::cfg::empty()
+        lancelot::workspace::config::empty()
     };
 
     if let Some(matches) = matches.subcommand_matches("functions") {

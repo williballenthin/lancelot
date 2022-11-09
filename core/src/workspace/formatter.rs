@@ -424,7 +424,7 @@ mod tests {
     fn with_colors() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
-        let config = cfg::empty();
+        let config = config::empty();
 
         let ws = PEWorkspace::from_pe(config, pe)?;
 
@@ -448,7 +448,7 @@ mod tests {
     fn no_colors() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
-        let config = cfg::empty();
+        let config = config::empty();
 
         let ws = PEWorkspace::from_pe(config, pe)?;
 
@@ -475,7 +475,7 @@ mod tests {
     fn hex() -> Result<()> {
         let buf = get_buf(Rsrc::NOP);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
-        let config = cfg::empty();
+        let config = config::empty();
 
         let ws = PEWorkspace::from_pe(config, pe)?;
 

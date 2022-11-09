@@ -3,7 +3,7 @@
 use anyhow::Result;
 use log::{debug, error, info};
 
-use lancelot::{analysis::cfg, loader::pe::PE, util};
+use lancelot::{analysis::cfg, util, workspace::{workspace_from_bytes, config::empty}};
 
 fn _main() -> Result<()> {
     better_panic::install();
@@ -68,18 +68,18 @@ fn _main() -> Result<()> {
     debug!("input: {}", filename);
 
     let buf = util::read_file(filename)?;
-    let pe = PE::from_bytes(&buf)?;
+    let config = empty();
+    let ws = workspace_from_bytes(config, &buf)?;
 
-    let functions = lancelot::analysis::pe::find_function_starts(&pe)?;
-    info!("found {} functions", functions.len());
+    info!("found {} functions", ws.analysis().functions.len());
 
     let mut insns: cfg::InstructionIndex = Default::default();
-    for &va in functions.iter() {
-        insns.build_index(&pe.module, va)?;
+    for &va in ws.analysis().functions.keys() {
+        insns.build_index(&ws.module(), va)?;
     }
     info!("found {} instructions", insns.insns_by_address.len());
 
-    let cfg = cfg::CFG::from_instructions(&pe.module, insns)?;
+    let cfg = cfg::CFG::from_instructions(ws.module(), insns)?;
     info!("found {} basic blocks", cfg.basic_blocks.blocks_by_address.len());
 
     Ok(())
