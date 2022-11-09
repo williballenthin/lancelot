@@ -6,6 +6,7 @@ use lancelot_flirt::{FlirtSignature, FlirtSignatureSet};
 
 pub trait Configuration: Send {
     fn get_sigs(&self) -> Result<FlirtSignatureSet>;
+    fn clone(&self) -> Box<dyn Configuration>;
 }
 
 // dummy configuration with only empty values.
@@ -14,6 +15,10 @@ pub struct EmptyConfiguration {}
 impl Configuration for EmptyConfiguration {
     fn get_sigs(&self) -> Result<FlirtSignatureSet> {
         Ok(FlirtSignatureSet::with_signatures(vec![]))
+    }
+
+    fn clone(&self) -> Box<dyn Configuration> {
+        Box::new(EmptyConfiguration {})
     }
 }
 
@@ -55,5 +60,11 @@ impl Configuration for FileSystemConfiguration {
         }
 
         Ok(FlirtSignatureSet::with_signatures(sigs))
+    }
+
+    fn clone(&self) -> Box<dyn Configuration> {
+        Box::new(FileSystemConfiguration {
+            path: self.path.clone(),
+        })
     }
 }
