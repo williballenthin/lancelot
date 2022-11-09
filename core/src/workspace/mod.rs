@@ -75,6 +75,8 @@ pub struct WorkspaceAnalysis {
     //   - file format analysis pass: pe::get_improts()
     pub imports: BTreeMap<VA, Import>,
 
+    pub externs: BTreeMap<VA, String>,
+
     // derived from:
     //  - user names
     //  - export names
@@ -224,6 +226,7 @@ impl PEWorkspace {
             analysis: WorkspaceAnalysis {
                 functions,
                 imports,
+                externs: Default::default(),
                 names,
             },
         })
@@ -274,6 +277,11 @@ impl COFFWorkspace {
             if names.contains_address(symbol.address).not() {
                 names.insert(symbol.address, name.clone());
             }
+        }
+
+        let externs: BTreeMap<VA, String> = coff.externs.iter().map(|(name, &va)| (va, name.clone())).collect();
+        for (&va, name) in externs.iter() {
+            names.insert(va, name.clone());
         }
 
         for &function in function_starts.iter() {
@@ -344,6 +352,7 @@ impl COFFWorkspace {
             analysis: WorkspaceAnalysis {
                 functions,
                 imports: Default::default(),
+                externs,
                 names,
             },
         })
