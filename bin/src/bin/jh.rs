@@ -82,12 +82,17 @@ fn extract_insn_features(
                 continue;
             }
 
-            if n < 0x1000 {
+            if n < 0x100 {
                 // skip small numbers
                 continue;
             }
 
-            if n > u64::MAX - 0x1_0000 {
+            if n < 0x001_0000 && n % 0x1000 == 0 {
+                // skip small page aligned numbers
+                continue;
+            }
+
+            if n > u64::MAX - 0x1000 {
                 // skip small negative numbers
                 continue;
             }
@@ -219,12 +224,15 @@ fn extract_function_features(ws: &dyn lancelot::workspace::Workspace, va: VA) ->
 
 struct FunctionDescriptor {
     name:    String,
+    #[allow(dead_code)]
     address: VA,
 
     features: Features,
 }
 
-fn extract_workspace_features(ws: &dyn lancelot::workspace::Workspace) -> Result<BTreeMap<VA, FunctionDescriptor>> {
+type FunctionsFeatures = BTreeMap<VA, FunctionDescriptor>;
+
+fn extract_workspace_features(ws: &dyn lancelot::workspace::Workspace) -> Result<FunctionsFeatures> {
     let descriptors = ws
         .analysis()
         .functions
@@ -256,9 +264,29 @@ fn extract_workspace_features(ws: &dyn lancelot::workspace::Workspace) -> Result
     Ok(descriptors)
 }
 
-fn extract_buf_features(config: Box<dyn Configuration>, buf: &[u8]) -> Result<BTreeMap<VA, FunctionDescriptor>> {
+fn extract_buf_features(config: Box<dyn Configuration>, buf: &[u8]) -> Result<FunctionsFeatures> {
     let ws = workspace_from_bytes(config, buf)?;
     extract_workspace_features(&*ws)
+}
+
+fn output_functions_features(ns: &str, features: &FunctionsFeatures) -> Result<()> {
+    for desc in features.values() {
+        let name = format!("{}/{}", ns, desc.name);
+
+        for v in desc.features.numbers.iter() {
+            println!("{},number,0x{:08x}", name, v);
+        }
+
+        for v in desc.features.apis.iter() {
+            println!("{},api,{}", name, v);
+        }
+
+        for v in desc.features.strings.iter() {
+            println!("{},string,{}", name, json!(v));
+        }
+    }
+
+    Ok(())
 }
 
 fn _main() -> Result<()> {
@@ -281,9 +309,15 @@ fn _main() -> Result<()> {
                 .help("disable informational messages"),
         )
         .arg(
-            clap::Arg::new("input")
+            clap::Arg::new("namespace")
                 .required(true)
                 .index(1)
+                .help("namespace prefix to use for function paths"),
+        )
+        .arg(
+            clap::Arg::new("input")
+                .required(true)
+                .index(2)
                 .help("path to file to analyze"),
         )
         .get_matches();
@@ -299,6 +333,8 @@ fn _main() -> Result<()> {
             _ => log::LevelFilter::Trace,
         }
     };
+
+    let ns = matches.value_of("namespace").unwrap();
 
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -326,7 +362,13 @@ fn _main() -> Result<()> {
 
     let buf = util::read_file(filename)?;
 
-    if buf.starts_with(b"!<arch>\n") {
+    if buf.starts_with(b"MZ") || buf.starts_with(&[0x64, 0x86]) {
+        // PE or COFF
+
+        let features = extract_buf_features(config.clone(), &buf)?;
+
+        output_functions_features(ns, &features)?;
+    } else if buf.starts_with(b"!<arch>\n") {
         // archive file
 
         let mut ar = ar::Archive::new(buf.as_slice());
@@ -339,43 +381,15 @@ fn _main() -> Result<()> {
                 continue;
             };
 
+            // fix paths to use forward slashes
+            let name = name.replace('\\', "/");
+
             let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
             entry.read_to_end(&mut sbuf)?;
 
-            println!("{}", name);
+            let features = extract_buf_features(config.clone(), &sbuf)?;
 
-            for desc in extract_buf_features(config.clone(), &sbuf)?.values() {
-                println!("  function: {} (0x{:08x})", desc.name, desc.address);
-
-                for v in desc.features.numbers.iter() {
-                    println!("    number: 0x{:08x}", v);
-                }
-
-                for v in desc.features.strings.iter() {
-                    println!("    string: {}", json!(v));
-                }
-
-                for v in desc.features.apis.iter() {
-                    println!("    api: {}", v);
-                }
-            }
-        }
-    } else if buf.starts_with(b"MZ") || buf.starts_with(&[0x64, 0x86]) {
-        // PE or COFF
-        for desc in extract_buf_features(config, &buf)?.values() {
-            println!("function: {} (0x{:08x})", desc.name, desc.address);
-
-            for v in desc.features.numbers.iter() {
-                println!("  number: 0x{:08x}", v);
-            }
-
-            for v in desc.features.strings.iter() {
-                println!("  string: {}", json!(v));
-            }
-
-            for v in desc.features.apis.iter() {
-                println!("  api: {}", v);
-            }
+            output_functions_features(&format!("{}/{}", ns, name), &features)?;
         }
     } else {
         error!("unrecognized file format");
