@@ -72,8 +72,21 @@ pub trait AddressSpace<T> {
 // addresses spaces that support write operations.
 // these are really only meant for loaders that apply relocations, etc.
 pub trait WritableAddressSpace<T> {
-    fn write_u32(&mut self, offset: T, v: u32) -> Result<()>;
-    fn write_u64(&mut self, offset: T, v: u64) -> Result<()>;
+    fn write(&mut self, addr: T, v: &[u8]) -> Result<()>;
+
+    fn write_u32(&mut self, addr: T, v: u32) -> Result<()> {
+        let mut src = [0u8; std::mem::size_of::<u32>()];
+        LittleEndian::write_u32(&mut src, v);
+
+        self.write(addr, &src[..])
+    }
+
+    fn write_u64(&mut self, addr: T, v: u64) -> Result<()> {
+        let mut src = [0u8; std::mem::size_of::<u64>()];
+        LittleEndian::write_u64(&mut src, v);
+
+        self.write(addr, &src[..])
+    }
 }
 
 /// An AddressSpace in which data is mapped at or near after a base address,
@@ -147,69 +160,81 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
     }
 }
 
+pub const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SHIFT: usize = 12;
+pub const PAGE_MASK: u64 = 0xFFF;
+
+pub fn is_page_aligned(va: VA) -> bool {
+    va & PAGE_MASK == 0x0
+}
+
+pub fn page_address(va: VA) -> u64 {
+    (va >> PAGE_SHIFT) << PAGE_SHIFT
+}
+
+pub fn page_offset(va: VA) -> usize {
+    (va & PAGE_MASK) as usize
+}
+
 impl WritableAddressSpace<RVA> for RelativeAddressSpace {
-    fn write_u32(&mut self, offset: RVA, v: u32) -> Result<()> {
-        const PAGE_SIZE: u64 = 0x1000;
+    fn write(&mut self, addr: RVA, buf: &[u8]) -> Result<()> {
+        assert!(buf.len() <= PAGE_SIZE);
 
-        let (page_address, page_offset) = if offset % PAGE_SIZE != 0 {
-            (
-                crate::util::align(offset, PAGE_SIZE) - PAGE_SIZE,
-                (offset % PAGE_SIZE) as usize,
-            )
+        let end_addr = addr + buf.len() as u64;
+        if page_address(addr) != page_address(end_addr) && !is_page_aligned(end_addr) {
+            // uncommon case: split write across two pages
+            // guaranteed to only be two pages due to size assertion above.
+            let write_size: usize = buf.len();
+            let page_offset = page_offset(addr);
+            let first_size = PAGE_SIZE - page_offset;
+            let second_size = write_size - first_size;
+
+            // first page
+            {
+                // get the existing page
+                let mut page = [0u8; PAGE_SIZE];
+                self.map.slice_into(page_address(addr), &mut page[..])?;
+
+                // update the page
+                // changes will be until the end of the page (and overflow into next page)
+                let dst = &mut page[page_offset..];
+                dst.copy_from_slice(&buf[0..first_size]);
+
+                // write back
+                self.map.write(page_address(addr), &page)?;
+            }
+
+            // second page
+            {
+                // get the existing page
+                let mut page = [0u8; PAGE_SIZE];
+                self.map
+                    .slice_into(page_address(addr) + PAGE_SIZE as u64, &mut page[..])?;
+
+                // update the page
+                // changes will be from page address 0, because it overflows from prior page.
+                let dst = &mut page[0..second_size];
+                dst.copy_from_slice(&buf[first_size..]);
+
+                // write back
+                self.map.write(page_address(addr) + PAGE_SIZE as u64, &page)?;
+            }
         } else {
-            (offset, 0x0usize)
-        };
+            // common case: all data in single page
 
-        if page_offset >= PAGE_SIZE as usize - std::mem::size_of::<u32>() {
-            panic!("cannot split write");
+            // get the existing page
+            let mut page = [0u8; PAGE_SIZE];
+            self.map.slice_into(page_address(addr), &mut page[..])?;
+
+            // update the page
+            let dst = &mut page[page_offset(addr)..page_offset(addr) + buf.len()];
+            dst.copy_from_slice(buf);
+
+            // write back
+            self.map.write(page_address(addr), &page)?;
         }
 
-        // compute the byte-wise u32 representation
-        let mut src = [0u8; std::mem::size_of::<u32>()];
-        LittleEndian::write_u32(&mut src, v);
-
-        // get the existing page
-        let mut page = [0u8; PAGE_SIZE as usize];
-        self.map.slice_into(page_address, &mut page[..])?;
-
-        // update the page
-        let dst = &mut page[page_offset..page_offset + std::mem::size_of::<u32>()];
-        dst.copy_from_slice(&src[..]);
-
-        // write back
-        self.map.write(page_address, &page)
-    }
-
-    fn write_u64(&mut self, offset: RVA, v: u64) -> Result<()> {
-        const PAGE_SIZE: u64 = 0x1000;
-
-        let (page_address, page_offset) = if offset % PAGE_SIZE != 0 {
-            (
-                crate::util::align(offset, PAGE_SIZE) - PAGE_SIZE,
-                (offset % PAGE_SIZE) as usize,
-            )
-        } else {
-            (offset, 0x0usize)
-        };
-
-        if page_offset >= PAGE_SIZE as usize - std::mem::size_of::<u64>() {
-            panic!("cannot split write");
-        }
-
-        // compute the byte-wise u32 representation
-        let mut src = [0u8; std::mem::size_of::<u64>()];
-        LittleEndian::write_u64(&mut src, v);
-
-        // get the existing page
-        let mut page = [0u8; PAGE_SIZE as usize];
-        self.map.slice_into(page_address, &mut page[..])?;
-
-        // update the page
-        let dst = &mut page[page_offset..page_offset + std::mem::size_of::<u64>()];
-        dst.copy_from_slice(&src[..]);
-
-        // write back
-        self.map.write(page_address, &page)
+        Ok(())
     }
 }
 
@@ -231,12 +256,8 @@ impl AddressSpace<RVA> for &RelativeAddressSpace {
 }
 
 impl WritableAddressSpace<RVA> for &mut RelativeAddressSpace {
-    fn write_u32(&mut self, offset: RVA, v: u32) -> Result<()> {
-        (*self).write_u32(offset, v)
-    }
-
-    fn write_u64(&mut self, offset: RVA, v: u64) -> Result<()> {
-        (*self).write_u64(offset, v)
+    fn write(&mut self, addr: RVA, buf: &[u8]) -> Result<()> {
+        (*self).write(addr, buf)
     }
 }
 
@@ -294,20 +315,12 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
 }
 
 impl WritableAddressSpace<VA> for AbsoluteAddressSpace {
-    fn write_u32(&mut self, offset: VA, v: u32) -> Result<()> {
-        if offset < self.base_address {
+    fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+        if addr < self.base_address {
             return Err(PageMapError::NotMapped.into());
         }
 
-        self.relative.write_u32((offset - self.base_address) as RVA, v)
-    }
-
-    fn write_u64(&mut self, offset: VA, v: u64) -> Result<()> {
-        if offset < self.base_address {
-            return Err(PageMapError::NotMapped.into());
-        }
-
-        self.relative.write_u64((offset - self.base_address) as RVA, v)
+        self.relative.write((addr - self.base_address) as RVA, buf)
     }
 }
 
@@ -326,12 +339,8 @@ impl AddressSpace<VA> for &AbsoluteAddressSpace {
 }
 
 impl WritableAddressSpace<VA> for &mut AbsoluteAddressSpace {
-    fn write_u32(&mut self, offset: VA, v: u32) -> Result<()> {
-        (*self).write_u32(offset, v)
-    }
-
-    fn write_u64(&mut self, offset: VA, v: u64) -> Result<()> {
-        (*self).write_u64(offset, v)
+    fn write(&mut self, addr: VA, buf: &[u8]) -> Result<()> {
+        (*self).write(addr, buf)
     }
 }
 
