@@ -87,6 +87,11 @@ fn extract_insn_features(
                 continue;
             }
 
+            if n == 0xFFFFFFFF {
+                // skip -1i32
+                continue;
+            }
+
             if n < 0x001_0000 && n % 0x1000 == 0 {
                 // skip small page aligned numbers
                 continue;
