@@ -11,9 +11,7 @@ use thiserror::Error;
 
 pub use crate::{module::Permissions, VA};
 
-pub const PAGE_SIZE: usize = 0x1000;
-const PAGE_SHIFT: usize = 12;
-const PAGE_MASK: u64 = 0xFFF;
+pub use crate::aspace::{is_page_aligned, page_address, page_offset, PAGE_MASK, PAGE_SHIFT, PAGE_SIZE};
 
 type PageFrame = [u8; PAGE_SIZE];
 const EMPTY_PAGE: PageFrame = [0u8; PAGE_SIZE];
@@ -137,16 +135,8 @@ pub struct MMU {
     mapping: BTreeMap<VA, (PFN, PageFlags)>,
 }
 
-fn is_page_aligned(va: VA) -> bool {
-    va & PAGE_MASK == 0x0
-}
-
 fn page_number(va: VA) -> u64 {
-    (va >> PAGE_SHIFT) << PAGE_SHIFT
-}
-
-fn page_offset(va: VA) -> usize {
-    (va & PAGE_MASK) as usize
+    page_address(va)
 }
 
 impl MMU {
