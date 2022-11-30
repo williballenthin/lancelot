@@ -150,7 +150,7 @@ impl Ranges {
 
     /// find ranges that fall within the given range.
     /// only collect the ranges that are direct children of the range.
-    fn get_children<'a>(&self, range: &'a Range) -> Vec<&Range> {
+    fn get_children(&self, range: &Range) -> Vec<&Range> {
         let key = (range.start, -(range.end as i64));
         let max = (u64::MAX, i64::MIN);
 
