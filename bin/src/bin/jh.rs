@@ -28,6 +28,34 @@ struct Features {
     apis:    BTreeSet<String>,
 }
 
+fn is_jump(insn: &dis::zydis::DecodedInstruction) -> bool {
+    matches!(
+        insn.mnemonic,
+        dis::zydis::Mnemonic::JB
+            | dis::zydis::Mnemonic::JBE
+            | dis::zydis::Mnemonic::JCXZ
+            | dis::zydis::Mnemonic::JECXZ
+            | dis::zydis::Mnemonic::JKNZD
+            | dis::zydis::Mnemonic::JKZD
+            | dis::zydis::Mnemonic::JL
+            | dis::zydis::Mnemonic::JLE
+            | dis::zydis::Mnemonic::JMP
+            | dis::zydis::Mnemonic::JNB
+            | dis::zydis::Mnemonic::JNBE
+            | dis::zydis::Mnemonic::JNL
+            | dis::zydis::Mnemonic::JNLE
+            | dis::zydis::Mnemonic::JNO
+            | dis::zydis::Mnemonic::JNP
+            | dis::zydis::Mnemonic::JNS
+            | dis::zydis::Mnemonic::JNZ
+            | dis::zydis::Mnemonic::JO
+            | dis::zydis::Mnemonic::JP
+            | dis::zydis::Mnemonic::JRCXZ
+            | dis::zydis::Mnemonic::JS
+            | dis::zydis::Mnemonic::JZ
+    )
+}
+
 fn extract_insn_features(
     ws: &dyn lancelot::workspace::Workspace,
     insn: &dis::zydis::DecodedInstruction,
@@ -45,7 +73,11 @@ fn extract_insn_features(
             .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
             .take(3)
         {
-            if matches!(insn.mnemonic, dis::zydis::Mnemonic::JMP | dis::zydis::Mnemonic::CALL) {
+            if is_jump(insn) {
+                continue;
+            }
+
+            if matches!(insn.mnemonic, dis::zydis::Mnemonic::CALL) {
                 continue;
             }
 
@@ -114,7 +146,11 @@ fn extract_insn_features(
             .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
             .take(3)
         {
-            if matches!(insn.mnemonic, dis::zydis::Mnemonic::JMP | dis::zydis::Mnemonic::CALL) {
+            if is_jump(insn) {
+                continue;
+            }
+
+            if matches!(insn.mnemonic, dis::zydis::Mnemonic::CALL) {
                 continue;
             }
 
