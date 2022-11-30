@@ -167,6 +167,8 @@ fn extract_insn_features(
 
                 if let Some(extern_) = ws.analysis().externs.get(&x) {
                     if extern_.starts_with("__imp_") {
+                        // unlinked object files may refer to subsequently linked/imported symbols
+                        // via the prefix `__imp_`.
                         apis.insert(extern_.replace("__imp_", ""));
                     } else {
                         apis.insert(extern_.clone());
