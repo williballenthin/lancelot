@@ -166,7 +166,11 @@ fn extract_insn_features(
                 }
 
                 if let Some(extern_) = ws.analysis().externs.get(&x) {
-                    apis.insert(extern_.clone());
+                    if extern_.starts_with("__imp_") {
+                        apis.insert(extern_.replace("__imp_", ""));
+                    } else {
+                        apis.insert(extern_.clone());
+                    }
                 }
 
                 // local function with a name, such as recovered via symbols or FLIRT
