@@ -114,6 +114,10 @@ fn extract_insn_features(
             .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
             .take(3)
         {
+            if matches!(insn.mnemonic, dis::zydis::Mnemonic::JMP | dis::zydis::Mnemonic::CALL) {
+                continue;
+            }
+
             let x = match get_operand_xref(ws.module(), va, insn, op) {
                 Err(_) => continue,
                 Ok(None) => continue,
