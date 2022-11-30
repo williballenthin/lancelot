@@ -320,18 +320,38 @@ fn extract_buf_features(config: Box<dyn Configuration>, buf: &[u8]) -> Result<Fu
     extract_workspace_features(&*ws)
 }
 
-fn output_functions_features(library: &str, version: &str, path: &str, features: &FunctionsFeatures) -> Result<()> {
+struct BuildSettings {
+    triplet:  String,
+    compiler: String,
+    library:  String,
+    version:  String,
+    profile:  String,
+}
+
+fn output_functions_features(build: &BuildSettings, path: &str, features: &FunctionsFeatures) -> Result<()> {
     for desc in features.values() {
         for v in desc.features.numbers.iter() {
-            println!("{},{},{},{},number,0x{:08x}", library, version, path, desc.name, v);
+            print!(
+                "{},{},{},{},{},",
+                build.triplet, build.compiler, build.library, build.version, build.profile
+            );
+            println!("{},{},number,0x{:08x}", path, desc.name, v);
         }
 
         for v in desc.features.apis.iter() {
-            println!("{},{},{},{},api,{}", library, version, path, desc.name, v);
+            print!(
+                "{},{},{},{},{},",
+                build.triplet, build.compiler, build.library, build.version, build.profile
+            );
+            println!("{},{},api,{}", path, desc.name, v);
         }
 
         for v in desc.features.strings.iter() {
-            println!("{},{},{},{},string,{}", library, version, path, desc.name, json!(v));
+            print!(
+                "{},{},{},{},{},",
+                build.triplet, build.compiler, build.library, build.version, build.profile
+            );
+            println!("{},{},string,{}", path, desc.name, json!(v));
         }
     }
 
@@ -357,22 +377,15 @@ fn _main() -> Result<()> {
                 .long("quiet")
                 .help("disable informational messages"),
         )
-        .arg(
-            clap::Arg::new("library")
-                .required(true)
-                .index(1)
-                .help("name of library"),
-        )
-        .arg(
-            clap::Arg::new("version")
-                .required(true)
-                .index(2)
-                .help("version of library"),
-        )
+        .arg(clap::Arg::new("triplet").required(true).index(1))
+        .arg(clap::Arg::new("compiler").required(true).index(2))
+        .arg(clap::Arg::new("library").required(true).index(3))
+        .arg(clap::Arg::new("version").required(true).index(4))
+        .arg(clap::Arg::new("profile").required(true).index(5))
         .arg(
             clap::Arg::new("input")
                 .required(true)
-                .index(3)
+                .index(6)
                 .help("path to file to analyze"),
         )
         .get_matches();
@@ -389,8 +402,13 @@ fn _main() -> Result<()> {
         }
     };
 
-    let lib = matches.value_of("library").unwrap();
-    let version = matches.value_of("version").unwrap();
+    let build = BuildSettings {
+        triplet:  matches.value_of("triplet").unwrap().to_string(),
+        compiler: matches.value_of("compiler").unwrap().to_string(),
+        library:  matches.value_of("library").unwrap().to_string(),
+        version:  matches.value_of("version").unwrap().to_string(),
+        profile:  matches.value_of("profile").unwrap().to_string(),
+    };
 
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -423,12 +441,12 @@ fn _main() -> Result<()> {
 
         let features = extract_buf_features(config.clone(), &buf)?;
 
-        println!("# library,version,path,function,type,value");
-        output_functions_features(lib, version, "/", &features)?;
+        println!("# triplet,compiler,library,version,profile,path,function,type,value");
+        output_functions_features(&build, "/", &features)?;
     } else if buf.starts_with(b"!<arch>\n") {
         // archive file
 
-        println!("# library,version,path,function,type,value");
+        println!("# triplet,compiler,library,version,profile,path,function,type,value");
         let mut ar = ar::Archive::new(buf.as_slice());
         while let Some(entry_result) = ar.next_entry() {
             let Ok(mut entry) = entry_result else {
@@ -447,7 +465,7 @@ fn _main() -> Result<()> {
 
             let features = extract_buf_features(config.clone(), &sbuf)?;
 
-            output_functions_features(lib, version, &path, &features)?;
+            output_functions_features(&build, &path, &features)?;
         }
     } else {
         error!("unrecognized file format");
