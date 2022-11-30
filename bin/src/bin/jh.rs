@@ -284,20 +284,18 @@ fn extract_buf_features(config: Box<dyn Configuration>, buf: &[u8]) -> Result<Fu
     extract_workspace_features(&*ws)
 }
 
-fn output_functions_features(ns: &str, features: &FunctionsFeatures) -> Result<()> {
+fn output_functions_features(library: &str, version: &str, path: &str, features: &FunctionsFeatures) -> Result<()> {
     for desc in features.values() {
-        let name = format!("{}/{}", ns, desc.name);
-
         for v in desc.features.numbers.iter() {
-            println!("{},number,0x{:08x}", name, v);
+            println!("{},{},{},{},number,0x{:08x}", library, version, path, desc.name, v);
         }
 
         for v in desc.features.apis.iter() {
-            println!("{},api,{}", name, v);
+            println!("{},{},{},{},api,{}", library, version, path, desc.name, v);
         }
 
         for v in desc.features.strings.iter() {
-            println!("{},string,{}", name, json!(v));
+            println!("{},{},{},{},string,{}", library, version, path, desc.name, json!(v));
         }
     }
 
@@ -324,15 +322,21 @@ fn _main() -> Result<()> {
                 .help("disable informational messages"),
         )
         .arg(
-            clap::Arg::new("namespace")
+            clap::Arg::new("library")
                 .required(true)
                 .index(1)
-                .help("namespace prefix to use for function paths"),
+                .help("name of library"),
+        )
+        .arg(
+            clap::Arg::new("version")
+                .required(true)
+                .index(2)
+                .help("version of library"),
         )
         .arg(
             clap::Arg::new("input")
                 .required(true)
-                .index(2)
+                .index(3)
                 .help("path to file to analyze"),
         )
         .get_matches();
@@ -349,7 +353,8 @@ fn _main() -> Result<()> {
         }
     };
 
-    let ns = matches.value_of("namespace").unwrap();
+    let lib = matches.value_of("library").unwrap();
+    let version = matches.value_of("version").unwrap();
 
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -382,29 +387,31 @@ fn _main() -> Result<()> {
 
         let features = extract_buf_features(config.clone(), &buf)?;
 
-        output_functions_features(ns, &features)?;
+        println!("# library,version,path,function,type,value");
+        output_functions_features(lib, version, "/", &features)?;
     } else if buf.starts_with(b"!<arch>\n") {
         // archive file
 
+        println!("# library,version,path,function,type,value");
         let mut ar = ar::Archive::new(buf.as_slice());
         while let Some(entry_result) = ar.next_entry() {
             let Ok(mut entry) = entry_result else {
                 continue;
             };
 
-            let Ok(name) = String::from_utf8(entry.header().identifier().to_vec()) else {
+            let Ok(path) = String::from_utf8(entry.header().identifier().to_vec()) else {
                 continue;
             };
 
             // fix paths to use forward slashes
-            let name = name.replace('\\', "/");
+            let path = path.replace('\\', "/");
 
             let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
             entry.read_to_end(&mut sbuf)?;
 
             let features = extract_buf_features(config.clone(), &sbuf)?;
 
-            output_functions_features(&format!("{}/{}", ns, name), &features)?;
+            output_functions_features(lib, version, &path, &features)?;
         }
     } else {
         error!("unrecognized file format");
