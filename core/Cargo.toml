@@ -2,7 +2,7 @@
 name = "lancelot"
 description = "binary analysis framework for x32/x64 PE files"
 license = "Apache-2.0"
-version = "0.8.1"
+version = "0.8.3"
 authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
@@ -37,7 +37,7 @@ chrono = { version = "0.4", features = ["clock"], default-features = false, opti
 bitvec = { version = "1", optional = true }
 
 # needed for flirt
-lancelot-flirt = { path = "../flirt", version = "0.8.1", optional = true}
+lancelot-flirt = { path = "../flirt", version = "0.8.3", optional = true}
 
 [dev-dependencies]
 criterion = "0.4"
