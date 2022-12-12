@@ -1,6 +1,6 @@
 [project]
 name = "python-lancelot"
-version = "0.8.3"
+version = "0.8.4"
 description = "Intel x86(-64) code analysis library that reconstructs control flow"
 readme = "README.md"
 requires-python = ">=3.7"
