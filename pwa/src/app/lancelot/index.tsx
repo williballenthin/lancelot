@@ -16,8 +16,9 @@ import { address, Address, Size, NamedLocation, Workspace } from "../../componen
 import { Dispatches, AppState, actions, store } from "../../components/store";
 
 import init, * as Lancelot from "../../../../jslancelot/pkg/jslancelot";
-import NOP from "./nop.bin";
+import { NOP } from "./nop";
 import { GraphView } from "../../components/graphview";
+
 
 export const APP = {
     set_theme: (name: string) => {
@@ -108,7 +109,7 @@ const DisassemblyView = (props: { ws: Workspace; address: address; size?: number
     let insn_address = address;
     while (insn_address < (address as bigint) + BigInt(size)) {
         try {
-            const insn = ws.pe.read_insn(insn_address);
+            const insn = ws.pe.read_insn(insn_address as bigint);
             insns.push(insn);
             (insn_address as bigint) += BigInt(insn.size);
         } catch (err) {
@@ -546,7 +547,7 @@ async function amain() {
 
     APP.set_theme(Settings.get("theme", "light"));
 
-    const buf = Uint8Array.from(NOP.data);
+    const buf = NOP;
     const pe = pe_from_bytes(buf);
 
     const cfg = pe.cfg();
