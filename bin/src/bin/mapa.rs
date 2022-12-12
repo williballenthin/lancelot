@@ -868,7 +868,12 @@ fn _main() -> Result<()> {
                 .long("quiet")
                 .help("disable informational messages"),
         )
-        .arg(clap::Arg::new("va").long("va").action(clap::ArgAction::SetTrue).help("output addresses as mapped into memory"))
+        .arg(
+            clap::Arg::new("va")
+                .long("va")
+                .action(clap::ArgAction::SetTrue)
+                .help("output addresses as mapped into memory"),
+        )
         .arg(
             clap::Arg::new("input")
                 .required(true)
