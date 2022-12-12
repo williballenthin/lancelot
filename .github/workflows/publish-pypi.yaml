@@ -43,7 +43,6 @@ jobs:
     strategy:
       matrix:
         python: [
-          { version: '3.6', abi: 'cp36-cp36m' },
           { version: '3.7', abi: 'cp37-cp37m' },
           { version: '3.8', abi: 'cp38-cp38' },
           { version: '3.9', abi: 'cp39-cp39' },
