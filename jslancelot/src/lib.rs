@@ -23,7 +23,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
 pub fn version() -> String {
-    String::from("v0.7.0")
+    String::from("v0.8.0")
 }
 
 #[wasm_bindgen(start)]
