@@ -150,6 +150,8 @@ jobs:
         target: aarch64-apple-darwin
     - uses: messense/maturin-action@v1
       name: build pylancelot for macos (universal2)
+      env:
+        MACOSX_DEPLOYMENT_TARGET: 10.9
       with:
         maturin-version: latest
         command: build
