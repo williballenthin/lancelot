@@ -520,7 +520,7 @@ function pe_from_bytes(buf: Uint8Array): Lancelot.PE {
                     return {
                         basic_blocks: wasm_to_js(v1.basic_blocks),
                         get_reachable_blocks: v1.get_reachable_blocks.bind(v1),
-                    }
+                    };
                 };
             } else if (prop === "strings" || prop === "read_insn") {
                 const orig = (target as any)[prop];

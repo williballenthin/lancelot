@@ -378,7 +378,7 @@ export const GraphView = (props: { ws: Workspace; address: address; size?: numbe
 
     g.nodes().forEach(function (v) {
         if (g.node(v) === undefined) {
-            console.log("empty node", v)
+            console.log("empty node", v);
         } else {
             elems.push(<Node node={g.node(v)} dispatch={dispatch} />);
         }
