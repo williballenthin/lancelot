@@ -133,6 +133,10 @@ jobs:
       with:
         python-version: 3.9
         architecture: x64
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v1.13
+      with:
+        cmake-version: '3.24.3'
     - name: install Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
