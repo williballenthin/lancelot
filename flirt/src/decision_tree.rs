@@ -28,7 +28,7 @@ impl std::convert::From<u8> for Symbol {
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Symbol::Byte(b) => write!(f, r"{:02X}", b),
+            Symbol::Byte(b) => write!(f, r"{b:02X}"),
             Symbol::Wildcard => write!(f, ".."),
         }
     }
@@ -69,7 +69,7 @@ impl Pattern {
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for symbol in self.0.iter() {
-            write!(f, "{}", symbol)?;
+            write!(f, "{symbol}")?;
         }
         Ok(())
     }
@@ -470,16 +470,16 @@ impl std::fmt::Debug for DecisionTree {
                         let pattern = &patterns[index as usize];
 
                         write_indent(f, indent + 1)?;
-                        writeln!(f, "{}", pattern)?;
+                        writeln!(f, "{pattern}")?;
                     }
                 }
                 Node::Branch { index, choices, other } => {
                     write_indent(f, indent)?;
-                    writeln!(f, "index {}", index)?;
+                    writeln!(f, "index {index}")?;
 
                     for (choice, node) in choices.iter() {
                         write_indent(f, indent + 1)?;
-                        writeln!(f, "choice {:02X}", choice)?;
+                        writeln!(f, "choice {choice:02X}")?;
 
                         rec(f, patterns, bucket, indent + 2, node)?;
                     }
@@ -497,7 +497,7 @@ impl std::fmt::Debug for DecisionTree {
         }
 
         for (size, (bucket, root)) in self.buckets.iter() {
-            writeln!(f, "size: {}", size)?;
+            writeln!(f, "size: {size}")?;
             rec(f, &self.patterns, bucket, 2, root)?;
         }
 

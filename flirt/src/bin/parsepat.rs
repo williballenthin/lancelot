@@ -53,6 +53,6 @@ fn main() {
         .expect("failed to configure logging");
 
     if let Err(e) = run(matches.value_of("pat").unwrap()) {
-        eprintln!("error: {:}", e);
+        eprintln!("error: {e:}");
     }
 }

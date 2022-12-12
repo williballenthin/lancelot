@@ -204,7 +204,7 @@ pub fn get_memory_operand_ptr(
         // this is something like `JMP [0x1000+eax*4]` (32-bit)
         Ok(None)
     } else {
-        println!("{:#x}: get mem op xref", va);
+        println!("{va:#x}: get mem op xref");
         print_op(op);
         panic!("not supported");
     }

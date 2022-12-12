@@ -54,14 +54,14 @@ pub struct Pattern(pub Vec<Symbol>);
 
 impl std::fmt::Display for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let parts: Vec<String> = self.0.iter().map(|s| format!("{}", s)).collect();
+        let parts: Vec<String> = self.0.iter().map(|s| format!("{s}")).collect();
         write!(f, "{}", parts.join(""))
     }
 }
 
 impl std::fmt::Debug for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -105,7 +105,7 @@ pub struct PatternSet {
 impl std::fmt::Debug for PatternSet {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for pattern in self.patterns.iter() {
-            writeln!(f, "  - {}", pattern)?;
+            writeln!(f, "  - {pattern}")?;
         }
         Ok(())
     }
@@ -145,7 +145,7 @@ impl PatternSetBuilder {
 
         let mut patterns = vec![];
         for pattern in self.patterns.iter() {
-            patterns.push(format!("{}", pattern));
+            patterns.push(format!("{pattern}"));
         }
 
         let dt = super::decision_tree::DecisionTree::new(&patterns);

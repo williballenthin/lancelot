@@ -50,16 +50,13 @@ pub fn link_imports(emu: &mut Emulator, pe: &PE) -> Result<BTreeMap<VA, String>>
                 let original_thunk_addr = original_thunk_array + (i * psize) as RVA;
 
                 let name = match read_image_thunk_data(pe, original_thunk_addr)? {
-                    IMAGE_THUNK_DATA::Ordinal(n) => format!("{}!#{}", dll, n),
+                    IMAGE_THUNK_DATA::Ordinal(n) => format!("{dll}!#{n}"),
                     IMAGE_THUNK_DATA::Function(rva) => {
                         read_image_import_by_name(pe, pe.module.address_space.base_address + rva)?.name
                     }
                 };
-                debug!(
-                    "emu: plat: win: link import {:#x} -> {}!{} ",
-                    original_thunk_addr, dll, name
-                );
-                imports.insert(original_thunk_addr, format!("{}!{}", dll, name));
+                debug!("emu: plat: win: link import {original_thunk_addr:#x} -> {dll}!{name} ");
+                imports.insert(original_thunk_addr, format!("{dll}!{name}"));
 
                 match pe.module.arch {
                     Arch::X32 => {

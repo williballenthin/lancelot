@@ -215,7 +215,7 @@ impl PEWorkspace {
 
         for &function in functions.keys() {
             if names.contains_address(function).not() {
-                names.insert(function, format!("sub_{:x}", function));
+                names.insert(function, format!("sub_{function:x}"));
             }
         }
 
@@ -341,7 +341,7 @@ impl COFFWorkspace {
 
         for &function in functions.keys() {
             if names.contains_address(function).not() {
-                names.insert(function, format!("sub_{:x}", function));
+                names.insert(function, format!("sub_{function:x}"));
             }
         }
 

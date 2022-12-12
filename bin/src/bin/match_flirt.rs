@@ -105,8 +105,8 @@ fn _main() -> Result<()> {
     impl std::fmt::Display for Name {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             match self {
-                Name::Public(s) => write!(f, "(public) {}", s),
-                Name::Local(s) => write!(f, "(local)  {}", s),
+                Name::Public(s) => write!(f, "(public) {s}"),
+                Name::Local(s) => write!(f, "(local)  {s}"),
             }
         }
     }
@@ -142,15 +142,15 @@ fn _main() -> Result<()> {
         if let Some(names) = names.get(&va) {
             if names.len() == 1 {
                 let names: Vec<_> = names.iter().collect();
-                println!("{:#x}: {}", va, names[0]);
+                println!("{va:#x}: {}", names[0]);
             } else {
-                println!("{:#x}:", va);
+                println!("{va:#x}:");
                 for name in names.iter() {
-                    println!("  - {}", name);
+                    println!("  - {name}");
                 }
             }
         } else {
-            println!("{:#x}: (unknown)", va);
+            println!("{va:#x}: (unknown)");
         }
     }
 

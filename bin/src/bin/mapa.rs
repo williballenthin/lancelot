@@ -72,8 +72,8 @@ impl std::fmt::Display for Structure {
             Structure::Signature => write!(f, "signature"),
             Structure::IMAGE_FILE_HEADER => write!(f, "IMAGE_FILE_HEADER"),
             Structure::IMAGE_OPTIONAL_HEADER => write!(f, "IMAGE_OPTIONAL_HEADER"),
-            Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {}", name),
-            Structure::Section(_, name) => write!(f, "section {}", name),
+            Structure::IMAGE_SECTION_HEADER(_, name) => write!(f, "IMAGE_SECTION_HEADER {name}"),
+            Structure::Section(_, name) => write!(f, "section {name}"),
             Structure::ImportTable => write!(f, "import table"),
             Structure::ExportTable => write!(f, "export table"),
             Structure::ResourceTable => write!(f, "resource table"),
@@ -86,9 +86,9 @@ impl std::fmt::Display for Structure {
             Structure::BoundImportTable => write!(f, "bound import table"),
             Structure::DelayImportDescriptor => write!(f, "delay import descriptor"),
             Structure::ClrRuntimeHeader => write!(f, "CLR runtime header"),
-            Structure::String(s) => write!(f, "string: {}", s),
-            Structure::Function(name) => write!(f, "function: {}", name),
-            Structure::Resource(name) => write!(f, "resource: {}", name),
+            Structure::String(s) => write!(f, "string: {s}"),
+            Structure::Function(name) => write!(f, "function: {name}"),
+            Structure::Resource(name) => write!(f, "resource: {name}"),
             Structure::Overlay => write!(f, "overlay"),
         }
     }
@@ -539,18 +539,18 @@ fn insert_resource_ranges_inner(
                     NodeIdentifier::ID(id) => {
                         if prefix.is_empty() {
                             match ResourceDataType::from_u32(id) {
-                                Some(dt) => format!("{:?}", dt),
-                                None => format!("{:#x}", id),
+                                Some(dt) => format!("{dt:?}"),
+                                None => format!("{id:#x}"),
                             }
                         } else {
-                            format!("{}/{:#x}", prefix, id)
+                            format!("{prefix}/{id:#x}")
                         }
                     }
                     NodeIdentifier::Name(s) => {
                         if prefix.is_empty() {
                             s.clone()
                         } else {
-                            format!("{}/{}", prefix, s)
+                            format!("{prefix}/{s}")
                         }
                     }
                 };
@@ -587,7 +587,7 @@ fn insert_function_ranges(ranges: &mut Ranges, pe: &PE, cfg: &CFG, functions: &[
             }
             end += bb.length;
         }
-        ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{:x}", function)))?;
+        ranges.va_insert(pe, function, end, Structure::Function(format!("sub_{function:x}")))?;
     }
 
     Ok(())
@@ -799,8 +799,8 @@ fn render_range<'a>(
     depth: usize,
 ) -> Result<()> {
     match &range.structure {
-        Structure::Function(s) => prefixln(depth, &format!(" {:#08x}: {}", range.start, s)),
-        Structure::String(s) => prefixln(depth, &format!(" {:#08x}: \"{}\"", range.start, s)),
+        Structure::Function(s) => prefixln(depth, &format!(" {:#08x}: {s}", range.start)),
+        Structure::String(s) => prefixln(depth, &format!(" {:#08x}: \"{s}\"", range.start)),
         Structure::IMAGE_DOS_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
         Structure::Signature => prefixln(depth, &format_range_hex(address_space, range)),
         Structure::IMAGE_FILE_HEADER => prefixln(depth, &format_range_hex(address_space, range)),
@@ -915,7 +915,7 @@ fn _main() -> Result<()> {
         .expect("failed to configure logging");
 
     let filename = matches.value_of("input").unwrap();
-    debug!("input: {}", filename);
+    debug!("input: {filename}");
 
     let buf = util::read_file(filename)?;
     let pe = PE::from_bytes(&buf)?;

@@ -160,10 +160,10 @@ impl Formatter {
                     buf.append(zydis::TOKEN_ADDRESS_ABS)?;
                     match userdata.ws.module().arch {
                         Arch::X32 => {
-                            buf.get_string()?.append(&format!("{:08x}", va))?;
+                            buf.get_string()?.append(&format!("{va:08x}"))?;
                         }
                         Arch::X64 => {
-                            buf.get_string()?.append(&format!("{:016x}", va))?;
+                            buf.get_string()?.append(&format!("{va:016x}"))?;
                         }
                     }
 
@@ -196,7 +196,7 @@ impl Formatter {
                                     hex.write_str(" ").unwrap();
                                 }
 
-                                hex.write_str(&format!("{:02X}", b)).unwrap();
+                                hex.write_str(&format!("{b:02X}")).unwrap();
                             } else {
                                 // common case, insn is smaller than reserved space,
                                 // so fill with spaces.

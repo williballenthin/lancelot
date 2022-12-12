@@ -168,14 +168,11 @@ lazy_static! {
         ].join("|"));
 
         let re = format!(
-            r"(?x)   # whitespace allowed
-              (?-u)  # disable unicode mode, so we can match raw bytes
-              (:?{})   # capture the pre match
-              (:?{})   # capture the match
-            ",
-            PREPATTERN,
-            POSTPATTERN,
-            );
+            r"(?x)                # whitespace allowed
+              (?-u)               # disable unicode mode, so we can match raw bytes
+              (:?{PREPATTERN})    # capture the pre match
+              (:?{POSTPATTERN})   # capture the match
+            ");
 
         Regex::new(&re).unwrap()
     };

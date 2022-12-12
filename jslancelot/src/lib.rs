@@ -39,7 +39,7 @@ pub fn main_js() -> Result<(), JsValue> {
 type JsError = JsValue;
 
 fn to_value_error(e: anyhow::Error) -> JsError {
-    js_sys::Error::new(&format!("{}", e)).into()
+    js_sys::Error::new(&format!("{e}")).into()
 }
 
 fn to_js_err(e: Error) -> JsError {
@@ -375,9 +375,7 @@ impl PE {
             let mut out_buf = zydis::OutputBuffer::new(&mut out_buf[..]);
             self.formatter
                 .format_instruction(&insn, &mut out_buf, Some(va), None)
-                .map_err(|e| -> JsError {
-                    js_sys::Error::new(&format!("failed to format instruction: {}", e)).into()
-                })?;
+                .map_err(|e| -> JsError { js_sys::Error::new(&format!("failed to format instruction: {e}")).into() })?;
 
             Ok(Instruction {
                 address: va,

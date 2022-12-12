@@ -58,6 +58,6 @@ fn main() {
         .expect("failed to configure logging");
 
     if let Err(e) = run(matches.value_of("sig").unwrap(), matches.value_of("output").unwrap()) {
-        eprintln!("error: {:}", e);
+        eprintln!("error: {e}");
     }
 }

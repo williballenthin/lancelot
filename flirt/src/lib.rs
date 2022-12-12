@@ -50,7 +50,7 @@ pub enum SigElement {
 impl std::fmt::Display for SigElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SigElement::Byte(v) => write!(f, "{:02x}", v),
+            SigElement::Byte(v) => write!(f, "{v:02x}"),
             SigElement::Wildcard => write!(f, ".."),
         }
     }
@@ -62,7 +62,7 @@ pub struct ByteSignature(pub Vec<SigElement>);
 impl std::fmt::Display for ByteSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for elem in self.0.iter() {
-            write!(f, "{}", elem)?;
+            write!(f, "{elem}")?;
         }
         Ok(())
     }
@@ -251,11 +251,11 @@ impl std::fmt::Display for FlirtSignature {
         write!(f, "{:04x} ", self.size_of_function)?;
 
         if let Some(name) = self.get_name() {
-            write!(f, "{}", name)?;
+            write!(f, "{name}")?;
         }
 
         for tail_byte in self.tail_bytes.iter() {
-            write!(f, " {}", tail_byte)?;
+            write!(f, " {tail_byte}")?;
         }
 
         Ok(())
@@ -264,16 +264,16 @@ impl std::fmt::Display for FlirtSignature {
 
 impl std::fmt::Debug for FlirtSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)?;
+        write!(f, "{self}")?;
 
         // emit local names
         for name in self.names.iter() {
-            write!(f, " {}", name)?;
+            write!(f, " {name}")?;
         }
 
         // emit trailing byte patterns
         if let Some(footer) = &self.footer {
-            write!(f, " {}", footer)?;
+            write!(f, " {footer}")?;
         }
 
         Ok(())
@@ -402,7 +402,7 @@ impl FlirtSignature {
         write!(f, " {:04x}", self.size_of_function).unwrap();
 
         for name in self.names.iter() {
-            write!(f, " {}", name).unwrap();
+            write!(f, " {name}").unwrap();
         }
 
         for tail_byte in self.tail_bytes.iter() {
@@ -410,7 +410,7 @@ impl FlirtSignature {
         }
 
         if let Some(footer) = &self.footer {
-            write!(f, " {}", footer).unwrap();
+            write!(f, " {footer}").unwrap();
         }
 
         // we're writing utf8 above, so no reason for this to fail.
@@ -440,7 +440,7 @@ fn create_pattern(sig: &FlirtSignature) -> String {
         .map(|b| match b {
             // lots of allocations here.
             // could create a static translation table to the &str formats.
-            SigElement::Byte(v) => format!("\\x{:02x}", v),
+            SigElement::Byte(v) => format!("\\x{v:02x}"),
             SigElement::Wildcard => ".".to_string(),
         })
         .collect::<Vec<String>>()

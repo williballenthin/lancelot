@@ -14,7 +14,7 @@ use lancelot::{
 fn handle_functions(ws: &dyn Workspace) -> Result<()> {
     info!("found {} functions", ws.analysis().functions.len());
     for (va, md) in ws.analysis().functions.iter() {
-        print!("{:#x}", va);
+        print!("{va:#x}");
 
         if md.flags.intersects(lancelot::workspace::FunctionFlags::NORET) {
             print!(" noret")
@@ -25,7 +25,7 @@ fn handle_functions(ws: &dyn Workspace) -> Result<()> {
         }
 
         if let Some(name) = ws.analysis().names.names_by_address.get(va) {
-            print!(" {}", name);
+            print!(" {name}");
         }
 
         println!();

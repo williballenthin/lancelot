@@ -7,7 +7,7 @@ use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
-    pyo3::exceptions::PyValueError::new_err(format!("{}", e))
+    pyo3::exceptions::PyValueError::new_err(format!("{e}"))
 }
 
 fn to_py_err(e: Error) -> PyErr {
