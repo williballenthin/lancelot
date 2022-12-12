@@ -16,6 +16,10 @@ sed -i "$ROOT/core/Cargo.toml"       -e "s/^version = \"\([^\"]*\)\"/version = \
 sed -i "$ROOT/pylancelot/Cargo.toml" -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
 sed -i "$ROOT/pyflirt/Cargo.toml"    -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
 sed -i "$ROOT/bin/Cargo.toml"        -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
+sed -i "$ROOT/jslancelot/Cargo.toml" -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
+
+sed -i "$ROOT/pyflirt/pyproject.toml" -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
+sed -i "$ROOT/pylancelot/pyproject.toml" -e "s/^version = \"\([^\"]*\)\"/version = \"$VERSION\"/g";
 
 sed -i "$ROOT/core/Cargo.toml" \
     -e "s/\(lancelot-flirt.*\)version = \"[^\"]*\"\(.*\)$/\1version = \"$VERSION\"\2/g";
@@ -25,6 +29,7 @@ sed -i "$ROOT/pylancelot/Cargo.toml" \
     -e "s/\(lancelot.*\)version = \"[^\"]*\"\(.*\)$/\1version = \"$VERSION\"\2/g";
 sed -i "$ROOT/pyflirt/Cargo.toml" \
     -e "s/\(lancelot-flirt.*\)version = \"[^\"]*\"\(.*\)$/\1version = \"$VERSION\"\2/g";
-
+sed -i "$ROOT/jslancelot/Cargo.toml" \
+    -e "s/\(lancelot.*\)version = \"[^\"]*\"\(.*\)$/\1version = \"$VERSION\"\2/g";
 
 exec git diff;
