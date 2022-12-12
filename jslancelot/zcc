@@ -1,3 +1,3 @@
 #!/bin/sh
 
-/home/user/.bin/zig-linux-x86_64-0.8.1/zig cc -target wasm32-wasi $@
+/nix/store/qzabcrp41h1shjaj0j0w8g9pzx0dh68y-devshell-dir/bin/zig cc -target wasm32-wasi $@
