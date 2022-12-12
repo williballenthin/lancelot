@@ -753,7 +753,14 @@ fn format_range_hex(address_space: &AbsoluteAddressSpace, range: &Range) -> Stri
         .read_bytes(range.start, (range.end - range.start) as usize)
         .unwrap();
     let b = &buf[..];
-    let mut h = hexyl::Printer::new(&mut ostream, true, true, true, hexyl::BorderStyle::None, true);
+    let mut h = hexyl::PrinterBuilder::new(&mut ostream)
+        .show_color(true)
+        .show_char_panel(true)
+        .show_position_panel(true)
+        .with_border_style(hexyl::BorderStyle::None)
+        .enable_squeezing(true)
+        .num_panels(1)
+        .build();
     h.display_offset(range.start);
     h.print_all(b).unwrap();
     let hex = String::from_utf8(ostream).unwrap();
