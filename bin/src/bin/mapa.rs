@@ -861,7 +861,7 @@ fn _main() -> Result<()> {
                 .long("quiet")
                 .help("disable informational messages"),
         )
-        .arg(clap::Arg::new("va").help("output addresses as mapped into memory"))
+        .arg(clap::Arg::new("va").long("va").action(clap::ArgAction::SetTrue).help("output addresses as mapped into memory"))
         .arg(
             clap::Arg::new("input")
                 .required(true)
@@ -911,7 +911,7 @@ fn _main() -> Result<()> {
     // returns a Ranges containing FileOffsets
     let ranges = compute_ranges(&buf, &pe)?;
 
-    if matches.is_present("va") {
+    if matches.get_flag("va") {
         // user wants to display output as VAs
         // so convert the Ranges<FileOffset> to Ranges<VA>
         // and use the loaded PE as the source data.
