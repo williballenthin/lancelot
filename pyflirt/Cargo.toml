@@ -1,6 +1,6 @@
 [package]
 name = "python-flirt"
-version = "0.8.5"
+version = "0.8.6"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 edition = "2021"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ name = "flirt"
 crate-type = ["cdylib"]
 
 [dependencies]
-lancelot-flirt = { path = "../flirt", version = "0.8.5" }
+lancelot-flirt = { path = "../flirt", version = "0.8.6" }
 pyo3 = { version = "0.17"}
 anyhow = "1"
 
