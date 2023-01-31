@@ -44,7 +44,7 @@ criterion = "0.4"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 fern = "0.6"
 unicorn-engine = "2.0.0"
-dynasm = "1.0.1"
+dynasm = "2.0.0"
 dynasmrt = "1.0.1"
 
 [[bench]]
