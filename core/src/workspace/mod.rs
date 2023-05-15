@@ -8,6 +8,7 @@ use std::{
 use anyhow::Result;
 use bitflags::bitflags;
 use thiserror::Error;
+use log::error;
 
 use crate::{
     analysis::{
@@ -387,10 +388,15 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
         let pe = crate::loader::pe::PE::from_bytes(buf)?;
         Ok(Box::new(PEWorkspace::from_pe(config, pe)?))
     } else if buf[0] == 0x64 && buf[1] == 0x86 {
-        // TODO: support other COFF magic
+        // from static libs built via MSVC 2019
+        let coff = crate::loader::coff::COFF::from_bytes(buf)?;
+        Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
+    } else if buf[0] == 0x4C && buf[1] == 0x01 {
+        // from msvcrt libcpmt.lib 0a783ea78e08268f9ead780da0368409
         let coff = crate::loader::coff::COFF::from_bytes(buf)?;
         Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
     } else {
+        error!("unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
         return Err(WorkspaceError::FormatNotSupported.into());
     }
 }
