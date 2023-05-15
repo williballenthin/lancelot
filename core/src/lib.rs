@@ -1,4 +1,7 @@
 #![allow(clippy::upper_case_acronyms)]
+// for thiserror derive macros
+#![feature(error_generic_member_access)]
+#![feature(provide_any)]
 
 extern crate bitflags;
 #[macro_use]

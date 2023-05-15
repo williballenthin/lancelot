@@ -28,8 +28,13 @@ pub mod formatter;
 
 #[derive(Error, Debug)]
 pub enum WorkspaceError {
+    #[error("buffer too small")]
+    BufferTooSmall,
     #[error("format not supported")]
-    FormatNotSupported,
+    FormatNotSupported {
+        #[backtrace]
+        source: anyhow::Error,
+    },
 }
 
 bitflags! {
@@ -380,7 +385,7 @@ impl Workspace for COFFWorkspace {
 
 pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
     if buf.len() < 2 {
-        return Err(WorkspaceError::FormatNotSupported.into());
+        return Err(WorkspaceError::BufferTooSmall.into());
     }
 
     // TODO: move this tasting to the loaders?
@@ -397,7 +402,7 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
         Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
     } else {
         error!("unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
-        return Err(WorkspaceError::FormatNotSupported.into());
+        return Err(WorkspaceError::FormatNotSupported{source: anyhow::anyhow!("unknown magic")}.into());
     }
 }
 
@@ -479,4 +484,19 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn coff_from_msvcrt() -> Result<()> {
+        let buf = get_buf(Rsrc::LIBCPMT);
+        let config = get_config();
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert_eq!(
+            ws.analysis().names.addresses_by_name.first_key_value().unwrap().0,
+            &"foo"
+        );
+
+        Ok(())
+    }
+
 }
