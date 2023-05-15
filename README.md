@@ -7,7 +7,11 @@ intel x86(-64) code analysis library that reconstructs control flow
 ## maintenance
 
 ```
-$ cargo outdated -x unicorn
+$ rustup update  # update rust compiler
+
+$ cargo update  # update dependencies, not crossing major versions
+
+$ cargo outdated -x unicorn  # find outdated major version dependencies
 ```
 
 because we use an older version of unicorn thats easier to build with cargo,
