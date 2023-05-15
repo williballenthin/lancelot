@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
-use log::error;
+use log::{error, warn};
 use serde_json::json;
 
 use lancelot::{
@@ -449,8 +449,12 @@ fn _main() -> Result<()> {
         println!("# triplet,compiler,library,version,profile,path,function,type,value");
         let mut ar = ar::Archive::new(buf.as_slice());
         while let Some(entry_result) = ar.next_entry() {
-            let Ok(mut entry) = entry_result else {
-                continue;
+            let mut entry = match entry_result {
+                Ok(entry) => entry,
+                Err(e) => {
+                    warn!("failed to read archive entry: {:?}", e);
+                    continue;
+                },
             };
 
             let Ok(path) = String::from_utf8(entry.header().identifier().to_vec()) else {
