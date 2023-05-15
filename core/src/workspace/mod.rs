@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 use bitflags::bitflags;
 use thiserror::Error;
-use log::error;
+use log::warn;
 
 use crate::{
     analysis::{
@@ -33,7 +33,7 @@ pub enum WorkspaceError {
     #[error("format not supported")]
     FormatNotSupported {
         #[backtrace]
-        source: anyhow::Error,
+        source: anyhow::Error,  // TODO: doesn't seem like we want anyhow in library code.
     },
 }
 
@@ -389,20 +389,27 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
     }
 
     // TODO: move this tasting to the loaders?
-    if buf[0] == 0x4D && buf[1] == 0x5A {
-        let pe = crate::loader::pe::PE::from_bytes(buf)?;
-        Ok(Box::new(PEWorkspace::from_pe(config, pe)?))
-    } else if buf[0] == 0x64 && buf[1] == 0x86 {
-        // from static libs built via MSVC 2019
-        let coff = crate::loader::coff::COFF::from_bytes(buf)?;
-        Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
-    } else if buf[0] == 0x4C && buf[1] == 0x01 {
-        // from msvcrt libcpmt.lib 0a783ea78e08268f9ead780da0368409
-        let coff = crate::loader::coff::COFF::from_bytes(buf)?;
-        Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
-    } else {
-        error!("unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
-        return Err(WorkspaceError::FormatNotSupported{source: anyhow::anyhow!("unknown magic")}.into());
+    match (buf[1] as u16) << 8u16 | buf[0] as u16 {
+        0x5A4D => {
+            let pe = crate::loader::pe::PE::from_bytes(buf)?;
+            Ok(Box::new(PEWorkspace::from_pe(config, pe)?))
+        },
+        0x14C => {
+            // coff.Machine == IMAGE_FILE_MACHINE_I386
+            // from msvcrt libcpmt.lib 0a783ea78e08268f9ead780da0368409
+            let coff = crate::loader::coff::COFF::from_bytes(buf)?;
+            Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
+        }
+        0x8664 => {
+            // coff.Machine == IMAGE_FILE_MACHINE_AMD64
+            // from static libs built via MSVC 2019
+            let coff = crate::loader::coff::COFF::from_bytes(buf)?;
+            Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
+        }
+        _ => {
+            warn!("unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
+            Err(WorkspaceError::FormatNotSupported{source: anyhow::anyhow!("unknown magic")}.into())
+        }
     }
 }
 
