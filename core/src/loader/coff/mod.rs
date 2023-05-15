@@ -508,6 +508,22 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
 
                         *extern_ as i64
                     }
+                    (object::SymbolKind::Unknown, _) => {
+                        warn!(
+                            "coff: reloc: unknown: {}([{}])+0x{:02x}: ??? -> {} (unknown)",
+                            current_section.name,
+                            i,
+                            reloc_rva,
+                            symbol.name()?
+                        );
+
+                        // this is a relocation with unknown kind.
+                        // so what can we do?
+                        // maybe it points to an extern, but we haven't extracted it above.
+                        // at most we can just log here.
+
+                        continue;
+                    }
                     _ => {
                         unimplemented!("unsupported symbol: {:?}", symbol);
                     }
