@@ -160,8 +160,9 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
     //
     // so we use the magic header to determine arch/bitness
     let arch = match obj.architecture() {
-        object::Architecture::X86_64_X32 => Arch::X32,
         object::Architecture::X86_64 => Arch::X64,
+        // seen in msvcrt libcpmt.lib 0a783ea78e08268f9ead780da0368409
+        object::Architecture::I386 => Arch::X32,
         _ => {
             return Err(COFFError::FormatNotSupported(format!("{:?}", obj.architecture())).into());
         }
