@@ -454,7 +454,7 @@ fn _main() -> Result<()> {
                 Err(e) => {
                     warn!("failed to read archive entry: {:?}", e);
                     continue;
-                },
+                }
             };
 
             let Ok(path) = String::from_utf8(entry.header().identifier().to_vec()) else {
@@ -467,7 +467,13 @@ fn _main() -> Result<()> {
             let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
             entry.read_to_end(&mut sbuf)?;
 
-            let features = extract_buf_features(config.clone(), &sbuf)?;
+            let features = match extract_buf_features(config.clone(), &sbuf) {
+                Ok(features) => features,
+                Err(e) => {
+                    warn!("failed to extract features: {}: {}", path, e);
+                    continue;
+                }
+            };
 
             output_functions_features(&build, &path, &features)?;
         }
@@ -490,10 +496,12 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, io::Read};
+    use log::debug;
+    use std::{io::Read, path::PathBuf};
 
     use anyhow::Result;
-    use lancelot::workspace::*;
+
+    use super::*;
 
     /// Fetch the file system path of the given resource.
     fn get_path(name: &str) -> String {
@@ -514,14 +522,25 @@ mod tests {
 
     fn ar_first_entry(buf: &[u8]) -> Result<Vec<u8>> {
         let mut ar = ar::Archive::new(buf);
-        let mut entry = ar.next_entry().unwrap().unwrap();
-        let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
-        entry.read_to_end(&mut sbuf)?;
-        Ok(sbuf)
+        loop {
+            let mut entry = ar.next_entry().unwrap().unwrap();
+
+            let path = String::from_utf8(entry.header().identifier().to_vec()).unwrap();
+            let path = path.replace('\\', "/");
+            debug!("ar: path: {}", path);
+
+            let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
+            entry.read_to_end(&mut sbuf)?;
+
+            if &sbuf[..2] == b"\x00\x00" {
+                continue;
+            }
+            return Ok(sbuf);
+        }
     }
 
     #[test]
-    fn coff_from_msvcrt() -> Result<()> {
+    fn coff_from_libcpmt() -> Result<()> {
         let buf = get_buf("libcpmt.lib");
         let config = lancelot::workspace::config::empty();
         let buf = ar_first_entry(buf.as_slice())?;
@@ -540,5 +559,45 @@ mod tests {
         Ok(())
     }
 
-}
+    pub fn init_logging() {
+        let log_level = log::LevelFilter::Debug;
+        fern::Dispatch::new()
+            .format(move |out, message, record| {
+                out.finish(format_args!(
+                    "{} [{:5}] {} {}",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                    record.level(),
+                    if log_level == log::LevelFilter::Trace {
+                        record.target()
+                    } else {
+                        ""
+                    },
+                    message
+                ))
+            })
+            .level(log_level)
+            .chain(std::io::stderr())
+            .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
+            .apply()
+            .expect("failed to configure logging");
+    }
 
+    #[test]
+    fn coff_from_libcmt() -> Result<()> {
+        init_logging();
+
+        let buf = get_buf("libcmt.lib");
+        let config = lancelot::workspace::config::empty();
+        let buf = ar_first_entry(buf.as_slice())?;
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert_eq!(
+            ws.analysis().names.addresses_by_name.first_key_value().unwrap().0,
+            &".data"
+        );
+
+        assert_eq!(ws.analysis().names.addresses_by_name[".data"], 0x20001000);
+
+        Ok(())
+    }
+}
