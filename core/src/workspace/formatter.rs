@@ -244,7 +244,8 @@ impl Formatter {
                     if let Some(name) = userdata.ws.analysis().names.names_by_address.get(&absolute_address) {
                         // name is found in map, use that.
                         buf.append(TOKEN_USER_SYMBOLNAME)?;
-                        return buf.get_string()?.append(name);
+
+                        buf.get_string()?.append(name)
                     } else {
                         // name is not found, use original formatter.
 
