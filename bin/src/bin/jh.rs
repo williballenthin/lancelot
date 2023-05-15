@@ -487,3 +487,58 @@ fn main() {
         error!("{:}", e);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, io::Read};
+
+    use anyhow::Result;
+    use lancelot::workspace::*;
+
+    /// Fetch the file system path of the given resource.
+    fn get_path(name: &str) -> String {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("..");
+        d.push("core");
+        d.push("resources");
+        d.push("test");
+        d.push(name.to_string());
+        println!("{}", String::from(d.to_str().unwrap()));
+        String::from(d.to_str().unwrap())
+    }
+
+    /// Fetch the contents of the given resource.
+    pub fn get_buf(name: &str) -> Vec<u8> {
+        lancelot::util::read_file(&get_path(name)).unwrap()
+    }
+
+    fn ar_first_entry(buf: &[u8]) -> Result<Vec<u8>> {
+        let mut ar = ar::Archive::new(buf);
+        let mut entry = ar.next_entry().unwrap().unwrap();
+        let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
+        entry.read_to_end(&mut sbuf)?;
+        Ok(sbuf)
+    }
+
+    #[test]
+    fn coff_from_msvcrt() -> Result<()> {
+        let buf = get_buf("libcpmt.lib");
+        let config = lancelot::workspace::config::empty();
+        let buf = ar_first_entry(buf.as_slice())?;
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert_eq!(
+            ws.analysis().names.addresses_by_name.first_key_value().unwrap().0,
+            &"___std_init_once_begin_initialize_clr@16"
+        );
+
+        assert_eq!(
+            ws.analysis().names.addresses_by_name["___std_init_once_begin_initialize_clr@16"],
+            0x20000000
+        );
+
+        Ok(())
+    }
+
+}
+

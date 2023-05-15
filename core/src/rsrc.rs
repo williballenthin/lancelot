@@ -17,6 +17,10 @@ pub enum Rsrc {
     MIMI,
     /// COFF file from libcurl
     ALTSVC,
+    /// AR archive from msvc
+    LIBCMT,
+    /// AR archive from msvc
+    LIBCPMT,
 }
 
 /// Fetch the file system name of the given resource.
@@ -27,6 +31,8 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::NOP => String::from("nop.exe"),
         Rsrc::MIMI => String::from("mimikatz.exe_"),
         Rsrc::ALTSVC => String::from("altsvc.c.obj"),
+        Rsrc::LIBCMT => String::from("libcmt.lib"),
+        Rsrc::LIBCPMT => String::from("libcpmt.lib"),
     }
 }
 
@@ -45,19 +51,11 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
     let mut buf = util::read_file(&path).unwrap();
     match rsrc {
         Rsrc::K32 => {
+            // deobfuscate the MZ header
             buf[0] = b'M';
             buf[1] = b'Z';
         }
-        Rsrc::TINY => {
-            // pass
-        }
-        Rsrc::NOP => {
-            // pass
-        }
-        Rsrc::MIMI => {
-            // pass
-        }
-        Rsrc::ALTSVC => {
+        _ => {
             // pass
         }
     }
