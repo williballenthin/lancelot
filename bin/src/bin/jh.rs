@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
-use log::{error, warn};
+use log::{debug, error, warn};
 use serde_json::json;
 
 use lancelot::{
@@ -463,6 +463,7 @@ fn _main() -> Result<()> {
 
             // fix paths to use forward slashes
             let path = path.replace('\\', "/");
+            debug!("ar: path: {}", path);
 
             let mut sbuf = Vec::with_capacity(entry.header().size() as usize);
             entry.read_to_end(&mut sbuf)?;
@@ -470,6 +471,9 @@ fn _main() -> Result<()> {
             let features = match extract_buf_features(config.clone(), &sbuf) {
                 Ok(features) => features,
                 Err(e) => {
+                    // MS may embed some files with COFF magic/machine == 00 00
+                    // such as in libcmt.lib.
+                    // object::coff doesn't parse these, so we skip them.
                     warn!("failed to extract features: {}: {}", path, e);
                     continue;
                 }
@@ -584,7 +588,8 @@ mod tests {
 
     #[test]
     fn coff_from_libcmt() -> Result<()> {
-        init_logging();
+        // libcmt.lib contains objects with Machine/magic == 00 00
+        // that we'll want to skip gracefully.
 
         let buf = get_buf("libcmt.lib");
         let config = lancelot::workspace::config::empty();
