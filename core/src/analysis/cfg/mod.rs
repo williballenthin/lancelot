@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{collections::{BTreeMap, BTreeSet, VecDeque}, ops::Not};
 
 use anyhow::Result;
 
@@ -552,8 +552,15 @@ impl CFG {
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
                 for succ in edge_targets(direct_edges(edges(succs))) {
-                    log::debug!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
-                    queue.push_back(succ);
+                    if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
+                        // there's a flow to an address that isn't a basic block
+                        // such as where we failed to decode an instruction.
+                        log::warn!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)", va, bbva, succ);
+                        // don't keep exploring at that address.
+                    } else {
+                        log::debug!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
+                        queue.push_back(succ);
+                    }
                 }
 
                 let preds = &self.flows.flows_by_dst[&bb.address];
@@ -594,7 +601,13 @@ impl CFG {
 
                 let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
                 for succ in edge_targets(direct_edges(edges(succs))) {
-                    queue.push_back(succ);
+                    if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
+                        // there's a flow to an address that isn't a basic block
+                        // such as where we failed to decode an instruction.
+                        // don't keep exploring at that address.
+                    } else {
+                        queue.push_back(succ);
+                    }
                 }
 
                 seen.insert(bbva);
