@@ -454,7 +454,7 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                 let target: i64 = match (symbol.kind(), symbol.section()) {
                     (
                         // a relative offset to a code/data symbol found in a section.
-                        object::SymbolKind::Data | object::SymbolKind::Text | object::SymbolKind::Label,
+                        object::SymbolKind::Data | object::SymbolKind::Text | object::SymbolKind::Label | object::SymbolKind::Section,
                         object::SymbolSection::Section(secindex @ object::SectionIndex(_)),
                     ) => {
                         // COFF section
