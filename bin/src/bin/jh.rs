@@ -605,4 +605,25 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn coff_from_mfcm140() -> Result<()> {
+        // MFCM140.lib contains objects with an unknown Symbol type
+        // issue #182
+        init_logging();
+
+        let buf = get_buf("MFCM140.lib");
+        let config = lancelot::workspace::config::empty();
+        let buf = ar_first_entry(buf.as_slice())?;
+        let ws = workspace_from_bytes(config, &buf)?;
+
+        assert_eq!(
+            ws.analysis().names.addresses_by_name.first_key_value().unwrap().0,
+            &".CRTMP$XCY"
+        );
+
+        assert_eq!(ws.analysis().names.addresses_by_name[".CRTMP$XCY"], 0x20016000);
+
+        Ok(())
+    }
 }

@@ -348,6 +348,8 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                 };
 
                 let (object::SymbolSection::Undefined | object::SymbolSection::Common) = symbol.section() else {
+                    // TODO: add extern for a section that isn't present in this COFF.
+                    // see MFCM140.lib referencing .idata$4
                     continue;
                 };
 
@@ -476,7 +478,6 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                             symbol.name()?,
                         );
 
-                        // the amount to increment the fixup location.
                         target_section
                             .virtual_range
                             .start
@@ -507,6 +508,43 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
                         };
 
                         *extern_ as i64
+                    }
+                    (
+                        // relative offset to a known section.
+                        object::SymbolKind::Section, object::SymbolSection::Common,
+                    ) => {
+                        let Ok(name) = symbol.name() else {
+                            continue;
+                        };
+
+                        let Some(target_section) = module.sections.iter().find(|s| s.name == name) else {
+                            // its possible there's a relocation fixup to a section thats not found in this COFF.
+                            // such as MFCM140.lib referencing .idata$4
+                            // we could add an extern for this above.
+                            warn!("coff: reloc: {}([{}])+0x{:02x}: failed to find section: {:?}",
+                                current_section.name,
+                                i,
+                                reloc_rva,
+                                name
+                            );
+
+                            continue;
+                        };
+
+                        debug!(
+                            "coff: reloc: relative: {}([{}])+0x{:02x}: 0x{:08x} -> {}",
+                            current_section.name,
+                            i,
+                            reloc_rva,
+                            target_section.virtual_range.start,
+                            symbol.name()?,
+                        );
+
+                        target_section
+                            .virtual_range
+                            .start
+                            .try_into()
+                            .expect("64-bit section address")
                     }
                     (object::SymbolKind::Unknown, _) => {
                         warn!(
