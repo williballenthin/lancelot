@@ -21,7 +21,9 @@ anyhow = "1"
 thiserror = "1"
 better-panic = "0.3"
 goblin = "0.6"
-ar = "0.9"
+# unreleased fixes for: https://github.com/mdsteele/rust-ar/issues/26
+# otherwise just use 0.9 or next release.
+ar = { git = "https://github.com/mdsteele/rust-ar", rev = "03d664b", version = "0.9" }
 hex = "0.4"
 serde_json = "1.0"
 
