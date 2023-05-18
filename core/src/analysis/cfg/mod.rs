@@ -97,7 +97,7 @@ impl InstructionIndex {
                 let page = match reader.read(&module.address_space, va) {
                     Ok(page) => page,
                     Err(e) => {
-                        log::warn!("failed to read instruction: {:#x}: invalid page: {:#x?}", va, e);
+                        log::warn!("cfg: failed to read instruction: {:#x}: invalid page: {:#x?}", va, e);
                         continue;
                     }
                 };
@@ -113,7 +113,7 @@ impl InstructionIndex {
                 //   2. we have to reach into the address space, which isn't free.
                 let mut insn_buf = [0u8; 0x10];
                 if let Err(e) = module.address_space.read_into(va, &mut insn_buf) {
-                    log::warn!("failed to read instruction: {:#x}: invalid address: {:#x?}", va, e);
+                    log::warn!("cfg: failed to read instruction: {:#x}: invalid address: {:#x?}", va, e);
                     continue;
                 };
                 decoder.decode(&insn_buf)
@@ -126,7 +126,7 @@ impl InstructionIndex {
                 }
                 Err(e) => {
                     // invalid instruction
-                    log::warn!("invalid instruction: {:#x}: {:#?}", va, e);
+                    log::warn!("cfg: invalid instruction: {:#x}: {:#?}", va, e);
                     continue;
                 }
                 Ok(None) => continue,
@@ -530,11 +530,10 @@ impl CFG {
     }
 
     pub fn get_reachable_blocks<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
-        log::debug!("reachable from: {:#x}", va);
+        log::debug!("cfg: reachable from: {:#x}", va);
         let mut seen: BTreeSet<VA> = Default::default();
 
         if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            log::warn!("get_reachable_blocks: address is not a basic block: {:#x}", va);
             return Box::new(std::iter::empty());
         }
 
@@ -546,7 +545,7 @@ impl CFG {
                 if seen.contains(&bbva) {
                     continue;
                 }
-                log::debug!("reachable from: {:#x}: basic block: {:#x}", va, bbva);
+                log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}", va, bbva);
 
                 let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
@@ -555,10 +554,10 @@ impl CFG {
                     if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
                         // there's a flow to an address that isn't a basic block
                         // such as where we failed to decode an instruction.
-                        log::warn!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)", va, bbva, succ);
+                        log::warn!("cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)", va, bbva, succ);
                         // don't keep exploring at that address.
                     } else {
-                        log::debug!("reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
+                        log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
                         queue.push_back(succ);
                     }
                 }
@@ -567,7 +566,7 @@ impl CFG {
                 for pred in
                     edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
                 {
-                    log::debug!("reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
+                    log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
                     queue.push_back(pred);
                 }
 
@@ -720,16 +719,16 @@ impl CFG {
         // it does not remove flows "upwards".
         // this might be interesting, but not considered here.
 
-        log::debug!("prune: {:x?} at {:#x}", flow, va);
+        log::debug!("cfg: prune: {:x?} at {:#x}", flow, va);
 
         self.insns.insns_by_address.entry(va).and_modify(|insn| {
             insn.successors = insn.successors.clone().into_iter().filter(|s| s != flow).collect();
-            log::debug!("prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
+            log::debug!("cfg: prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
         });
 
         self.flows.flows_by_src.entry(va).and_modify(|succs| {
             *succs = succs.clone().into_iter().filter(|s| s != flow).collect();
-            log::debug!("prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
+            log::debug!("cfg: prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
         });
 
         let target = match flow {
@@ -740,12 +739,12 @@ impl CFG {
             Flow::Call(Target::Indirect(ptr)) => *ptr,
             Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
         };
-        log::debug!("prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
+        log::debug!("cfg: prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
 
         self.flows.flows_by_dst.entry(target).and_modify(|preds| {
             *preds = preds.clone().into_iter().filter(|s| s != &flow.swap(va)).collect();
             log::debug!(
-                "prune: {:x?} at {:#x}: target: {:#x} preds: {:x?}",
+                "cfg: prune: {:x?} at {:#x}: target: {:#x} preds: {:x?}",
                 flow,
                 va,
                 target,
@@ -773,7 +772,7 @@ impl CFG {
         // so its no longer an instruction.
         // remove it, and recurse any flows from it.
         if self.flows.flows_by_dst[&target].is_empty() {
-            log::debug!("prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
+            log::debug!("cfg: prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
             for flow in self.flows.flows_by_src[&target].clone().iter() {
                 self.prune_flow(target, flow);
             }

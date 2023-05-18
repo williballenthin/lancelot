@@ -474,7 +474,7 @@ fn _main() -> Result<()> {
                     // MS may embed some files with COFF magic/machine == 00 00
                     // such as in libcmt.lib.
                     // object::coff doesn't parse these, so we skip them.
-                    warn!("failed to extract features: {}: {}", path, e);
+                    debug!("failed to extract features: {}: {}", path, e);
                     continue;
                 }
             };
