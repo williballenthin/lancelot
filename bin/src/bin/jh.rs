@@ -413,8 +413,7 @@ fn _main() -> Result<()> {
     fern::Dispatch::new()
         .format(move |out, message, record| {
             out.finish(format_args!(
-                "{} [{:5}] {} {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                "[{:5}] {} {}",
                 record.level(),
                 if log_level == log::LevelFilter::Trace {
                     record.target()
@@ -427,6 +426,8 @@ fn _main() -> Result<()> {
         .level(log_level)
         .chain(std::io::stderr())
         .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
+        // ignore warnings like: workspace: unknown file format: magic: 00 00
+        .filter(|metadata| !metadata.target().starts_with("lancelot::workspace") )
         .apply()
         .expect("failed to configure logging");
 

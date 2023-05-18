@@ -407,7 +407,7 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
             Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
         }
         _ => {
-            warn!("unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
+            warn!("workspace: unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
             Err(WorkspaceError::FormatNotSupported{source: anyhow::anyhow!("unknown magic")}.into())
         }
     }
