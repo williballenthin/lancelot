@@ -23,6 +23,9 @@ pub enum Rsrc {
     LIBCPMT,
     /// COFF file from libcmtd.lib
     TLSDYN,
+    MFCM140,
+    /// COFF file from MFCM140
+    _1MFCM140,
 }
 
 /// Fetch the file system name of the given resource.
@@ -36,6 +39,8 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::LIBCMT => String::from("libcmt.lib"),
         Rsrc::LIBCPMT => String::from("libcpmt.lib"),
         Rsrc::TLSDYN => String::from("tlsdyn.obj"),
+        Rsrc::MFCM140 => String::from("MFCM140.lib"),
+        Rsrc::_1MFCM140 => String::from("1.MFCM140.dll"),
     }
 }
 

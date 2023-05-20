@@ -327,31 +327,26 @@ fn get_coff_extern_names(obj: &object::File) -> BTreeSet<String> {
                     continue;
                 };
 
-                let (object::SymbolKind::Data | object::SymbolKind::Text) = symbol.kind() else {
+                let Ok(name) = symbol.name() else {
+                    warn!("coff: reloc: no name: {:?}", symbol);
                     continue;
                 };
 
-                let (object::SymbolSection::Undefined | object::SymbolSection::Common) = symbol.section() else {
-                    // TODO: add extern for a section that isn't present in this COFF.
-                    // see MFCM140.lib referencing .idata$4
-                    continue;
-                };
-
-                let name = match symbol.name() {
-                    Ok(name) => name,
-                    Err(_) => {
-                        continue;
+                match (symbol.kind(), symbol.section()) {
+                    (
+                        object::SymbolKind::Data | object::SymbolKind::Text,
+                        object::SymbolSection::Undefined | object::SymbolSection::Common,
+                    ) => {
+                        debug!("coff: reloc: extern: symbol: {}", name);
+                        externs.insert(name.to_string());
                     }
-                };
-
-                if let object::RelocationKind::Relative = reloc.kind() {
-                    externs.insert(name.to_string());
-                } else if let object::RelocationKind::ImageOffset = reloc.kind() {
-                    externs.insert(name.to_string());
-                } else if let object::RelocationKind::Absolute = reloc.kind() {
-                    externs.insert(name.to_string());
-                } else {
-                    continue;
+                    (object::SymbolKind::Section, object::SymbolSection::Common) => {
+                        if obj.section_by_name(name).is_none() {
+                            debug!("coff: reloc: extern: section: {}", name);
+                            externs.insert(name.to_string());
+                        };
+                    }
+                    (_, _) => continue,
                 }
             }
         }
@@ -548,28 +543,31 @@ fn get_coff_fixups(
                         continue;
                     };
 
-                    let Some(target_section) = get_section_by_name(module, name) else {
-                        // its possible there's a relocation fixup to a section thats not found in this COFF.
-                        // such as MFCM140.lib referencing .idata$4
-                        // we could add an extern for this above.
-                        unimplemented!("coff: reloc: {}([{}])+0x{:02x}: failed to find section: {:?}",
-                            current_section.name,
-                            i,
-                            reloc_rva,
-                            name
+                    if let Some(target_section) = get_section_by_name(module, name) {
+                        debug!(
+                            "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (section, 0x{:08x})",
+                            i, current_section.name, reloc_rva, name, target_section.virtual_range.start,
                         );
-                    };
 
-                    debug!(
-                        "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (section, 0x{:08x})",
-                        i, current_section.name, reloc_rva, name, target_section.virtual_range.start,
-                    );
+                        target_section
+                            .virtual_range
+                            .start
+                            .try_into()
+                            .expect("64-bit section address")
+                    } else {
+                        // extern section
+                        let Some(extern_) = externs.get(name) else {
+                            warn!("coff: reloc: failed to find extern: {:?}", name);
+                            continue;
+                        };
 
-                    target_section
-                        .virtual_range
-                        .start
-                        .try_into()
-                        .expect("64-bit section address")
+                        debug!(
+                            "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (extern, section, 0x{:08x})",
+                            i, current_section.name, reloc_rva, name, extern_
+                        );
+
+                        *extern_ as i64
+                    }
                 }
                 (object::SymbolKind::Unknown, _) => {
                     unimplemented!(
@@ -1024,6 +1022,35 @@ mod tests {
         // so we see the relocation applied as 00 90 00 20 at 0x20017000
         let v = coff.module.address_space.read_bytes(pdata, 0x4)?;
         assert_eq!(v, &[0x00, 0x90, 0x00, 0x20]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn reloc_extern_section() -> Result<()> {
+        crate::test::init_logging();
+
+        let buf = get_buf(Rsrc::_1MFCM140);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        // first dword of .idata$2 is the address of .idata$4
+        // which doesn't exist in the module,
+        // but is an extern section.
+
+        let idata2 = coff.symbols.by_name.get(".idata$2").unwrap().address;
+        assert_eq!(idata2, 0x20000000);
+
+        let idata4 = coff.externs.get(".idata$4").unwrap();
+        assert_eq!(*idata4, 0x20002000);
+
+        assert_eq!(coff.module.address_space.read_u32(idata2)? as u64, *idata4);
+
+        // dword at .idata$2+0x10 is the address of .idata$5
+        // which doesn't exist in the module,
+        // but is an extern section.
+        let idata5 = coff.externs.get(".idata$5").unwrap();
+        assert_eq!(*idata5, 0x20002004);
+        assert_eq!(coff.module.address_space.read_u32(idata2 + 0x10)? as u64, *idata5);
 
         Ok(())
     }
