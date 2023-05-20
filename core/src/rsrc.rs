@@ -21,6 +21,8 @@ pub enum Rsrc {
     LIBCMT,
     /// AR archive from msvc
     LIBCPMT,
+    /// COFF file from libcmtd.lib
+    TLSDYN,
 }
 
 /// Fetch the file system name of the given resource.
@@ -33,6 +35,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::ALTSVC => String::from("altsvc.c.obj"),
         Rsrc::LIBCMT => String::from("libcmt.lib"),
         Rsrc::LIBCPMT => String::from("libcpmt.lib"),
+        Rsrc::TLSDYN => String::from("tlsdyn.obj"),
     }
 }
 
