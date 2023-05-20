@@ -1,4 +1,7 @@
-use std::{collections::{BTreeMap, BTreeSet, VecDeque}, ops::Not};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Not,
+};
 
 use anyhow::Result;
 
@@ -554,10 +557,20 @@ impl CFG {
                     if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
                         // there's a flow to an address that isn't a basic block
                         // such as where we failed to decode an instruction.
-                        log::warn!("cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)", va, bbva, succ);
+                        log::warn!(
+                            "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)",
+                            va,
+                            bbva,
+                            succ
+                        );
                         // don't keep exploring at that address.
                     } else {
-                        log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x}", va, bbva, succ);
+                        log::debug!(
+                            "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x}",
+                            va,
+                            bbva,
+                            succ
+                        );
                         queue.push_back(succ);
                     }
                 }
@@ -566,7 +579,12 @@ impl CFG {
                 for pred in
                     edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
                 {
-                    log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}: pred: {:#x}", va, bbva, pred);
+                    log::debug!(
+                        "cfg: reachable from: {:#x}: basic block: {:#x}: pred: {:#x}",
+                        va,
+                        bbva,
+                        pred
+                    );
                     queue.push_back(pred);
                 }
 

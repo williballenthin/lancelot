@@ -7,8 +7,8 @@ use std::{
 
 use anyhow::Result;
 use bitflags::bitflags;
-use thiserror::Error;
 use log::warn;
+use thiserror::Error;
 
 use crate::{
     analysis::{
@@ -33,7 +33,7 @@ pub enum WorkspaceError {
     #[error("format not supported")]
     FormatNotSupported {
         #[backtrace]
-        source: anyhow::Error,  // TODO: doesn't seem like we want anyhow in library code.
+        source: anyhow::Error, // TODO: doesn't seem like we want anyhow in library code.
     },
 }
 
@@ -393,7 +393,7 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
         0x5A4D => {
             let pe = crate::loader::pe::PE::from_bytes(buf)?;
             Ok(Box::new(PEWorkspace::from_pe(config, pe)?))
-        },
+        }
         0x14C => {
             // coff.Machine == IMAGE_FILE_MACHINE_I386
             // from msvcrt libcpmt.lib 0a783ea78e08268f9ead780da0368409
@@ -408,7 +408,10 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
         }
         _ => {
             warn!("workspace: unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
-            Err(WorkspaceError::FormatNotSupported{source: anyhow::anyhow!("unknown magic")}.into())
+            Err(WorkspaceError::FormatNotSupported {
+                source: anyhow::anyhow!("unknown magic"),
+            }
+            .into())
         }
     }
 }
@@ -505,5 +508,4 @@ mod tests {
 
         Ok(())
     }
-
 }
