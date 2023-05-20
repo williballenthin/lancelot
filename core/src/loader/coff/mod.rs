@@ -3,12 +3,15 @@
 use anyhow::Result;
 use log::{debug, warn};
 use object::{Object, ObjectSection, ObjectSymbol, ObjectSymbolTable};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    unimplemented,
+};
 use thiserror::Error;
 
 use crate::{
     arch::Arch,
-    aspace::{AddressSpace, RelativeAddressSpace, WritableAddressSpace},
+    aspace::{RelativeAddressSpace, WritableAddressSpace},
     module::{Module, Permissions, Section},
     util, RVA, VA,
 };
@@ -399,9 +402,12 @@ enum FixupSize {
 }
 
 struct Fixup {
+    // the location to change
     address: VA,
+    // the size to change, either 4 or 8 bytes
     size:    FixupSize,
-    addend:  i64,
+    // the value to write at the location
+    value:   i64,
 }
 
 fn get_section_by_file_rva(module: &Module, rva: RVA) -> Option<&Section> {
@@ -410,6 +416,10 @@ fn get_section_by_file_rva(module: &Module, rva: RVA) -> Option<&Section> {
 
 fn get_section_by_coff_section<'a>(module: &'a Module, section: &object::Section) -> Option<&'a Section> {
     get_section_by_file_rva(module, section.file_range().unwrap_or_default().0)
+}
+
+fn get_section_by_name<'a>(module: &'a Module, name: &str) -> Option<&'a Section> {
+    module.sections.iter().find(|s| s.name == name)
 }
 
 fn get_coff_fixups(
@@ -424,54 +434,84 @@ fn get_coff_fixups(
             continue;
         };
 
+        // reloc_rva: the place that needs to be updated.
+        // reloc: the thing to be done at that place.
         for (reloc_rva, reloc) in section.relocations() {
-            // virtual address of the place that needs to be fixed up.
+            // reloc_va: the place that needs to be updated.
             let reloc_va: VA = current_section.virtual_range.start + reloc_rva;
 
             let object::RelocationEncoding::Generic = reloc.encoding() else {
-                warn!("unexpected relocation encoding: {:?}", reloc.encoding());
-                continue;
+                // other encodings are not yet supported/tested.
+                unimplemented!("unexpected relocation encoding: {:?}", reloc.encoding());
             };
+
+            // see LLVM implementation for reference:
+            // https://github.com/llvm/llvm-project/blob/3bc1ea5b0ac90e04e7b935a5d964613f8fbad4bf/llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldCOFFI386.h#L43
 
             // index of the symbol that the relocation is referencing.
+            //
+            //    auto Symbol = RelI->getSymbol();
             let object::RelocationTarget::Symbol(symindex @ object::SymbolIndex(_)) = reloc.target() else {
-                warn!("unexpected relocation target: {:?}", reloc.target());
-                continue;
+                // other targets are not yet supported/tested.
+                unimplemented!("unexpected relocation target: {:?}", reloc.target());
             };
 
+            // the name of the symbol that the relocation is referencing.
+            //
+            //     Expected<StringRef> TargetNameOrErr = Symbol->getName();
             let Ok(symbol) = symtab.symbol_by_index(symindex) else {
-                warn!("failed to find symbol: {:?}", symindex);
+                // while we're not sure why we'd hit this case,
+                // that the relocation target symbol is not available,
+                // we can limp along by not applying the relocation.
+                warn!("coff: reloc: failed to find symbol: {:?}", symindex);
                 continue;
             };
 
+            // the address of the thing that the relocation is referencing.
+            //
+            // there are three supported cases today:
+            //   1. code/data found in a section
+            //      target is address of the section.
+            //   2. code/data found in an external symbol,
+            //      target is the address of thesymbol (in UNDEF section).
+            //   3. a known section, like .text,
+            //      target is ??TODO??.
             let target: i64 = match (symbol.kind(), symbol.section()) {
                 (
-                    // a relative offset to a code/data symbol found in a section.
                     object::SymbolKind::Data
                     | object::SymbolKind::Text
                     | object::SymbolKind::Label
                     | object::SymbolKind::Section,
                     object::SymbolSection::Section(secindex @ object::SectionIndex(_)),
                 ) => {
-                    // COFF section
+                    // convert from the section index in the relocation
+                    // to our module's section.
                     let Ok(target_section) = obj.section_by_index(secindex) else {
-                        warn!("failed to find section: {:?}", secindex);
+                        warn!("coff: reloc: failed to find section: {:?}", secindex);
+                        continue;
+                    };
+                    let Some(target_section) = get_section_by_coff_section(&*module, &target_section) else {
+                        warn!("coff: reloc: failed to find section: {:?}", secindex);
                         continue;
                     };
 
-                    // section in memory
-                    let Some(target_section) = get_section_by_coff_section(&*module, &target_section) else {
-                        warn!("failed to find section: {:?}", secindex);
-                        continue;
-                    };
+                    // we've resolved the section in which the target symbol is found,
+                    // so we can apply the fixup by computing the delta between current section and
+                    // target section, and adding this to the existing value
+                    // found at reloc_rva (reloc.addend()).
+                    //
+                    // when each COFF section contains exactly one symbol,
+                    // then the addend is 0x0, and we can easily resolve the symbol name here.
+                    // but this is not always the case.
 
                     debug!(
-                        "coff: reloc: relative: {}([{}])+0x{:02x}: 0x{:08x} -> {}",
-                        current_section.name,
+                        "coff: reloc: sections[{}]: {}+0x{:02x} -> {} in section {} (0x{:08x})",
                         i,
+                        current_section.name,
                         reloc_rva,
-                        target_section.virtual_range.start,
                         symbol.name()?,
+                        target_section.name,
+                        target_section.virtual_range.start,
                     );
 
                     target_section
@@ -481,60 +521,48 @@ fn get_coff_fixups(
                         .expect("64-bit section address")
                 }
                 (
-                    // relative offset to an extern symbol.
                     // we place these extern symbols in a fake section named "UNDEF".
                     object::SymbolKind::Data | object::SymbolKind::Text,
                     object::SymbolSection::Undefined | object::SymbolSection::Common,
                 ) => {
-                    debug!(
-                        "coff: reloc: relative: {}([{}])+0x{:02x}: [extern]   -> {}",
-                        current_section.name,
-                        i,
-                        reloc_rva,
-                        symbol.name()?
-                    );
-
                     let Ok(name) = symbol.name() else {
+                        warn!("coff: reloc: no name: {:?}", symbol);
                         continue;
                     };
 
                     let Some(extern_) = externs.get(name) else {
-                        warn!("failed to find extern: {:?}", name);
+                        warn!("coff: reloc: failed to find extern: {:?}", name);
                         continue;
                     };
+
+                    debug!(
+                        "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (extern, 0x{:08x})",
+                        i, current_section.name, reloc_rva, name, extern_
+                    );
 
                     *extern_ as i64
                 }
-                (
-                    // relative offset to a known section.
-                    object::SymbolKind::Section,
-                    object::SymbolSection::Common,
-                ) => {
+                (object::SymbolKind::Section, object::SymbolSection::Common) => {
                     let Ok(name) = symbol.name() else {
+                        warn!("coff: reloc: no name: {:?}", symbol);
                         continue;
                     };
 
-                    let Some(target_section) = module.sections.iter().find(|s| s.name == name) else {
+                    let Some(target_section) = get_section_by_name(module, name) else {
                         // its possible there's a relocation fixup to a section thats not found in this COFF.
                         // such as MFCM140.lib referencing .idata$4
                         // we could add an extern for this above.
-                        warn!("coff: reloc: {}([{}])+0x{:02x}: failed to find section: {:?}",
+                        unimplemented!("coff: reloc: {}([{}])+0x{:02x}: failed to find section: {:?}",
                             current_section.name,
                             i,
                             reloc_rva,
                             name
                         );
-
-                        continue;
                     };
 
                     debug!(
-                        "coff: reloc: relative: {}([{}])+0x{:02x}: 0x{:08x} -> {}",
-                        current_section.name,
-                        i,
-                        reloc_rva,
-                        target_section.virtual_range.start,
-                        symbol.name()?,
+                        "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (section, 0x{:08x})",
+                        i, current_section.name, reloc_rva, name, target_section.virtual_range.start,
                     );
 
                     target_section
@@ -544,7 +572,7 @@ fn get_coff_fixups(
                         .expect("64-bit section address")
                 }
                 (object::SymbolKind::Unknown, _) => {
-                    warn!(
+                    unimplemented!(
                         "coff: reloc: unknown: {}([{}])+0x{:02x}: ??? -> {} (unknown)",
                         current_section.name,
                         i,
@@ -554,86 +582,80 @@ fn get_coff_fixups(
 
                     // this is a relocation with unknown kind.
                     // so what can we do?
-                    // maybe it points to an extern, but we haven't extracted it above.
-                    // at most we can just log here.
-
-                    continue;
+                    // maybe it points to an extern, but we haven't extracted it
+                    // above. at most we can just log here.
                 }
                 _ => {
                     unimplemented!("unsupported symbol: {:?}", symbol);
                 }
             };
 
-            let mut addend = target;
-
-            match reloc.kind() {
-                object::RelocationKind::Relative => {
+            // resolved_address: the address that we'll write into the relocation address.
+            // that takes into account the location of the relocation symbol, any value
+            // currently at the relocation address (addend), etc.
+            let resolved_address = match (reloc.kind(), reloc.has_implicit_addend()) {
+                (object::RelocationKind::Relative, true) => {
                     // S + A - P
                     //
+                    // * S - The address of the symbol.
                     // * A - The value of the addend.
                     // * P - The address of the place of the relocation.
-                    // * S - The address of the symbol.
                     //
-                    // symbol + addend - reloc_va
-
-                    addend -= reloc_va as i64;
+                    // add in the current offset encoded at the relocation address,
+                    // such as within a call instruction's operand.
+                    //
+                    // when a COFF section contains more than one symbol,
+                    // then this added can be non-zero.
+                    (target + reloc.addend()) - reloc_va as i64
                 }
-                object::RelocationKind::ImageOffset => {
-                    // the image is assumed to be loaded at 0
+                (object::RelocationKind::ImageOffset, true) => {
+                    // S + A - Image
+                    //
+                    // * S - The address of the symbol.
+                    // * A - The value of the addend.
+                    //
+                    // note: the image is assumed to be loaded at 0
                     // (though we load it elsewhere)
                     // so no adjustment needed here.
+
+                    target + reloc.addend()
                 }
-                object::RelocationKind::Absolute => {
-                    // pass
+                (object::RelocationKind::Absolute, true) => {
+                    // S + A
+                    //
+                    // * S - The address of the symbol.
+                    // * A - The value of the addend.
+                    target + reloc.addend()
                 }
-                object::RelocationKind::SectionOffset => {
+                (object::RelocationKind::SectionOffset, true) => {
                     // S + A - Section
                     //
-                    // * A - The value of the addend.
                     // * S - The address of the symbol.
+                    // * A - The value of the addend.
                     // * Section - The address of the section containing the symbol.
                     //
-                    // symbol + addend - symbol.section
-
-                    // TODO: #183
-                    log::info!("{:?}", section);
-                    log::info!("{:?}", reloc);
-                    log::info!("{:?}", symbol);
-                    log::info!("target: {:x}", reloc_va);
-                    log::info!("reloc: {:x}", reloc_va);
-
-                    let idx = symbol.section_index().expect("missing symbol index");
-                    let section = obj.section_by_index(idx)?;
-                    let section = get_section_by_coff_section(&*module, &section).unwrap();
-                    let section = section.virtual_range.start;
-
-                    log::info!("section: {:x}", section);
-
-                    let b = module.address_space.read_bytes(reloc_va - 8, 0x10)?;
-                    log::info!("{}", crate::util::hexdump(&b, 0));
-
-                    //addend -= section as i64;
+                    // the computation of the target above includes the section address.
+                    // so we don't need to include it here, as suggested.
+                    //
+                    // this makes me think there might be a bug lurking around.
+                    target + reloc.addend()
                 }
                 _ => unimplemented!("relocation kind: {:?}", reloc.kind()),
-            }
-
-            if reloc.has_implicit_addend() {
-                addend += reloc.addend();
-            }
+            };
 
             match reloc.size() {
                 32 => {
                     fixups.push(Fixup {
                         address: reloc_va,
-                        size: FixupSize::_32,
-                        addend,
+                        size:    FixupSize::_32,
+                        value:   resolved_address,
                     });
                 }
                 64 => {
                     fixups.push(Fixup {
                         address: reloc_va,
-                        size: FixupSize::_64,
-                        addend,
+                        size:    FixupSize::_64,
+                        value:   resolved_address,
                     });
                 }
                 _ => unimplemented!("relocation size: {}", reloc.size()),
@@ -647,18 +669,10 @@ fn apply_coff_fixups(module: &mut Module, fixups: Vec<Fixup>) -> Result<(), anyh
     for fixup in fixups.into_iter() {
         match fixup.size {
             FixupSize::_32 => {
-                let existing = module.address_space.read_u32(fixup.address)?;
-
-                let new = existing as i32 + fixup.addend as i32;
-
-                module.address_space.write_u32(fixup.address, new as u32)?;
+                module.address_space.write_i32(fixup.address, fixup.value as i32)?;
             }
             FixupSize::_64 => {
-                let existing = module.address_space.read_u64(fixup.address)?;
-
-                let new = existing as i64 + fixup.addend;
-
-                module.address_space.write_u64(fixup.address, new as u64)?;
+                module.address_space.write_i64(fixup.address, fixup.value)?;
             }
         }
     }
@@ -740,9 +754,11 @@ fn load_coff(buf: &[u8]) -> Result<COFF> {
 
 #[cfg(test)]
 mod tests {
+    use std::assert_eq;
+
     use anyhow::Result;
 
-    use crate::{arch, aspace::AddressSpace, emu::mmu::PAGE_SIZE, rsrc::*};
+    use crate::{arch, aspace::AddressSpace, emu::mmu::PAGE_SIZE, loader::coff::get_section_by_name, rsrc::*};
 
     #[test]
     fn base_address() -> Result<()> {
@@ -810,61 +826,204 @@ mod tests {
     }
 
     #[test]
-    fn relocs() -> Result<()> {
-        let buf = get_buf(Rsrc::ALTSVC);
+    fn reloc_relative() -> Result<()> {
+        //crate::test::init_logging();
+
+        // IDA shows:
+        //
+        //```ignore
+        //  .text$mn:0F  6A FF              push    0FFFFFFFFh
+        //  .text$mn:11  68 CC 00 00 00     push    offset __ehhandler...
+        //  .text$mn:16  64 A1 00 00 00 00  mov     eax, large fs:0
+        //```
+        //
+        // and IDA has loaded .text$mn at 0xC
+        // and __ehhandler$___dyn_tls_init@12 in section .text$x:000000CC
+        //
+        // so we see the relocation applied as CC 00 00 00 at 0x12.
+
+        let buf = get_buf(Rsrc::TLSDYN);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
 
-        assert_eq!(
-            coff.module.address_space.relative.read_u32(0x10).unwrap() as u64,
-            0x00072FEC
-        );
-        assert_eq!(
-            coff.module.address_space.relative.read_u32(0x17).unwrap() as u64,
-            0x00071FE5
-        );
+        // we load .text$mn at 0x20003000
+        let textmn = get_section_by_name(&coff.module, ".text$mn")
+            .unwrap()
+            .virtual_range
+            .start;
+        assert_eq!(textmn, 0x20003000);
 
-        // image relocation
-        let pdata = coff.symbols.by_name.get("$pdata$2$altsvc_flush").unwrap().address;
-        let altsvc_flush = coff.symbols.by_name.get("altsvc_flush").unwrap().address;
-        assert_eq!(
-            coff.module.address_space.read_u32(pdata).unwrap() as u64,
-            altsvc_flush + 0xDB
-        );
+        // and the instruction with the relocation is at +5
+        let relocated_instruction = textmn + 5;
+
+        // we load __ehhandler$___dyn_tls_init@12 in section .text$x at 0x20007000
+        let textx = get_section_by_name(&coff.module, ".text$x")
+            .unwrap()
+            .virtual_range
+            .start;
+        assert_eq!(textx, 0x20007000);
+        let ehandler = coff
+            .symbols
+            .by_name
+            .get("__ehhandler$___dyn_tls_init@12")
+            .unwrap()
+            .address;
+        assert_eq!(ehandler, 0x20007000);
+
+        // so we see the relocation applied as 00 70 00 20 at 0x20003006
+        let v = coff.module.address_space.read_bytes(relocated_instruction, 0x5)?;
+        assert_eq!(v, &[0x68, 0x00, 0x70, 0x00, 0x20]);
+
+        // our instruction formatter renders this as:
+        //   .text$mn:20003005  68 00 70 00 20  push    0x20007000
+        // because its a push, so doesn't know its an address.
+        let ws = crate::workspace::COFFWorkspace::from_coff(crate::workspace::config::empty(), coff)?;
+        let insn = crate::test::read_insn(&ws.coff.module, relocated_instruction);
+        let fmt = crate::workspace::formatter::Formatter::with_options()
+            .with_colors(true)
+            .with_hex_column_size(8)
+            .build();
+
+        log::debug!("{}", fmt.format_instruction(&ws, &insn, relocated_instruction).unwrap());
 
         Ok(())
     }
 
     #[test]
-    fn section_reloc() -> Result<()> {
-        // issue #183
+    fn reloc_extern() -> Result<()> {
+        //crate::test::init_logging();
 
-        crate::test::init_logging();
+        // IDA shows:
+        //
+        //  .text$mn:1D  83 EC 08        sub esp, 8
+        //  .text$mn:20  A1 40 01 00 00  mov eax, ds:___security_cookie
+        //  .text$mn:25  33 C5           xor eax, ebp
+        //
+        // and IDA has loaded .text$mn at 0xC
+        // and ___security_cookie in section UNDEF at 00000140
+        //
+        // so we see the relocation applied as 40 10 00 00 at 0x20.
 
         let buf = get_buf(Rsrc::TLSDYN);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
 
-        log::info!("{:#x}", 0x2000303d);
+        // we load .text$mn at 0x20003000
+        let textmn = get_section_by_name(&coff.module, ".text$mn")
+            .unwrap()
+            .virtual_range
+            .start;
+        assert_eq!(textmn, 0x20003000);
 
-        let v = coff.module.address_space.read_bytes(0x2000303d - 8, 0x10)?;
-        log::info!("{}", crate::util::hexdump(&v, 0));
+        // and the instruction with the relocation is at +14
+        let relocated_instruction = textmn + 0x14;
 
+        // we load ___security_cookie in section UNDEF at 0x2000C00C
+        let undef = get_section_by_name(&coff.module, "UNDEF").unwrap().virtual_range.start;
+        assert_eq!(undef, 0x2000C000);
+        let cookie = coff.externs.get("___security_cookie").unwrap();
+        assert_eq!(*cookie, 0x2000C00C);
+
+        // so we see the relocation applied as 0C C0 00 20 at 0x20003014
+        let v = coff.module.address_space.read_bytes(relocated_instruction, 0x5)?;
+        assert_eq!(v, &[0xA1, 0x0C, 0xC0, 0x00, 0x20]);
+
+        // our instruction formatter renders this as:
+        //  .text$mn:2000303a  0F B6 82 00 00           mov     eax,
+        // [___security_cookie]
         let ws = crate::workspace::COFFWorkspace::from_coff(crate::workspace::config::empty(), coff)?;
-
-        // ```
-        //     .text:00401C4E 000 68 F4 61 40 00          push    offset ModuleName ; "mscoree.dll"
-        //     .text:00401C53 004 FF 15 00 60 40 00       call    ds:GetModuleHandleA
-        //     .text:00401C59 000 85 C0                   test    eax, eax
-        // ```
-        let insn = crate::test::read_insn(&ws.coff.module, 0x2000303a);
-
+        let insn = crate::test::read_insn(&ws.coff.module, relocated_instruction);
         let fmt = crate::workspace::formatter::Formatter::with_options()
-            .with_colors(false)
-            .with_hex_column_size(0)
+            .with_colors(true)
+            .with_hex_column_size(8)
             .build();
 
-        log::info!("{:?}", fmt.format_instruction(&ws, &insn, 0x2000303a).unwrap());
+        log::debug!("{}", fmt.format_instruction(&ws, &insn, relocated_instruction).unwrap());
 
-        assert!(false);
+        Ok(())
+    }
+
+    #[test]
+    fn reloc_section() -> Result<()> {
+        //crate::test::init_logging();
+
+        // IDA shows:
+        //
+        //  .text$mn:43  8B 14 81              mov   edx, [ecx+eax*4]
+        //  .text$mn:46  0F B6 82 00 00 00 00  movzx eax, _volmd[edx]
+        //  .text$mn:4D  83 F8 01              cmp   eax, 1
+        //
+        // and IDA has loaded .text$mn at 0xC
+        // and .tls$ at 00000000
+        //
+        // so we see the relocation applied as 00 00 00 00 at 0x46.
+
+        let buf = get_buf(Rsrc::TLSDYN);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        // we load .text$mn at 0x20003000
+        let textmn = get_section_by_name(&coff.module, ".text$mn")
+            .unwrap()
+            .virtual_range
+            .start;
+        assert_eq!(textmn, 0x20003000);
+
+        // and the instruction with the relocation is at +3A
+        let relocated_instruction = textmn + 0x3A;
+
+        // we load section .tls$ at 0x20000000
+        let tls = get_section_by_name(&coff.module, ".tls$").unwrap().virtual_range.start;
+        assert_eq!(tls, 0x20000000);
+
+        // so we see the relocation applied as 00 00 00 20 at 0x2000303C
+        let v = coff.module.address_space.read_bytes(relocated_instruction, 0x7)?;
+        assert_eq!(v, &[0x0F, 0xB6, 0x82, 0x00, 0x00, 0x00, 0x20]);
+
+        // our instruction formatter renders this as:
+        //  .text$mn:2000303a  0F B6 82 00 00           mov     eax,
+        // [___security_cookie]
+        let ws = crate::workspace::COFFWorkspace::from_coff(crate::workspace::config::empty(), coff)?;
+        let insn = crate::test::read_insn(&ws.coff.module, relocated_instruction);
+        let fmt = crate::workspace::formatter::Formatter::with_options()
+            .with_colors(true)
+            .with_hex_column_size(8)
+            .build();
+
+        log::debug!("{}", fmt.format_instruction(&ws, &insn, relocated_instruction).unwrap());
+
+        Ok(())
+    }
+
+    #[test]
+    fn reloc_imageoffset() -> Result<()> {
+        //crate::test::init_logging();
+
+        // IDA shows:
+        //
+        //  .pdata:001710  A8 0C 00 00 01 0D 00 00  F8 16 00 00
+        //
+        //  .pdata:001710   $pdata$_vsscanf_l RUNTIME_FUNCTION
+        //                  <rva _vsscanf_l,
+        //                   rva algn_D01,
+        //                   rva $unwind$_vsscanf_l>
+        //
+        // and IDA has loaded .pdata (section 47) at 0x1710
+        // and _vsscanf_l at section .text$mn at 0000000000000CA8
+        //
+        // so we see the relocation applied as A8 0C 00 00 at 0x1710.
+
+        let buf = get_buf(Rsrc::ALTSVC);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        // we load .pdata (section 47) at 0x20017000
+        let pdata = coff.symbols.by_name.get("$pdata$_vsscanf_l").unwrap().address;
+        assert_eq!(pdata, 0x20017000);
+
+        // we load _vsscanf_l in section .text$mn at 0x20009000
+        let vsscanf = coff.symbols.by_name.get("_vsscanf_l").unwrap().address;
+        assert_eq!(vsscanf, 0x20009000);
+
+        // so we see the relocation applied as 00 90 00 20 at 0x20017000
+        let v = coff.module.address_space.read_bytes(pdata, 0x4)?;
+        assert_eq!(v, &[0x00, 0x90, 0x00, 0x20]);
 
         Ok(())
     }
