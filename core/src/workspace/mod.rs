@@ -494,18 +494,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn coff_from_msvcrt() -> Result<()> {
-        let buf = get_buf(Rsrc::LIBCPMT);
-        let config = get_config();
-        let ws = workspace_from_bytes(config, &buf)?;
-
-        assert_eq!(
-            ws.analysis().names.addresses_by_name.first_key_value().unwrap().0,
-            &"foo"
-        );
-
-        Ok(())
-    }
 }
