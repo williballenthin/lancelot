@@ -346,6 +346,10 @@ fn get_coff_extern_names(obj: &object::File) -> BTreeSet<String> {
                             externs.insert(name.to_string());
                         };
                     }
+                    (object::SymbolKind::Unknown, object::SymbolSection::Common) => {
+                        debug!("coff: reloc: extern: unknown: {}", name);
+                        externs.insert(name.to_string());
+                    }
                     (_, _) => continue,
                 }
             }
@@ -567,21 +571,27 @@ fn get_coff_fixups(
                         );
 
                         *extern_ as i64
-                    }
+
+                   }
                 }
                 (object::SymbolKind::Unknown, _) => {
-                    unimplemented!(
-                        "coff: reloc: unknown: {}([{}])+0x{:02x}: ??? -> {} (unknown)",
-                        current_section.name,
-                        i,
-                        reloc_rva,
-                        symbol.name()?
+                    let Ok(name) = symbol.name() else {
+                        warn!("coff: reloc: no name: {:?}", symbol);
+                        continue;
+                    };
+
+                    // assume its an extern.
+                    let Some(extern_) = externs.get(name) else {
+                        warn!("coff: reloc: failed to find extern: {:?}", name);
+                        continue;
+                    };
+
+                    debug!(
+                        "coff: reloc: sections[{}]: {}+0x{:02x} -> {} (extern, unknown, 0x{:08x})",
+                        i, current_section.name, reloc_rva, name, extern_
                     );
 
-                    // this is a relocation with unknown kind.
-                    // so what can we do?
-                    // maybe it points to an extern, but we haven't extracted it
-                    // above. at most we can just log here.
+                    *extern_ as i64
                 }
                 _ => {
                     unimplemented!("unsupported symbol: {:?}", symbol);
@@ -637,6 +647,10 @@ fn get_coff_fixups(
                     //
                     // this makes me think there might be a bug lurking around.
                     target + reloc.addend()
+                }
+                (object::RelocationKind::Coff(typ), _) => {
+                    warn!("coff: reloc: unsupported kind: COFF({:?})", typ);
+                    continue;
                 }
                 _ => unimplemented!("relocation kind: {:?}", reloc.kind()),
             };
@@ -1028,7 +1042,7 @@ mod tests {
 
     #[test]
     fn reloc_extern_section() -> Result<()> {
-        crate::test::init_logging();
+        //crate::test::init_logging();
 
         let buf = get_buf(Rsrc::_1MFCM140);
         let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
@@ -1051,6 +1065,24 @@ mod tests {
         let idata5 = coff.externs.get(".idata$5").unwrap();
         assert_eq!(*idata5, 0x20002004);
         assert_eq!(coff.module.address_space.read_u32(idata2 + 0x10)? as u64, *idata5);
+
+        Ok(())
+    }
+
+    #[test]
+    fn reloc_unknown() -> Result<()> {
+        crate::test::init_logging();
+
+        let buf = get_buf(Rsrc::POSTDLLMAIN);
+        crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        // there's a relocation with an unknown symbol kind,
+        // this we can assume is an extern symbol and handle that.
+        //
+        // there's a relocation with an unknown kind,
+        // this we *cannot* handle, so we skip it.
+        //
+        // we should be able to load, but we won't touch the relocations.
 
         Ok(())
     }

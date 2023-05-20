@@ -26,6 +26,8 @@ pub enum Rsrc {
     MFCM140,
     /// COFF file from MFCM140
     _1MFCM140,
+    /// COFF file from MFCM140
+    POSTDLLMAIN,
 }
 
 /// Fetch the file system name of the given resource.
@@ -41,6 +43,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::TLSDYN => String::from("tlsdyn.obj"),
         Rsrc::MFCM140 => String::from("MFCM140.lib"),
         Rsrc::_1MFCM140 => String::from("1.MFCM140.dll"),
+        Rsrc::POSTDLLMAIN => String::from("postdllmain.obj"),
     }
 }
 
