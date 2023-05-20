@@ -25,7 +25,8 @@ fn to_value_error(e: anyhow::Error) -> PyErr {
 fn to_py_err(e: Error) -> PyErr {
     #[allow(clippy::single_match)]
     match e.downcast_ref::<WorkspaceError>() {
-        Some(WorkspaceError::FormatNotSupported) => return to_value_error(e),
+        Some(WorkspaceError::BufferTooSmall) => return to_value_error(e),
+        Some(WorkspaceError::FormatNotSupported{source: _}) => return to_value_error(e), 
         None => (),
     };
 
