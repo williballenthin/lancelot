@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn reloc_unknown() -> Result<()> {
-        crate::test::init_logging();
+        //crate::test::init_logging();
 
         let buf = get_buf(Rsrc::POSTDLLMAIN);
         crate::loader::coff::COFF::from_bytes(&buf)?;
