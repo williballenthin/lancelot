@@ -571,8 +571,7 @@ fn get_coff_fixups(
                         );
 
                         *extern_ as i64
-
-                   }
+                    }
                 }
                 (object::SymbolKind::Unknown, _) => {
                     let Ok(name) = symbol.name() else {

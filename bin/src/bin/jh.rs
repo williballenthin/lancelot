@@ -427,7 +427,7 @@ fn _main() -> Result<()> {
         .chain(std::io::stderr())
         .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         // ignore warnings like: workspace: unknown file format: magic: 00 00
-        .filter(|metadata| !metadata.target().starts_with("lancelot::workspace") )
+        .filter(|metadata| !metadata.target().starts_with("lancelot::workspace"))
         .apply()
         .expect("failed to configure logging");
 
