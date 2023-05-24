@@ -36,7 +36,7 @@ jobs:
       - name: install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc make git cmake python3.8  
+          sudo apt-get install -y build-essential gcc make git cmake python3.11  
       - name: test core
         uses: actions-rs/cargo@v1
         with:
@@ -51,8 +51,8 @@ jobs:
         working-directory: ./pylancelot/
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc cmake python3.8 python3.8-dev virtualenv
-          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.8 /tmp/vdir
+          sudo apt-get install -y build-essential gcc cmake python3.11 python3.11-dev virtualenv
+          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.11 /tmp/vdir
           source /tmp/vdir/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
@@ -61,8 +61,8 @@ jobs:
         working-directory: ./pyflirt/
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc cmake python3.8 python3.8-dev virtualenv
-          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.8 /tmp/vdir
+          sudo apt-get install -y build-essential gcc cmake python3.11 python3.11-dev virtualenv
+          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.11 /tmp/vdir
           source /tmp/vdir/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
