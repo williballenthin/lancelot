@@ -239,8 +239,16 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
     for section in sections.iter() {
         let pstart = section.physical_range.start as usize;
         let pend = section.physical_range.end as usize;
-        let psize = pend - pstart;
-        let pbuf = &buf[pstart..pend];
+
+        let (psize, pbuf) = if pstart >= buf.len() {
+            (0, &[] as &[u8])
+        } else if pend > buf.len() {
+            (buf.len() - pstart, &buf[pstart..])
+        } else {
+            let psize = pend - pstart;
+            let pbuf = &buf[pstart..pend];
+            (psize, pbuf)
+        };
 
         // the section range contains VAs,
         // while we're writing to the RelativeAddressSpace.
