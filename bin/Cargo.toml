@@ -1,6 +1,6 @@
 [package]
 name = "lancelot-bin"
-version = "0.8.6"
+version = "0.8.7"
 description = "binary analysis tools for x32/x64 PE files"
 authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 license = "Apache-2.0"
@@ -27,5 +27,5 @@ ar = { git = "https://github.com/mdsteele/rust-ar", rev = "03d664b", version = "
 hex = "0.4"
 serde_json = "1.0"
 
-lancelot = { path = "../core", version = "0.8.6" }
-lancelot-flirt = { path = "../flirt", version = "0.8.6" }
+lancelot = { path = "../core", version = "0.8.7" }
+lancelot-flirt = { path = "../flirt", version = "0.8.7" }
