@@ -142,7 +142,7 @@ pub fn read_best_thunk_data(pe: &PE, original_first_thunk_addr: VA, first_thunk_
     // the First Thunk (FT) is the pointer that will be overwritten upon load.
     // entries here may not point to the IMAGE_IMPORT_BY_NAME.
     //
-    // in practice, using this array works better, as some OFT entries may be empty.
+    // note: some OFT entries may be empty
     // see: be24e9d47cfe588a8ced0ac3e453d390 hotfix2.exe
     //
     // however, this doesn't work if the PE has been dumped from memory
@@ -151,43 +151,49 @@ pub fn read_best_thunk_data(pe: &PE, original_first_thunk_addr: VA, first_thunk_
     let ft = read_image_thunk_data(pe, first_thunk_addr);
     let oft = read_image_thunk_data(pe, original_first_thunk_addr);
 
-    // if only one of the thunks could be read, pick that one.
-    let (ft, oft) = match (ft, oft) {
-        (Ok(ft), Err(_)) => return Ok(ft),
-        (Err(_), Ok(oft)) => return Ok(oft),
-        (Err(e), Err(_)) => return Err(e),
-        //
-        (Ok(ft), Ok(oft)) => (ft, oft),
-    };
-
-    // prefer what FT says it is, if the thunk types conflict
-    let (ftname, oftname) = match (ft, oft) {
-        (IMAGE_THUNK_DATA::Ordinal(_), _) => return Ok(ft),
-        (IMAGE_THUNK_DATA::Function(_), IMAGE_THUNK_DATA::Ordinal(_)) => return Ok(ft),
-        (IMAGE_THUNK_DATA::Function(ftva), IMAGE_THUNK_DATA::Function(oftva)) => (ftva, oftva),
-    };
-
-    // at this point, both say they are names
-    // so
-    // if one of the names is not readable, pick the other thunk
-    if !pe.module.probe_rva(ftname, Permissions::R) {
-        return Ok(oft);
-    }
-    if !pe.module.probe_rva(oftname, Permissions::R) {
-        return Ok(ft);
+    if ft.is_err() && oft.is_err() {
+        // prefer the OFT errror.
+        return oft;
     }
 
-    // pick the first thunk that appears to contain a string
-    // in a198216798ca38f280dc413f8c57f2c2, FT contains a non-zero hint, but empty
-    // name.
-    if pe.module.address_space.relative.read_u8(ftname + 2)? != 0x0 {
-        return Ok(ft);
-    }
-    if pe.module.address_space.relative.read_u8(oftname + 2)? != 0x0 {
-        return Ok(oft);
+    fn validate_thunk_data(pe: &PE, thunk: IMAGE_THUNK_DATA) -> Result<IMAGE_THUNK_DATA> {
+        match thunk {
+            IMAGE_THUNK_DATA::Ordinal(_) => Ok(thunk),
+            IMAGE_THUNK_DATA::Function(thunk) => {
+                if pe.module.probe_rva(thunk, Permissions::R)
+                    && pe.module.address_space.relative.read_ascii(thunk + 2, 1).is_ok()
+                {
+                    // thunk appears to contain a string.
+                    // because in a198216798ca38f280dc413f8c57f2c2,
+                    // FT contains a non-zero hint, but empty name name.
+                    return Ok(IMAGE_THUNK_DATA::Function(thunk));
+                }
+                Err(crate::loader::pe::PEError::MalformedPEFile("invalid thunk".to_string()).into())
+            }
+        }
     }
 
-    Ok(oft)
+    if let Ok(oft) = oft {
+        if let Ok(oft) = validate_thunk_data(pe, oft) {
+            return Ok(oft);
+        }
+    }
+
+    // OFT pointer is not valid
+    // or OFT thunk doesn't contain a string
+    // so fall back to trying the FT
+
+    if let Ok(ft) = ft {
+        if let Ok(ft) = validate_thunk_data(pe, ft) {
+            return Ok(ft);
+        }
+    }
+
+    // FT pointer is not valid
+    // or FT thunk doesn't caontain a string
+    // neither OFT nor FT are valid, so we're in error territory.
+
+    Err(crate::loader::pe::PEError::MalformedPEFile("invalid FT/OFT entry".to_string()).into())
 }
 
 pub fn read_thunks<'a>(

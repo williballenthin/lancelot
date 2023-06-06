@@ -94,7 +94,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
         .into_iter()
         .filter(|&(src, dst)| {
             let mut buf = [0u8; 3];
-            if matches!(pe.module.address_space.read_into(dst - 3, &mut buf), Ok(_)) {
+            if pe.module.address_space.read_into(dst - 3, &mut buf).is_ok() {
                 // va - 3
                 if buf[0] == RETN {
                     return true;
@@ -132,7 +132,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
             }
         })
         .filter(|&(src, dst)| {
-            if matches!(pe.module.address_space.read_ascii(dst, 4), Ok(_)) {
+            if pe.module.address_space.read_ascii(dst, 4).is_ok() {
                 debug!(
                     "pointers: candidate pointer {:#x}: points to a string at {:#x}",
                     src, dst
