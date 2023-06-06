@@ -92,17 +92,21 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                     break;
                 }
 
-                let symbol = match read_best_thunk_data(pe, oft, ft)? {
-                    IMAGE_THUNK_DATA::Function(name_rva) => {
+                let symbol = match read_best_thunk_data(pe, oft, ft) {
+                    Ok(IMAGE_THUNK_DATA::Function(name_rva)) => {
                         // u16    hint
                         // asciiz name
                         let name = pe.module.address_space.relative.read_ascii(name_rva + 2, 1)?;
                         debug!("imports: {}!{}", dll, name);
                         ImportedSymbol::Name(name)
                     }
-                    IMAGE_THUNK_DATA::Ordinal(ord) => {
+                    Ok(IMAGE_THUNK_DATA::Ordinal(ord)) => {
                         debug!("imports: {}!#{}", dll, ord);
                         ImportedSymbol::Ordinal(ord)
+                    }
+                    Err(e) => {
+                        debug!("imports: error reading thunk: {}", e);
+                        continue;
                     }
                 };
 
