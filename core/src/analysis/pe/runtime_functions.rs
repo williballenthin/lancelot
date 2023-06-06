@@ -91,7 +91,10 @@ fn read_unwind_info(pe: &PE, offset: VA) -> Result<UnwindInfo> {
     let version = hdr[0] & 0b0000_0111;
     let flags = (hdr[0] & 0b1111_1000) >> 3;
 
-    if version != 0x1 {
+    // version 2 is not documented by microsoft,
+    // but referenced and explained here:
+    // https://sourceware.org/legacy-ml/gdb-patches/2013-12/msg00097.html
+    if version != 0x1 && version != 0x2 {
         return Err(RuntimeFunctionError::UnsupportedUnwindInfoVersion.into());
     }
 
