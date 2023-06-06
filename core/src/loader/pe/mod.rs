@@ -92,7 +92,18 @@ impl PE {
 }
 
 fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
-    let pe = goblin::pe::PE::parse(buf)?;
+    let pe = match goblin::pe::PE::parse(buf) {
+        Ok(pe) => pe,
+        Err(e) => {
+            // goblin failed to parse the PE file
+            // so we won't be able to do any analysis.
+            //
+            // the alternative here would be to write our own PE parser,
+            // which is not very attractive...
+            return Err(PEError::MalformedPEFile(e.to_string()).into());
+        }
+    };
+
     if let Some(opt) = pe.header.optional_header {
         if opt.data_directories.get_clr_runtime_header().is_some() {
             return Err(PEError::FormatNotSupported(".NET assembly".to_string()).into());
