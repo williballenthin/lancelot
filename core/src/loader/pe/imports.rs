@@ -151,7 +151,7 @@ pub fn read_best_thunk_data(pe: &PE, original_first_thunk_addr: VA, first_thunk_
     let ft = read_image_thunk_data(pe, first_thunk_addr);
     let oft = read_image_thunk_data(pe, original_first_thunk_addr);
 
-    if matches!(ft, Err(_)) && matches!(oft, Err(_)) {
+    if ft.is_err() && oft.is_err() {
         // prefer the OFT errror.
         return oft;
     }
