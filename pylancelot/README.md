@@ -3,7 +3,7 @@
 ```sh
 # use a py3 virtual environment
 $ pip install maturin pytest
-$ maturin develop
+$ maturin develop --release --extras dev
 $ pytest
 ```
 

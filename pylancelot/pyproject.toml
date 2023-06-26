@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.urls]
-repository = "https://github.com/williballenthin/lancelot/tree/master/pyflirt"
+repository = "https://github.com/williballenthin/lancelot/tree/master/pylancelot"
 
 [build-system]
 requires = ["maturin>=0.13,<0.14"]
