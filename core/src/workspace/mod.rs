@@ -108,25 +108,37 @@ pub struct PEWorkspace {
 impl PEWorkspace {
     pub fn from_pe(config: Box<dyn config::Configuration>, pe: PE) -> Result<PEWorkspace> {
         let mut insns: InstructionIndex = Default::default();
-
-        let mut function_starts: BTreeSet<VA> = Default::default();
-        function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?);
-        function_starts.extend(crate::analysis::pe::exports::find_pe_exports(&pe)?);
-        function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?);
-        function_starts.extend(crate::analysis::pe::runtime_functions::find_pe_runtime_functions(&pe)?);
-        function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(&pe)?);
-
-        // heuristics:
-        // function_starts.extend(crate::analysis::pe::call_targets::
-        // find_pe_call_targets(pe)?); function_starts.extend(crate::analysis::
-        // pe::patterns::find_function_prologues(pe)?); function_starts.
-        // extend(crate::analysis::pe::pointers::
-        // find_pe_nonrelocated_executable_pointers(pe)?; TODO: only do the
-        // above searches in unrecovered regions.
+        let mut function_starts = crate::analysis::pe::find_function_starts(&pe)?;
 
         for &function in function_starts.iter() {
             insns.build_index(&pe.module, function)?;
         }
+
+        // heuristic that we trust:
+        //   - find_new_code_references: existing instruction operands that reference
+        //     likely code.
+
+        loop {
+            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&pe.module, &insns)?;
+            if new_code.is_empty() {
+                break;
+            }
+
+            for &function in new_code.iter() {
+                insns.build_index(&pe.module, function)?;
+
+                function_starts.push(function);
+                // is this the right thing to do? are these guaranteed to be
+                // functions? we can imagine SEH handlers being
+                // referenced. so: no. probably the users of the
+                // workspace will want to enumerate CFG "roots", rather than
+                // functions. but then, what about tail calls,
+                // where a function has a jump to it, therefore not a root?
+                // this is another discussion that probably shouldn't be inline
+                // here.
+            }
+        }
+
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
 
         let mut noret = crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg)?;
@@ -293,6 +305,21 @@ impl COFFWorkspace {
         for &function in function_starts.iter() {
             insns.build_index(&coff.module, function)?;
         }
+
+        loop {
+            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&coff.module, &insns)?;
+            if new_code.is_empty() {
+                break;
+            }
+
+            for &function in new_code.iter() {
+                insns.build_index(&coff.module, function)?;
+
+                // see note in PE workspace about whether this is the right idea or note.
+                function_starts.insert(function);
+            }
+        }
+
         let mut cfg = CFG::from_instructions(&coff.module, insns)?;
 
         let mut function_starts = function_starts

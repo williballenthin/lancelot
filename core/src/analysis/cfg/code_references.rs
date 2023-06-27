@@ -11,14 +11,13 @@ use crate::{
         cfg::{self, read_insn_with_cache, CachingPageReader},
         dis,
         dis::zydis::{DecodedInstruction, Decoder},
-        pe::Function,
     },
     aspace::AddressSpace,
     module::{Module, Permissions},
     VA,
 };
 
-pub fn find_pe_nonrelocated_executable_pointers(module: &Module) -> Result<Vec<VA>> {
+pub fn find_executable_pointers(module: &Module) -> Result<Vec<VA>> {
     // list of candidates: (address of pointer, address pointed to)
     let mut candidates: Vec<(VA, VA)> = vec![];
 
@@ -39,7 +38,7 @@ pub fn find_pe_nonrelocated_executable_pointers(module: &Module) -> Result<Vec<V
         let sec_buf = module.address_space.read_bytes(vstart, vsize)?;
 
         debug!(
-            "pointers: scanning section {:#x}-{:#x}",
+            "code references: scanning section {:#x}-{:#x}",
             section.virtual_range.start, section.virtual_range.end
         );
 
@@ -76,7 +75,7 @@ pub fn find_pe_nonrelocated_executable_pointers(module: &Module) -> Result<Vec<V
         .into_iter()
         .map(|(src, dst)| {
             debug!(
-                "pointers: candidate pointer: {:#x} points to valid content at {:#x}",
+                "code references: candidate pointer: {:#x} points to valid content at {:#x}",
                 src, dst
             );
             dst
@@ -300,28 +299,12 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
     }
 }
 
-pub fn find_new_code_references(module: &Module, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
+pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) -> Result<Vec<VA>> {
     let decoder = dis::get_disassembler(module)?;
     // we prefer to read via a page cache,
     // assuming that when we read instructions ordered by address,
     // fetches will often be localized within one page.
     let mut reader: CachingPageReader = Default::default();
-
-    let function_addresses: BTreeSet<VA> = existing_functions
-        .iter()
-        .flat_map(|f| match f {
-            Function::Local(va) => Some(va),
-            Function::Thunk(_) => None,
-            Function::Import(_) => None,
-        })
-        .cloned()
-        .collect();
-
-    let mut insns: cfg::InstructionIndex = Default::default();
-    for function_address in function_addresses.iter() {
-        let _ = insns.build_index(module, *function_address);
-        // don't care if this fails, just continue.
-    }
 
     let mut new_code: BTreeSet<VA> = Default::default();
     for &va in insns.insns_by_address.keys() {
@@ -366,7 +349,7 @@ pub fn find_new_code_references(module: &Module, existing_functions: Vec<Functio
 #[cfg(test)]
 mod tests {
     use crate::{
-        analysis::{cfg::code_references::*, pe::Function},
+        analysis::cfg::{code_references::*, InstructionIndex},
         rsrc::*,
     };
     use anyhow::Result;
@@ -394,13 +377,18 @@ mod tests {
         let buf = get_buf(Rsrc::DED0);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
-        let ptrs = find_pe_nonrelocated_executable_pointers(&pe.module)?;
+        let ptrs = find_executable_pointers(&pe.module)?;
         assert!(ptrs.contains(&0x4010E0));
 
-        let existing = crate::analysis::pe::find_functions(&pe)?;
-        assert!(!existing.contains(&Function::Local(0x4010E0)));
+        let existing = crate::analysis::pe::find_function_starts(&pe)?;
+        assert!(!existing.contains(&0x4010E0));
 
-        let found = find_new_code_references(&pe.module, existing)?;
+        let mut insns: InstructionIndex = Default::default();
+        for &function in existing.iter() {
+            insns.build_index(&pe.module, function)?;
+        }
+
+        let found = find_new_code_references(&pe.module, &insns)?;
         assert!(found.contains(&0x4010E0));
 
         Ok(())
