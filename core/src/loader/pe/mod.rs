@@ -122,6 +122,7 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<S
 
     //   on disk:
     //
+    // ```
     //   +---------------------------------+
     //   |   header        |  sections...  |
     //   +---------------------------------+
@@ -136,6 +137,7 @@ fn load_pe_header(buf: &[u8], pe: &goblin::pe::PE, base_address: VA) -> Result<S
     //                     |        aligned to 0x200
     //                     +-- raw size
     //                         no alignment
+    // ```
 
     let hdr_raw_size = std::cmp::min(hdr_raw_size as usize, buf.len());
     let hdr_virt_size = util::align(hdr_raw_size as u64, 0x200);
