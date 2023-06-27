@@ -222,7 +222,7 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     let mut has_uncommon_instruction = false;
     let mut mnemonics = [MnemonicDescriptor::NONE; 8];
     for (i, (offset, insn)) in dis::linear_disassemble(decoder, buf).enumerate() {
-        if buf[4 + offset] == 0x00 && buf[5 + offset] == 0x00 {
+        if let (Some(0x0), Some(0x0)) = (buf.get(offset), buf.get(offset + 1)) {
             has_zero_instruction = true;
         }
 
@@ -277,7 +277,7 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     }
 }
 
-pub fn find_functions_by_pointers(pe: &PE, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
+pub fn find_new_code_references(pe: &PE, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
     let decoder = dis::get_disassembler(&pe.module)?;
     // we prefer to read via a page cache,
     // assuming that when we read instructions ordered by address,
@@ -376,6 +376,8 @@ pub fn find_functions_by_pointers(pe: &PE, existing_functions: Vec<Function>) ->
         }
     }
 
+    // TODO: do additional passes on the newly found code
+
     Ok(new_code.into_iter().collect())
 }
 
@@ -416,7 +418,7 @@ mod tests {
         let existing = crate::analysis::pe::find_functions(&pe)?;
         assert!(!existing.contains(&Function::Local(0x4010E0)));
 
-        let found = find_functions_by_pointers(&pe, existing)?;
+        let found = find_new_code_references(&pe, existing)?;
         assert!(found.contains(&0x4010E0));
 
         Ok(())
