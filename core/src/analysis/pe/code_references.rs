@@ -111,8 +111,6 @@ enum MnemonicDescriptor {
 
 #[derive(Debug)]
 struct CodeFeatures {
-    // capped at: 255 bytes
-    size_of_basic_block:     u8,
     // when disassembling the first basic block,
     // do we encounter an invalid instruction?
     has_invalid_instruction: bool,
@@ -125,10 +123,6 @@ struct CodeFeatures {
     // when disassembling the first basic block,
     // do we encounter an instruction in the "OTHER" category?
     has_uncommon_instruction: bool,
-
-    // 8 instructions of the first basic block.
-    // categorical.
-    mnemonics: [MnemonicDescriptor; 8],
 }
 
 fn extract_mnemonic_feature(insn: &DecodedInstruction) -> MnemonicDescriptor {
@@ -269,11 +263,9 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     }
 
     CodeFeatures {
-        size_of_basic_block,
         has_invalid_instruction,
         has_zero_instruction,
         has_uncommon_instruction,
-        mnemonics,
     }
 }
 
