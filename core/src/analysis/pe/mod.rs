@@ -19,12 +19,12 @@ use std::collections::HashSet;
 
 #[cfg(feature = "disassembler")]
 pub mod call_targets;
+pub mod code_references;
 pub mod control_flow_guard;
 pub mod entrypoints;
 pub mod exports;
 pub mod patterns;
 pub mod pointers;
-pub mod rf_code_references;
 pub mod runtime_functions;
 pub mod safeseh;
 

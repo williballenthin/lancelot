@@ -1,21 +1,15 @@
-//! Train a machine learning model on the functions that are currently known.
-//! Then search for pointers to functions that may not yet be known,
-//! using the machine learning model to score and accept/reject those
-//! candidates.
-use std::{collections::BTreeSet, vec};
+//! This is a heuristic that inspects operands to existing instructions
+//! for references to likely code.
+use std::{collections::BTreeSet, ops::Not, vec};
 
 use anyhow::Result;
 use byteorder::ByteOrder;
 use log::debug;
-use rand::RngCore;
-use smartcore::{
-    ensemble::random_forest_classifier::{RandomForestClassifier, RandomForestClassifierParameters},
-    model_selection::train_test_split,
-};
 
 use crate::{
     analysis::{
-        cfg, dis,
+        cfg::{self, read_insn_with_cache, CachingPageReader},
+        dis,
         dis::zydis::{DecodedInstruction, Decoder},
         pe::Function,
     },
@@ -89,38 +83,9 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
             );
             dst
         })
+        .collect::<BTreeSet<VA>>()
+        .into_iter()
         .collect())
-}
-
-#[derive(Clone, Copy)]
-struct RandomData {
-    data: [u8; 260],
-}
-
-impl Default for RandomData {
-    fn default() -> Self {
-        let mut data = [0u8; 260];
-        rand::thread_rng().fill_bytes(&mut data);
-        RandomData { data }
-    }
-}
-
-// padding values, from: https://gist.github.com/stevemk14ebr/d117e8d0fd1432fb2a92354a034ce5b9
-#[derive(Clone, Copy, Debug)]
-enum ByteDescriptor {
-    /// value is not present, such as beyond the bounds of the section.
-    NONE  = 1,
-    /// 0x90, NOP
-    NOP   = 2,
-    /// 0xCC, breakpoint
-    CC    = 3,
-    /// 0x00
-    ZERO  = 4,
-    /// ret, retf, retn
-    /// 0xC3, 0xC2, 0xCA, 0xCB
-    RET   = 5,
-    // anything else
-    OTHER = 6,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -152,54 +117,18 @@ struct CodeFeatures {
     // do we encounter an invalid instruction?
     has_invalid_instruction: bool,
 
-    // 4 bytes before the candidate address.
-    // categorical.
-    prebytes: [ByteDescriptor; 4],
+    // when disassembling the first basic block,
+    // do we encounter the instruction representated by
+    // 00 00: add    BYTE PTR [eax],al?
+    has_zero_instruction: bool,
+
+    // when disassembling the first basic block,
+    // do we encounter an instruction in the "OTHER" category?
+    has_uncommon_instruction: bool,
 
     // 8 instructions of the first basic block.
     // categorical.
     mnemonics: [MnemonicDescriptor; 8],
-}
-
-impl CodeFeatures {
-    fn to_feature_vec(&self) -> Vec<u8> {
-        let mut features = vec![];
-
-        features.push(self.size_of_basic_block);
-        features.push(self.has_invalid_instruction as u8);
-
-        for prebyte in self.prebytes.iter() {
-            features.push(*prebyte as u8);
-        }
-
-        for mnemonic in self.mnemonics.iter() {
-            features.push(*mnemonic as u8);
-        }
-
-        features
-    }
-
-    // indices of feature_vec that contain categorical values.
-    const fn cat_idx() -> [usize; 8] {
-        return [
-            // 0: size_of_basic_block
-            // 1: has_invalid_instruction
-
-            // prebytes
-            2, 3, 4, 5, // mnemonics
-            6, 7, 8, 9,
-        ];
-    }
-}
-
-fn extract_prebyte_feature(byte: u8) -> ByteDescriptor {
-    match byte {
-        0x90 => ByteDescriptor::NOP,
-        0xCC => ByteDescriptor::CC,
-        0x00 => ByteDescriptor::ZERO,
-        0xC3 | 0xC2 | 0xCA | 0xCB => ByteDescriptor::RET,
-        _ => ByteDescriptor::OTHER,
-    }
 }
 
 fn extract_mnemonic_feature(insn: &DecodedInstruction) -> MnemonicDescriptor {
@@ -284,26 +213,29 @@ fn extract_mnemonic_feature(insn: &DecodedInstruction) -> MnemonicDescriptor {
     }
 }
 
-fn extract_features_for_data(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
-    assert!(buf.len() >= 260);
-
-    let prebytes4 = extract_prebyte_feature(buf[0]);
-    let prebytes3 = extract_prebyte_feature(buf[1]);
-    let prebytes2 = extract_prebyte_feature(buf[2]);
-    let prebytes1 = extract_prebyte_feature(buf[3]);
-
-    let prebytes = [prebytes4, prebytes3, prebytes2, prebytes1];
+fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
+    assert!(buf.len() >= 256);
 
     let mut size_of_basic_block = 0u8;
     let mut has_invalid_instruction = false;
+    let mut has_zero_instruction = false;
+    let mut has_uncommon_instruction = false;
     let mut mnemonics = [MnemonicDescriptor::NONE; 8];
-    for (i, (offset, insn)) in dis::linear_disassemble(&decoder, &buf[4..260]).enumerate() {
+    for (i, (offset, insn)) in dis::linear_disassemble(decoder, buf).enumerate() {
+        if buf[4 + offset] == 0x00 && buf[5 + offset] == 0x00 {
+            has_zero_instruction = true;
+        }
+
         if let Ok(Some(insn)) = insn {
-            size_of_basic_block = size_of_basic_block.saturating_add(insn.length as u8);
+            size_of_basic_block = size_of_basic_block.saturating_add(insn.length);
 
             let mnem = extract_mnemonic_feature(&insn);
             if i < 8 {
                 mnemonics[i] = mnem;
+            }
+
+            if matches!(mnem, MnemonicDescriptor::OTHER) {
+                has_uncommon_instruction = true;
             }
 
             if matches!(
@@ -337,26 +269,20 @@ fn extract_features_for_data(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     }
 
     CodeFeatures {
-        prebytes,
         size_of_basic_block,
         has_invalid_instruction,
+        has_zero_instruction,
+        has_uncommon_instruction,
         mnemonics,
     }
 }
 
 pub fn find_functions_by_pointers(pe: &PE, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
     let decoder = dis::get_disassembler(&pe.module)?;
-
-    let RANDOM_SAMPLES = 1000;
-    let SUCCESSOR_SAMPLES = 0;
-
-    let random_samples = (0..RANDOM_SAMPLES)
-        .map(|_| RandomData::default())
-        .map(|data| extract_features_for_data(&decoder, &data.data))
-        .collect::<Vec<_>>();
-
-    // this is code that isn't found at the start of a function
-    let mut successor_samples: Vec<CodeFeatures> = Default::default();
+    // we prefer to read via a page cache,
+    // assuming that when we read instructions ordered by address,
+    // fetches will often be localized within one page.
+    let mut reader: CachingPageReader = Default::default();
 
     let function_addresses: BTreeSet<VA> = existing_functions
         .iter()
@@ -368,138 +294,95 @@ pub fn find_functions_by_pointers(pe: &PE, existing_functions: Vec<Function>) ->
         .cloned()
         .collect();
 
-    let mut function_samples: Vec<CodeFeatures> = Default::default();
-    for function_address in function_addresses.iter() {
-        let buf = pe.module.address_space.read_bytes(function_address - 4, 260);
-        let buf = match buf {
-            Ok(buf) => buf,
-            Err(_) => continue,
-        };
-
-        let features = extract_features_for_data(&decoder, &buf);
-
-        //debug!("features: {:?}", features);
-        function_samples.push(features);
-    }
-
     let mut insns: cfg::InstructionIndex = Default::default();
     for function_address in function_addresses.iter() {
-        if let Err(_) = insns.build_index(&pe.module, *function_address) {
-            continue;
+        let _ = insns.build_index(&pe.module, *function_address);
+        // don't care if this fails, just continue.
+    }
+
+    let mut new_code: BTreeSet<VA> = Default::default();
+    for &va in insns.insns_by_address.keys() {
+        if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &pe.module.address_space, va, &decoder) {
+            for op in insn
+                .operands
+                .iter()
+                .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
+                .take(3)
+            {
+                if let Ok(Some(xref)) = dis::get_operand_xref(&pe.module, va, &insn, op) {
+                    let target = match xref {
+                        dis::Target::Direct(target) => target,
+                        dis::Target::Indirect(target) => target,
+                    };
+
+                    if insns.insns_by_address.contains_key(&target) {
+                        // this is already code.
+                        continue;
+                    }
+
+                    if pe.module.probe_va(target, Permissions::X).not() {
+                        // this is not code because its not executable.
+                        continue;
+                    }
+
+                    // we could ensure the target is not being written to,
+                    // by inspecting the mnemonic and operand index,
+                    // although with W^X, we don't expect it to be both executable and writable.
+
+                    fn is_pointer(pe: &PE, va: VA) -> bool {
+                        match pe.module.read_va_at_va(va) {
+                            Ok(dst) => pe.module.probe_va(dst, Permissions::R),
+                            Err(_) => false,
+                        }
+                    }
+
+                    // the given address contains a pointer, as does the previous or next address.
+                    fn is_pointer_table(pe: &PE, va: VA) -> bool {
+                        let psize = pe.module.arch.pointer_size();
+                        is_pointer(pe, va) && (is_pointer(pe, va + psize as u64) || is_pointer(pe, va - psize as u64))
+                    }
+
+                    if is_pointer_table(pe, target) {
+                        // this is a pointer table, not code.
+                        continue;
+                    }
+
+                    if let Ok(buf) = pe.module.address_space.read_bytes(target, 256) {
+                        let features = extract_code_features(&decoder, &buf);
+
+                        if features.has_invalid_instruction {
+                            continue;
+                        }
+
+                        if features.has_zero_instruction {
+                            continue;
+                        }
+
+                        if features.has_uncommon_instruction {
+                            continue;
+                        }
+
+                        // finally, we think we have some new code.
+                        log::debug!("code references: found new code at {:#x}", target);
+                        new_code.insert(target);
+                    } else {
+                        // is there something else we could do here?
+                        // i think the scenario is: the region is right at the end of the section/file,
+                        // so there aren't 256 bytes to read.
+                        continue;
+                    }
+                }
+            }
         }
     }
 
-    if let Ok(cfg) = cfg::CFG::from_instructions(&pe.module, insns) {
-        for bb in cfg.basic_blocks.blocks_by_address.values() {
-            if function_addresses.contains(&bb.address) {
-                // don't consider the function entry as a negative case
-                continue;
-            }
-
-            let buf = pe.module.address_space.read_bytes(bb.address - 4, 260);
-            let buf = match buf {
-                Ok(buf) => buf,
-                Err(_) => continue,
-            };
-
-            let features = extract_features_for_data(&decoder, &buf);
-
-            //debug!("features: {:?}", features);
-            successor_samples.push(features);
-
-            if successor_samples.len() >= SUCCESSOR_SAMPLES {
-                break;
-            }
-        }
-    }
-
-    use smartcore::{
-        linalg::basic::matrix::DenseMatrix,
-        preprocessing::categorical::{OneHotEncoder, OneHotEncoderParams},
-    };
-
-    let mut data: Vec<Vec<f32>> = Default::default();
-
-    log::info!("function_samples: {}", function_samples.len());
-    data.extend(
-        function_samples
-            .iter()
-            .map(|features| features.to_feature_vec().iter().map(|&v| v as f32).collect()),
-    );
-
-    log::info!("random_samples: {}", random_samples.len());
-    data.extend(
-        random_samples
-            .iter()
-            .map(|features| features.to_feature_vec().iter().map(|&v| v as f32).collect()),
-    );
-
-    log::info!("successor_samples: {}", successor_samples.len());
-    data.extend(
-        successor_samples
-            .iter()
-            .map(|features| features.to_feature_vec().iter().map(|&v| v as f32).collect()),
-    );
-
-    let x = DenseMatrix::from_2d_vec(&data);
-
-    let encoder_params = OneHotEncoderParams::from_cat_idx(&CodeFeatures::cat_idx());
-    // Infer number of categories from data and return a reusable encoder
-    let encoder = OneHotEncoder::fit(&x, encoder_params).expect("failed to fit encoder");
-    // Transform categorical to one-hot encoded (can transform similar)
-    let oh_x = encoder
-        .transform(&x)
-        .expect("failed to transform categorical variables");
-
-    let mut y: Vec<u8> = Default::default();
-    for _ in 0..function_samples.len() {
-        y.push(1);
-    }
-    for _ in 0..random_samples.len() {
-        y.push(0);
-    }
-    for _ in 0..successor_samples.len() {
-        y.push(0);
-    }
-
-    let (x_train, x_test, y_train, y_test) = train_test_split(&oh_x, &y, 0.2, true, None);
-
-    let classifier = RandomForestClassifier::fit(
-        &x_train,
-        &y_train,
-        RandomForestClassifierParameters::default()
-            //.with_max_depth(4)
-            .with_n_trees(2_000),
-    )
-    .expect("failed to train model");
-
-    let y_hat = classifier.predict(&x_test).expect("failed to predict");
-
-    {
-        use smartcore::metrics::{ClassificationMetrics, Metrics};
-
-        let y_test = y_test.iter().map(|&v| v as f32).collect::<Vec<_>>();
-        let y_hat = y_hat.iter().map(|&v| v as f32).collect::<Vec<_>>();
-
-        log::info!(
-            "precision: {}",
-            ClassificationMetrics::precision().get_score(&y_test, &y_hat)
-        );
-        log::info!("recall: {}", ClassificationMetrics::recall().get_score(&y_test, &y_hat));
-        log::info!("f1: {}", ClassificationMetrics::f1(1.0).get_score(&y_test, &y_hat));
-        log::info!(
-            "auc: {}",
-            ClassificationMetrics::roc_auc_score().get_score(&y_test, &y_hat)
-        );
-    }
-
-    Ok(vec![])
+    Ok(new_code.into_iter().collect())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        analysis::pe::{rf_code_references::*, Function},
+        analysis::pe::{code_references::*, Function},
         rsrc::*,
     };
     use anyhow::Result;
