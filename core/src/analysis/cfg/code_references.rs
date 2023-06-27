@@ -372,8 +372,6 @@ mod tests {
         // push    eax
         // call    ??_L@YGXPAXIHP6EX0@Z1@Z ;
         // ```
-        crate::test::init_logging();
-
         let buf = get_buf(Rsrc::DED0);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 

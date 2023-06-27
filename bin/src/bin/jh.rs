@@ -564,7 +564,8 @@ mod tests {
         Ok(())
     }
 
-    pub fn init_logging() {
+    // duplicated from core/src/test.rs
+    pub fn _init_logging() {
         let log_level = log::LevelFilter::Debug;
         fern::Dispatch::new()
             .format(move |out, message, record| {
@@ -611,7 +612,7 @@ mod tests {
     fn coff_from_mfcm140() -> Result<()> {
         // MFCM140.lib contains objects with an unknown Symbol type
         // issue #182
-        init_logging();
+        //init_logging();
 
         let buf = get_buf("MFCM140.lib");
         let config = lancelot::workspace::config::empty();
