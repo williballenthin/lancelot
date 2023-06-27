@@ -92,7 +92,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
 enum MnemonicDescriptor {
     /// value is not present, such as beyond the bounds of the section or basic
     /// block.
-    NONE    = 1,
+    _NONE   = 1,
     PUSH    = 2,
     POP     = 3,
     MOV     = 4,
@@ -105,8 +105,6 @@ enum MnemonicDescriptor {
     /// add, sub, xor, mul, div, etc.
     ARITH   = 11,
     OTHER   = 12,
-    /// failed to decode
-    INVALID = 13,
 }
 
 #[derive(Debug)]
@@ -210,23 +208,16 @@ fn extract_mnemonic_feature(insn: &DecodedInstruction) -> MnemonicDescriptor {
 fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     assert!(buf.len() >= 256);
 
-    let mut size_of_basic_block = 0u8;
     let mut has_invalid_instruction = false;
     let mut has_zero_instruction = false;
     let mut has_uncommon_instruction = false;
-    let mut mnemonics = [MnemonicDescriptor::NONE; 8];
-    for (i, (offset, insn)) in dis::linear_disassemble(decoder, buf).enumerate() {
+    for (offset, insn) in dis::linear_disassemble(decoder, buf) {
         if let (Some(0x0), Some(0x0)) = (buf.get(offset), buf.get(offset + 1)) {
             has_zero_instruction = true;
         }
 
         if let Ok(Some(insn)) = insn {
-            size_of_basic_block = size_of_basic_block.saturating_add(insn.length);
-
             let mnem = extract_mnemonic_feature(&insn);
-            if i < 8 {
-                mnemonics[i] = mnem;
-            }
 
             if matches!(mnem, MnemonicDescriptor::OTHER) {
                 has_uncommon_instruction = true;
@@ -239,17 +230,7 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
                 // end of basic block
                 break;
             };
-
-            if size_of_basic_block == u8::MAX {
-                // we've reached the maximum size of a basic block.
-                // we're not recording instructions beyond this, anyways.
-                break;
-            }
         } else {
-            if i < 8 {
-                mnemonics[i] = MnemonicDescriptor::INVALID;
-            }
-
             if offset < 256 - 0x10 {
                 has_invalid_instruction = true;
             } else {
