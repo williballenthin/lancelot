@@ -14,38 +14,36 @@ use crate::{
         pe::Function,
     },
     aspace::AddressSpace,
-    loader::pe::PE,
-    module::Permissions,
+    module::{Module, Permissions},
     VA,
 };
 
-pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
+pub fn find_pe_nonrelocated_executable_pointers(module: &Module) -> Result<Vec<VA>> {
     // list of candidates: (address of pointer, address pointed to)
     let mut candidates: Vec<(VA, VA)> = vec![];
 
-    let min_addr = pe.module.address_space.base_address;
-    let max_addr = pe
-        .module
+    let min_addr = module.address_space.base_address;
+    let max_addr = module
         .sections
         .iter()
         .map(|section| section.virtual_range.end)
         .max()
         .unwrap();
 
-    // look for hardcoded pointers into the executable section of the PE.
+    // look for hardcoded pointers into the executable section of the module.
     // note: this often finds jump tables, too. more filtering is below.
     // note: also finds many exception handlers. see filtering below.
-    for section in pe.module.sections.iter() {
+    for section in module.sections.iter() {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
-        let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
+        let sec_buf = module.address_space.read_bytes(vstart, vsize)?;
 
         debug!(
             "pointers: scanning section {:#x}-{:#x}",
             section.virtual_range.start, section.virtual_range.end
         );
 
-        if let crate::arch::Arch::X64 = pe.module.arch {
+        if let crate::arch::Arch::X64 = module.arch {
             candidates.extend(
                 sec_buf
                     // using windows for unaligned pointers,
@@ -55,7 +53,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                     .enumerate()
                     // naive range filter that is very fast
                     .filter(|&(_, va)| va >= min_addr && va < max_addr)
-                    .filter(|&(_, va)| pe.module.probe_va(va, Permissions::X))
+                    .filter(|&(_, va)| module.probe_va(va, Permissions::X))
                     .map(|(i, va)| (vstart + (i as u64), va)),
             )
         } else {
@@ -68,7 +66,7 @@ pub fn find_pe_nonrelocated_executable_pointers(pe: &PE) -> Result<Vec<VA>> {
                     .enumerate()
                     // naive range filter that is very fast
                     .filter(|&(_, va)| va >= min_addr && va < max_addr)
-                    .filter(|&(_, va)| pe.module.probe_va(va, Permissions::X))
+                    .filter(|&(_, va)| module.probe_va(va, Permissions::X))
                     .map(|(i, va)| (vstart + (i as u64), va)),
             )
         }
@@ -250,8 +248,60 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     }
 }
 
-pub fn find_new_code_references(pe: &PE, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
-    let decoder = dis::get_disassembler(&pe.module)?;
+pub fn is_pointer(module: &Module, va: VA) -> bool {
+    match module.read_va_at_va(va) {
+        Ok(dst) => module.probe_va(dst, Permissions::R),
+        Err(_) => false,
+    }
+}
+
+// the given address contains a pointer, as does the previous or next address.
+pub fn is_pointer_table(module: &Module, va: VA) -> bool {
+    let psize = module.arch.pointer_size();
+    is_pointer(module, va) && (is_pointer(module, va + psize as u64) || is_pointer(module, va - psize as u64))
+}
+
+pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
+    if module.probe_va(va, Permissions::X).not() {
+        // this is not code because its not executable.
+        return false;
+    }
+
+    // we could ensure the target is not being written to,
+    // by inspecting the mnemonic and operand index,
+    // although with W^X, we don't expect it to be both executable and writable.
+
+    if is_pointer_table(module, va) {
+        // this is a pointer table, not code.
+        return false;
+    }
+
+    if let Ok(buf) = module.address_space.read_bytes(va, 256) {
+        let features = extract_code_features(decoder, &buf);
+
+        if features.has_invalid_instruction {
+            return false;
+        }
+
+        if features.has_zero_instruction {
+            return false;
+        }
+
+        if features.has_uncommon_instruction {
+            return false;
+        }
+
+        true
+    } else {
+        // is there something else we could do here?
+        // i think the scenario is: the region is right at the end of the section/file,
+        // so there aren't 256 bytes to read.
+        false
+    }
+}
+
+pub fn find_new_code_references(module: &Module, existing_functions: Vec<Function>) -> Result<Vec<VA>> {
+    let decoder = dis::get_disassembler(module)?;
     // we prefer to read via a page cache,
     // assuming that when we read instructions ordered by address,
     // fetches will often be localized within one page.
@@ -269,20 +319,20 @@ pub fn find_new_code_references(pe: &PE, existing_functions: Vec<Function>) -> R
 
     let mut insns: cfg::InstructionIndex = Default::default();
     for function_address in function_addresses.iter() {
-        let _ = insns.build_index(&pe.module, *function_address);
+        let _ = insns.build_index(module, *function_address);
         // don't care if this fails, just continue.
     }
 
     let mut new_code: BTreeSet<VA> = Default::default();
     for &va in insns.insns_by_address.keys() {
-        if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &pe.module.address_space, va, &decoder) {
+        if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
             for op in insn
                 .operands
                 .iter()
                 .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
                 .take(3)
             {
-                if let Ok(Some(xref)) = dis::get_operand_xref(&pe.module, va, &insn, op) {
+                if let Ok(Some(xref)) = dis::get_operand_xref(module, va, &insn, op) {
                     let target = match xref {
                         dis::Target::Direct(target) => target,
                         dis::Target::Indirect(target) => target,
@@ -293,56 +343,15 @@ pub fn find_new_code_references(pe: &PE, existing_functions: Vec<Function>) -> R
                         continue;
                     }
 
-                    if pe.module.probe_va(target, Permissions::X).not() {
+                    if module.probe_va(target, Permissions::X).not() {
                         // this is not code because its not executable.
                         continue;
                     }
 
-                    // we could ensure the target is not being written to,
-                    // by inspecting the mnemonic and operand index,
-                    // although with W^X, we don't expect it to be both executable and writable.
-
-                    fn is_pointer(pe: &PE, va: VA) -> bool {
-                        match pe.module.read_va_at_va(va) {
-                            Ok(dst) => pe.module.probe_va(dst, Permissions::R),
-                            Err(_) => false,
-                        }
-                    }
-
-                    // the given address contains a pointer, as does the previous or next address.
-                    fn is_pointer_table(pe: &PE, va: VA) -> bool {
-                        let psize = pe.module.arch.pointer_size();
-                        is_pointer(pe, va) && (is_pointer(pe, va + psize as u64) || is_pointer(pe, va - psize as u64))
-                    }
-
-                    if is_pointer_table(pe, target) {
-                        // this is a pointer table, not code.
-                        continue;
-                    }
-
-                    if let Ok(buf) = pe.module.address_space.read_bytes(target, 256) {
-                        let features = extract_code_features(&decoder, &buf);
-
-                        if features.has_invalid_instruction {
-                            continue;
-                        }
-
-                        if features.has_zero_instruction {
-                            continue;
-                        }
-
-                        if features.has_uncommon_instruction {
-                            continue;
-                        }
-
+                    if is_probably_code(module, &decoder, target) {
                         // finally, we think we have some new code.
                         log::debug!("code references: found new code at {:#x}", target);
                         new_code.insert(target);
-                    } else {
-                        // is there something else we could do here?
-                        // i think the scenario is: the region is right at the end of the section/file,
-                        // so there aren't 256 bytes to read.
-                        continue;
                     }
                 }
             }
@@ -357,7 +366,7 @@ pub fn find_new_code_references(pe: &PE, existing_functions: Vec<Function>) -> R
 #[cfg(test)]
 mod tests {
     use crate::{
-        analysis::pe::{code_references::*, Function},
+        analysis::{cfg::code_references::*, pe::Function},
         rsrc::*,
     };
     use anyhow::Result;
@@ -385,13 +394,13 @@ mod tests {
         let buf = get_buf(Rsrc::DED0);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
-        let ptrs = find_pe_nonrelocated_executable_pointers(&pe)?;
+        let ptrs = find_pe_nonrelocated_executable_pointers(&pe.module)?;
         assert!(ptrs.contains(&0x4010E0));
 
         let existing = crate::analysis::pe::find_functions(&pe)?;
         assert!(!existing.contains(&Function::Local(0x4010E0)));
 
-        let found = find_new_code_references(&pe, existing)?;
+        let found = find_new_code_references(&pe.module, existing)?;
         assert!(found.contains(&0x4010E0));
 
         Ok(())

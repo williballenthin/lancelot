@@ -19,7 +19,6 @@ use std::collections::HashSet;
 
 #[cfg(feature = "disassembler")]
 pub mod call_targets;
-pub mod code_references;
 pub mod control_flow_guard;
 pub mod entrypoints;
 pub mod exports;

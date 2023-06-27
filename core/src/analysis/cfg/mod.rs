@@ -7,6 +7,7 @@ use anyhow::Result;
 
 pub mod flow;
 
+pub mod code_references;
 pub mod noret;
 pub mod thunk;
 
