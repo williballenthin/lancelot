@@ -24,6 +24,7 @@ pub mod entrypoints;
 pub mod exports;
 pub mod patterns;
 pub mod pointers;
+pub mod rf_code_references;
 pub mod runtime_functions;
 pub mod safeseh;
 

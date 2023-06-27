@@ -28,6 +28,8 @@ pub enum Rsrc {
     _1MFCM140,
     /// COFF file from MFCM140
     POSTDLLMAIN,
+    /// EXE malware sample from VT
+    DED0,
 }
 
 /// Fetch the file system name of the given resource.
@@ -44,6 +46,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::MFCM140 => String::from("MFCM140.lib"),
         Rsrc::_1MFCM140 => String::from("1.MFCM140.dll"),
         Rsrc::POSTDLLMAIN => String::from("postdllmain.obj"),
+        Rsrc::DED0 => String::from("ded0ee29af97496f27d810f6c16d78a3031d8c2193d5d2a87355f3e3ca58f9b3"),
     }
 }
 
@@ -61,7 +64,7 @@ pub fn get_buf(rsrc: Rsrc) -> Vec<u8> {
     let path = get_path(rsrc);
     let mut buf = util::read_file(&path).unwrap();
     match rsrc {
-        Rsrc::K32 => {
+        Rsrc::K32 | Rsrc::DED0 => {
             // deobfuscate the MZ header
             buf[0] = b'M';
             buf[1] = b'Z';

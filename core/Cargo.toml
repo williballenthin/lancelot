@@ -38,6 +38,10 @@ bitvec = { version = "1", optional = true }
 # needed for flirt
 lancelot-flirt = { path = "../flirt", version = "0.8.7", optional = true}
 
+# needed for RF scoring
+rand = "0.8"
+smartcore = "0.3"
+
 [dev-dependencies]
 criterion = "0.4"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
