@@ -32,10 +32,10 @@ pub struct InstructionIndex {
     pub insns_by_address: BTreeMap<VA, InstructionDescriptor>,
 }
 
-const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE: usize = 0x1000;
 const PAGE_MASK: u64 = 0xFFF;
 
-struct CachingPageReader {
+pub struct CachingPageReader {
     page:         [u8; PAGE_SIZE],
     page_address: VA,
 }
@@ -52,7 +52,7 @@ impl Default for CachingPageReader {
 }
 
 impl CachingPageReader {
-    fn read(&mut self, address_space: &AbsoluteAddressSpace, va: VA) -> Result<&[u8; PAGE_SIZE]> {
+    pub fn read(&mut self, address_space: &AbsoluteAddressSpace, va: VA) -> Result<&[u8; PAGE_SIZE]> {
         // mask off the bottom 12 bits
         let page_address = va & 0xFFFF_FFFF_FFFF_F000;
 
@@ -64,6 +64,39 @@ impl CachingPageReader {
         self.page_address = page_address;
 
         Ok(&self.page)
+    }
+}
+
+pub fn read_insn_with_cache(
+    reader: &mut CachingPageReader,
+    address_space: &AbsoluteAddressSpace,
+    va: VA,
+    decoder: &zydis::Decoder,
+) -> Result<Option<zydis::DecodedInstruction>> {
+    if va & 0xFFFF_FFFF_FFFF_F000 <= (PAGE_SIZE - 0x10) as u64 {
+        // common case: instruction doesn't split two pages (max insn size: 0x10).
+        //
+        // so we read from the page cache, which we expect to be pretty fast.
+        let page = reader.read(address_space, va)?;
+        let insn_buf = &page[(va & PAGE_MASK) as usize..];
+        match decoder.decode(insn_buf) {
+            Ok(i) => Ok(i),
+            Err(e) => Err(e.into()),
+        }
+    } else {
+        // uncommon case: potentially valid instruction that splits two pages.
+        // so, we'll read 0x10 bytes across the two pages,
+        // and try to decode again.
+        //
+        // we expect this to be a bit slower, because:
+        //   1. we have read from two pages, and
+        //   2. we have to reach into the address space, which isn't free.
+        let mut insn_buf = [0u8; 0x10];
+        address_space.read_into(va, &mut insn_buf)?;
+        match decoder.decode(&insn_buf) {
+            Ok(i) => Ok(i),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -93,36 +126,7 @@ impl InstructionIndex {
                 continue;
             }
 
-            let maybe_insn = if va & 0xFFFF_FFFF_FFFF_F000 <= (PAGE_SIZE - 0x10) as u64 {
-                // common case: instruction doesn't split two pages (max insn size: 0x10).
-                //
-                // so we read from the page cache, which we expect to be pretty fast.
-                let page = match reader.read(&module.address_space, va) {
-                    Ok(page) => page,
-                    Err(e) => {
-                        log::warn!("cfg: failed to read instruction: {:#x}: invalid page: {:#x?}", va, e);
-                        continue;
-                    }
-                };
-                let insn_buf = &page[(va & PAGE_MASK) as usize..];
-                decoder.decode(insn_buf)
-            } else {
-                // uncommon case: potentially valid instruction that splits two pages.
-                // so, we'll read 0x10 bytes across the two pages,
-                // and try to decode again.
-                //
-                // we expect this to be a bit slower, because:
-                //   1. we have read from two pages, and
-                //   2. we have to reach into the address space, which isn't free.
-                let mut insn_buf = [0u8; 0x10];
-                if let Err(e) = module.address_space.read_into(va, &mut insn_buf) {
-                    log::warn!("cfg: failed to read instruction: {:#x}: invalid address: {:#x?}", va, e);
-                    continue;
-                };
-                decoder.decode(&insn_buf)
-            };
-
-            let insn = match maybe_insn {
+            let insn = match read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
                 Ok(Some(insn)) => {
                     // common happy case: valid instruction that doesn't split two pages.
                     insn
