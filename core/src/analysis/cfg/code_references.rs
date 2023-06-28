@@ -94,12 +94,7 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
     let mut new_code: BTreeSet<VA> = Default::default();
     for &va in insns.insns_by_address.keys() {
         if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
-            for op in insn
-                .operands
-                .iter()
-                .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
-                .take(3)
-            {
+            for op in dis::get_operands(&insn) {
                 if let Ok(Some(xref)) = dis::get_operand_xref(module, va, &insn, op) {
                     let target = match xref {
                         dis::Target::Direct(target) => target,

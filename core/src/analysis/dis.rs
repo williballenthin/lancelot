@@ -130,13 +130,19 @@ fn print_op(_op: &zydis::DecodedOperand) {
     //}
 }
 
+pub fn get_operands(insn: &zydis::DecodedInstruction) -> impl Iterator<Item = &zydis::DecodedOperand> + '_ {
+    insn.operands
+        .iter()
+        // explicit operands are guaranteed to be first:
+        // https://github.com/zyantific/zydis/blob/6a17c48576e1b016ce098c4bdbd001a1403b6a0a/include/Zydis/DecoderTypes.h#L1005-L1007
+        .take_while(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
+}
+
 /// zydis supports implicit operands,
 /// which we don't currently use in our analysis.
 /// so, fetch the first explicit operand to an instruction.
 pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::DecodedOperand> {
-    insn.operands
-        .iter()
-        .find(|op| op.visibility == zydis::OperandVisibility::EXPLICIT)
+    get_operands(insn).next()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -67,12 +67,7 @@ fn extract_insn_features(
 
     // numbers
     {
-        for op in insn
-            .operands
-            .iter()
-            .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
-            .take(3)
-        {
+        for op in dis::get_operands(insn) {
             if is_jump(insn) {
                 continue;
             }
@@ -140,12 +135,7 @@ fn extract_insn_features(
 
     // strings
     {
-        for op in insn
-            .operands
-            .iter()
-            .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
-            .take(3)
-        {
+        for op in dis::get_operands(insn) {
             if is_jump(insn) {
                 continue;
             }
@@ -185,12 +175,7 @@ fn extract_insn_features(
     {
         // JMP for tail calls
         if matches!(insn.mnemonic, dis::zydis::Mnemonic::CALL | dis::zydis::Mnemonic::JMP) {
-            for op in insn
-                .operands
-                .iter()
-                .filter(|op| op.visibility == dis::zydis::OperandVisibility::EXPLICIT)
-                .take(1)
-            {
+            for op in dis::get_operands(insn).take(1) {
                 let x = match get_operand_xref(ws.module(), va, insn, op) {
                     Err(_) => continue,
                     Ok(None) => continue,

@@ -51,14 +51,9 @@ fn guess_reference_target(
 
         if module.address_space.read_into(candidate_insn_va, &mut insn_buf).is_ok() {
             if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
-                let explicit_operands = insn
-                    .operands
-                    .iter()
-                    .filter(|op| matches!(op.visibility, zydis::OperandVisibility::EXPLICIT));
-
                 // we assume the pointer will be found in the first two explicit operands,
                 // which works well for x86.
-                for (j, op) in explicit_operands.take(2).enumerate() {
+                for (j, op) in dis::get_operands(&insn).take(2).enumerate() {
                     match op.ty {
                         zydis::OperandType::MEMORY => {
                             if (op.mem.base == zydis::Register::NONE || op.mem.base == zydis::Register::RIP)
