@@ -239,20 +239,20 @@ pub struct BasicBlockIndex {
 // lets call an "edge" a flow that you'd see in IDA;
 // that is, not a call flow or cmov, but a jump/fallthrough/etc.
 
-fn edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(flows.iter().filter(|flow| !matches!(flow, Flow::Call(_))))
+fn edges(flows: &Flows) -> impl Iterator<Item = &Flow> + '_ {
+    flows.iter().filter(|flow| !matches!(flow, Flow::Call(_)))
 }
 
-fn fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(edges(flows).filter(|flow| matches!(flow, Flow::Fallthrough(_))))
+fn fallthrough_edges(flows: &Flows) -> impl Iterator<Item = &Flow> + '_ {
+    edges(flows).filter(|flow| matches!(flow, Flow::Fallthrough(_)))
 }
 
-fn non_fallthrough_edges<'a>(flows: &'a Flows) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(edges(flows).filter(|flow| !matches!(flow, Flow::Fallthrough(_))))
+fn non_fallthrough_edges(flows: &Flows) -> impl Iterator<Item = &Flow> + '_ {
+    edges(flows).filter(|flow| !matches!(flow, Flow::Fallthrough(_)))
 }
 
-fn direct_edges<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Iterator<Item = &'a Flow> + 'a> {
-    Box::new(i.filter(|f| match f {
+fn direct_edges<'a>(i: impl Iterator<Item = &'a Flow> + 'a) -> impl Iterator<Item = &'a Flow> + 'a {
+    i.filter(|f| match f {
         // direct
         Flow::Fallthrough(_) => true,
         Flow::Call(Target::Direct(_)) => true,
@@ -261,13 +261,13 @@ fn direct_edges<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Itera
         // indirect
         Flow::Call(Target::Indirect(_)) => false,
         Flow::UnconditionalJump(Target::Indirect(_)) => false,
-    }))
+    })
 }
 
 // careful, don't treat direct and indirect edges the same!
 // probably filter to direct or indirect edges first.
-fn edge_targets<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Iterator<Item = VA> + 'a> {
-    Box::new(i.map(|f| match f {
+fn edge_targets<'a>(i: impl Iterator<Item = &'a Flow> + 'a) -> impl Iterator<Item = VA> + 'a {
+    i.map(|f| match f {
         // direct
         Flow::Fallthrough(va) => *va,
         Flow::Call(Target::Direct(va)) => *va,
@@ -276,10 +276,10 @@ fn edge_targets<'a>(i: Box<dyn Iterator<Item = &'a Flow> + 'a>) -> Box<dyn Itera
         // indirect
         Flow::Call(Target::Indirect(ptr)) => *ptr,
         Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
-    }))
+    })
 }
 
-fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
+fn empty<'a, T>(mut i: impl Iterator<Item = T> + 'a) -> bool {
     i.next().is_none()
 }
 
@@ -287,12 +287,12 @@ fn empty<'a, T>(mut i: Box<dyn Iterator<Item = T> + 'a>) -> bool {
 fn iter_insn_flows<'a>(
     insns: &'a InstructionIndex,
     flows: &'a FlowIndex,
-) -> Box<dyn Iterator<Item = (VA, &'a InstructionDescriptor, &'a Flows, &'a Flows)> + 'a> {
+) -> impl Iterator<Item = (VA, &'a InstructionDescriptor, &'a Flows, &'a Flows)> + 'a {
     let mut insns_iter = insns.insns_by_address.iter();
     let mut flows_by_src_iter = flows.flows_by_src.iter();
     let mut flows_by_dst_iter = flows.flows_by_dst.iter();
 
-    let iter = std::iter::from_fn(move || {
+    std::iter::from_fn(move || {
         if let Some((&insnva, insn)) = insns_iter.next() {
             let (mut va1, mut successors) = flows_by_src_iter.next().expect("flow index (src) out of sync");
             while insnva > *va1 {
@@ -310,9 +310,7 @@ fn iter_insn_flows<'a>(
         } else {
             None
         }
-    });
-
-    Box::new(iter)
+    })
 }
 
 impl BasicBlockIndex {
@@ -537,18 +535,16 @@ impl CFG {
         })
     }
 
-    pub fn get_reachable_blocks<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+    pub fn get_reachable_blocks(&self, va: VA) -> impl Iterator<Item = &BasicBlock> + '_ {
         log::debug!("cfg: reachable from: {:#x}", va);
         let mut seen: BTreeSet<VA> = Default::default();
 
-        if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            return Box::new(std::iter::empty());
+        let mut queue: VecDeque<VA> = Default::default();
+        if self.basic_blocks.blocks_by_address.contains_key(&va) {
+            queue.push_back(va);
         }
 
-        let mut queue: VecDeque<VA> = Default::default();
-        queue.push_back(va);
-
-        let iter = std::iter::from_fn(move || loop {
+        std::iter::from_fn(move || loop {
             if let Some(bbva) = queue.pop_front() {
                 if seen.contains(&bbva) {
                     continue;
@@ -598,22 +594,18 @@ impl CFG {
             } else {
                 return None;
             }
-        });
-
-        Box::new(iter)
+        })
     }
 
-    pub fn get_reaches_from<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+    pub fn get_reaches_from(&self, va: VA) -> impl Iterator<Item = &BasicBlock> + '_ {
         let mut seen: BTreeSet<VA> = Default::default();
 
-        if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            return Box::new(std::iter::empty());
+        let mut queue: VecDeque<VA> = Default::default();
+        if self.basic_blocks.blocks_by_address.contains_key(&va) {
+            queue.push_back(va);
         }
 
-        let mut queue: VecDeque<VA> = Default::default();
-        queue.push_back(va);
-
-        let iter = std::iter::from_fn(move || loop {
+        std::iter::from_fn(move || loop {
             if let Some(bbva) = queue.pop_front() {
                 if seen.contains(&bbva) {
                     continue;
@@ -637,22 +629,18 @@ impl CFG {
             } else {
                 return None;
             }
-        });
-
-        Box::new(iter)
+        })
     }
 
-    pub fn get_reaches_to<'a>(&'a self, va: VA) -> Box<dyn Iterator<Item = &'a BasicBlock> + 'a> {
+    pub fn get_reaches_to(&self, va: VA) -> impl Iterator<Item = &BasicBlock> + '_ {
         let mut seen: BTreeSet<VA> = Default::default();
 
-        if !self.basic_blocks.blocks_by_address.contains_key(&va) {
-            return Box::new(std::iter::empty());
+        let mut queue: VecDeque<VA> = Default::default();
+        if self.basic_blocks.blocks_by_address.contains_key(&va) {
+            queue.push_back(va);
         }
 
-        let mut queue: VecDeque<VA> = Default::default();
-        queue.push_back(va);
-
-        let iter = std::iter::from_fn(move || loop {
+        std::iter::from_fn(move || loop {
             if let Some(bbva) = queue.pop_front() {
                 if seen.contains(&bbva) {
                     continue;
@@ -672,9 +660,7 @@ impl CFG {
             } else {
                 return None;
             }
-        });
-
-        Box::new(iter)
+        })
     }
 }
 

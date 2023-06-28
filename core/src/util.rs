@@ -177,12 +177,12 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-pub fn find_ascii_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<usize>, String)> + 'a> {
+pub fn find_ascii_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, String)> + '_ {
     lazy_static! {
         static ref ASCII_RE: Regex = Regex::new("[ -~]{4,}").unwrap();
     }
 
-    Box::new(ASCII_RE.captures_iter(buf).map(|cap| {
+    ASCII_RE.captures_iter(buf).map(|cap| {
         // guaranteed to have at least one hit
         let mat = cap.get(0).unwrap();
 
@@ -196,15 +196,15 @@ pub fn find_ascii_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<u
             },
             s,
         )
-    }))
+    })
 }
 
-pub fn find_unicode_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range<usize>, String)> + 'a> {
+pub fn find_unicode_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, String)> + '_ {
     lazy_static! {
         static ref UNICODE_RE: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
     }
 
-    Box::new(UNICODE_RE.captures_iter(buf).map(|cap| {
+    UNICODE_RE.captures_iter(buf).map(|cap| {
         // guaranteed to have at least one hit
         let mat = cap.get(0).unwrap();
 
@@ -225,7 +225,7 @@ pub fn find_unicode_strings<'a>(buf: &'a [u8]) -> Box<dyn Iterator<Item = (Range
             },
             s,
         )
-    }))
+    })
 }
 
 pub fn va_add_signed(va: VA, rva: i64) -> Option<VA> {

@@ -106,20 +106,15 @@ pub fn read_image_import_descriptor(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_DESC
     })
 }
 
-pub fn read_import_descriptors<'a>(
-    pe: &'a PE,
-    import_directory: VA,
-) -> Box<dyn Iterator<Item = IMAGE_IMPORT_DESCRIPTOR> + 'a> {
-    Box::new(
-        (0..std::usize::MAX)
-            .map(move |i| import_directory + (i * sizeof_IMAGE_IMPORT_DESCRIPTOR) as RVA)
-            .map(move |va| read_image_import_descriptor(pe, va))
-            .take_while(|desc| match desc {
-                Ok(desc) => !desc.is_empty(),
-                Err(_) => false,
-            })
-            .map(|desc| desc.unwrap()),
-    )
+pub fn read_import_descriptors(pe: &PE, import_directory: VA) -> impl Iterator<Item = IMAGE_IMPORT_DESCRIPTOR> + '_ {
+    (0..std::usize::MAX)
+        .map(move |i| import_directory + (i * sizeof_IMAGE_IMPORT_DESCRIPTOR) as RVA)
+        .map(move |va| read_image_import_descriptor(pe, va))
+        .take_while(|desc| match desc {
+            Ok(desc) => !desc.is_empty(),
+            Err(_) => false,
+        })
+        .map(|desc| desc.unwrap())
 }
 
 pub fn read_image_thunk_data(pe: &PE, va: VA) -> Result<IMAGE_THUNK_DATA> {
@@ -199,26 +194,24 @@ pub fn read_best_thunk_data(pe: &PE, original_first_thunk_addr: VA, first_thunk_
 pub fn read_thunks<'a>(
     pe: &'a PE,
     import_descriptor: &'a IMAGE_IMPORT_DESCRIPTOR,
-) -> Box<dyn Iterator<Item = IMAGE_THUNK_DATA> + 'a> {
+) -> impl Iterator<Item = IMAGE_THUNK_DATA> + 'a {
     let base_address = pe.module.address_space.base_address;
     let psize = pe.module.arch.pointer_size();
 
-    Box::new(
-        (0..std::usize::MAX)
-            .map(move |i| {
-                (
-                    // the Original First Thunk (OFT) remains constant, and points to the
-                    // IMAGE_IMPORT_BY_NAME. FT and OFT are parallel arrays.
-                    base_address + import_descriptor.original_first_thunk + (i * psize) as RVA,
-                    // the First Thunk (FT) is the pointer that will be overwritten upon load.
-                    // entries here may not point to the IMAGE_IMPORT_BY_NAME.
-                    base_address + import_descriptor.first_thunk + (i * psize) as RVA,
-                )
-            })
-            .map(move |(oft, ft)| read_best_thunk_data(pe, oft, ft))
-            .take_while(|thunk| !matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))))
-            .map(|thunk| thunk.unwrap()),
-    )
+    (0..std::usize::MAX)
+        .map(move |i| {
+            (
+                // the Original First Thunk (OFT) remains constant, and points to the
+                // IMAGE_IMPORT_BY_NAME. FT and OFT are parallel arrays.
+                base_address + import_descriptor.original_first_thunk + (i * psize) as RVA,
+                // the First Thunk (FT) is the pointer that will be overwritten upon load.
+                // entries here may not point to the IMAGE_IMPORT_BY_NAME.
+                base_address + import_descriptor.first_thunk + (i * psize) as RVA,
+            )
+        })
+        .map(move |(oft, ft)| read_best_thunk_data(pe, oft, ft))
+        .take_while(move |thunk| !matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))))
+        .map(move |thunk| thunk.unwrap())
 }
 
 pub fn read_image_import_by_name(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_BY_NAME> {

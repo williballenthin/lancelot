@@ -40,7 +40,7 @@ pub fn get_disassembler(module: &Module) -> Result<zydis::Decoder> {
 pub fn linear_disassemble<'a>(
     decoder: &'a zydis::Decoder,
     buf: &'a [u8],
-) -> Box<dyn Iterator<Item = (usize, zydis::Result<Option<zydis::DecodedInstruction>>)> + 'a> {
+) -> impl Iterator<Item = (usize, zydis::Result<Option<zydis::DecodedInstruction>>)> + 'a {
     let mut offset = 0usize;
     let mut insn_count = 0usize;
     let iter = std::iter::from_fn(move || {
