@@ -197,6 +197,8 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<
 
 #[cfg(feature = "disassembler")]
 pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
+    use crate::analysis::heuristics;
+
     let imports = get_imports(pe)?;
     debug!("imports: found {} imports", imports.len());
 
@@ -206,10 +208,20 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(pe)?);
     function_starts.extend(crate::analysis::pe::runtime_functions::find_pe_runtime_functions(pe)?);
     function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(pe)?);
-    function_starts.extend(crate::analysis::pe::call_targets::find_pe_call_targets(pe)?);
-    function_starts.extend(crate::analysis::pe::patterns::find_function_prologues(pe)?);
 
-    // TODO: validate that the code looks ok
+    // the following are heuristics,
+    // so ensure the found addresses look like code.
+    let decoder = dis::get_disassembler(&pe.module)?;
+    function_starts.extend(
+        crate::analysis::pe::call_targets::find_pe_call_targets(pe)?
+            .into_iter()
+            .filter(|&va| heuristics::is_probably_code(&pe.module, &decoder, va)),
+    );
+    function_starts.extend(
+        crate::analysis::pe::patterns::find_function_prologues(pe)?
+            .into_iter()
+            .filter(|&va| heuristics::is_probably_code(&pe.module, &decoder, va)),
+    );
 
     let thunks = find_thunks(pe, &imports, &function_starts)?;
     debug!("functions: found {} function candidates", function_starts.len());
