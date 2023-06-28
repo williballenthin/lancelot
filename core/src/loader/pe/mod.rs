@@ -9,7 +9,7 @@ pub mod rsrc;
 
 use crate::{
     arch::Arch,
-    aspace::RelativeAddressSpace,
+    aspace::{self, RelativeAddressSpace},
     module::{Module, Permissions, Section},
     util, RVA, VA,
 };
@@ -283,6 +283,14 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
             // psize > vsize, but vsize wins, so we only read a subset of physical data.
             let src = &pbuf[0..vsize as usize];
             vbuf.copy_from_slice(src);
+        }
+
+        if aspace::page_offset(rstart) != 0 {
+            // see discussion in #66
+            // Microsoft says its ok to have non-page aligned sections in memory.
+            // but this would require a lot of work to support here.
+            // so... we bail.
+            return Err(PEError::FormatNotSupported("non-page aligned section".to_string()).into());
         }
 
         address_space.map.writezx(rstart, &vbuf)?;
