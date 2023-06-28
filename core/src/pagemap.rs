@@ -75,13 +75,15 @@ impl<T: Default + Copy> PageMap<T> {
         map
     }
 
+    /// write the given page's worth of items to the given address.
+    ///
     /// error if rva is not in a valid page.
     /// panic due to:
     ///   - rva must be page aligned.
     ///   - must be PAGE_SIZE number of items.
     fn write_page(&mut self, rva: RVA, items: &[T]) -> Result<()> {
         if page_offset(rva) != 0 {
-            panic!("invalid map address");
+            panic!("RVA must be page aligned");
         }
         if items.len() != PAGE_SIZE {
             panic!("invalid map buffer size");
@@ -104,6 +106,9 @@ impl<T: Default + Copy> PageMap<T> {
     ///
     /// see example under `get`.
     pub fn write(&mut self, rva: RVA, items: &[T]) -> Result<()> {
+        if page_offset(rva) != 0 {
+            panic!("RVA must be page aligned");
+        }
         if items.len() % PAGE_SIZE != 0 {
             panic!("items must be page aligned");
         }
@@ -116,16 +121,28 @@ impl<T: Default + Copy> PageMap<T> {
     /// map the default value (probably zero) at the given address for the given
     /// size.
     ///
-    /// same error conditions as `map`.
+    /// error if rva is not in a valid page.
+    /// panic due to:
+    ///   - rva must be page aligned.
+    ///   - size must be multiple of PAGE_SIZE.
+    ///
     /// see example under `probe`.
     pub fn map_empty(&mut self, rva: RVA, size: usize) -> Result<()> {
+        if page_offset(rva) != 0 {
+            panic!("RVA must be page aligned");
+        }
+        if size % PAGE_SIZE != 0 {
+            panic!("invalid map buffer size");
+        }
         self.write(rva, &vec![Default::default(); size])
     }
 
     /// map the given items at the given address, padding with the default value
     /// until the next page. (map zero-extend).
     ///
-    /// same error conditions as `map`.
+    /// error if rva or items are not in a valid page.
+    /// panic due to:
+    ///   - rva must be page aligned.
     ///
     /// ```
     /// use lancelot::pagemap::PageMap;
@@ -139,10 +156,15 @@ impl<T: Default + Copy> PageMap<T> {
     /// assert_eq!(d.get(0x1), Some(0x0));
     /// ```
     pub fn writezx(&mut self, rva: RVA, items: &[T]) -> Result<()> {
+        if page_offset(rva) != 0 {
+            panic!("RVA must be page aligned");
+        }
+
         let empty_count = PAGE_SIZE - page_offset(items.len() as u64);
         let mut padded_items = Vec::with_capacity(items.len() + empty_count);
         padded_items.extend(items);
         padded_items.extend(&vec![Default::default(); empty_count]);
+
         self.write(rva, &padded_items)
     }
 
