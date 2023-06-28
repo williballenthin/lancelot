@@ -272,23 +272,19 @@ pub fn get_immediate_operand_xref(
         // destination = $pc + immediate + insn.len
         //
         // see doctest: [test relative immediate operand]()
+        //
+        // however, we can rely on zydis to do this calculation for us.
+        // specifically for IMM operands with relative addressing.
 
-        let imm = if op.imm.is_signed {
-            util::u64_i64(op.imm.value)
+        if let Ok(dst) = insn.calc_absolute_address(va, op) {
+            // must be mapped
+            if module.probe_va(dst, Permissions::RWX) {
+                Ok(Some(dst))
+            } else {
+                // invalid address
+                Ok(None)
+            }
         } else {
-            op.imm.value as i64
-        };
-
-        let dst = match util::va_add_signed(va + insn.length as u64, imm) {
-            None => return Ok(None),
-            Some(dst) => dst,
-        };
-
-        // must be mapped
-        if module.probe_va(dst, Permissions::RWX) {
-            Ok(Some(dst))
-        } else {
-            // invalid address
             Ok(None)
         }
     } else {
