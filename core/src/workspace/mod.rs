@@ -62,11 +62,11 @@ impl NameIndex {
     }
 
     pub fn contains_address(&self, va: VA) -> bool {
-        return self.names_by_address.get(&va).is_some();
+        self.names_by_address.contains_key(&va)
     }
 
     pub fn contains_name(&self, name: &str) -> bool {
-        return self.addresses_by_name.get(name).is_some();
+        self.addresses_by_name.contains_key(name)
     }
 }
 

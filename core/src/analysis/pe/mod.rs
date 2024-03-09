@@ -246,10 +246,9 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
 pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
     Ok(find_functions(pe)?
         .into_iter()
-        .filter(|f| matches!(f, Function::Local(_)))
-        .map(|f| match f {
-            Function::Local(va) => va,
-            _ => unreachable!(),
+        .filter_map(|f| match f {
+            Function::Local(va) => Some(va),
+            _ => None,
         })
         .collect())
 }

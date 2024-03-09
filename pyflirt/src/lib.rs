@@ -3,7 +3,7 @@
 
 use anyhow::Error;
 use lancelot_flirt::{pat, sig};
-use pyo3::{self, prelude::*, types::*, wrap_pyfunction};
+use pyo3::{prelude::*, types::*, wrap_pyfunction};
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {

@@ -31,7 +31,7 @@ lazy_static! {
         // 0xC2 ......00 0x00
         // let RET_LONGFORM =
 
-        let PREPATTERN = format!("(?P<prepattern>{})", vec![
+        let PREPATTERN = format!("(?P<prepattern>{})", [
             CC,
             CCCC,
             NOP,
@@ -160,7 +160,7 @@ lazy_static! {
             \x48 \x83 \xEC .                     # sub  rsp, ??
         ";
 
-        let POSTPATTERN = format!("(?P<postpattern>{})", vec![
+        let POSTPATTERN = format!("(?P<postpattern>{})", [
             P0,
             P6,
             P18,

@@ -332,10 +332,9 @@ impl PE {
         Ok(lancelot::analysis::pe::find_functions(&self.inner)
             .map_err(to_js_err)?
             .into_iter()
-            .filter(|f| matches!(f, lancelot::analysis::pe::Function::Local(_)))
-            .map(|f| match f {
-                lancelot::analysis::pe::Function::Local(va) => va,
-                _ => unreachable!(),
+            .filter_map(|f| match f {
+                lancelot::analysis::pe::Function::Local(va) => Some(va),
+                _ => None,
             })
             .collect())
     }

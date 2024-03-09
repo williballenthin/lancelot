@@ -278,9 +278,7 @@ fn extract_workspace_features(ws: &dyn lancelot::workspace::Workspace) -> Result
                 return None;
             }
 
-            let Some(name) = ws.analysis().names.names_by_address.get(&va) else {
-                return None;
-            };
+            let name = ws.analysis().names.names_by_address.get(&va)?;
 
             let Ok(features) = extract_function_features(ws, va) else {
                 return None;
