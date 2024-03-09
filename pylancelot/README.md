@@ -2,7 +2,7 @@
 
 ```sh
 # use a py3 virtual environment
-$ pip install maturin pytest
+$ pip install maturin[patchelf] pytest
 $ maturin develop --release --extras dev
 $ pytest
 ```

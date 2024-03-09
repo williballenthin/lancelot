@@ -1,0 +1,93 @@
+# install the pre-commit hooks:
+#
+#    ❯ pre-commit install --hook-type pre-commit
+#    pre-commit installed at .git/hooks/pre-commit
+#
+#    ❯ pre-commit install --hook-type pre-push
+#    pre-commit installed at .git/hooks/pre-push
+#
+# run all linters liks:
+#
+#    ❯ pre-commit run --all-files
+#    isort....................................................................Passed
+#    black....................................................................Passed
+#    ruff.....................................................................Passed
+#    flake8...................................................................Passed
+#    mypy.....................................................................Passed
+#
+# run a single linter like:
+#
+#    ❯ pre-commit run --all-files isort
+#    isort....................................................................Passed
+#
+# to run the slow linters, like tests, pass `--hook-stage manual`, like:
+#
+#    > pre-commit run --all-files --hook-stage manual
+
+repos:
+-   repo: local
+    hooks:
+    -   id: check
+        name: check
+        stages: [commit, push, manual]
+        language: system
+        entry: cargo check
+        always_run: true
+        pass_filenames: false
+    -   id: fmt
+        name: fmt
+        stages: [commit, push, manual]
+        language: system
+        entry: cargo fmt
+        always_run: true
+        pass_filenames: false
+    -   id: clippy
+        name: clippy
+        stages: [commit, push, manual]
+        language: system
+        entry: cargo clippy
+        always_run: true
+        pass_filenames: false
+    -   id: test-core
+        name: test core
+        stages: [manual]
+        language: system
+        entry: cargo test core
+        always_run: true
+        pass_filenames: false
+    -   id: test-flirt
+        name: test flirt
+        stages: [manual]
+        language: system
+        entry: cargo test flirt
+        always_run: true
+        pass_filenames: false
+    -   id: test-pylancelot-rust
+        name: test pylancelot (rust)
+        stages: [manual]
+        language: system
+        entry: cargo test pylancelot
+        always_run: true
+        pass_filenames: false
+    -   id: test-pylancelot-py
+        name: test pylancelot (python)
+        stages: [manual]
+        language: system
+        entry: bash .github/scripts/pytest-pylancelot.sh
+        always_run: true
+        pass_filenames: false
+    -   id: test-pyflirt-rust
+        name: test pyflirt (rust)
+        stages: [manual]
+        language: system
+        entry: cargo test pyflirt
+        always_run: true
+        pass_filenames: false
+    -   id: test-pyflirt-py
+        name: test pyflirt (python)
+        stages: [manual]
+        language: system
+        entry: bash .github/scripts/pytest-pyflirt.sh
+        always_run: true
+        pass_filenames: false
+ 

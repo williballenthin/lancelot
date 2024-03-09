@@ -42,5 +42,5 @@ dev = [
 repository = "https://github.com/williballenthin/lancelot/tree/master/pylancelot"
 
 [build-system]
-requires = ["maturin>=0.13,<0.14"]
+requires = ["maturin>=1,<2"]
 build-backend = "maturin"
