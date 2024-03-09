@@ -32,10 +32,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        analysis::cfg::InstructionIndex,
-        rsrc::*,
-    };
+    use crate::{analysis::cfg::InstructionIndex, rsrc::*};
     use anyhow::Result;
 
     #[test]

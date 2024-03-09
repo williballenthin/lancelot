@@ -39,10 +39,7 @@ mod tests {
     use std::ops::Not;
 
     use super::*;
-    use crate::{
-        analysis::cfg::InstructionIndex,
-        rsrc::*,
-    };
+    use crate::{analysis::cfg::InstructionIndex, rsrc::*};
 
     #[test]
     fn nop() -> Result<()> {
