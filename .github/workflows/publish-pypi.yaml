@@ -39,10 +39,10 @@ jobs:
         manylinux: auto
         command: build
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       name: upload
       with:
-        name: wheels
+        name: wheels-linux-${{ matrix.python.version }}
         path: target/wheels/*.whl
   
   windows:
@@ -83,10 +83,10 @@ jobs:
         command: build
         target: ${{ matrix.target }}
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       name: upload
       with:
-        name: wheels
+        name: wheels-windows-${{ matrix.python.version }}
         path: target/wheels/*.whl
 
   macos:
@@ -163,10 +163,10 @@ jobs:
         command: build
         target: x86_64
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       name: upload
       with:
-        name: wheels
+        name: wheels-macos-${{ matrix.python.version }}
         path: target/wheels/*.whl
         
   pypi-publish:
