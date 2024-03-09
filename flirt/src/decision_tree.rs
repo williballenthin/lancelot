@@ -159,8 +159,6 @@ impl<K: Eq, V> VecMap<K, V> {
     }
 }
 
-use std::iter::Iterator;
-
 impl<K: Eq, V> std::iter::FromIterator<(K, V)> for VecMap<K, V> {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         let mut m: VecMap<K, V> = Default::default();

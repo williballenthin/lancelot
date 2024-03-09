@@ -127,7 +127,6 @@ mod tests {
         analysis::cfg::{code_references::*, InstructionIndex},
         rsrc::*,
     };
-    use anyhow::Result;
 
     #[test]
     fn push_function_pointer() -> Result<()> {

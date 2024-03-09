@@ -1102,9 +1102,8 @@ impl Emulator {
 
 #[cfg(test)]
 mod tests {
-    use crate::{arch::Arch, emu::*, test::*};
+    use crate::{emu::*, test::*};
 
-    use anyhow::Result;
     use dynasmrt::{dynasm, DynasmApi};
 
     const BASE_ADDRESS: u64 = 0x1000;

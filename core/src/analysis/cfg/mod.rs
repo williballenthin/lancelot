@@ -1097,8 +1097,6 @@ mod tests {
     }
 
     mod prune {
-        use std::ops::Not;
-
         use super::*;
 
         #[test]

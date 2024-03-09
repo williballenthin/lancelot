@@ -33,7 +33,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        analysis::cfg::{InstructionIndex, CFG},
+        analysis::cfg::InstructionIndex,
         rsrc::*,
     };
     use anyhow::Result;

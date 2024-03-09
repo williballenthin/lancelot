@@ -145,8 +145,6 @@ mod tests {
         rsrc::*,
     };
 
-    use anyhow::Result;
-
     /// Errors:
     ///   - FetchError::InvalidInstruction for instructions that cannot be
     ///     decoded.

@@ -7,7 +7,7 @@ use crate::{
         cfg,
         cfg::{flow::Flow, ChangeBatch, CFG},
         dis,
-        dis::{zydis, Target},
+        dis::Target,
     },
     aspace::AddressSpace,
     module::Module,

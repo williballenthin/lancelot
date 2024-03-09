@@ -447,7 +447,6 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
 mod tests {
     use super::*;
     use crate::rsrc::*;
-    use anyhow::Result;
 
     #[test]
     fn nop() -> Result<()> {

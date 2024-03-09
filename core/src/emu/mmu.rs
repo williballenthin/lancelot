@@ -4,7 +4,7 @@ use std::collections::{btree_map::Entry, BTreeMap};
 
 use anyhow::Result;
 use bitflags::*;
-use bitvec::{prelude::*, vec::BitVec};
+use bitvec::prelude::*;
 use byteorder::{ByteOrder, LittleEndian};
 use log::debug;
 use thiserror::Error;
@@ -630,7 +630,6 @@ mod tests {
     #[cfg(test)]
     mod pf {
         use crate::emu::mmu::*;
-        use anyhow::Result;
 
         #[test]
         fn allocate() -> Result<()> {
@@ -690,7 +689,6 @@ mod tests {
     #[cfg(test)]
     mod mmu {
         use crate::emu::mmu::*;
-        use anyhow::Result;
 
         #[test]
         fn access_violation() -> Result<()> {

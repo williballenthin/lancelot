@@ -2,7 +2,7 @@ use std::{cmp::min, fmt::Write};
 
 use anyhow::Result;
 
-use crate::{analysis::dis::zydis, arch::Arch, aspace::AddressSpace, VA};
+use crate::{arch::Arch, aspace::AddressSpace, VA};
 
 use super::Workspace;
 
@@ -417,7 +417,6 @@ impl Default for Formatter {
 mod tests {
     use super::{super::*, *};
     use crate::rsrc::*;
-    use anyhow::Result;
 
     #[test]
     fn with_colors() -> Result<()> {
