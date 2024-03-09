@@ -133,7 +133,7 @@ jobs:
       with:
         maturin-version: 1.5.0
         command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --universal2 --strip --manifest-path=./pylancelot/Cargo.toml
+        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
       name: build pyflirt for macos (universal2)
       env:
@@ -141,7 +141,7 @@ jobs:
       with:
         maturin-version: 1.5.0
         command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --universal2 --strip --manifest-path=./pyflirt/Cargo.toml
+        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pyflirt/Cargo.toml
     #
     # x86_64 build
     #
