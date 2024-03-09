@@ -169,13 +169,6 @@ jobs:
         name: wheels
         path: target/wheels/*.whl
         
-  release:
-    name: push to pypi
-    runs-on: ubuntu-latest
-
-    if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [ macos, windows, linux ]
-
   pypi-publish:
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
