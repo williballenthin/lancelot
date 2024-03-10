@@ -10,6 +10,7 @@ intel x86(-64) code analysis library that reconstructs control flow
   - make
   - cmake
   - pkg-config
+  - protobuf-compiler
 
 Consider using [cranelift](https://github.com/rust-lang/rustc_codegen_cranelift) during development:
 
