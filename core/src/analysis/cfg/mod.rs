@@ -732,12 +732,12 @@ impl CFG {
 
         self.insns.insns_by_address.entry(va).and_modify(|insn| {
             insn.successors = insn.successors.clone().into_iter().filter(|s| s != flow).collect();
-            log::debug!("cfg: prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
+            log::trace!("cfg: prune: {:x?} at {:#x}: insn: {:x?}", flow, va, insn);
         });
 
         self.flows.flows_by_src.entry(va).and_modify(|succs| {
             *succs = succs.clone().into_iter().filter(|s| s != flow).collect();
-            log::debug!("cfg: prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
+            log::trace!("cfg: prune: {:x?} at {:#x}: succs: {:x?}", flow, va, succs);
         });
 
         let target = match flow {

@@ -17,6 +17,7 @@ pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
         .filter(|imp| match (&*imp.dll, &imp.symbol) {
             ("kernel32.dll", ImportedSymbol::Name(symbol)) if symbol == "ExitProcess" => true,
             ("kernel32.dll", ImportedSymbol::Ordinal(171)) => true,
+            ("msvcrt.dll", ImportedSymbol::Name(symbol)) if symbol == "_CxxThrowException" => true,
             (_, _) => false,
         })
         .map(|imp| imp.address)

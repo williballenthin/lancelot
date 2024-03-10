@@ -17,15 +17,15 @@ use crate::{
 // TODO: add cfg_check_noret(module, cfg, va) that optionally marks as noret, if
 // valid.
 
-// with the given function address,
+// With the given function address,
 // either as the target of a direct or indirect call,
 // consider it to be non-returning (such as ExitProcess).
 //
-// recursively consider its callers,
+// Recursively consider its callers,
 // possibly pruning instructions after the calls,
 // and possibly considering those functions as noret, too.
 //
-// returns the set of functions newly recognized as noret.
+// Returns the set of functions newly recognized as noret.
 pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet<VA>> {
     log::debug!("mark noret: {:#x}", va);
     let mut ret: BTreeSet<VA> = Default::default();
@@ -35,19 +35,26 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
     // for each of these, remove any fallthrough flows from that call instruction.
     // then, rebuild the CFG.
     let mut callers: Vec<VA> = Default::default();
-    for flow in cfg
+    let flows_to = cfg
         .flows
         .flows_by_dst
         .get(&va)
         .unwrap_or(&Default::default())
         .clone()
-        .into_iter()
-    {
+        .into_iter();
+    for flow in flows_to {
         let src = match flow {
             Flow::Call(Target::Direct(src)) => src,
             Flow::Call(Target::Indirect(src)) => src,
             // tail call
             Flow::UnconditionalJump(Target::Direct(src)) => src,
+            // thunk to import, like:
+            //
+            //```
+            // ; void __stdcall __noreturn CxxThrowException(void *pExceptionObject, _ThrowInfo *pThrowInfo)
+            // jmp ds:__imp__CxxThrowException
+            //```
+            Flow::UnconditionalJump(Target::Indirect(src)) => src,
             _ => continue,
         };
         log::debug!("mark noret: {:#x}: caller: {:#x}", va, src);
