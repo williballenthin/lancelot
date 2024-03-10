@@ -62,3 +62,4 @@ resources/evaluation/SoK/binaries.txt
 .direnv
 .envrc
 .envrc
+.env
