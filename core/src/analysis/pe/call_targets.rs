@@ -45,6 +45,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
     let mut call_count = 0usize;
     for section in pe.executable_sections() {
+        let name = &section.name;
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
         let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
@@ -122,7 +123,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
             }
         }
 
-        debug!("call count: {}", call_count);
+        debug!("call targets: {name}, call count: {call_count}");
     }
 
     Ok(ret)

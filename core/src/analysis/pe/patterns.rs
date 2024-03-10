@@ -1,6 +1,7 @@
 // https://github.com/NationalSecurityAgency/ghidra/tree/79d8f164f8bb8b15cfb60c5d4faeb8e1c25d15ca/Ghidra/Processors/x86/data/patterns
 #![allow(non_snake_case)]
 use anyhow::Result;
+use log::debug;
 use regex::bytes::Regex;
 
 use crate::{aspace::AddressSpace, loader::pe::PE, VA};
@@ -187,6 +188,7 @@ const INDEX_MATCH: usize = 4;
 pub fn find_function_prologues(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
     for section in pe.executable_sections() {
+        let name = &section.name;
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
         let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
@@ -196,6 +198,10 @@ pub fn find_function_prologues(pe: &PE) -> Result<Vec<VA>> {
             let va = vstart + m.start() as u64;
             ret.push(va);
         }
+
+        let count = ret.len();
+
+        debug!("function prologues: {name}, candidates: {count}");
     }
     Ok(ret)
 }

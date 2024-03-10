@@ -82,7 +82,6 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                 .relative
                 .read_ascii(import_descriptor.name, 1)?
                 .to_lowercase();
-            debug!("imports: {}", dll);
 
             for i in 0.. {
                 let oft = base_address + import_descriptor.original_first_thunk + (i * psize) as RVA;
@@ -97,13 +96,9 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
                         // u16    hint
                         // asciiz name
                         let name = pe.module.address_space.relative.read_ascii(name_rva + 2, 1)?;
-                        debug!("imports: {}!{}", dll, name);
                         ImportedSymbol::Name(name)
                     }
-                    Ok(IMAGE_THUNK_DATA::Ordinal(ord)) => {
-                        debug!("imports: {}!#{}", dll, ord);
-                        ImportedSymbol::Ordinal(ord)
-                    }
+                    Ok(IMAGE_THUNK_DATA::Ordinal(ord)) => ImportedSymbol::Ordinal(ord),
                     Err(e) => {
                         debug!("imports: error reading thunk: {}", e);
                         continue;
@@ -201,6 +196,9 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
 
     let imports = get_imports(pe)?;
     debug!("imports: found {} imports", imports.len());
+    for (va, import) in imports.iter() {
+        debug!("imports: {va:#x}: {import}");
+    }
 
     let mut function_starts: HashSet<VA> = Default::default();
     function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(pe)?);
@@ -226,6 +224,10 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     let thunks = find_thunks(pe, &imports, &function_starts)?;
     debug!("functions: found {} function candidates", function_starts.len());
     debug!("functions: found {} thunks", thunks.len());
+
+    for function_start in function_starts.iter() {
+        debug!("functions: function candidate: {function_start:#x}");
+    }
 
     let function_starts: Vec<_> = function_starts
         .difference(&thunks.keys().cloned().collect())

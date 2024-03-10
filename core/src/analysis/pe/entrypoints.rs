@@ -2,6 +2,7 @@
 //!
 //! All PEs should have an entry point, unless they don't have any code.
 use anyhow::Result;
+use log::debug;
 
 use crate::{loader::pe::PE, VA};
 
@@ -11,7 +12,9 @@ pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
         if entry_point == 0 {
             return Ok(vec![]);
         }
-        Ok(vec![optional_header.windows_fields.image_base + entry_point])
+        let entry_point = optional_header.windows_fields.image_base + entry_point;
+        debug!("entry point: {entry_point:#x}");
+        Ok(vec![entry_point])
     } else {
         Ok(vec![])
     }
