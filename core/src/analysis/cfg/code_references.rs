@@ -108,7 +108,7 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
 
                     if heuristics::is_probably_code(module, &decoder, target) {
                         // finally, we think we have some new code.
-                        log::debug!("code references: found new code at {:#x}", target);
+                        log::debug!("code references: found new likely code at {:#x}", target);
                         new_code.insert(target);
                     }
                 }
