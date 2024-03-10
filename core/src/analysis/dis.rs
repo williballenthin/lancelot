@@ -75,6 +75,41 @@ pub fn linear_disassemble<'a>(
     Box::new(iter)
 }
 
+pub fn is_control_flow_instruction(insn: &zydis::DecodedInstruction) -> bool {
+    use zydis::Mnemonic;
+
+    matches!(
+        insn.mnemonic,
+        Mnemonic::CALL
+            | Mnemonic::RET
+            | Mnemonic::IRET
+            | Mnemonic::IRETD
+            | Mnemonic::IRETQ
+            | Mnemonic::JMP
+            | Mnemonic::JB
+            | Mnemonic::JBE
+            | Mnemonic::JCXZ
+            | Mnemonic::JECXZ
+            | Mnemonic::JKNZD
+            | Mnemonic::JKZD
+            | Mnemonic::JL
+            | Mnemonic::JLE
+            | Mnemonic::JNB
+            | Mnemonic::JNBE
+            | Mnemonic::JNL
+            | Mnemonic::JNLE
+            | Mnemonic::JNO
+            | Mnemonic::JNP
+            | Mnemonic::JNS
+            | Mnemonic::JNZ
+            | Mnemonic::JO
+            | Mnemonic::JP
+            | Mnemonic::JRCXZ
+            | Mnemonic::JS
+            | Mnemonic::JZ
+    )
+}
+
 /// Does the given instruction have a fallthrough flow?
 pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
     match insn.mnemonic {
