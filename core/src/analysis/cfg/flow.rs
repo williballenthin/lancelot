@@ -64,13 +64,20 @@ pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     if let Ok(Some(target)) = dis::get_operand_xref(module, va, insn, op) {
         match target {
             Target::Direct(va) => {
-                if is_executable(module, va) {
-                    return Ok(smallvec![Flow::Call(target)]);
-                } else {
+                if !is_executable(module, va) {
                     // direct call to a non-executable part of the file,
                     // which doesn't make sense.
                     return Ok(smallvec![]);
                 }
+
+                if !module.is_in_image(va) {
+                    // region doesn't exist on disk,
+                    // like the RWX region that UPX unpacks to.
+                    // physical size=0, virtual size=big.
+                    return Ok(smallvec![]);
+                }
+
+                return Ok(smallvec![Flow::Call(target)]);
             }
             Target::Indirect(_) => {
                 // indirect call ptr can be in non-executable region,
@@ -90,13 +97,20 @@ pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstructi
     if let Ok(Some(target)) = dis::get_operand_xref(module, va, insn, op) {
         match target {
             Target::Direct(va) => {
-                if is_executable(module, va) {
-                    return Ok(smallvec![Flow::UnconditionalJump(target)]);
-                } else {
+                if !is_executable(module, va) {
                     // direct jump to a non-executable part of the file,
                     // which doesn't make sense.
                     return Ok(smallvec![]);
                 }
+
+                if !module.is_in_image(va) {
+                    // region doesn't exist on disk,
+                    // like the RWX region that UPX unpacks to.
+                    // physical size=0, virtual size=big.
+                    return Ok(smallvec![]);
+                }
+
+                return Ok(smallvec![Flow::UnconditionalJump(target)]);
             }
             Target::Indirect(_) => {
                 // indirect jmp ptr can be in non-executable region,
@@ -114,13 +128,20 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     let op = dis::get_first_operand(insn).expect("CJMP has no target");
 
     if let Ok(Some(Target::Direct(dst))) = dis::get_operand_xref(module, va, insn, op) {
-        if is_executable(module, dst) {
-            return Ok(smallvec![Flow::ConditionalJump(dst)]);
-        } else {
+        if !is_executable(module, dst) {
             // conditional jump to a non-executable part of the file,
             // which doesn't make sense.
             return Ok(smallvec![]);
         }
+
+        if !module.is_in_image(dst) {
+            // region doesn't exist on disk,
+            // like the RWX region that UPX unpacks to.
+            // physical size=0, virtual size=big.
+            return Ok(smallvec![]);
+        }
+
+        return Ok(smallvec![Flow::ConditionalJump(dst)]);
     }
     Ok(smallvec![])
 }

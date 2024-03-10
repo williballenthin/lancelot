@@ -191,6 +191,12 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
         return false;
     }
 
+    if module.is_in_image(va).not() {
+        // this is not code, because its not found in the module image.
+        // such as the RWX section that UPX unpacks into.
+        return false;
+    }
+
     // we could ensure the target is not being written to,
     // by inspecting the mnemonic and operand index,
     // although with W^X, we don't expect it to be both executable and writable.
