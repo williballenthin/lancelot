@@ -2,11 +2,11 @@
 
 /// > Table-based exception handling requires a table entry for all functions
 /// > that allocate stack space or call another function (for example, nonleaf
-/// functions). > The RUNTIME_FUNCTION structure must be DWORD aligned in
-/// memory. > All addresses are image relative, that is, they're 32-bit offsets
-/// from > the starting address of the image that contains the function table
-/// entry. > These entries are sorted, and put in the .pdata section of a PE32+
-/// image.
+/// > functions). The RUNTIME_FUNCTION structure must be DWORD aligned in
+/// > memory. All addresses are image relative, that is, they're 32-bit offsets
+/// > from the starting address of the image that contains the function table
+/// > entry. These entries are sorted, and put in the .pdata section of a PE32+
+/// > image.
 ///
 /// ref: https://docs.microsoft.com/en-us/cpp/build/exception-handling-x64
 /// ref: https://stackoverflow.com/questions/19808172/struct-runtime-function
@@ -168,23 +168,40 @@ pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
             .step_by(sizeof_RUNTIME_FUNCTION)
         {
             if let Some(runtime_function) = read_runtime_function(pe, va)? {
+                debug!("pdata: found RUNTIME_FUNCTION@{:#x}", va);
                 let mut unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
+
+                debug!(
+                    "pdata: RUNTIME_FUNCTION@{:#x} with UNWIND_INFO@{:#x}",
+                    va, runtime_function.unwind_info_address
+                );
 
                 // if the UNWIND_INFO is chained,
                 // keep following it until it reaches the "primary entry".
+                let mut function_start = runtime_function.function_start;
+                let mut unwind_info_address = runtime_function.unwind_info_address;
                 while let UnwindInfoData::ChainedUnwindInfo(runtime_function) = unwind_info.data {
-                    debug!("pdata: found chained UNWIND_INFO");
+                    debug!(
+                        "pdata: UNWIND_INFO@{:#x} chained to {:#x}",
+                        unwind_info_address, runtime_function.unwind_info_address
+                    );
+
                     unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
+
+                    function_start = runtime_function.function_start;
+                    unwind_info_address = runtime_function.unwind_info_address
                 }
 
-                if !pe.module.probe_va(runtime_function.function_start, Permissions::X) {
+                if !pe.module.probe_va(function_start, Permissions::X) {
                     return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
                 }
 
-                let function = runtime_function.function_start;
+                debug!(
+                    "pdata: RUNTIME_FUNCTION@{:#x} points to function {:#x}",
+                    va, function_start
+                );
 
-                debug!("pdata: found RUNTIME_FUNCTION: {:#x}", function);
-                ret.push(function);
+                ret.push(function_start);
             } else {
                 // just read an entry filled with zeros.
                 // assume this means we reached the end of the table.
