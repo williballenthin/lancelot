@@ -107,6 +107,11 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
                                 op0.imm.value as i64
                             };
 
+                            if imm == 0 {
+                                debug!("call targets: {insn_va:#x}: call $+5 skipped");
+                                continue;
+                            }
+
                             let target = ((insn_va + insn.length as u64) as i64 + imm) as u64;
                             if pe.module.probe_va(target, Permissions::X) {
                                 ret.push(target);

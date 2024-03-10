@@ -15,7 +15,7 @@ use crate::{
     util, RVA, VA,
 };
 #[cfg(feature = "disassembler")]
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[cfg(feature = "disassembler")]
 pub mod call_targets;
@@ -121,7 +121,7 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
 }
 
 #[cfg(feature = "disassembler")]
-pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &HashSet<VA>) -> Result<BTreeMap<VA, Thunk>> {
+pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &BTreeSet<VA>) -> Result<BTreeMap<VA, Thunk>> {
     let mut thunks: BTreeMap<VA, Thunk> = Default::default();
     let decoder = dis::get_disassembler(&pe.module)?;
 
@@ -200,7 +200,7 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
         debug!("imports: {va:#x}: {import}");
     }
 
-    let mut function_starts: HashSet<VA> = Default::default();
+    let mut function_starts: BTreeSet<VA> = Default::default();
     function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(pe)?);
     function_starts.extend(crate::analysis::pe::exports::find_pe_exports(pe)?);
     function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(pe)?);
