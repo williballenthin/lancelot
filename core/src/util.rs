@@ -27,22 +27,42 @@ pub enum UtilError {
 ///
 /// ```
 /// use lancelot::util::*;
-/// assert_eq!(0, u64_i64(0));
-/// assert_eq!(1, u64_i64(0x1));
-/// assert_eq!(-1, u64_i64(0xFFFF_FFFF_FFFF_FFFF));
+/// assert_eq!(u64_i64(0), 0);
+/// assert_eq!(u64_i64(0x1), 1);
+/// assert_eq!(u64_i64(0x10), 0x10);
+/// assert_eq!(u64_i64(13), 13);
+/// assert_eq!(u64_i64(0xFFFF_FFFF_FFFF_FFFF), -1);
+/// assert_eq!(u64_i64(0xFFFF_FFFF_FFFF_FFF0), -0x10);
+/// assert_eq!(u64_i64(0xFFFF_FFFF_FFFF_FFF3), -13);
 /// ```
 pub fn u64_i64(i: u64) -> i64 {
-    if i & 1 << 63 > 0 {
-        // TODO: there's probably some elegant rust-way to do this.
-        // in the meantime, manually compute twos-complement.
-        let bits = i & 0x7FFF_FFFF_FFFF_FFFF;
-        let bits = !bits;
-        let bits = bits + 1;
-        let bits = bits & 0x7FFF_FFFF_FFFF_FFFF;
-        -(bits as i64)
-    } else {
-        i as i64
-    }
+    // it took me a while to figure out that
+    // Rust guarantees this sort of casting to work
+    // (that the signed number representation is 2s complement).
+    // So we keep such as cast explicit in this routine.
+    i as i64
+}
+
+/// Static cast the given 64-bit signed integer to a 64-bit unsigned integer.
+/// This is probably only useful when some other code provides you a i64
+///  that is meant to be an u64 (aka. uncommon).
+///
+/// In C: `*(uint64_t *)&i`
+///
+/// # Examples
+///
+/// ```
+/// use lancelot::util::*;
+/// assert_eq!(i64_u64(0), 0);
+/// assert_eq!(i64_u64(1), 0x1);
+/// assert_eq!(i64_u64(0x10), 0x10);
+/// assert_eq!(i64_u64(13), 13);
+/// assert_eq!(i64_u64(-1), 0xFFFF_FFFF_FFFF_FFFF);
+/// assert_eq!(i64_u64(-0x10), 0xFFFF_FFFF_FFFF_FFF0);
+/// assert_eq!(i64_u64(-13), 0xFFFF_FFFF_FFFF_FFF3);
+/// ```
+pub fn i64_u64(i: i64) -> u64 {
+    i as u64
 }
 
 /// Round the given value up to the next multiple of the given base.
