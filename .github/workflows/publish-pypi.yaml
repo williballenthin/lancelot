@@ -24,7 +24,7 @@ jobs:
       env:
         PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         target: ${{ matrix.target }}
         manylinux: auto
         command: build
@@ -34,7 +34,7 @@ jobs:
       env:
         PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         target: ${{ matrix.target }}
         manylinux: auto
         command: build
@@ -72,14 +72,14 @@ jobs:
     - uses: messense/maturin-action@v1
       name: build pylancelot for windows (${{ matrix.target }})
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         target: ${{ matrix.target }}
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
       name: build pyflirt for windows (${{ matrix.target }})
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         target: ${{ matrix.target }}
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
@@ -131,7 +131,7 @@ jobs:
         # needed due to: https://stackoverflow.com/a/56092773/87207
         MACOSX_DEPLOYMENT_TARGET: 10.9
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pylancelot/Cargo.toml
     - uses: messense/maturin-action@v1
@@ -139,7 +139,7 @@ jobs:
       env:
         MACOSX_DEPLOYMENT_TARGET: 10.9
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pyflirt/Cargo.toml
     #
@@ -150,7 +150,7 @@ jobs:
       env:
         MACOSX_DEPLOYMENT_TARGET: 10.9
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         target: x86_64
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
@@ -159,7 +159,7 @@ jobs:
       env:
         MACOSX_DEPLOYMENT_TARGET: 10.9
       with:
-        maturin-version: 1.5.0
+        maturin-version: 1.4.0
         command: build
         target: x86_64
         args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
