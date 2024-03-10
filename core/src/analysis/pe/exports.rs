@@ -3,6 +3,7 @@
 //!
 //! PEs may export data, which we'll assume isn't in an executable section.
 use anyhow::Result;
+use log::debug;
 
 use crate::{loader::pe::PE, module::Permissions, VA};
 
@@ -26,6 +27,13 @@ pub fn find_pe_exports(pe: &PE) -> Result<Vec<VA>> {
             pe.module.probe_va(va, Permissions::X)
         })
         .collect();
+
+    for export in exports.iter() {
+        debug!("export: {export:#x}");
+    }
+    if exports.is_empty() {
+        debug!("exports: none");
+    }
 
     Ok(exports)
 }

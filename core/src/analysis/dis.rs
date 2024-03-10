@@ -42,10 +42,8 @@ pub fn linear_disassemble<'a>(
     buf: &'a [u8],
 ) -> impl Iterator<Item = (usize, zydis::Result<Option<zydis::DecodedInstruction>>)> + 'a {
     let mut offset = 0usize;
-    let mut insn_count = 0usize;
     let iter = std::iter::from_fn(move || {
         if offset >= buf.len() {
-            debug!("decoded {} instructions", insn_count);
             return None;
         }
 
@@ -63,8 +61,6 @@ pub fn linear_disassemble<'a>(
 
             // thorough disassembly:
             // offset += 1;
-
-            insn_count += 1;
         } else {
             offset += 1;
         }

@@ -227,6 +227,10 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     debug!("functions: found {} function candidates", function_starts.len());
     debug!("functions: found {} thunks", thunks.len());
 
+    for function_start in function_starts.iter() {
+        debug!("functions: function candidate: {function_start:#x}");
+    }
+
     let function_starts: Vec<_> = function_starts
         .difference(&thunks.keys().cloned().collect())
         .cloned()
