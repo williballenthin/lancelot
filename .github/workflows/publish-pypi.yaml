@@ -24,6 +24,9 @@ jobs:
       env:
         PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
       with:
+        # bump this to v1.5.0 shortly
+        # downgraded here due to https://github.com/pypa/twine/issues/1059
+        # which prevents GH action from uploading to PyPI
         maturin-version: 1.4.0
         target: ${{ matrix.target }}
         manylinux: auto

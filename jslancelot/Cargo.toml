@@ -1,6 +1,6 @@
 [package]
 name = "jslancelot"
-version = "0.8.9"
+version = "0.8.10"
 authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
@@ -13,7 +13,7 @@ readme = "./README.md"
 crate-type = ["cdylib"]
 
 [dependencies]
-lancelot = { path = "../core", version = "0.8.9" }
+lancelot = { path = "../core", version = "0.8.10" }
 anyhow = "1"
 wasm-bindgen = { version = "0.2", features = ["enable-interning", "std"] }
 js-sys = "0.3"
