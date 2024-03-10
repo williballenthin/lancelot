@@ -184,8 +184,9 @@ jobs:
       - name: move files to dist/
         run: |
           shopt -s globstar  # Enable recursive globbing (**)
+          rm -rf dist/
           mkdir dist/
-          cp -r artifacts/**/* dist/
+          cp -r artifacts/**/*.whl dist/
       - name: publish package
         uses: pypa/gh-action-pypi-publish@f5622bde02b04381239da3573277701ceca8f6a0  # release/v1
         with:
