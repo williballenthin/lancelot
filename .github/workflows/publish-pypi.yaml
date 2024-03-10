@@ -18,7 +18,7 @@ jobs:
         ]
         target: [x86_64, i686, aarch64, armv7]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: messense/maturin-action@v1
       name: build pylancelot for linux (${{ matrix.target }})
       env:
@@ -42,7 +42,7 @@ jobs:
     - uses: actions/upload-artifact@v4
       name: upload
       with:
-        name: wheels-linux-${{ matrix.python.version }}
+        name: wheels-linux-${{ matrix.python.version }}-${{ matrix.target }}
         path: target/wheels/*.whl
   
   windows:
@@ -58,8 +58,8 @@ jobs:
           { version: '3.12' },
         ]
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python.version }}
         architecture: ${{ matrix.target }}
@@ -86,7 +86,7 @@ jobs:
     - uses: actions/upload-artifact@v4
       name: upload
       with:
-        name: wheels-windows-${{ matrix.python.version }}
+        name: wheels-windows-${{ matrix.python.version }}-${{ matrix.target }}
         path: target/wheels/*.whl
 
   macos:
@@ -101,8 +101,8 @@ jobs:
           { version: '3.12' },
         ]
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v2
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python.version }}
         architecture: x64
