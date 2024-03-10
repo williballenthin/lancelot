@@ -11,6 +11,23 @@ intel x86(-64) code analysis library that reconstructs control flow
   - cmake
   - pkg-config
 
+Consider using [cranelift](https://github.com/rust-lang/rustc_codegen_cranelift) during development:
+
+```console
+$ rustup component add rustc-codegen-cranelift-preview --toolchain nightly
+$ set -x CARGO_PROFILE_DEV_CODEGEN_BACKEND cranelift
+$ cargo build -Zcodegen-backend
+```
+
+Also consider using `mold`:
+
+```console
+$ mold -run cargo build
+```
+
+If it doesn't work with your (read: Willi's) nixOS setup,
+use it just for incremental builds.
+
 ## maintenance
 
 ```
@@ -27,19 +44,5 @@ we want to ignore any old dependencies stemming from unicorn.
 ## testing
 
 ```
-$ pushd core; cargo test; popd
-$ pushd flirt; cargo test; popd
-$ pushd bin; cargo test; popd
-
-$ pushd pylancelot
-$   # install maturin if necessary
-$   maturin develop --extras dev
-$   pytest
-$ popd
-
-$ pushd pyflirt
-$   # install maturin if necessary
-$   maturin develop  --extras dev
-$   pytest
-$ popd
+$ pre-commit run --all-files --hook-stage manual
 ```

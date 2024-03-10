@@ -1,3 +1,5 @@
+#cargo-features = ["codegen-backend"]
+
 [workspace]
 resolver = "2"
 
@@ -11,7 +13,6 @@ members = [
 ]
 
 [profile.release]
-# temporarily disabled due to: https://github.com/zyantific/zydis-rs/issues/29
 lto = "fat"
 codegen-units = 1
 incremental = true
@@ -23,3 +24,11 @@ incremental = true
 # but hopefully this isn't as painful due to incremental being enabled.
 opt-level = 3
 incremental = true
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+# third party dependencies aren't rebuilt as often, so optimize them more.
+# via: https://benw.is/posts/how-i-improved-my-rust-compile-times-by-seventy-five-percent
+opt-level = 3
