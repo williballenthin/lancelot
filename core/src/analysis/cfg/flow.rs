@@ -2,7 +2,8 @@ use anyhow::Result;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    analysis::{dis, dis::Target},
+    analysis::dis::{self, Target},
+    aspace::AddressSpace,
     module::{Module, Permissions},
     VA,
 };
@@ -56,6 +57,16 @@ fn is_executable(module: &Module, va: VA) -> bool {
     module.probe_va(va, Permissions::X)
 }
 
+/// Is the given address a NULL byte (which is not a relevant x86 instruction).
+/// If the address isn't mapped, return false.
+fn is_empty(module: &Module, va: VA) -> bool {
+    match module.address_space.read_u8(va) {
+        Ok(0) => true,
+        Ok(_) => false,
+        Err(_) => false,
+    }
+}
+
 pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CALL, then its a programming error. panic!
     // all CALLs should have an operand.
@@ -74,6 +85,12 @@ pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
                     // region doesn't exist on disk,
                     // like the RWX region that UPX unpacks to.
                     // physical size=0, virtual size=big.
+                    return Ok(smallvec![]);
+                }
+
+                if is_empty(module, va) {
+                    // region exists on disk, but it starts with a NULL byte,
+                    // which isn't a reasonable x86 instruction.
                     return Ok(smallvec![]);
                 }
 
@@ -110,6 +127,12 @@ pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstructi
                     return Ok(smallvec![]);
                 }
 
+                if is_empty(module, va) {
+                    // region exists on disk, but it starts with a NULL byte,
+                    // which isn't a reasonable x86 instruction.
+                    return Ok(smallvec![]);
+                }
+
                 return Ok(smallvec![Flow::UnconditionalJump(target)]);
             }
             Target::Indirect(_) => {
@@ -138,6 +161,12 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
             // region doesn't exist on disk,
             // like the RWX region that UPX unpacks to.
             // physical size=0, virtual size=big.
+            return Ok(smallvec![]);
+        }
+
+        if is_empty(module, va) {
+            // region exists on disk, but it starts with a NULL byte,
+            // which isn't a reasonable x86 instruction.
             return Ok(smallvec![]);
         }
 
