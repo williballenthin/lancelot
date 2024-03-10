@@ -105,6 +105,17 @@ impl Module {
         self.probe_va(va, perm)
     }
 
+    /// Is the memory at the given VA backed by data in the module?
+    pub fn is_in_image(&self, offset: VA) -> bool {
+        if let Ok(file_offset) = self.file_offset(offset) {
+            self.sections
+                .iter()
+                .any(|section| section.physical_range.contains(&(file_offset as u64)))
+        } else {
+            false
+        }
+    }
+
     pub fn file_offset(&self, va: VA) -> Result<usize> {
         if let Some(sec) = self.sections.iter().find(|&sec| sec.virtual_range.contains(&va)) {
             let offset = va - sec.virtual_range.start;
