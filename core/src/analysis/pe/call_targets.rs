@@ -34,13 +34,14 @@
 // TODO: detect thunks (call to unconditional jmp).
 
 use log::debug;
+use std::collections::BTreeSet;
 
 use anyhow::Result;
 
 use crate::{analysis::dis, aspace::AddressSpace, loader::pe::PE, module::Permissions, util, VA};
 
-pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
-    let mut ret = vec![];
+pub fn find_pe_call_targets(pe: &PE) -> Result<BTreeSet<VA>> {
+    let mut ret = BTreeSet::default();
     let decoder = dis::get_disassembler(&pe.module)?;
 
     let mut call_count = 0usize;
@@ -89,7 +90,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
                         let target = op0.ptr.offset as u64;
                         if pe.module.probe_va(target, Permissions::X) {
-                            ret.push(target);
+                            ret.insert(target);
                         }
                     }
                     zydis::OperandType::IMMEDIATE => {
@@ -114,7 +115,7 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
 
                             let target = ((insn_va + insn.length as u64) as i64 + imm) as u64;
                             if pe.module.probe_va(target, Permissions::X) {
-                                ret.push(target);
+                                ret.insert(target);
                             }
                         } else {
                             debug!("CALL-IMM-ABS: {:#x}", insn_va);
@@ -128,7 +129,8 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<Vec<VA>> {
             }
         }
 
-        debug!("call targets: {name}, call count: {call_count}");
+        let count = ret.len();
+        debug!("call targets: {name}, call count: {call_count}, targets: {count}");
     }
 
     Ok(ret)
@@ -145,7 +147,7 @@ mod tests {
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
-        assert_eq!(3610, fns.len());
+        assert_eq!(891, fns.len());
 
         Ok(())
     }
@@ -167,7 +169,7 @@ mod tests {
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
-        assert_eq!(250, fns.len());
+        assert_eq!(94, fns.len());
 
         Ok(())
     }
@@ -178,7 +180,7 @@ mod tests {
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::call_targets::find_pe_call_targets(&pe)?;
-        assert_eq!(10907, fns.len());
+        assert_eq!(1772, fns.len());
 
         Ok(())
     }
