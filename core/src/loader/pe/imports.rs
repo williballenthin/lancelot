@@ -107,7 +107,7 @@ pub fn read_image_import_descriptor(pe: &PE, va: VA) -> Result<IMAGE_IMPORT_DESC
 }
 
 pub fn read_import_descriptors(pe: &PE, import_directory: VA) -> impl Iterator<Item = IMAGE_IMPORT_DESCRIPTOR> + '_ {
-    (0..std::usize::MAX)
+    (0..usize::MAX)
         .map(move |i| import_directory + (i * sizeof_IMAGE_IMPORT_DESCRIPTOR) as RVA)
         .map(move |va| read_image_import_descriptor(pe, va))
         .take_while(|desc| match desc {
@@ -198,7 +198,7 @@ pub fn read_thunks<'a>(
     let base_address = pe.module.address_space.base_address;
     let psize = pe.module.arch.pointer_size();
 
-    (0..std::usize::MAX)
+    (0..usize::MAX)
         .map(move |i| {
             (
                 // the Original First Thunk (OFT) remains constant, and points to the

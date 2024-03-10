@@ -571,7 +571,7 @@ impl FlirtSignatureSet {
 
 #[cfg(test)]
 mod tests {
-    use super::{pat, sig, *};
+    use super::*;
 
     const PAT: &'static str = "\
 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3

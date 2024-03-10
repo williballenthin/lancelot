@@ -485,9 +485,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use log::debug;
-    use std::{io::Read, path::PathBuf};
-
-    use anyhow::Result;
+    use std::path::PathBuf;
 
     use super::*;
 
@@ -498,7 +496,7 @@ mod tests {
         d.push("core");
         d.push("resources");
         d.push("test");
-        d.push(name.to_string());
+        d.push(name);
         println!("{}", String::from(d.to_str().unwrap()));
         String::from(d.to_str().unwrap())
     }

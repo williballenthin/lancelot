@@ -78,7 +78,7 @@ pub struct WorkspaceAnalysis {
     pub functions: BTreeMap<VA, FunctionAnalysis>,
 
     // derived from:
-    //   - file format analysis pass: pe::get_improts()
+    //   - file format analysis pass: pe::get_imports()
     pub imports: BTreeMap<VA, Import>,
 
     pub externs: BTreeMap<VA, String>,

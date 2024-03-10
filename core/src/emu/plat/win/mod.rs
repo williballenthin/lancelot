@@ -40,7 +40,7 @@ pub fn link_imports(emu: &mut Emulator, pe: &PE) -> Result<BTreeMap<VA, String>>
             let original_thunk_array = base_address + import_descriptor.original_first_thunk;
             let first_thunk_array = base_address + import_descriptor.first_thunk;
 
-            for i in 0..std::usize::MAX {
+            for i in 0..usize::MAX {
                 let first_thunk_addr = first_thunk_array + (i * psize) as RVA;
                 let thunk = read_image_thunk_data(pe, first_thunk_addr);
                 if matches!(thunk, Err(_) | Ok(IMAGE_THUNK_DATA::Function(0x0))) {

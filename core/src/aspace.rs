@@ -151,7 +151,7 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
         const NEWLINE: u8 = 0xA;
         const LINEFEED: u8 = 0xD;
 
-        let buf: Vec<u8> = (offset..std::u64::MAX)
+        let buf: Vec<u8> = (offset..u64::MAX)
             .map(|offset| self.map.get(offset))
             .take_while(|c| c.is_some())
             .map(|c| c.unwrap())

@@ -422,7 +422,7 @@ impl<T: Default + Copy> PageMap<T> {
             panic!("start > end");
         }
 
-        if end - start > std::usize::MAX as u64 {
+        if end - start > usize::MAX as u64 {
             panic!("slice too large")
         }
 
