@@ -60,4 +60,3 @@ resources/evaluation/SoK/binaries.txt
 .vscode
 */target/
 .direnv
-.envrc
