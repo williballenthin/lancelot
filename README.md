@@ -16,17 +16,18 @@ Consider using [cranelift](https://github.com/rust-lang/rustc_codegen_cranelift)
 
 ```console
 $ rustup component add rustc-codegen-cranelift-preview --toolchain nightly
-$ set -x CARGO_PROFILE_DEV_CODEGEN_BACKEND cranelift
-$ cargo build -Zcodegen-backend
+$ env CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo build -Zcodegen-backend
 ```
 
 Also consider using `mold`:
 
 ```console
 $ mold -run cargo build
+# or with cranelift:
+$ env CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift mold -run cargo build -Zcodegen-backend
 ```
 
-If it doesn't work with your (read: Willi's) nixOS setup,
+If it doesn't work with your (read: Willi's) nix setup,
 use it just for incremental builds.
 
 ## maintenance

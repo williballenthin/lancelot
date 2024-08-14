@@ -19,6 +19,10 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'           
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc make git cmake python3.11 protobuf-compiler
       - name: check
         uses: actions-rs/cargo@v1
         with:
@@ -33,10 +37,6 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
-      - name: install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gcc make git cmake python3.11 protobuf-compiler
       - name: test core
         uses: actions-rs/cargo@v1
         with:
