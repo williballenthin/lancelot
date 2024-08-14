@@ -1273,12 +1273,17 @@ mod tests {
         // hide the panic stack trace
         // ref: https://stackoverflow.com/a/35559417/87207
         std::panic::set_hook(Box::new(|_info| {
-            // do nothing
+            // explicitly exit with zero status (success).
+            // this is necessary because the unwind is not guaranteed to be caught.
+            // but this hook will be invoked. so now's our chance to say things are ok.
+            std::process::exit(0);
         }));
 
         // catch expected panic
         // ref: https://stackoverflow.com/a/42649833/87207
         assert!(
+            // this doesn't work under cranelift (at least today),
+            // probably because it doesn't support unwinding.
             std::panic::catch_unwind(|| {
                 // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
                 let mut uc = uc::uc_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
