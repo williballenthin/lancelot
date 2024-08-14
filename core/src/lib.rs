@@ -11,7 +11,7 @@ pub mod analysis;
 pub mod arch;
 pub mod aspace;
 pub mod config;
-#[cfg(feature = "emulator")]
+#[cfg(any(test, doctest, feature = "emulator"))]
 pub mod emu;
 pub mod loader;
 pub mod module;

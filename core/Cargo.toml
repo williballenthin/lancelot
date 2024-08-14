@@ -33,7 +33,7 @@ fern = { version = "0.6", optional = true }
 chrono = { version = "0.4", features = ["clock"], default-features = false, optional = true}
 
 # needed for emu
-bitvec = { version = "1", optional = true }
+bitvec = { version = "1" }
 
 # needed for flirt
 lancelot-flirt = { path = "../flirt", version = "0.8.10", optional = true}
@@ -42,7 +42,7 @@ lancelot-flirt = { path = "../flirt", version = "0.8.10", optional = true}
 criterion = "0.4"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 fern = "0.6"
-# unicorn-engine = "2.0.0"
+unicorn-engine = "2.0.0"
 dynasm = "1.0.1"
 dynasmrt = "1.0.1"
 
@@ -57,5 +57,5 @@ default = ["flirt", "disassembler"]
 # See: https://github.com/rust-lang/cargo/issues/4669
 test = ["chrono", "fern", "emulator"]
 flirt = ["lancelot-flirt", "disassembler"]
-emulator = ["bitvec", "zydis"]
+emulator = ["zydis"]
 disassembler = ["zydis"]
