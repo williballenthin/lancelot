@@ -32,7 +32,7 @@ test-flirt:
 
 test-pylancelot-rs:
     cd pylancelot && \
-    env CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo test -Zcodegen-backend
+    cargo test  # can't use cranelift when linking to python
 
 test-pylancelot-py:
     bash .github/scripts/pytest-pylancelot.sh
@@ -41,7 +41,7 @@ test-pylancelot: test-pylancelot-rs test-pylancelot-py
 
 test-pyflirt-rs:
     cd pyflirt && \
-    env CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo test -Zcodegen-backend
+    cargo test  # can't use cranelift when linking to python
 
 test-pyflirt-py:
     bash .github/scripts/pytest-pyflirt.sh
