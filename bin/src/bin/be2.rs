@@ -753,7 +753,7 @@ fn collect_flow_graphs(
 }
 
 fn collect_call_graphs(
-    ws: Box<dyn Workspace>,
+    ws: &dyn Workspace,
     vertexes: Vec<bin_export2::call_graph::Vertex>,
     vertex_index_by_address: BTreeMap<u64, usize>,
     call_targets_by_basic_block: BTreeMap<u64, Vec<u64>>,
@@ -923,7 +923,7 @@ fn _main() -> Result<()> {
         })
         .collect::<Vec<bin_export2::Library>>();
 
-    let vertices = collect_vertices(&ws, &libraries);
+    let vertices = collect_vertices(&*ws, &libraries);
 
     // Map from function address to Vertex index.
     // Used for checking if an address is a function, for example.
@@ -979,7 +979,7 @@ fn _main() -> Result<()> {
                 let instruction_index = instructions.len();
 
                 let instruction_call_targets = collect_instruction_call_targets(
-                    &ws,
+                    &*ws,
                     bb,
                     va,
                     &vertex_index_by_address,
@@ -989,7 +989,7 @@ fn _main() -> Result<()> {
                 let mnemonic_index = mnemonics.add(insn.mnemonic.get_string().unwrap().to_string());
 
                 collect_instruction_references(
-                    &ws,
+                    &*ws,
                     instruction_index,
                     va,
                     &insn,
@@ -998,7 +998,7 @@ fn _main() -> Result<()> {
                     &mut data_references,
                 );
 
-                let operand_indexes = collect_instruction_operands(&ws, va, &insn, &mut expressions, &mut operands);
+                let operand_indexes = collect_instruction_operands(&*ws, va, &insn, &mut expressions, &mut operands);
 
                 instructions.push(bin_export2::Instruction {
                     address:        if offset == 0 { Some(va) } else { None },
@@ -1028,9 +1028,9 @@ fn _main() -> Result<()> {
         basic_block_index_by_address.insert(bb.address, basic_blocks.len() - 1);
     }
 
-    let flow_graphs = collect_flow_graphs(&ws, basic_block_index_by_address);
+    let flow_graphs = collect_flow_graphs(&*ws, basic_block_index_by_address);
 
-    let call_graph = collect_call_graphs(ws, vertices, vertex_index_by_address, call_targets_by_basic_block);
+    let call_graph = collect_call_graphs(&*ws, vertices, vertex_index_by_address, call_targets_by_basic_block);
 
     #[allow(deprecated)]
     let be2 = BinExport2 {

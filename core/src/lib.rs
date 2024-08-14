@@ -19,9 +19,9 @@ pub mod pagemap;
 pub mod util;
 pub mod workspace;
 
-#[cfg(any(test, doctest, feature = "test", bench, feature = "bench"))]
+#[cfg(any(test, doctest, feature = "test"))]
 pub mod rsrc;
-#[cfg(any(test, doctest, feature = "test", bench, feature = "bench"))]
+#[cfg(any(test, doctest, feature = "test"))]
 pub mod test;
 
 pub type VA = u64;

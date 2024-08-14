@@ -42,7 +42,7 @@ lancelot-flirt = { path = "../flirt", version = "0.8.10", optional = true}
 criterion = "0.4"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 fern = "0.6"
-unicorn-engine = "2.0.0"
+# unicorn-engine = "2.0.0"
 dynasm = "1.0.1"
 dynasmrt = "1.0.1"
 
@@ -52,7 +52,7 @@ harness = false
 required-features = ["emulator", "flirt", "disassembler", "test"]
 
 [features]
-default = ["emulator", "flirt", "disassembler"]
+default = ["flirt", "disassembler"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 test = ["chrono", "fern", "emulator"]

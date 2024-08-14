@@ -7,14 +7,14 @@
 /// implemented via [RegexSet](https://docs.rs/regex/1.3.9/regex/struct.RegexSet.html)
 ///
 /// > Match multiple (possibly overlapping) regular expressions in a single
-/// scan. >
+/// > scan.
 /// > A regex set corresponds to the union of two or more regular expressions.
 /// > That is, a regex set will match text where at least one of its constituent
 /// > regular expressions matches. A regex set as its formulated here provides a
-/// touch more power: >  it will also report which regular expressions in the
-/// set match. > Indeed, this is the key difference between regex sets and a
-/// single Regex with many alternates, > since only one alternate can match at a
-/// time.
+/// > touch more power:  it will also report which regular expressions in the
+/// > set match. Indeed, this is the key difference between regex sets and a
+/// > single Regex with many alternates, since only one alternate can match at a
+/// > time.
 use anyhow::Result;
 use nom::{
     branch::alt,
