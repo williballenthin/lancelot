@@ -145,3 +145,12 @@ def test_probe(k32):
 def test_insn_int(k32):
     ws = lancelot.from_bytes(k32)
     assert int(ws.read_insn(0x1800202B0)) == 0x1800202B0
+
+
+def test_binexport2(k32):
+    buf = lancelot.binexport2_from_bytes(k32)
+    assert buf is not None
+
+    ws = lancelot.from_bytes(k32)
+    buf = ws.to_binexport2()
+    assert buf is not None

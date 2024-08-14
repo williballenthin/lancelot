@@ -26,17 +26,20 @@ smallvec = "1"
 widestring = "1.0"
 smol_str = "0.1"
 ansi_term = "0.12"
+chrono = { version = "0.4", features = ["clock"], default-features = false}
 
-# chrono, and fern are only needed by tests, but because of the need for a feature named
+# fern is only needed by tests, but because of the need for a feature named
 # test, they also have to be optional dependencies as well.
 fern = { version = "0.6", optional = true }
-chrono = { version = "0.4", features = ["clock"], default-features = false, optional = true}
 
 # needed for emu
 bitvec = { version = "1" }
 
 # needed for flirt
 lancelot-flirt = { path = "../flirt", version = "0.8.10", optional = true}
+
+# needed for binexport2
+prost = "0.13"
 
 [dev-dependencies]
 criterion = "0.4"
@@ -45,6 +48,9 @@ fern = "0.6"
 unicorn-engine = "2.0.0"
 dynasm = "1.0.1"
 dynasmrt = "1.0.1"
+
+[build-dependencies]
+prost-build = { version = "0.13" }
 
 [[bench]]
 name = "core"
@@ -55,7 +61,7 @@ required-features = ["emulator", "flirt", "disassembler", "test"]
 default = ["flirt", "disassembler"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
-test = ["chrono", "fern", "emulator"]
+test = ["fern", "emulator"]
 flirt = ["lancelot-flirt", "disassembler"]
 emulator = ["zydis"]
 disassembler = ["zydis"]

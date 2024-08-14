@@ -11,7 +11,7 @@ use ::lancelot::{
     module::{ModuleError, Permissions},
     pagemap::PageMapError,
     util::UtilError,
-    workspace::{Workspace as lWorkspace, WorkspaceError},
+    workspace::{export::binexport2::export_workspace_to_binexport2, Workspace as lWorkspace, WorkspaceError},
     VA,
 };
 use anyhow::Error;
@@ -78,6 +78,7 @@ pub fn from_bytes(buf: &PyBytes) -> PyResult<Workspace> {
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let dec = dis::get_disassembler(ws.module()).map_err(to_py_err)?;
     Ok(Workspace {
+        buf:     buf.as_bytes().to_vec(),
         inner:   ws,
         decoder: dec,
     })
@@ -298,6 +299,7 @@ const PERMISSION_EXECUTE: u8 = 0b100;
 
 #[pyclass]
 pub struct Workspace {
+    buf:     Vec<u8>,
     inner:   Box<dyn lWorkspace>,
     decoder: zydis::Decoder,
 }
@@ -498,6 +500,32 @@ impl Workspace {
             }
         }
     }
+
+    /// emit a BinExport2 protobuf using the analysis for the given workspace.
+    ///
+    /// Args:
+    ///   executable_id (Optional[str]): name of the file
+    ///
+    /// Returns: bytes
+    pub fn to_binexport2(&self, executable_id: Option<String>) -> PyResult<Vec<u8>> {
+        let hash = sha256::digest(&self.buf);
+        export_workspace_to_binexport2(&*self.inner, hash, executable_id).map_err(to_py_err)
+    }
+}
+
+/// analyze the given bytes with Lancelot and emit a BinExport2 protobuf.
+///
+/// Args:
+///   buf (bytes): the raw bytes of a supported file (e.g., PE or COFF)
+///   executable_id (Optional[str]): name of the file
+///
+/// Returns: bytes
+#[pyfunction]
+pub fn binexport2_from_bytes(buf: &PyBytes, executable_id: Option<String>) -> PyResult<Vec<u8>> {
+    let config = ::lancelot::workspace::config::empty();
+    let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
+    let hash = sha256::digest(buf.as_bytes());
+    export_workspace_to_binexport2(&*ws, hash, executable_id).map_err(to_py_err)
 }
 
 #[pymodule]
@@ -548,6 +576,8 @@ fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add("PERMISSION_READ", PERMISSION_READ)?;
     m.add("PERMISSION_WRITE", PERMISSION_WRITE)?;
     m.add("PERMISSION_EXECUTE", PERMISSION_EXECUTE)?;
+
+    m.add_function(wrap_pyfunction!(binexport2_from_bytes, m)?)?;
 
     Ok(())
 }
