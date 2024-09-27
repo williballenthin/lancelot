@@ -505,7 +505,7 @@ impl std::fmt::Debug for DecisionTree {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, path::PathBuf, ops::Not};
+    use std::{io::Read, ops::Not, path::PathBuf};
 
     use super::*;
 

@@ -274,7 +274,10 @@ fn collect_instruction_references(
 /// BinExport2 uses a Vertex to describe an element within the call graph.
 /// Note that there is not necessarily disassembly/control flow graph associated
 /// with a Vertex, such as an imported function.
-fn collect_vertices(ws: &dyn Workspace, libraries: &[pb::bin_export2::Library]) -> Vec<pb::bin_export2::call_graph::Vertex> {
+fn collect_vertices(
+    ws: &dyn Workspace,
+    libraries: &[pb::bin_export2::Library],
+) -> Vec<pb::bin_export2::call_graph::Vertex> {
     // Map from DLL name to library index,
     // so that we can link imported functions to the library entry.
     let library_index_by_name: BTreeMap<String, usize> = libraries

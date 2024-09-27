@@ -140,7 +140,6 @@ pub struct FlirtSignature {
     //
     // means: the CRC16 of the six bytes following the byte signature match
     // must be 0x2828.
-
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
     pub crc16:               u16,

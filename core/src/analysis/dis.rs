@@ -384,8 +384,8 @@ pub fn get_operand_xref(
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Not;
     use crate::{analysis::dis::*, rsrc::*, test::*};
+    use std::ops::Not;
 
     #[test]
     fn test_get_memory_operand_ptr() {
