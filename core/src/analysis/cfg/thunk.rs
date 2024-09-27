@@ -8,6 +8,20 @@ use crate::{
     VA,
 };
 
+/// A thunk is a function that contains only an unconditional jump to another
+/// function.
+pub fn is_thunk(cfg: &CFG, va: VA) -> bool {
+    if let Some(succs) = cfg.flows.flows_by_src.get(&va) {
+        if succs.len() != 1 {
+            false
+        } else {
+            matches!(succs[0], Flow::UnconditionalJump(_))
+        }
+    } else {
+        false
+    }
+}
+
 pub fn find_thunks<'a, T>(cfg: &CFG, functions: T) -> BTreeSet<VA>
 where
     T: Iterator<Item = &'a VA>,
@@ -15,14 +29,8 @@ where
     let mut thunks: BTreeSet<VA> = Default::default();
 
     for &function in functions {
-        if let Some(succs) = cfg.flows.flows_by_src.get(&function) {
-            if succs.len() != 1 {
-                continue;
-            }
-
-            if let Flow::UnconditionalJump(_) = succs[0] {
-                thunks.insert(function);
-            }
+        if is_thunk(cfg, function) {
+            thunks.insert(function);
         }
     }
 
