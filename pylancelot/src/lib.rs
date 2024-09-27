@@ -70,7 +70,7 @@ fn to_py_err(e: Error) -> PyErr {
 ///
 /// Returns: Workspace
 #[pyfunction]
-pub fn from_bytes(buf: &PyBytes) -> PyResult<Workspace> {
+pub fn from_bytes(buf: &Bound<'_, PyBytes>) -> PyResult<Workspace> {
     use ::lancelot::analysis::dis;
 
     let config = ::lancelot::workspace::config::empty();
@@ -120,7 +120,7 @@ fn flow_to_tuple(py: Python, flow: &::lancelot::analysis::cfg::flow::Flow) -> Py
         Flow::UnconditionalJump(Target::Indirect(va)) => [*va, TARGET_INDIRECT as u64, FLOW_UNCONDITIONAL_JUMP as u64],
         Flow::ConditionalJump(va) => [*va, TARGET_DIRECT as u64, FLOW_CONDITIONAL_JUMP as u64],
     };
-    let triple = PyTuple::new(py, triple.iter());
+    let triple = PyTuple::new_bound(py, triple.iter());
     triple.into()
 }
 
@@ -231,7 +231,7 @@ fn operand_to_tuple(py: Python, operand: &zydis::DecodedOperand) -> Py<PyTuple> 
         _ => {}
     };
 
-    PyTuple::new(py, ret.iter()).into()
+    PyTuple::new_bound(py, ret.iter()).into()
 }
 
 #[pyclass]
@@ -274,7 +274,7 @@ impl Instruction {
             ret.push(operand_to_tuple(py, operand));
         }
 
-        PyTuple::new(py, ret.iter()).into()
+        PyTuple::new_bound(py, ret.iter()).into()
     }
 
     fn __str__(&self) -> PyResult<String> {
@@ -381,9 +381,9 @@ impl Workspace {
         insns.build_index(self.inner.module(), va).map_err(to_py_err)?;
         let cfg = cfg::CFG::from_instructions(self.inner.module(), insns).map_err(to_py_err)?;
 
-        let basic_blocks = PyDict::new(py);
+        let basic_blocks = PyDict::new_bound(py);
         for (bbva, bb) in cfg.basic_blocks.blocks_by_address.iter() {
-            let succs = PyList::empty(py);
+            let succs = PyList::empty_bound(py);
             for succ in cfg.flows.flows_by_src[&bb.address_of_last_insn].iter() {
                 succs.append(flow_to_tuple(py, succ))?;
             }
@@ -419,7 +419,7 @@ impl Workspace {
             .module()
             .address_space
             .read_bytes(va, length)
-            .map(|buf| PyBytes::new(py, &buf).into())
+            .map(|buf| PyBytes::new_bound(py, &buf).into())
             .map_err(to_py_err)
     }
 
@@ -507,10 +507,11 @@ impl Workspace {
     ///   executable_id (Optional[str]): name of the file
     ///
     /// Returns: bytes
+    #[pyo3(signature = (executable_id=None))]
     pub fn to_binexport2(&self, py: Python, executable_id: Option<String>) -> PyResult<Py<PyBytes>> {
         let hash = sha256::digest(&self.buf);
         export_workspace_to_binexport2(&*self.inner, hash, executable_id)
-            .map(|buf| PyBytes::new(py, &buf).into())
+            .map(|buf| PyBytes::new_bound(py, &buf).into())
             .map_err(to_py_err)
     }
 }
@@ -523,17 +524,23 @@ impl Workspace {
 ///
 /// Returns: bytes
 #[pyfunction]
-pub fn binexport2_from_bytes(py: Python, buf: &PyBytes, executable_id: Option<String>) -> PyResult<Py<PyBytes>> {
+#[pyo3(signature = (buf, executable_id=None))]
+pub fn binexport2_from_bytes(
+    py: Python,
+    buf: &Bound<'_, PyBytes>,
+    executable_id: Option<String>,
+) -> PyResult<Py<PyBytes>> {
     let config = ::lancelot::workspace::config::empty();
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let hash = sha256::digest(buf.as_bytes());
     export_workspace_to_binexport2(&*ws, hash, executable_id)
-        .map(|buf| PyBytes::new(py, &buf).into())
+        .map(|buf| PyBytes::new_bound(py, &buf).into())
         .map_err(to_py_err)
 }
 
 #[pymodule]
-fn lancelot(_py: Python, m: &PyModule) -> PyResult<()> {
+fn lancelot(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+
     m.add_function(wrap_pyfunction!(from_bytes, m)?)?;
     m.add_class::<Workspace>()?;
 

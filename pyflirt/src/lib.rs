@@ -67,7 +67,7 @@ impl FlirtSignature {
 
                 let data = [name.into_py(py), ty.into_py(py), offset.into_py(py)];
 
-                PyTuple::new(py, data.iter()).to_object(py)
+                PyTuple::new_bound(py, data.iter()).to_object(py)
             })
             .collect()
     }
@@ -87,7 +87,7 @@ impl FlirtSignature {
 }
 
 #[pyfunction]
-pub fn parse_sig(buf: &PyBytes) -> PyResult<Vec<FlirtSignature>> {
+pub fn parse_sig(buf: &Bound<'_, PyBytes>) -> PyResult<Vec<FlirtSignature>> {
     Ok(sig::parse(buf.as_bytes())
         .map_err(to_py_err)?
         .into_iter()
@@ -111,7 +111,7 @@ pub struct FlirtMatcher {
 
 #[pymethods]
 impl FlirtMatcher {
-    pub fn r#match(&self, buf: &PyBytes) -> Vec<FlirtSignature> {
+    pub fn r#match(&self, buf: &Bound<'_, PyBytes>) -> Vec<FlirtSignature> {
         self.inner
             .r#match(buf.as_bytes())
             .into_iter()
@@ -121,7 +121,7 @@ impl FlirtMatcher {
 }
 
 #[pyfunction]
-pub fn compile(py: Python, sigs: &PyList) -> PyResult<FlirtMatcher> {
+pub fn compile(py: Python, sigs: &Bound<'_, PyList>) -> PyResult<FlirtMatcher> {
     let sigs = match sigs.to_object(py).extract::<Vec<FlirtSignature>>(py) {
         Err(_) => {
             return Err(pyo3::exceptions::PyValueError::new_err(String::from(
@@ -137,7 +137,7 @@ pub fn compile(py: Python, sigs: &PyList) -> PyResult<FlirtMatcher> {
 }
 
 #[pymodule]
-fn flirt(_py: Python, m: &PyModule) -> PyResult<()> {
+fn flirt(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_pat, m)?)?;
     m.add_function(wrap_pyfunction!(parse_sig, m)?)?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;
