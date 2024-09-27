@@ -1,4 +1,5 @@
 //! Parse the PE Control Flow Guard function table.
+//!
 //! This table contains an entry for each function that may be invoked
 //! dynamically. When present, it tends to cover a large percentage of the
 //! functions in a module.

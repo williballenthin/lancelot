@@ -128,18 +128,18 @@ pub struct FlirtSignature {
     /// ```
     pub byte_sig: ByteSignature,
 
-    /// after byte signature matching the start of the function,
-    /// flirt checks the CRC16 checksum of subsequent data.
-    /// usually this is up to the next relocation/fixup.
-    ///
-    /// example
-    ///
-    /// ```text
-    ///  06 2828
-    /// ```
-    ///
-    /// means: the CRC16 of the six bytes following the byte signature match
-    /// must be 0x2828.
+    // after byte signature matching the start of the function,
+    // flirt checks the CRC16 checksum of subsequent data.
+    // usually this is up to the next relocation/fixup.
+    //
+    // example
+    //
+    // ```text
+    //  06 2828
+    // ```
+    //
+    // means: the CRC16 of the six bytes following the byte signature match
+    // must be 0x2828.
 
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
@@ -448,7 +448,7 @@ fn create_pattern(sig: &FlirtSignature) -> String {
 }
 
 impl<'a> FlirtSignatureMatcher<'a> {
-    pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher {
+    pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher<'a> {
         FlirtSignatureMatcher {
             re: FlirtSignatureMatcher::create_match_re(sig),
             sig,

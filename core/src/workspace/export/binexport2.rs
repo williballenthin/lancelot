@@ -25,7 +25,10 @@ use crate::{
     RVA, VA,
 };
 
-include!(concat!(env!("OUT_DIR"), "/binexport2.rs"));
+#[allow(clippy::too_long_first_doc_paragraph)]
+pub mod pb {
+    include!(concat!(env!("OUT_DIR"), "/binexport2.rs"));
+}
 
 /// Deduplicated list of values.
 ///
@@ -51,10 +54,10 @@ impl<T: std::hash::Hash + std::cmp::Eq + Clone> ValueIndex<T> {
 }
 
 type StringIndex = ValueIndex<String>;
-type ExpressionIndex = ValueIndex<bin_export2::Expression>;
-type OperandIndex = ValueIndex<bin_export2::Operand>;
+type ExpressionIndex = ValueIndex<pb::bin_export2::Expression>;
+type OperandIndex = ValueIndex<pb::bin_export2::Operand>;
 
-impl std::hash::Hash for bin_export2::Expression {
+impl std::hash::Hash for pb::bin_export2::Expression {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.r#type.hash(state);
         self.symbol.hash(state);
@@ -64,31 +67,31 @@ impl std::hash::Hash for bin_export2::Expression {
     }
 }
 
-impl std::cmp::Eq for bin_export2::Expression {}
+impl std::cmp::Eq for pb::bin_export2::Expression {}
 
-impl std::hash::Hash for bin_export2::Operand {
+impl std::hash::Hash for pb::bin_export2::Operand {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.expression_index.hash(state);
     }
 }
 
-impl std::cmp::Eq for bin_export2::Operand {}
+impl std::cmp::Eq for pb::bin_export2::Operand {}
 
-impl std::hash::Hash for bin_export2::Mnemonic {
+impl std::hash::Hash for pb::bin_export2::Mnemonic {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
 }
 
-impl std::cmp::Eq for bin_export2::Mnemonic {}
+impl std::cmp::Eq for pb::bin_export2::Mnemonic {}
 
 struct MnemonicIndex {
-    inner: ValueIndex<bin_export2::Mnemonic>,
+    inner: ValueIndex<pb::bin_export2::Mnemonic>,
 }
 
 impl MnemonicIndex {
     fn add(&mut self, value: String) -> i32 {
-        self.inner.add(bin_export2::Mnemonic { name: Some(value) })
+        self.inner.add(pb::bin_export2::Mnemonic { name: Some(value) })
     }
 }
 
@@ -118,8 +121,8 @@ fn add_operator(
     symbol: &str,
     parent: i32,
 ) -> i32 {
-    let expression = expressions.add(bin_export2::Expression {
-        r#type:        Some(bin_export2::expression::Type::Operator.into()),
+    let expression = expressions.add(pb::bin_export2::Expression {
+        r#type:        Some(pb::bin_export2::expression::Type::Operator.into()),
         symbol:        Some(symbol.into()),
         immediate:     None,
         parent_index:  Some(parent),
@@ -130,8 +133,8 @@ fn add_operator(
 }
 
 fn add_int(expressions: &mut ExpressionIndex, expression_indexes: &mut Vec<i32>, i: u64, parent: i32) -> i32 {
-    let expression = expressions.add(bin_export2::Expression {
-        r#type:        Some(bin_export2::expression::Type::ImmediateInt.into()),
+    let expression = expressions.add(pb::bin_export2::Expression {
+        r#type:        Some(pb::bin_export2::expression::Type::ImmediateInt.into()),
         symbol:        None,
         immediate:     Some(i),
         parent_index:  Some(parent),
@@ -147,8 +150,8 @@ fn add_reg(
     reg: dis::zydis::Register,
     parent: i32,
 ) -> i32 {
-    let expression = expressions.add(bin_export2::Expression {
-        r#type:        Some(bin_export2::expression::Type::Register.into()),
+    let expression = expressions.add(pb::bin_export2::Expression {
+        r#type:        Some(pb::bin_export2::expression::Type::Register.into()),
         symbol:        reg.get_string().map(|v| v.to_string()),
         immediate:     None,
         parent_index:  Some(parent),
@@ -205,8 +208,8 @@ fn collect_instruction_references(
     insn_va: u64,
     insn: &dis::zydis::DecodedInstruction,
     strings: &mut ValueIndex<String>,
-    string_references: &mut Vec<bin_export2::Reference>,
-    data_references: &mut Vec<bin_export2::DataReference>,
+    string_references: &mut Vec<pb::bin_export2::Reference>,
+    data_references: &mut Vec<pb::bin_export2::DataReference>,
 ) {
     if dis::is_control_flow_instruction(insn).not() {
         for (i, op) in dis::get_operands(insn).enumerate() {
@@ -216,14 +219,14 @@ fn collect_instruction_references(
                         // Insert a string reference, *or* a data reference, but not both.
                         if let Ok(s) = ws.module().address_space.read_ascii(target, 4) {
                             let string_index = strings.add(s);
-                            string_references.push(bin_export2::Reference {
+                            string_references.push(pb::bin_export2::Reference {
                                 instruction_index:         Some(instruction_index as i32),
                                 instruction_operand_index: Some(i as i32),
                                 operand_expression_index:  None,
                                 string_table_index:        Some(string_index),
                             });
                         } else {
-                            data_references.push(bin_export2::DataReference {
+                            data_references.push(pb::bin_export2::DataReference {
                                 instruction_index: Some(instruction_index as i32),
                                 address:           Some(target),
                             });
@@ -236,7 +239,7 @@ fn collect_instruction_references(
                             continue;
                         }
 
-                        data_references.push(bin_export2::DataReference {
+                        data_references.push(pb::bin_export2::DataReference {
                             instruction_index: Some(instruction_index as i32),
                             address:           Some(target),
                         });
@@ -246,14 +249,14 @@ fn collect_instruction_references(
                             if ws.module().probe_va(target, Permissions::R) {
                                 if let Ok(s) = ws.module().address_space.read_ascii(target, 4) {
                                     let string_index = strings.add(s);
-                                    string_references.push(bin_export2::Reference {
+                                    string_references.push(pb::bin_export2::Reference {
                                         instruction_index:         Some(instruction_index as i32),
                                         instruction_operand_index: Some(i as i32),
                                         operand_expression_index:  None,
                                         string_table_index:        Some(string_index),
                                     });
                                 } else {
-                                    data_references.push(bin_export2::DataReference {
+                                    data_references.push(pb::bin_export2::DataReference {
                                         instruction_index: Some(instruction_index as i32),
                                         address:           Some(target),
                                     });
@@ -271,7 +274,7 @@ fn collect_instruction_references(
 /// BinExport2 uses a Vertex to describe an element within the call graph.
 /// Note that there is not necessarily disassembly/control flow graph associated
 /// with a Vertex, such as an imported function.
-fn collect_vertices(ws: &dyn Workspace, libraries: &[bin_export2::Library]) -> Vec<bin_export2::call_graph::Vertex> {
+fn collect_vertices(ws: &dyn Workspace, libraries: &[pb::bin_export2::Library]) -> Vec<pb::bin_export2::call_graph::Vertex> {
     // Map from DLL name to library index,
     // so that we can link imported functions to the library entry.
     let library_index_by_name: BTreeMap<String, usize> = libraries
@@ -290,11 +293,11 @@ fn collect_vertices(ws: &dyn Workspace, libraries: &[bin_export2::Library]) -> V
 
     // Pass 1: Recognized functions with code.
     vertices.extend(ws.analysis().functions.iter().map(|(&address, f)| {
-        bin_export2::call_graph::Vertex {
+        pb::bin_export2::call_graph::Vertex {
             address:       Some(address),
             r#type:        Some(match f.flags.intersects(FunctionFlags::THUNK) {
-                true => bin_export2::call_graph::vertex::Type::Thunk.into(),
-                false => bin_export2::call_graph::vertex::Type::Normal.into(),
+                true => pb::bin_export2::call_graph::vertex::Type::Thunk.into(),
+                false => pb::bin_export2::call_graph::vertex::Type::Normal.into(),
             }),
             mangled_name:  ws
                 .analysis()
@@ -314,9 +317,9 @@ fn collect_vertices(ws: &dyn Workspace, libraries: &[bin_export2::Library]) -> V
         ws.analysis()
             .imports
             .iter()
-            .map(|(&address, imp)| bin_export2::call_graph::Vertex {
+            .map(|(&address, imp)| pb::bin_export2::call_graph::Vertex {
                 address:       Some(address),
-                r#type:        Some(bin_export2::call_graph::vertex::Type::Imported.into()),
+                r#type:        Some(pb::bin_export2::call_graph::vertex::Type::Imported.into()),
                 mangled_name:  Some(match &imp.symbol {
                     ImportedSymbol::Ordinal(ord) => format!("#{}", ord),
                     ImportedSymbol::Name(name) => name.clone(),
@@ -338,8 +341,8 @@ fn collect_instruction_operands(
     ws: &dyn Workspace,
     insn_va: VA,
     insn: &dis::zydis::DecodedInstruction,
-    expressions: &mut ValueIndex<bin_export2::Expression>,
-    operands: &mut ValueIndex<bin_export2::Operand>,
+    expressions: &mut ValueIndex<pb::bin_export2::Expression>,
+    operands: &mut ValueIndex<pb::bin_export2::Operand>,
 ) -> Vec<i32> {
     let mut operand_indexes: Vec<i32> = vec![];
     for op in dis::get_operands(insn) {
@@ -356,16 +359,16 @@ fn collect_instruction_operands(
 
                 // TODO: how is FP handled? XMM?
 
-                vec![expressions.add(bin_export2::Expression {
-                    r#type:        Some(bin_export2::expression::Type::ImmediateInt.into()),
+                vec![expressions.add(pb::bin_export2::Expression {
+                    r#type:        Some(pb::bin_export2::expression::Type::ImmediateInt.into()),
                     symbol:        None,
                     immediate:     Some(v),
                     parent_index:  None,
                     is_relocation: Some(false),
                 })]
             }
-            dis::zydis::OperandType::REGISTER => vec![expressions.add(bin_export2::Expression {
-                r#type:        Some(bin_export2::expression::Type::Register.into()),
+            dis::zydis::OperandType::REGISTER => vec![expressions.add(pb::bin_export2::Expression {
+                r#type:        Some(pb::bin_export2::expression::Type::Register.into()),
                 symbol:        op.reg.get_string().map(|v| v.to_string()),
                 immediate:     None,
                 parent_index:  None,
@@ -397,8 +400,8 @@ fn collect_instruction_operands(
                 };
 
                 if let Some(element_size) = element_size {
-                    current_expression = Some(expressions.add(bin_export2::Expression {
-                        r#type:        Some(bin_export2::expression::Type::SizePrefix.into()),
+                    current_expression = Some(expressions.add(pb::bin_export2::Expression {
+                        r#type:        Some(pb::bin_export2::expression::Type::SizePrefix.into()),
                         symbol:        Some(element_size),
                         immediate:     None,
                         parent_index:  None,
@@ -414,8 +417,8 @@ fn collect_instruction_operands(
                     let reg_name = reg_name.to_lowercase();
                     let symbol = format!("{reg_name}:");
 
-                    current_expression = Some(expressions.add(bin_export2::Expression {
-                        r#type:        Some(bin_export2::expression::Type::Operator.into()),
+                    current_expression = Some(expressions.add(pb::bin_export2::Expression {
+                        r#type:        Some(pb::bin_export2::expression::Type::Operator.into()),
                         symbol:        Some(symbol),
                         immediate:     None,
                         parent_index:  current_expression,
@@ -424,8 +427,8 @@ fn collect_instruction_operands(
                     expression_indexes.push(current_expression.unwrap());
                 }
 
-                current_expression = Some(expressions.add(bin_export2::Expression {
-                    r#type:        Some(bin_export2::expression::Type::Dereference.into()),
+                current_expression = Some(expressions.add(pb::bin_export2::Expression {
+                    r#type:        Some(pb::bin_export2::expression::Type::Dereference.into()),
                     symbol:        Some("[".into()),
                     immediate:     None,
                     parent_index:  current_expression,
@@ -661,7 +664,7 @@ fn collect_instruction_operands(
             dis::zydis::OperandType::POINTER => unimplemented!("pointer operand"),
         };
 
-        let operand_index = operands.add(bin_export2::Operand {
+        let operand_index = operands.add(pb::bin_export2::Operand {
             expression_index: expression_indexes,
         });
 
@@ -673,7 +676,7 @@ fn collect_instruction_operands(
 fn collect_flow_graphs(
     ws: &dyn Workspace,
     basic_block_index_by_address: BTreeMap<u64, usize>,
-) -> Vec<bin_export2::FlowGraph> {
+) -> Vec<pb::bin_export2::FlowGraph> {
     let flow_graphs: Vec<_> = ws
         .analysis()
         .functions
@@ -698,7 +701,7 @@ fn collect_flow_graphs(
 
             let entry_block_index = *basic_block_index_by_address.get(&address).unwrap() as i32;
 
-            let mut edges: Vec<bin_export2::flow_graph::Edge> = vec![];
+            let mut edges: Vec<pb::bin_export2::flow_graph::Edge> = vec![];
             for block in ws.cfg().get_reaches_from(address) {
                 let source_block_index = *basic_block_index_by_address.get(&block.address).unwrap();
                 edges.extend(
@@ -713,25 +716,25 @@ fn collect_flow_graphs(
                                 .map(|&flow| match flow {
                                     Flow::Fallthrough(va) => {
                                         if flows.len() == 1 {
-                                            (va, bin_export2::flow_graph::edge::Type::Unconditional)
+                                            (va, pb::bin_export2::flow_graph::edge::Type::Unconditional)
                                         } else {
-                                            (va, bin_export2::flow_graph::edge::Type::ConditionFalse)
+                                            (va, pb::bin_export2::flow_graph::edge::Type::ConditionFalse)
                                         }
                                     }
                                     Flow::ConditionalJump(va) => {
-                                        (va, bin_export2::flow_graph::edge::Type::ConditionTrue)
+                                        (va, pb::bin_export2::flow_graph::edge::Type::ConditionTrue)
                                     }
                                     Flow::UnconditionalJump(Target::Direct(va)) => {
-                                        (va, bin_export2::flow_graph::edge::Type::Unconditional)
+                                        (va, pb::bin_export2::flow_graph::edge::Type::Unconditional)
                                     }
                                     Flow::UnconditionalJump(Target::Indirect(va)) => {
-                                        (va, bin_export2::flow_graph::edge::Type::Switch)
+                                        (va, pb::bin_export2::flow_graph::edge::Type::Switch)
                                     }
 
                                     Flow::Call(_) => unreachable!(),
                                 })
                                 .filter(|(target, _)| basic_block_index_by_address.contains_key(target))
-                                .map(|(target, r#type)| bin_export2::flow_graph::Edge {
+                                .map(|(target, r#type)| pb::bin_export2::flow_graph::Edge {
                                     source_basic_block_index: Some(source_block_index as i32),
                                     target_basic_block_index: Some(
                                         *basic_block_index_by_address.get(&target).unwrap() as i32
@@ -745,7 +748,7 @@ fn collect_flow_graphs(
                 );
             }
 
-            bin_export2::FlowGraph {
+            pb::bin_export2::FlowGraph {
                 basic_block_index:       block_indices,
                 entry_basic_block_index: Some(entry_block_index),
                 edge:                    edges,
@@ -757,10 +760,10 @@ fn collect_flow_graphs(
 
 fn collect_call_graphs(
     ws: &dyn Workspace,
-    vertexes: Vec<bin_export2::call_graph::Vertex>,
+    vertexes: Vec<pb::bin_export2::call_graph::Vertex>,
     vertex_index_by_address: BTreeMap<u64, usize>,
     call_targets_by_basic_block: BTreeMap<u64, Vec<u64>>,
-) -> bin_export2::CallGraph {
+) -> pb::bin_export2::CallGraph {
     let mut call_graph_edges: BTreeSet<(usize, usize)> = Default::default();
     let functions = ws
         .analysis()
@@ -780,11 +783,11 @@ fn collect_call_graphs(
         }
     }
 
-    bin_export2::CallGraph {
+    pb::bin_export2::CallGraph {
         vertex: vertexes,
         edge:   call_graph_edges
             .into_iter()
-            .map(|(source, target)| bin_export2::call_graph::Edge {
+            .map(|(source, target)| pb::bin_export2::call_graph::Edge {
                 source_vertex_index: Some(source as i32),
                 target_vertex_index: Some(target as i32),
             })
@@ -797,7 +800,7 @@ pub fn export_workspace_to_binexport2(
     sha256: String,
     executable_name: Option<String>,
 ) -> Result<Vec<u8>> {
-    let meta = bin_export2::Meta {
+    let meta = pb::bin_export2::Meta {
         executable_name,
 
         executable_id: Some(sha256),
@@ -816,7 +819,7 @@ pub fn export_workspace_to_binexport2(
         .module()
         .sections
         .iter()
-        .map(|section| bin_export2::Section {
+        .map(|section| pb::bin_export2::Section {
             address: Some(section.virtual_range.start),
             size:    Some(section.virtual_range.end - section.virtual_range.start),
             flag_r:  Some(section.permissions.intersects(Permissions::R)),
@@ -833,14 +836,14 @@ pub fn export_workspace_to_binexport2(
         .map(|import| import.dll.clone())
         .collect::<BTreeSet<String>>()
         .into_iter()
-        .map(|dll| bin_export2::Library {
+        .map(|dll| pb::bin_export2::Library {
             name:         Some(dll),
             is_static:    Some(false),
             load_address: None,
         })
-        .collect::<Vec<bin_export2::Library>>();
+        .collect::<Vec<pb::bin_export2::Library>>();
 
-    let vertices = collect_vertices(&*ws, &libraries);
+    let vertices = collect_vertices(ws, &libraries);
 
     // Map from function address to Vertex index.
     // Used for checking if an address is a function, for example.
@@ -856,9 +859,9 @@ pub fn export_workspace_to_binexport2(
 
     let mut operands = OperandIndex::default();
 
-    let mut instructions: Vec<bin_export2::Instruction> = Vec::with_capacity(ws.cfg().insns.insns_by_address.len());
+    let mut instructions: Vec<pb::bin_export2::Instruction> = Vec::with_capacity(ws.cfg().insns.insns_by_address.len());
 
-    let mut basic_blocks: Vec<bin_export2::BasicBlock> =
+    let mut basic_blocks: Vec<pb::bin_export2::BasicBlock> =
         Vec::with_capacity(ws.cfg().basic_blocks.blocks_by_address.len());
 
     let mut basic_block_index_by_address: BTreeMap<u64, usize> = Default::default();
@@ -868,11 +871,11 @@ pub fn export_workspace_to_binexport2(
     // the call graph, linking Vertex to Vertex.
     let mut call_targets_by_basic_block: BTreeMap<u64, Vec<u64>> = Default::default();
 
-    let mut data_references: Vec<bin_export2::DataReference> = Default::default();
+    let mut data_references: Vec<pb::bin_export2::DataReference> = Default::default();
 
     let mut strings = StringIndex::default();
 
-    let mut string_references: Vec<bin_export2::Reference> = Default::default();
+    let mut string_references: Vec<pb::bin_export2::Reference> = Default::default();
 
     let decoder = dis::get_disassembler(ws.module()).unwrap();
     for bb in ws.cfg().basic_blocks.blocks_by_address.values() {
@@ -896,7 +899,7 @@ pub fn export_workspace_to_binexport2(
                 let instruction_index = instructions.len();
 
                 let instruction_call_targets = collect_instruction_call_targets(
-                    &*ws,
+                    ws,
                     bb,
                     va,
                     &vertex_index_by_address,
@@ -906,7 +909,7 @@ pub fn export_workspace_to_binexport2(
                 let mnemonic_index = mnemonics.add(insn.mnemonic.get_string().unwrap().to_string());
 
                 collect_instruction_references(
-                    &*ws,
+                    ws,
                     instruction_index,
                     va,
                     &insn,
@@ -915,9 +918,9 @@ pub fn export_workspace_to_binexport2(
                     &mut data_references,
                 );
 
-                let operand_indexes = collect_instruction_operands(&*ws, va, &insn, &mut expressions, &mut operands);
+                let operand_indexes = collect_instruction_operands(ws, va, &insn, &mut expressions, &mut operands);
 
-                instructions.push(bin_export2::Instruction {
+                instructions.push(pb::bin_export2::Instruction {
                     address:        if offset == 0 { Some(va) } else { None },
                     call_target:    instruction_call_targets,
                     mnemonic_index: Some(mnemonic_index),
@@ -930,7 +933,7 @@ pub fn export_workspace_to_binexport2(
             }
         }
 
-        let index_range = bin_export2::basic_block::IndexRange {
+        let index_range = pb::bin_export2::basic_block::IndexRange {
             begin_index: Some(*instruction_indexes.first().unwrap() as i32),
             end_index:   if instruction_indexes.len() > 1 {
                 Some((*instruction_indexes.last().unwrap() + 1) as i32)
@@ -939,18 +942,18 @@ pub fn export_workspace_to_binexport2(
             },
         };
 
-        basic_blocks.push(bin_export2::BasicBlock {
+        basic_blocks.push(pb::bin_export2::BasicBlock {
             instruction_index: vec![index_range],
         });
         basic_block_index_by_address.insert(bb.address, basic_blocks.len() - 1);
     }
 
-    let flow_graphs = collect_flow_graphs(&*ws, basic_block_index_by_address);
+    let flow_graphs = collect_flow_graphs(ws, basic_block_index_by_address);
 
-    let call_graph = collect_call_graphs(&*ws, vertices, vertex_index_by_address, call_targets_by_basic_block);
+    let call_graph = collect_call_graphs(ws, vertices, vertex_index_by_address, call_targets_by_basic_block);
 
     #[allow(deprecated)]
-    let be2 = BinExport2 {
+    let be2 = pb::BinExport2 {
         meta_information: Some(meta),
         section: sections,
         library: libraries,

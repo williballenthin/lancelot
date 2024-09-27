@@ -60,7 +60,7 @@ impl PE {
         load_pe(buf)
     }
 
-    pub fn executable_sections<'b>(&'b self) -> Box<dyn Iterator<Item = &Section> + 'b> {
+    pub fn executable_sections<'b>(&'b self) -> Box<dyn Iterator<Item = &'b Section> + 'b> {
         Box::new(
             self.module
                 .sections

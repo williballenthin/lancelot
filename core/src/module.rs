@@ -55,6 +55,7 @@ pub struct Section {
 }
 
 /// An address space, as a file would be loaded into memory.
+///
 /// This has an associated architecture (e.g. x32 or x64),
 /// base address, and collection of sections.
 /// This is the information that we'd expect to be common across formats.
