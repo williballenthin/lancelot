@@ -507,9 +507,11 @@ impl Workspace {
     ///   executable_id (Optional[str]): name of the file
     ///
     /// Returns: bytes
-    pub fn to_binexport2(&self, executable_id: Option<String>) -> PyResult<Vec<u8>> {
+    pub fn to_binexport2(&self, py: Python, executable_id: Option<String>) -> PyResult<Py<PyBytes>> {
         let hash = sha256::digest(&self.buf);
-        export_workspace_to_binexport2(&*self.inner, hash, executable_id).map_err(to_py_err)
+        export_workspace_to_binexport2(&*self.inner, hash, executable_id)
+            .map(|buf| PyBytes::new(py, &buf).into())
+            .map_err(to_py_err)
     }
 }
 
@@ -521,11 +523,13 @@ impl Workspace {
 ///
 /// Returns: bytes
 #[pyfunction]
-pub fn binexport2_from_bytes(buf: &PyBytes, executable_id: Option<String>) -> PyResult<Vec<u8>> {
+pub fn binexport2_from_bytes(py: Python, buf: &PyBytes, executable_id: Option<String>) -> PyResult<Py<PyBytes>> {
     let config = ::lancelot::workspace::config::empty();
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let hash = sha256::digest(buf.as_bytes());
-    export_workspace_to_binexport2(&*ws, hash, executable_id).map_err(to_py_err)
+    export_workspace_to_binexport2(&*ws, hash, executable_id)
+        .map(|buf| PyBytes::new(py, &buf).into())
+        .map_err(to_py_err)
 }
 
 #[pymodule]

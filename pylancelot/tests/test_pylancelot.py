@@ -147,7 +147,9 @@ def test_insn_int(k32):
 def test_binexport2(k32):
     buf = lancelot.binexport2_from_bytes(k32)
     assert buf is not None
+    assert isinstance(buf, bytes)
 
     ws = lancelot.from_bytes(k32)
     buf = ws.to_binexport2()
     assert buf is not None
+    assert isinstance(buf, bytes)

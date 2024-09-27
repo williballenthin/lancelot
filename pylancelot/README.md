@@ -7,3 +7,10 @@ $ pytest
 ```
 
 use `maturin develop --release` for fast builds.
+
+## local builds
+
+```console
+$ maturin develop --release
+$ ../target/wheels/*.whl
+```
