@@ -684,7 +684,6 @@ fn collect_flow_graphs(
         .analysis()
         .functions
         .iter()
-        .filter(|(_, f)| !f.flags.intersects(FunctionFlags::THUNK))
         .map(|(&address, _)| {
             let mut block_addresses = ws
                 .cfg()
@@ -772,7 +771,6 @@ fn collect_call_graphs(
         .analysis()
         .functions
         .iter()
-        .filter(|(_, f)| !f.flags.intersects(FunctionFlags::THUNK))
         .map(|(address, _)| address);
     for &function_address in functions {
         if let Some(&source_vertex_index) = vertex_index_by_address.get(&function_address) {
