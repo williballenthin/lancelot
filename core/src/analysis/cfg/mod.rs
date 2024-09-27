@@ -1116,7 +1116,7 @@ mod tests {
             insns.build_index(&module, 0x0)?;
             let mut cfg = CFG::from_instructions(&module, insns)?;
 
-            let fallthrough = cfg.flows.flows_by_src[&0x1][0].clone();
+            let fallthrough = cfg.flows.flows_by_src[&0x1][0];
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x1, fallthrough);
             cfg.commit(batch);
@@ -1165,9 +1165,9 @@ mod tests {
             // cut second fallthrough, which should remove the edge,
             // but not any of the instructions.
 
-            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x7]).next().unwrap().clone();
+            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x7]).next().unwrap();
             let mut batch: ChangeBatch = Default::default();
-            batch.prune_flow(0x7, fallthrough);
+            batch.prune_flow(0x7, *fallthrough);
             cfg.commit(batch);
 
             //    ┌─────────────────────────────────┐
@@ -1198,9 +1198,9 @@ mod tests {
             // cut the first fallthrough, which should remove the edge,
             // and also the basic block at 0x7 (mov eax, 0x2).
 
-            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x5]).next().unwrap().clone();
+            let fallthrough = fallthrough_edges(&cfg.flows.flows_by_src[&0x5]).next().unwrap();
             let mut batch: ChangeBatch = Default::default();
-            batch.prune_flow(0x5, fallthrough);
+            batch.prune_flow(0x5, *fallthrough);
             cfg.commit(batch);
 
             //    ┌─────────────────────────────────┐

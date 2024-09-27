@@ -258,10 +258,10 @@ pub mod uc {
 
             // we don't emulate all of the flags, just the status flags.
             assert_eq!(
-                self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
+                self.emu.reg_read(EFLAGS).unwrap() & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
                 "flags, uc: {:#b} emu: {:#b}",
-                self.emu.reg_read(EFLAGS).unwrap() as u64 & STATUS_MASK,
+                self.emu.reg_read(EFLAGS).unwrap() & STATUS_MASK,
                 other.reg.rflags() & STATUS_MASK,
             );
 

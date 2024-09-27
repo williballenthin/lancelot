@@ -1,7 +1,6 @@
 ## testing
 
-```sh
-# use a py3 virtual environment
+```console
 $ pip install maturin[patchelf] pytest
 $ maturin develop --release --extras dev
 $ pytest

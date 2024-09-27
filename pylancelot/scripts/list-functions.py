@@ -2,8 +2,7 @@ import sys
 
 import lancelot
 
-
-with open(sys.argv[1], 'rb') as f:
+with open(sys.argv[1], "rb") as f:
     buf = f.read()
 
 ws = lancelot.from_bytes(buf)

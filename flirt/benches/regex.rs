@@ -26,7 +26,7 @@ fn regexset_from_patterns(max: usize) -> regex::bytes::RegexSet {
     let patterns = PATTERNS
         .iter()
         .take(max)
-        .map(|pattern| regex_from_pattern(*pattern))
+        .map(|pattern| regex_from_pattern(pattern))
         .collect::<Vec<String>>();
 
     regex::bytes::RegexSetBuilder::new(patterns)
@@ -100,7 +100,7 @@ fn multiregex_from_patterns(max: usize) -> MultiRegex {
         res: PATTERNS
             .iter()
             .take(max)
-            .map(|pattern| regex_from_pattern(*pattern))
+            .map(|pattern| regex_from_pattern(pattern))
             .map(|pattern| regex::bytes::Regex::new(&pattern).unwrap())
             .collect(),
     }
@@ -194,7 +194,7 @@ criterion_group!(decisiontree, decisiontree_benchmark);
 criterion_main!(regex, multiregex, decisiontree);
 
 // byte signature portion of FLIRT signatures from `vc32rtf.sig`.
-const PATTERNS: &'static [&'static str] = &[
+const PATTERNS: &[&str] = &[
     "0ac97512d9fac30ac9750bc3d9e49bdfe09b9e75ebc3e9",
     "0cffa2........a2........a2........a2........a2........a2",
     "0d00004000c3",
@@ -34702,7 +34702,7 @@ const PATTERNS: &'static [&'static str] = &[
 
 // up to 0x200 bytes from the start of each function in `Practical Malware
 // Analysis Lab 16-01.exe_`.
-const HAYSTACKS: &'static [&'static [u8]] = &[
+const HAYSTACKS: &[&[u8]] = &[
     &[
         139u8, 84u8, 36u8, 4u8, 139u8, 13u8, 192u8, 199u8, 64u8, 0u8, 57u8, 21u8, 64u8, 199u8, 64u8, 0u8, 86u8, 184u8,
         64u8, 199u8, 64u8, 0u8, 116u8, 21u8, 141u8, 52u8, 73u8, 141u8, 52u8, 181u8, 64u8, 199u8, 64u8, 0u8, 131u8,

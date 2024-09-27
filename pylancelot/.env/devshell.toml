@@ -1,0 +1,35 @@
+# https://numtide.github.io/devshell
+
+[[commands]]
+name = "profile"
+command = "echo 'python'"
+help = "show profile (python)"
+
+[devshell]
+packages = [
+  "protobuf",
+  "just",
+  "python312",
+  "stdenv.cc.cc.lib",
+  "uv",
+  "pre-commit",
+  # LSP for helix
+  "nodePackages.pyright",
+  "python312Packages.python-lsp-server",
+  "python312Packages.pylsp-mypy",
+  "python312Packages.python-lsp-ruff",
+  "python312Packages.black",
+]
+
+# via: https://github.com/numtide/devshell/issues/172#issuecomment-1208745562
+[[env]]
+name = "CPPFLAGS"
+eval = "-I${DEVSHELL_DIR}/include"
+
+[[env]]
+name = "LDFLAGS"
+eval = "-L${DEVSHELL_DIR}/lib"
+
+[[env]]
+name = "LD_LIBRARY_PATH"
+eval = "${DEVSHELL_DIR}/lib:${LD_LIBRARY_PATH}"

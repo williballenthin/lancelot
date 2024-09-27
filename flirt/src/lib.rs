@@ -573,7 +573,7 @@ impl FlirtSignatureSet {
 mod tests {
     use super::*;
 
-    const PAT: &'static str = "\
+    const PAT: &str = "\
 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 21 B4FE 006E :0000 __EH_prolog3_GS_align ^0041 ___security_cookie ........33C5508941FC8B4DF0895DF08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 1F E4CF 0063 :0000 __EH_prolog3_align ^003F ___security_cookie ........33C5508B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
 518B4C240C895C240C8D5C240C508D442408F7D923C18D60F88B43F08904248B 22 E4CE 006F :0000 __EH_prolog3_catch_GS_align ^0042 ___security_cookie ........33C5508941FC8B4DF08965F08B4304894504FF75F464A1000000008945F48D45F464A300000000F2C3
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn test_one_pat_match() {
-        let sigs = pat::parse(&PAT).unwrap();
+        let sigs = pat::parse(PAT).unwrap();
         let sig = sigs
             .iter()
             .find(|sig| sig.get_name().unwrap() == "__EH_prolog3_catch_align")
@@ -708,7 +708,7 @@ mod tests {
             0xc0, 0x75, 0x2d, 0x56, 0xeb,
         ];
         let pat = "ff35........ff742408e8........5959c3 00 0000 0012 :0000 _malloc\n---";
-        let sigs = FlirtSignatureSet::with_signatures(pat::parse(&pat).unwrap());
+        let sigs = FlirtSignatureSet::with_signatures(pat::parse(pat).unwrap());
         let matches = sigs.r#match(&buf[..]);
 
         assert_eq!(matches.len(), 1);
@@ -738,7 +738,7 @@ mod tests {
         let pat = "\
 56e8........8b4c240833f68908b8........3b08742283c008463d 0d 2a18 0073 :0000 __dosmaperr
 ---";
-        let sigs = FlirtSignatureSet::with_signatures(pat::parse(&pat).unwrap());
+        let sigs = FlirtSignatureSet::with_signatures(pat::parse(pat).unwrap());
         let matches = sigs.r#match(&buf[..]);
 
         assert_eq!(matches.len(), 1);
@@ -770,7 +770,7 @@ mod tests {
 568b742408578b460ca883746f8b7c241485ff740a83ff01740583ff02755d24 0b 2ec8 008d :0000 __fseek_lk (0050: 0E)
 ---
 ";
-        let sigs = FlirtSignatureSet::with_signatures(pat::parse(&pat).unwrap());
+        let sigs = FlirtSignatureSet::with_signatures(pat::parse(pat).unwrap());
         let matches = sigs.r#match(&buf[..]);
 
         assert_eq!(matches.len(), 1);

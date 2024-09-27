@@ -317,6 +317,8 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::identity_op)]
+
     use anyhow::Result;
 
     use crate::{aspace::AddressSpace, rsrc::*};
@@ -404,7 +406,7 @@ mod tests {
             pe.module
                 .address_space
                 .read_bytes(start, size as usize)
-                .expect(&format!("read section {} {:#x} {:#x}", section.name, start, size));
+                .unwrap_or_else(|_| panic!("read section {} {:#x} {:#x}", section.name, start, size));
         }
 
         Ok(())

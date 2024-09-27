@@ -1,8 +1,7 @@
+import contextlib
+
 import pytest
-
 import lancelot
-
-from fixtures import *
 
 
 def test_invalid_pe():
@@ -12,10 +11,8 @@ def test_invalid_pe():
     with pytest.raises(ValueError):
         lancelot.from_bytes(b"MZ\x9000")
 
-    try:
+    with contextlib.suppress(ValueError):
         lancelot.from_bytes(b"")
-    except ValueError as e:
-        pass
 
 
 def test_load_pe(k32):
@@ -104,7 +101,7 @@ def test_read_insn(k32):
     assert operands[1][lancelot.OPERAND_SIZE] == 64
     assert operands[1][lancelot.REGISTER_OPERAND_REGISTER] == "rcx"
 
-    assert operands == ((1, 64, 'rsp', None, 'ss', 0, 8), (3, 64, 'rcx'))
+    assert operands == ((1, 64, "rsp", None, "ss", 0, 8), (3, 64, "rcx"))
 
 
 def test_read_bytes(k32):

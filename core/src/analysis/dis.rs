@@ -384,6 +384,7 @@ pub fn get_operand_xref(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Not;
     use crate::{analysis::dis::*, rsrc::*, test::*};
 
     #[test]
@@ -398,9 +399,9 @@ mod tests {
 
         let insn = read_insn(&pe.module, 0x1800134D4);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_memory_operand_ptr(0x1800134D4, &insn, &op).unwrap();
+        let xref = get_memory_operand_ptr(0x1800134D4, &insn, op).unwrap();
 
-        assert_eq!(xref.is_some(), true);
+        assert!(xref.is_some());
         assert_eq!(xref.unwrap(), 0x1800773F0);
     }
 
@@ -411,9 +412,9 @@ mod tests {
         let module = load_shellcode32(b"\xFF\x25\x06\x00\x00\x00\x00\x00\x00\x00");
         let insn = read_insn(&module, 0x0);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
+        let xref = get_memory_operand_xref(&module, 0x0, &insn, op).unwrap();
 
-        assert_eq!(xref.is_some(), true);
+        assert!(xref.is_some());
         assert_eq!(xref.unwrap(), 0x0);
     }
 
@@ -424,9 +425,9 @@ mod tests {
         let module = load_shellcode64(b"\xFF\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00");
         let insn = read_insn(&module, 0x0);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_memory_operand_xref(&module, 0x0, &insn, &op).unwrap();
+        let xref = get_memory_operand_xref(&module, 0x0, &insn, op).unwrap();
 
-        assert_eq!(xref.is_some(), true);
+        assert!(xref.is_some());
         assert_eq!(xref.unwrap(), 0x0);
     }
 
@@ -439,9 +440,9 @@ mod tests {
         let module = load_shellcode32(b"\xEA\x00\x00\x00\x00\x00\x00");
         let insn = read_insn(&module, 0x0);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_pointer_operand_xref(&op).unwrap();
+        let xref = get_pointer_operand_xref(op).unwrap();
 
-        assert_eq!(xref.is_some(), true, "has pointer operand xref");
+        assert!(xref.is_some(), "has pointer operand xref");
         assert_eq!(xref.unwrap(), 0x0, "correct pointer operand xref");
     }
 
@@ -452,9 +453,9 @@ mod tests {
         let module = load_shellcode32(b"\xEB\xFE");
         let insn = read_insn(&module, 0x0);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
+        let xref = get_immediate_operand_xref(&module, 0x0, &insn, op).unwrap();
 
-        assert_eq!(xref.is_some(), true, "has immediate operand");
+        assert!(xref.is_some(), "has immediate operand");
         assert_eq!(xref.unwrap(), 0x0, "correct immediate operand");
 
         // this is a jump from addr 0x0 to -1, which is unmapped
@@ -462,9 +463,9 @@ mod tests {
         let module = load_shellcode32(b"\xEB\xFD");
         let insn = read_insn(&module, 0x0);
         let op = get_first_operand(&insn).unwrap();
-        let xref = get_immediate_operand_xref(&module, 0x0, &insn, &op).unwrap();
+        let xref = get_immediate_operand_xref(&module, 0x0, &insn, op).unwrap();
 
-        assert_eq!(xref.is_some(), false, "does not have immediate operand");
+        assert!(xref.is_some().not(), "does not have immediate operand");
     }
 
     #[test]
@@ -510,6 +511,7 @@ mod tests {
                             .expect("failed to calculate absolute address")
                     };
 
+                    #[allow(clippy::needless_return)]
                     if let Some(name) = userdata.names.get(&absolute_address) {
                         // name is found in map, use that.
                         return buf.get_string()?.append(name);

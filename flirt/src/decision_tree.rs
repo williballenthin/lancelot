@@ -505,7 +505,7 @@ impl std::fmt::Debug for DecisionTree {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Read, path::PathBuf};
+    use std::{io::Read, path::PathBuf, ops::Not};
 
     use super::*;
 
@@ -598,12 +598,12 @@ mod tests {
         let mut f = std::fs::File::open(path).unwrap();
         let mut s = String::new();
         f.read_to_string(&mut s).unwrap();
-        let patterns: Vec<&str> = s.split("\n").filter(|s| s.len() != 0).collect();
+        let patterns: Vec<&str> = s.split("\n").filter(|s| s.is_empty().not()).collect();
 
         let _ = DecisionTree::new(&patterns);
     }
 
-    const PATTERNS: &'static [&'static str] = &[
+    const PATTERNS: &[&str] = &[
         "558bec33c0505050ff751cff7518ff7514ff7510ff750cff7508ff15",
         "558bec33c050506804010000ff750c6affff750850e8........50ff15",
         "558bec33c05333db40395d0c7c46565785c0743e8b450c03c3992bc28bf08b45",

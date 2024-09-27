@@ -174,9 +174,9 @@ mod tests {
         //     .rdata:00475444                 dd offset sub_45D16A
         //     .rdata:00475448                 dd offset aConnect      ; "connect"
         //     .rdata:0047544C                 align 10h
-        assert!(functions.iter().find(|&&function| function == 0x45CC62).is_some());
-        assert!(functions.iter().find(|&&function| function == 0x45D028).is_some());
-        assert!(functions.iter().find(|&&function| function == 0x45D16A).is_some());
+        assert!(functions.iter().any(|&function| function == 0x45CC62));
+        assert!(functions.iter().any(|&function| function == 0x45D028));
+        assert!(functions.iter().any(|&function| function == 0x45D16A));
 
         Ok(())
     }
