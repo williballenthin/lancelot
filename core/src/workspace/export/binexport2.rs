@@ -12,8 +12,7 @@ use prost::Message;
 
 use crate::{
     analysis::{
-        cfg,
-        cfg::flow::Flow,
+        cfg::{self, flow::Flow},
         dis::{self, Target},
         pe::ImportedSymbol,
     },
@@ -664,7 +663,10 @@ fn collect_instruction_operands(
             }
             // Lancelot doesn't support this operand type in its analysis
             // so we also don't know what to do here.
-            dis::zydis::OperandType::POINTER => unimplemented!("pointer operand"),
+            dis::zydis::OperandType::POINTER => {
+                warn!("unsupported: pointer operand: 0x{insn_va:x}");
+                Default::default()
+            }
         };
 
         let operand_index = operands.add(pb::bin_export2::Operand {
@@ -684,7 +686,18 @@ fn collect_flow_graphs(
         .analysis()
         .functions
         .iter()
-        .map(|(&address, _)| {
+        // there isn't control flow found at the function's address.
+        .filter(|(address, _)| basic_block_index_by_address.contains_key(address))
+        .map(|(&address, f)| {
+            if f.flags.intersects(FunctionFlags::THUNK) {
+                let block_index = *basic_block_index_by_address.get(&address).unwrap() as i32;
+                return pb::bin_export2::FlowGraph {
+                    basic_block_index:       vec![block_index],
+                    entry_basic_block_index: Some(block_index),
+                    edge:                    vec![],
+                };
+            }
+
             let mut block_addresses = ws
                 .cfg()
                 .get_reaches_from(address)
@@ -696,10 +709,6 @@ fn collect_flow_graphs(
                 .iter()
                 .map(|&address| *basic_block_index_by_address.get(&address).unwrap() as i32)
                 .collect::<Vec<_>>();
-
-            if basic_block_index_by_address.contains_key(&address).not() {
-                log::warn!("** {address:#x}");
-            }
 
             let entry_block_index = *basic_block_index_by_address.get(&address).unwrap() as i32;
 
@@ -767,11 +776,7 @@ fn collect_call_graphs(
     call_targets_by_basic_block: BTreeMap<u64, Vec<u64>>,
 ) -> pb::bin_export2::CallGraph {
     let mut call_graph_edges: BTreeSet<(usize, usize)> = Default::default();
-    let functions = ws
-        .analysis()
-        .functions
-        .iter()
-        .map(|(address, _)| address);
+    let functions = ws.analysis().functions.keys();
     for &function_address in functions {
         if let Some(&source_vertex_index) = vertex_index_by_address.get(&function_address) {
             for block in ws.cfg().get_reaches_from(function_address) {
