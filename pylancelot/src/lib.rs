@@ -540,6 +540,7 @@ pub fn binexport2_from_bytes(
 
 #[pymodule]
 fn lancelot(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    pyo3_log::init();
 
     m.add_function(wrap_pyfunction!(from_bytes, m)?)?;
     m.add_class::<Workspace>()?;
