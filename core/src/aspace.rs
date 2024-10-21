@@ -364,7 +364,7 @@ pub struct AddressSpaceSlice<'a> {
     inner:        Box<dyn AddressSpace<u64> + 'a>,
 }
 
-impl<'a> AddressSpace<RVA> for AddressSpaceSlice<'a> {
+impl AddressSpace<RVA> for AddressSpaceSlice<'_> {
     fn read_into(&self, offset: RVA, buf: &mut [u8]) -> Result<()> {
         let offset = self.base_address + offset;
         self.inner.read_into(offset, buf)
@@ -385,7 +385,7 @@ impl<'a> AddressSpace<RVA> for AddressSpaceSlice<'a> {
 
 // note that slices don't support writing at the moment
 
-impl<'a> AddressSpace<RVA> for &AddressSpaceSlice<'a> {
+impl AddressSpace<RVA> for &AddressSpaceSlice<'_> {
     fn read_into(&self, offset: RVA, buf: &mut [u8]) -> Result<()> {
         (*self).read_into(offset, buf)
     }
