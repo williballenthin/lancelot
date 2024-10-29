@@ -155,6 +155,8 @@ jobs:
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build pylancelot wheels
         uses: PyO3/maturin-action@v1
