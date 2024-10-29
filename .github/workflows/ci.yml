@@ -75,9 +75,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [linux, macos, windows]
-        target: [x86_64, aarch64]
-        manylinux: [auto]
+        # os: [linux, macos, windows]
+        # target: [x86_64, aarch64]
+        # manylinux: [auto]
         include:
           # manylinux for various platforms, plus x86_64 pypy
           - os: linux
@@ -152,11 +152,6 @@ jobs:
         with:
           python-version: '3.13'
           architecture: ${{ matrix.python-architecture || 'x64' }}
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build pylancelot wheels
         uses: PyO3/maturin-action@v1
