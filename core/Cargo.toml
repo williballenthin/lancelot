@@ -51,6 +51,7 @@ dynasmrt = "1.0.1"
 
 [build-dependencies]
 prost-build = { version = "0.13" }
+protobuf-src = "2.1.0"
 
 [[bench]]
 name = "core"

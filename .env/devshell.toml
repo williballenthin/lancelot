@@ -17,7 +17,7 @@ help = "pre-commit (manual)"
 [devshell]
 packages = [
   "bacon",
-  "protobuf",
+  # "protobuf",
   "just",
   "gcc",
   "python312",

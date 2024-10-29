@@ -1,6 +1,7 @@
 use std::io::Result;
 
 fn main() -> Result<()> {
+    std::env::set_var("PROTOC", protobuf_src::protoc());
     prost_build::compile_protos(&["src/workspace/export/binexport2.proto"], &["src/"])?;
 
     let src = format!("{}/_.rs", std::env::var("OUT_DIR").unwrap());
