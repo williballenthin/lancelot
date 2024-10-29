@@ -6,10 +6,15 @@ use ::lancelot::{
     module::ModuleError,
     pagemap::PageMapError,
     util::UtilError,
-    workspace::{export::binexport2::export_workspace_to_binexport2, WorkspaceError},
+    workspace::{
+        config::{Configuration, DynamicConfiguration},
+        export::binexport2::export_workspace_to_binexport2,
+        WorkspaceError,
+    },
 };
 use anyhow::Error;
 use pyo3::{prelude::*, types::*, wrap_pyfunction};
+use std::path::PathBuf;
 
 /// ValueError -> "you're doing something wrong"
 fn to_value_error(e: anyhow::Error) -> PyErr {
@@ -61,17 +66,32 @@ fn to_py_err(e: Error) -> PyErr {
 ///
 /// Args:
 ///   buf (bytes): the raw bytes of a supported file (e.g., PE or COFF)
-///   executable_id (Optional[str]): name of the file
+///   executable_id (Optional[str]): name of the file, if known
+///   sig_paths (Optional[list[str]]): paths to FLIRT signature files
+///   function_hints (Optional[list[int]]): known function virtual addresses
 ///
 /// Returns: bytes
 #[pyfunction]
-#[pyo3(signature = (buf, executable_id=None))]
+#[pyo3(signature = (buf, executable_id=None, sig_paths=None, function_hints=None))]
 pub fn binexport2_from_bytes(
     py: Python,
     buf: &Bound<'_, PyBytes>,
     executable_id: Option<String>,
+    sig_paths: Option<Vec<String>>,
+    function_hints: Option<Vec<u64>>,
 ) -> PyResult<Py<PyBytes>> {
-    let config = ::lancelot::workspace::config::empty();
+    let mut config: DynamicConfiguration = Default::default();
+    if let Some(sig_paths) = sig_paths {
+        let sig_paths: Vec<_> = sig_paths.iter().map(PathBuf::from).collect();
+        config = config.with_sig_paths(&sig_paths);
+    }
+
+    if let Some(function_hints) = function_hints {
+        config = config.with_function_hints(&function_hints);
+    }
+
+    let config = config.clone();
+
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let hash = sha256::digest(buf.as_bytes());
     export_workspace_to_binexport2(&*ws, hash, executable_id)

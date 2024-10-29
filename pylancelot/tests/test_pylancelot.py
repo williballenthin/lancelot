@@ -28,3 +28,9 @@ def test_load_pe(k32):
 def test_load_coff(altsvc):
     lancelot.binexport2_from_bytes(altsvc)
 
+
+def test_hint_function(k32):
+    # 7dd70e00  int32_t* __stdcall _GetStartupInfoA@4(int32_t* arg1)
+    # 7dd70e00  8bff               mov     edi, edi
+    # 7dd70e02  55                 push    ebp {__saved_ebp}
+    lancelot.binexport2_from_bytes(k32, function_hints=[0x7dd70e02])

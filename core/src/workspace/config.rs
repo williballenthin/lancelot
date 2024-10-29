@@ -6,30 +6,13 @@ use crate::VA;
 use lancelot_flirt::{FlirtSignature, FlirtSignatureSet};
 
 pub trait Configuration: Send {
+    /// provide the FLIRT signatures to be used to recognize known code.
     fn get_sigs(&self) -> Result<FlirtSignatureSet>;
+
+    /// provide the addresses known to be functions.
     fn get_function_hints(&self) -> Result<Vec<VA>>;
+
     fn clone(&self) -> Box<dyn Configuration>;
-}
-
-// dummy configuration with only empty values.
-pub struct EmptyConfiguration {}
-
-impl Configuration for EmptyConfiguration {
-    fn get_sigs(&self) -> Result<FlirtSignatureSet> {
-        Ok(FlirtSignatureSet::with_signatures(vec![]))
-    }
-
-    fn get_function_hints(&self) -> Result<Vec<VA>> {
-        Ok(vec![])
-    }
-
-    fn clone(&self) -> Box<dyn Configuration> {
-        Box::new(EmptyConfiguration {})
-    }
-}
-
-pub fn empty() -> Box<dyn Configuration> {
-    Box::new(EmptyConfiguration {})
 }
 
 /// Directory that contains:
@@ -133,4 +116,8 @@ impl Configuration for DynamicConfiguration {
             function_hints: self.function_hints.clone(),
         })
     }
+}
+
+pub fn empty() -> Box<dyn Configuration> {
+    Box::new(DynamicConfiguration::default())
 }
