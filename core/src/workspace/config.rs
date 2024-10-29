@@ -2,10 +2,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::VA;
 use lancelot_flirt::{FlirtSignature, FlirtSignatureSet};
 
 pub trait Configuration: Send {
     fn get_sigs(&self) -> Result<FlirtSignatureSet>;
+    fn get_function_hints(&self) -> Result<Vec<VA>>;
     fn clone(&self) -> Box<dyn Configuration>;
 }
 
@@ -15,6 +17,10 @@ pub struct EmptyConfiguration {}
 impl Configuration for EmptyConfiguration {
     fn get_sigs(&self) -> Result<FlirtSignatureSet> {
         Ok(FlirtSignatureSet::with_signatures(vec![]))
+    }
+
+    fn get_function_hints(&self) -> Result<Vec<VA>> {
+        Ok(vec![])
     }
 
     fn clone(&self) -> Box<dyn Configuration> {
@@ -60,6 +66,12 @@ impl Configuration for FileSystemConfiguration {
         }
 
         Ok(FlirtSignatureSet::with_signatures(sigs))
+    }
+
+    // not supported at this time
+    // its probably ok to make this return an empty list, as necessary
+    fn get_function_hints(&self) -> Result<Vec<VA>> {
+        unimplemented!("FileSystemConfiguration::get_function_hints()")
     }
 
     fn clone(&self) -> Box<dyn Configuration> {

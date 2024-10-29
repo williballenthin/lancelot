@@ -109,7 +109,11 @@ pub struct PEWorkspace {
 impl PEWorkspace {
     pub fn from_pe(config: Box<dyn config::Configuration>, pe: PE) -> Result<PEWorkspace> {
         let mut insns: InstructionIndex = Default::default();
-        let mut function_starts = crate::analysis::pe::find_function_starts(&pe)?;
+        let mut function_starts: BTreeSet<VA> = Default::default();
+
+        function_starts.extend(config.get_function_hints()?);
+
+        function_starts.extend(crate::analysis::pe::find_function_starts(&pe)?);
 
         for &function in function_starts.iter() {
             insns.build_index(&pe.module, function)?;
@@ -128,7 +132,7 @@ impl PEWorkspace {
             for &function in new_code.iter() {
                 insns.build_index(&pe.module, function)?;
 
-                function_starts.push(function);
+                function_starts.insert(function);
                 // is this the right thing to do? are these guaranteed to be
                 // functions? we can imagine SEH handlers being
                 // referenced. so: no. probably the users of the
@@ -280,8 +284,9 @@ pub struct COFFWorkspace {
 impl COFFWorkspace {
     pub fn from_coff(config: Box<dyn config::Configuration>, coff: COFF) -> Result<COFFWorkspace> {
         let mut insns: InstructionIndex = Default::default();
-
         let mut function_starts: BTreeSet<VA> = Default::default();
+
+        function_starts.extend(config.get_function_hints()?);
 
         let mut names: NameIndex = Default::default();
         for (name, symbol) in coff.symbols.by_name.iter() {
