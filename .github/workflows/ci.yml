@@ -67,3 +67,175 @@ jobs:
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
+
+  check-build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [
+          { version: '3.13', abi: 'cp312-cp313' },
+        ]
+        target: [x86_64, i686, aarch64, armv7]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: PyO3/maturin-action@v1
+      name: build pylancelot for Linux (${{ matrix.target }})
+      env:
+        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
+      with:
+        target: ${{ matrix.target }}
+        manylinux: auto
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: PyO3/maturin-action@v1
+      name: build pyflirt for Linux (${{ matrix.target }})
+      env:
+        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
+      with:
+        target: ${{ matrix.target }}
+        manylinux: auto
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: actions/upload-artifact@v4
+      name: upload
+      with:
+        name: wheels-linux-${{ matrix.python.version }}-${{ matrix.target }}
+        path: target/wheels/*.whl
+
+  check-build-pypy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [
+          { version: 'pypy3.10' },
+        ]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: PyO3/maturin-action@v1
+      name: build pylancelot for Linux PyPy (${{ matrix.version }})
+      with:
+        manylinux: auto
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: PyO3/maturin-action@v1
+      name: build pyflirt for Linux PyPy (${{ matrix.version }})
+      with:
+        manylinux: auto
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: actions/upload-artifact@v4
+      name: upload
+      with:
+        name: wheels-linux-${{ matrix.python.version }}
+        path: target/wheels/*.whl
+
+  check-build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x64, x86]
+        python: [
+          { version: '3.12' },
+        ]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python.version }}
+        architecture: ${{ matrix.target }}
+    - name: install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
+    - uses: PyO3/maturin-action@v1
+      name: build pylancelot for windows (${{ matrix.target }})
+      with:
+        command: build
+        target: ${{ matrix.target }}
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: PyO3/maturin-action@v1
+      name: build pyflirt for windows (${{ matrix.target }})
+      with:
+        command: build
+        target: ${{ matrix.target }}
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: actions/upload-artifact@v4
+      name: upload
+      with:
+        name: wheels-windows-${{ matrix.python.version }}-${{ matrix.target }}
+        path: target/wheels/*.whl
+
+  check-build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python: [
+          { version: '3.12' },
+        ]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python.version }}
+        architecture: x64
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v1.13
+      with:
+        cmake-version: '3.24.3'
+    - name: install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        default: true
+
+    #
+    # aarch64 build
+    #
+    - name: Install aarch64-apple-darwin toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-apple-darwin
+    - uses: PyO3/maturin-action@v1
+      name: build pylancelot for macos (universal2)
+      env:
+        # needed due to: https://stackoverflow.com/a/56092773/87207
+        MACOSX_DEPLOYMENT_TARGET: 10.9
+      with:
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: PyO3/maturin-action@v1
+      name: build pyflirt for macos (universal2)
+      env:
+        MACOSX_DEPLOYMENT_TARGET: 10.9
+      with:
+        command: build
+        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pyflirt/Cargo.toml
+    #
+    # x86_64 build
+    #
+    - uses: PyO3/maturin-action@v1
+      name: build pylancelot for macos (x86_64)
+      env:
+        MACOSX_DEPLOYMENT_TARGET: 10.9
+      with:
+        command: build
+        target: x86_64
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
+    - uses: PyO3/maturin-action@v1
+      name: build pyflirt for macos (x86_64)
+      env:
+        MACOSX_DEPLOYMENT_TARGET: 10.9
+      with:
+        command: build
+        target: x86_64
+        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
+    - uses: actions/upload-artifact@v4
+      name: upload
+      with:
+        name: wheels-macos-${{ matrix.python.version }}
+        path: target/wheels/*.whl
+        
