@@ -5,177 +5,122 @@ on:
 name: publish pypi
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  # derived from pydantic-core build:
+  # https://github.com/pydantic/pydantic-core/blob/8568136ee9abdca8a1c8b631750a4896bb25522e/.github/workflows/ci.yml#L399
+  build:
+    name: build on ${{ matrix.os }} (${{ matrix.target }} - ${{ matrix.interpreter || 'all' }}${{ matrix.os == 'linux' && format(' - {0}', matrix.manylinux == 'auto' && 'manylinux' || matrix.manylinux) || '' }})
+    # only run on push to master and on release
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || contains(github.event.pull_request.labels.*.name, 'Full Build')
     strategy:
+      fail-fast: true
       matrix:
-        python: [
-          { version: '3.8', abi: 'cp38-cp38' },
-          { version: '3.9', abi: 'cp39-cp39' },
-          { version: '3.10', abi: 'cp310-cp310' },
-          { version: '3.11', abi: 'cp311-cp311' },
-          { version: '3.12', abi: 'cp312-cp312' },
-        ]
-        target: [x86_64, i686, aarch64, armv7]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: messense/maturin-action@v1
-      name: build pylancelot for linux (${{ matrix.target }})
-      env:
-        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
-      with:
-        # bump this to v1.5.0 shortly
-        # downgraded here due to https://github.com/pypa/twine/issues/1059
-        # which prevents GH action from uploading to PyPI
-        maturin-version: 1.4.0
-        target: ${{ matrix.target }}
-        manylinux: auto
-        command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
-    - uses: messense/maturin-action@v1
-      name: build pyflirt for linux (${{ matrix.target }})
-      env:
-        PYO3_CROSS_LIB_DIR: /opt/python/${{ matrix.python.abi }}/lib
-      with:
-        maturin-version: 1.4.0
-        target: ${{ matrix.target }}
-        manylinux: auto
-        command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v4
-      name: upload
-      with:
-        name: wheels-linux-${{ matrix.python.version }}-${{ matrix.target }}
-        path: target/wheels/*.whl
-  
-  windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        target: [x64, x86]
-        python: [
-          { version: '3.8' },
-          { version: '3.9' },
-          { version: '3.10' },
-          { version: '3.11' },
-          { version: '3.12' },
-        ]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python.version }}
-        architecture: ${{ matrix.target }}
-    - name: install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        default: true
-    - uses: messense/maturin-action@v1
-      name: build pylancelot for windows (${{ matrix.target }})
-      with:
-        maturin-version: 1.4.0
-        command: build
-        target: ${{ matrix.target }}
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
-    - uses: messense/maturin-action@v1
-      name: build pyflirt for windows (${{ matrix.target }})
-      with:
-        maturin-version: 1.4.0
-        command: build
-        target: ${{ matrix.target }}
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v4
-      name: upload
-      with:
-        name: wheels-windows-${{ matrix.python.version }}-${{ matrix.target }}
-        path: target/wheels/*.whl
+        os: [linux, macos, windows]
+        target: [x86_64, aarch64]
+        manylinux: [auto]
+        include:
+          # manylinux for various platforms, plus x86_64 pypy
+          - os: linux
+            manylinux: auto
+            target: i686
+          - os: linux
+            manylinux: auto
+            target: aarch64
+          - os: linux
+            manylinux: auto
+            target: armv7
+            interpreter: 3.9 3.10 3.11 3.12 3.13
+          - os: linux
+            manylinux: auto
+            target: x86_64
+            interpreter: pypy3.9 pypy3.10
 
-  macos:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        python: [
-          { version: '3.8' },
-          { version: '3.9' },
-          { version: '3.10' },
-          { version: '3.11' },
-          { version: '3.12' },
-        ]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python.version }}
-        architecture: x64
-    - name: Setup cmake
-      uses: jwlawson/actions-setup-cmake@v1.13
-      with:
-        cmake-version: '3.24.3'
-    - name: install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        default: true
+          # not supported by zydis/zycore:
+          # - os: linux
+          #   manylinux: auto
+          #   target: ppc64le
+          #   interpreter: 3.9 3.10 3.11 3.12 3.13
+          # - os: linux
+          #   manylinux: auto
+          #   target: s390x
+          #   interpreter: 3.9 3.10 3.11 3.12 3.13
 
-    #
-    # aarch64 build
-    #
-    - name: Install aarch64-apple-darwin toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: aarch64-apple-darwin
-    - uses: messense/maturin-action@v1
-      name: build pylancelot for macos (universal2)
-      env:
-        # needed due to: https://stackoverflow.com/a/56092773/87207
-        MACOSX_DEPLOYMENT_TARGET: 10.9
-      with:
-        maturin-version: 1.4.0
-        command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pylancelot/Cargo.toml
-    - uses: messense/maturin-action@v1
-      name: build pyflirt for macos (universal2)
-      env:
-        MACOSX_DEPLOYMENT_TARGET: 10.9
-      with:
-        maturin-version: 1.4.0
-        command: build
-        args: --interpreter=python${{ matrix.python.version }} --release --target universal2-apple-darwin --strip --manifest-path=./pyflirt/Cargo.toml
-    #
-    # x86_64 build
-    #
-    - uses: messense/maturin-action@v1
-      name: build pylancelot for macos (x86_64)
-      env:
-        MACOSX_DEPLOYMENT_TARGET: 10.9
-      with:
-        maturin-version: 1.4.0
-        command: build
-        target: x86_64
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pylancelot/Cargo.toml
-    - uses: messense/maturin-action@v1
-      name: build pyflirt for macos (x86_64)
-      env:
-        MACOSX_DEPLOYMENT_TARGET: 10.9
-      with:
-        maturin-version: 1.4.0
-        command: build
-        target: x86_64
-        args: --interpreter=python${{ matrix.python.version }} --release --strip --manifest-path=./pyflirt/Cargo.toml
-    - uses: actions/upload-artifact@v4
-      name: upload
-      with:
-        name: wheels-macos-${{ matrix.python.version }}
-        path: target/wheels/*.whl
-        
+          # musllinux
+          - os: linux
+            manylinux: musllinux_1_1
+            target: x86_64
+          - os: linux
+            manylinux: musllinux_1_1
+            target: aarch64
+          - os: linux
+            manylinux: musllinux_1_1
+            target: armv7
+
+          # macos
+          # all versions x86_64
+          # arm pypy and older pythons which can't be run on the arm hardware for PGO
+          - os: macos
+            target: x86_64
+          - os: macos
+            target: aarch64
+            interpreter: 3.9 pypy3.9 pypy3.10
+
+          # windows
+          - os: windows
+            target: x86_64
+            # pypy doesn't seem to link today? needs investigation
+            # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273843597
+            interpreter: 3.9 3.10 3.11 3.12 3.13
+          - os: windows
+            target: i686
+            python-architecture: x86
+            # i686 not supported by pypy
+            interpreter: 3.9 3.10 3.11 3.12 3.13
+
+        exclude:
+          # zydis doesn't seem to build on aarch64
+          # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273845822
+          - os: windows
+            target: aarch64
+
+    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: ${{ matrix.python-architecture || 'x64' }}
+
+      - name: build pylancelot wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10' }} --manifest-path=./pylancelot/Cargo.toml
+          rust-toolchain: nightly
+          docker-options: -e CI
+
+      - name: build pyflirt wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10' }} --manifest-path=./pyflirt/Cargo.toml
+          rust-toolchain: nightly
+          docker-options: -e CI
+
+      - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi_files_${{ matrix.os }}_${{ matrix.target }}_${{ matrix.interpreter || 'all' }}_${{ matrix.manylinux }}
+          path: dist
+
   pypi-publish:
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [ macos, windows, linux ]
+    needs: [ build ]
     environment:
       name: release
     permissions:

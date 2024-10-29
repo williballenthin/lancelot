@@ -18,7 +18,7 @@ jobs:
           components: rustfmt, clippy
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'           
+          python-version: '3.13'
       - name: install deps
         run: |
           sudo apt-get update
@@ -67,3 +67,4 @@ jobs:
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
+
