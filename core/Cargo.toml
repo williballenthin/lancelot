@@ -42,7 +42,7 @@ lancelot-flirt = { path = "../flirt", version = "0.8.10", optional = true}
 prost = "0.13"
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.5"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 fern = "0.6"
 unicorn-engine = "2.0.0"
