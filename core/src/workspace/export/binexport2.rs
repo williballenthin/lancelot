@@ -20,14 +20,9 @@ use crate::{
     aspace::AddressSpace,
     module::Permissions,
     util,
-    workspace::{FunctionFlags, Workspace},
+    workspace::{export::pb, FunctionFlags, Workspace},
     RVA, VA,
 };
-
-#[allow(clippy::too_long_first_doc_paragraph)]
-pub mod pb {
-    include!(concat!(env!("OUT_DIR"), "/binexport2.rs"));
-}
 
 /// Deduplicated list of values.
 ///
