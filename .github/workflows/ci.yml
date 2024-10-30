@@ -67,4 +67,3 @@ jobs:
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
-
