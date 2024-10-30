@@ -30,7 +30,7 @@ chrono = { version = "0.4", features = ["clock"], default-features = false}
 
 # fern is only needed by tests, but because of the need for a feature named
 # test, they also have to be optional dependencies as well.
-fern = { version = "0.6", optional = true }
+fern = { version = "0.7", optional = true }
 
 # needed for emu
 bitvec = { version = "1" }
@@ -44,7 +44,7 @@ prost = "0.13"
 [dev-dependencies]
 criterion = "0.5"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
-fern = "0.6"
+fern = "0.7"
 unicorn-engine = "2.0.0"
 dynasm = "1.0.1"
 dynasmrt = "1.0.1"
