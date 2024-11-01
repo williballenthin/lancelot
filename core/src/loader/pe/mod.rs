@@ -82,7 +82,7 @@ impl PE {
         };
 
         match opt_header.data_directories.data_directories[data_directory] {
-            Some(directory) => Ok(Some(DataDirectory {
+            Some((_, directory)) => Ok(Some(DataDirectory {
                 address: self.module.address_space.base_address + directory.virtual_address as VA,
                 size:    directory.size as RVA,
             })),
