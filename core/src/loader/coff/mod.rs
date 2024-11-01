@@ -290,7 +290,6 @@ fn get_coff_symbols(obj: &object::File, module: &Module) -> Symbols {
                 name: name.to_string(),
                 kind: match symbol.kind() {
                     object::SymbolKind::Unknown => SymbolKind::Unknown,
-                    object::SymbolKind::Null => SymbolKind::Null,
                     object::SymbolKind::Text => SymbolKind::Text,
                     object::SymbolKind::Data => SymbolKind::Data,
                     object::SymbolKind::Section => SymbolKind::Section,
@@ -645,9 +644,13 @@ fn get_coff_fixups(
                     // this makes me think there might be a bug lurking around.
                     target + reloc.addend()
                 }
-                (object::RelocationKind::Coff(typ), _) => {
-                    warn!("coff: reloc: unsupported kind: COFF({:?})", typ);
-                    continue;
+                (object::RelocationKind::Unknown, _) => {
+                    if let object::RelocationFlags::Coff { typ } = reloc.flags() {
+                        warn!("coff: reloc: unsupported kind: COFF({:?})", typ);
+                        continue;
+                    } else {
+                        unimplemented!("relocation kind: {:?}", reloc.kind());
+                    }
                 }
                 _ => unimplemented!("relocation kind: {:?}", reloc.kind()),
             };
