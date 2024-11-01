@@ -22,7 +22,12 @@ classifiers = [
   "Programming Language :: Rust"
 ]
 
-dependencies = ["pefile"]
+dependencies = [
+  # for interacting with BinExport2 instances
+  "pefile>=2023.2.7",
+  "pyelftools>=0.31",
+  "protobuf>=5",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -44,3 +49,7 @@ repository = "https://github.com/williballenthin/lancelot/tree/master/pylancelot
 [build-system]
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "lancelot._lib"

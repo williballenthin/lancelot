@@ -99,10 +99,12 @@ pub fn binexport2_from_bytes(
         .map_err(to_py_err)
 }
 
-#[pymodule]
+#[pymodule(name = "_lib")]
 fn lancelot(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     pyo3_log::init();
 
+    // note that these are re-exported by:
+    // pylancelot/python/lancelot/__init__.py
     m.add_function(wrap_pyfunction!(binexport2_from_bytes, m)?)?;
 
     Ok(())

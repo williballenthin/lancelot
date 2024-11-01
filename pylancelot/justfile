@@ -1,0 +1,17 @@
+isort:
+    uvx isort --length-sort --profile black --line-length 120 --skip-glob "*_pb2.py" python scripts tests
+
+black:
+    uvx black --line-length 120 --extend-exclude ".*_pb2.py" python scripts tests
+
+ruff:
+    uvx ruff check --line-length 120 --extend-exclude "*_pb2.py" python scripts tests
+
+mypy:
+    uvx mypy --check-untyped-defs --ignore-missing-imports python scripts tests
+
+@lint:
+    -just isort
+    -just black
+    -just ruff
+    -just mypy
