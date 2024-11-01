@@ -22,7 +22,7 @@ better-panic = "0.3"
 inflate = "0.4"
 anyhow = "1"
 thiserror = "1"
-bitflags = "1"
+bitflags = "2"
 smallvec = "1"
 
 [dev-dependencies]
