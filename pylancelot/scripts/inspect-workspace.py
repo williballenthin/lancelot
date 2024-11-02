@@ -281,7 +281,6 @@ def inspect_instruction(be2: BinExport2, instruction: BinExport2.Instruction, ad
 
 
 def main(argv=None):
-
     if argv is None:
         argv = sys.argv[1:]
 
