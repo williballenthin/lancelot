@@ -4,6 +4,7 @@ import logging
 import argparse
 from pathlib import Path
 
+import rich
 import lancelot
 import lancelot.be2utils
 from lancelot.be2utils import BinExport2Index
@@ -125,16 +126,23 @@ def main(argv=None):
 
                     apis.add(api_name)
 
+        vertex_index = idx.vertex_index_by_address[flow_graph_address]
+        name = idx.get_function_name_by_vertex(vertex_index)
+
         if strings or apis:
-            print(f"{hex(flow_graph_address)}:")
+            rich.print(f"[yellow]{name}[/] [grey37]@ {hex(flow_graph_address)}:[/]")
 
             for string in sorted(strings):
                 print(f'  - "{string}"')
 
             for api in sorted(apis):
-                print(f"  - {api}")
+                if "!" in api:
+                    dll, _, name = api.partition("!")
+                    rich.print(f"  - [grey37]{dll}![/]{name}")
+                else:
+                    rich.print(f"  - {api}")
         else:
-            print(f"{hex(flow_graph_address)}: (none)")
+            rich.print(f"[yellow]{name}[/] [grey37]@ {hex(flow_graph_address)}: (none)[/]")
 
 
 if __name__ == "__main__":
