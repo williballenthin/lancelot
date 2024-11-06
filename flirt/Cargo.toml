@@ -21,7 +21,7 @@ chrono = { version = "0.4", features = ["std", "clock"], default-features = fals
 better-panic = "0.3"
 inflate = "0.4"
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 bitflags = "1"
 smallvec = "1"
 

@@ -18,7 +18,7 @@ hexyl = "0.14"
 fern = "0.7"
 chrono = "0.4"
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 better-panic = "0.3"
 goblin = "0.9"
 # unreleased fixes for: https://github.com/mdsteele/rust-ar/issues/26
