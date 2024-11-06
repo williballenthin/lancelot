@@ -34,8 +34,14 @@ def compute_thunks(be2: BinExport2, idx: BinExport2Index) -> dict[int, int]:
             thunk_callees: list[int] = idx.callees_by_vertex_index[curr_vertex_idx]
             # if this doesn't hold, then it doesn't seem like this is a thunk,
             # because either, len is:
-            #    0 and the thunk doesn't point to anything, or
+            #    0 and the thunk doesn't point to anything, such as `jmp eax`, or
             #   >1 and the thunk may end up at many functions.
+
+            if not thunk_callees:
+                # maybe we have an indirect jump, like `jmp eax`
+                # that we can't actually resolve here.
+                break
+
             assert len(thunk_callees) == 1, f"thunk @ {hex(addr)} failed"
 
             thunked_vertex_idx: int = thunk_callees[0]

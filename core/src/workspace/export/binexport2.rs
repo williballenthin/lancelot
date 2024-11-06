@@ -771,13 +771,26 @@ fn collect_call_graphs(
     call_targets_by_basic_block: BTreeMap<u64, Vec<u64>>,
 ) -> pb::bin_export2::CallGraph {
     let mut call_graph_edges: BTreeSet<(usize, usize)> = Default::default();
-    let functions = ws.analysis().functions.keys();
-    for &function_address in functions {
+    let functions = ws.analysis().functions.iter();
+    for (&function_address, &anal) in functions {
         if let Some(&source_vertex_index) = vertex_index_by_address.get(&function_address) {
-            for block in ws.cfg().get_reaches_from(function_address) {
-                for target in call_targets_by_basic_block.get(&block.address).unwrap_or(&vec![]) {
+            if anal.flags.intersects(FunctionFlags::THUNK) {
+                // if its a thunk, we only consider the first basic block,
+                // which looks: jmp foo
+                // because the cfg we reconstruct here will include basic blocks
+                // after the jump, but thats not really part of
+                // the thunk.
+                for target in call_targets_by_basic_block.get(&function_address).unwrap_or(&vec![]) {
                     if let Some(&target_vertex_index) = vertex_index_by_address.get(target) {
                         call_graph_edges.insert((source_vertex_index, target_vertex_index));
+                    }
+                }
+            } else {
+                for block in ws.cfg().get_reaches_from(function_address) {
+                    for target in call_targets_by_basic_block.get(&block.address).unwrap_or(&vec![]) {
+                        if let Some(&target_vertex_index) = vertex_index_by_address.get(target) {
+                            call_graph_edges.insert((source_vertex_index, target_vertex_index));
+                        }
                     }
                 }
             }
