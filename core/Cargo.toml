@@ -47,7 +47,7 @@ chrono = { version = "0.4", features = ["clock"], default-features = false }
 fern = "0.7"
 unicorn-engine = "2.0.0"
 dynasm = "1.0.1"
-dynasmrt = "1.0.1"
+dynasmrt = "3.0.1"
 
 [[bench]]
 name = "core"
