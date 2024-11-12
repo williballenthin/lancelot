@@ -1,6 +1,8 @@
 on:
   release:
     types: [created, edited]
+  pull_request:
+    types: [opened, reopened]
 
 name: publish pypi
 
@@ -8,79 +10,67 @@ jobs:
   # derived from pydantic-core build:
   # https://github.com/pydantic/pydantic-core/blob/8568136ee9abdca8a1c8b631750a4896bb25522e/.github/workflows/ci.yml#L399
   build:
-    name: build on ${{ matrix.os }} (${{ matrix.target }} - ${{ matrix.interpreter || 'all' }}${{ matrix.os == 'linux' && format(' - {0}', matrix.manylinux == 'auto' && 'manylinux' || matrix.manylinux) || '' }})
-    # only run on push to master and on release
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    name: build for ${{ matrix.os }} / ${{ matrix.target }} / ${{ matrix.interpreter }}
+    # only run on release or if PR has label "Full Build"
+    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build')
     strategy:
       fail-fast: true
       matrix:
-        os: [linux, macos, windows]
-        target: [x86_64, aarch64]
-        manylinux: [auto]
+        # placeholder matrix, so the various cases are explicitly listed below
+        os: [foo]
+        target: [foo]
+        manylinux: [foo]
+        exclude:
+          - os: foo
+            target: foo
+            manylinux: foo
+
         include:
-          # manylinux for various platforms, plus x86_64 pypy
+          #
+          # Linux
+          #
           - os: linux
             manylinux: auto
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            target: x86_64
+          - os: linux
+            manylinux: auto
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            target: aarch64
+          - os: linux
+            manylinux: auto
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
             target: i686
           - os: linux
             manylinux: auto
-            target: aarch64
-          - os: linux
-            manylinux: auto
+            interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
             target: armv7
-            interpreter: 3.9 3.10 3.11 3.12 3.13
-          - os: linux
-            manylinux: auto
-            target: x86_64
-            interpreter: pypy3.9 pypy3.10
-
           # not supported by zydis/zycore:
-          # - os: linux
-          #   manylinux: auto
           #   target: ppc64le
-          #   interpreter: 3.9 3.10 3.11 3.12 3.13
-          # - os: linux
-          #   manylinux: auto
           #   target: s390x
-          #   interpreter: 3.9 3.10 3.11 3.12 3.13
 
-          # musllinux
-          - os: linux
-            manylinux: musllinux_1_1
-            target: x86_64
-          - os: linux
-            manylinux: musllinux_1_1
-            target: aarch64
-          - os: linux
-            manylinux: musllinux_1_1
-            target: armv7
-
-          # macos
-          # all versions x86_64
-          # arm pypy and older pythons which can't be run on the arm hardware for PGO
+          #
+          # macOS
+          #
           - os: macos
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
             target: x86_64
           - os: macos
+            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
             target: aarch64
-            interpreter: 3.9 pypy3.9 pypy3.10
 
-          # windows
+          #
+          # Windows
+          #
           - os: windows
-            target: x86_64
+            interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
             # pypy doesn't seem to link today? needs investigation
             # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273843597
-            interpreter: 3.9 3.10 3.11 3.12 3.13
+            target: x86_64
           - os: windows
+            interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
             target: i686
             python-architecture: x86
-            # i686 not supported by pypy
-            interpreter: 3.9 3.10 3.11 3.12 3.13
-
-        exclude:
-          # zydis doesn't seem to build on aarch64
-          # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273845822
-          - os: windows
-            target: aarch64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
@@ -97,7 +87,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10' }} --manifest-path=./pylancelot/Cargo.toml
+          args: --release --out dist --interpreter ${{ matrix.interpreter }} --manifest-path=./pylancelot/Cargo.toml
           rust-toolchain: nightly
           docker-options: -e CI
 
@@ -106,7 +96,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10' }} --manifest-path=./pyflirt/Cargo.toml
+          args: --release --out dist --interpreter ${{ matrix.interpreter }} --manifest-path=./pyflirt/Cargo.toml
           rust-toolchain: nightly
           docker-options: -e CI
 
@@ -119,6 +109,7 @@ jobs:
 
   pypi-publish:
     runs-on: ubuntu-latest
+    # only run on release, not on any PR
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [ build ]
     environment:
