@@ -90,7 +90,7 @@ struct Header {
 
 impl Header {
     fn get_size(&self) -> usize {
-        0x25 + self.extra.get_size() + self.library_name.as_bytes().len()
+        0x25 + self.extra.get_size() + self.library_name.len()
     }
 
     fn get_pattern_size(&self) -> u16 {
