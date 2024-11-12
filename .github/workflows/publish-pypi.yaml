@@ -16,10 +16,19 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # placeholder matrix, so the various cases are explicitly listed below
         os: [foo]
         target: [foo]
         manylinux: [foo]
+        exclude:
+          - os: foo
+            target: foo
+            manylinux: foo
+
         include:
+          #
+          # Linux
+          #
           - os: linux
             manylinux: auto
             interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
@@ -36,11 +45,13 @@ jobs:
             manylinux: auto
             interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
             target: armv7
-
           # not supported by zydis/zycore:
           #   target: ppc64le
           #   target: s390x
 
+          #
+          # macOS
+          #
           - os: macos
             interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
             target: x86_64
@@ -48,19 +59,19 @@ jobs:
             interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
             target: aarch64
 
+          #
+          # Windows
+          #
           - os: windows
-            interpreter: 3.9 3.10 3.11 3.12 3.13  # missing pypy
+            interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
             # pypy doesn't seem to link today? needs investigation
             # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273843597
             target: x86_64
           - os: windows
-            interpreter: 3.9 3.10 3.11 3.12 3.13 # missing pypy
+            interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
             target: i686
             python-architecture: x86
-        exclude:
-          - os: foo
-            target: foo
-            manylinux: foo
+
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4
