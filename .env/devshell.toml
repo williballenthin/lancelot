@@ -33,4 +33,10 @@ packages = [
   "pkg-config",
   "hyperfine",
   "tailspin",
+  # LSP for helix
+  "basedpyright",
+  "ruff-lsp",
+  "python312Packages.python-lsp-server",
+  "python312Packages.pylsp-mypy",
+  "python312Packages.black",
 ]
