@@ -5,7 +5,6 @@ import time
 import logging
 import argparse
 import contextlib
-from typing import Dict, List, Optional
 from pathlib import Path
 
 import lancelot
@@ -25,8 +24,8 @@ def timing(msg: str):
 
 class Renderer:
     def __init__(self, o: io.StringIO):
-        self.o = o
-        self.indent = 0
+        self.o: io.StringIO = o
+        self.indent: int = 0
 
     @contextlib.contextmanager
     def indenting(self):
@@ -36,16 +35,16 @@ class Renderer:
         finally:
             self.indent -= 1
 
-    def write(self, s):
+    def write(self, s: str):
         self.o.write(s)
 
-    def writeln(self, s):
+    def writeln(self, s: str):
         self.o.write("  " * self.indent)
         self.o.write(s)
         self.o.write("\n")
 
     @contextlib.contextmanager
-    def section(self, name):
+    def section(self, name: str):
         self.writeln(name)
         with self.indenting():
             try:
@@ -63,14 +62,14 @@ class Renderer:
 def _render_expression_tree(
     be2: BinExport2,
     operand: BinExport2.Operand,
-    expression_tree: List[List[int]],
+    expression_tree: list[list[int]],
     tree_index: int,
     o: io.StringIO,
 ):
 
     expression_index = operand.expression_index[tree_index]
     expression = be2.expression[expression_index]
-    children_tree_indexes: List[int] = expression_tree[tree_index]
+    children_tree_indexes: list[int] = expression_tree[tree_index]
 
     if expression.type == BinExport2.Expression.REGISTER:
         o.write(expression.symbol)
@@ -169,7 +168,7 @@ def _render_expression_tree(
 def _build_expression_tree(
     be2: BinExport2,
     operand: BinExport2.Operand,
-) -> List[List[int]]:
+) -> list[list[int]]:
     # The reconstructed expression tree layout, linking parent nodes to their children.
     #
     # There is one list of integers for each expression in the operand.
@@ -192,7 +191,7 @@ def _build_expression_tree(
     #          5
     #
     # Remember, these are the indices into the entries in operand.expression_index.
-    tree: List[List[int]] = []
+    tree: list[list[int]] = []
     for i, expression_index in enumerate(operand.expression_index):
         children = []
 
@@ -208,10 +207,10 @@ def _build_expression_tree(
     return tree
 
 
-_OPERAND_CACHE: Dict[int, str] = {}
+_OPERAND_CACHE: dict[int, str] = {}
 
 
-def render_operand(be2: BinExport2, operand: BinExport2.Operand, index: Optional[int] = None) -> str:
+def render_operand(be2: BinExport2, operand: BinExport2.Operand, index: int | None=None) -> str:
     # For the mimikatz example file, there are 138k distinct operands.
     # Of those, only 11k are unique, which is less than 10% of the total.
     # The most common operands are seen 37k, 24k, 17k, 15k, 11k, ... times.
@@ -251,10 +250,10 @@ def render_operand(be2: BinExport2, operand: BinExport2.Operand, index: Optional
 def inspect_operand(be2: BinExport2, operand: BinExport2.Operand):
     expression_tree = _build_expression_tree(be2, operand)
 
-    def rec(tree_index, indent=0):
+    def rec(tree_index: int, indent: int=0):
         expression_index = operand.expression_index[tree_index]
         expression = be2.expression[expression_index]
-        children_tree_indexes: List[int] = expression_tree[tree_index]
+        children_tree_indexes: list[int] = expression_tree[tree_index]
 
         expr = str(expression).replace("\n", "")
         print(f"    {'  ' * indent}expression: {expr}")
@@ -280,7 +279,7 @@ def inspect_instruction(be2: BinExport2, instruction: BinExport2.Instruction, ad
             inspect_operand(be2, operand)
 
 
-def main(argv=None):
+def main(argv: list[str] | None=None):
     if argv is None:
         argv = sys.argv[1:]
 
@@ -474,7 +473,7 @@ def main(argv=None):
                 # appears to be code
                 continue
 
-            data_xrefs: List[int] = []
+            data_xrefs: list[int] = []
             for data_reference_index in idx.data_reference_index_by_target_address[data_address]:
                 data_reference = be2.data_reference[data_reference_index]
                 instruction_address = idx.get_insn_address(data_reference.instruction_index)
