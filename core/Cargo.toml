@@ -7,6 +7,7 @@ authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
 repository = "https://github.com/williballenthin/lancelot"
+exclude = ["resources/test/"]
 
 [badges]
 travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch = "master" }
