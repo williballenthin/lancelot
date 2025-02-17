@@ -7,6 +7,7 @@ help = "show profile (python)"
 
 [devshell]
 packages = [
+  "gcc",
   "cmake",
   "protobuf",
   "just",

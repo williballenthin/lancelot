@@ -11,6 +11,6 @@ use `maturin develop --release` for fast builds.
 ## local builds
 
 ```console
-$ maturin develop --release
+$ maturin build --release
 $ ../target/wheels/*.whl
 ```

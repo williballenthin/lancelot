@@ -7,6 +7,7 @@ import argparse
 import contextlib
 from pathlib import Path
 
+import google.protobuf.message
 import lancelot
 import lancelot.be2utils
 from lancelot.be2utils.binexport2_pb2 import BinExport2
@@ -300,13 +301,21 @@ def main(argv: list[str] | None=None):
 
     o = Renderer(io.StringIO())
 
-    with timing("analyzing file"):
-        input_file: Path = args.input_file
-        buf: bytes = lancelot.get_binexport2_bytes_from_bytes(input_file.read_bytes())
+    be2: BinExport2
+    try:
+        buf = args.input_file.read_bytes()
+        with timing("loading BinExport2"):
+            be2 = BinExport2()
+            be2.ParseFromString(buf)
 
-    with timing("loading BinExport2"):
-        be2: BinExport2 = BinExport2()
-        be2.ParseFromString(buf)
+    except google.protobuf.message.DecodeError:
+        with timing("analyzing file"):
+            input_file: Path = args.input_file
+            buf: bytes = lancelot.get_binexport2_bytes_from_bytes(input_file.read_bytes())
+
+        with timing("loading BinExport2"):
+            be2 = BinExport2()
+            be2.ParseFromString(buf)
 
     with timing("indexing BinExport2"):
         idx = lancelot.be2utils.BinExport2Index(be2)
