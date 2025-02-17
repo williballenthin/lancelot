@@ -33,8 +33,13 @@ pub enum WorkspaceError {
     BufferTooSmall,
     #[error("format not supported")]
     FormatNotSupported {
-        #[backtrace]
-        source: anyhow::Error, // TODO: doesn't seem like we want anyhow in library code.
+        // we want the following:
+        //
+        // #[backtrace]
+        //
+        // but this requires nightly for Rust 1.73+.
+        // see: https://github.com/rust-lang/rust/issues/99301
+        source: anyhow::Error,
     },
 }
 

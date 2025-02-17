@@ -357,7 +357,7 @@ impl Formatter {
             // force this into a string, or else the formatting control codes will not be written.
             //
             // from the documentation:
-            // > If you do want to get at the escape codes, then you can convert the ANSIString 
+            // > If you do want to get at the escape codes, then you can convert the ANSIString
             // > to a string as you would any other Display value.
             let s = Formatter::get_token_color(token).paint(s).to_string();
             o.write_str(&s)?;
