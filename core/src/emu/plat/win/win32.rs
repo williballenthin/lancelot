@@ -179,7 +179,7 @@ mod tests {
         let mut emu: Win32Emulator = Default::default();
         emu.load_pe(&pe)?;
 
-        let opt = pe.header.optional_header.unwrap();
+        let opt = pe.optional_header.unwrap();
         let ep = opt.windows_fields.image_base + opt.standard_fields.address_of_entry_point;
         emu.set_pc(ep);
 

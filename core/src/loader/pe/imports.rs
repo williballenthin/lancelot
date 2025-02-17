@@ -82,7 +82,7 @@ impl std::fmt::Debug for IMAGE_IMPORT_BY_NAME {
 
 /// fetch the VA of the import directory, if it exists.
 pub fn get_import_directory(pe: &PE) -> Result<Option<VA>> {
-    if let Some(opt) = pe.header.optional_header {
+    if let Some(opt) = pe.optional_header {
         if let Some(import_directory) = opt.data_directories.get_import_table() {
             let base_address = pe.module.address_space.base_address;
             return Ok(Some(base_address + import_directory.virtual_address as RVA));

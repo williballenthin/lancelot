@@ -7,7 +7,7 @@ use log::debug;
 use crate::{loader::pe::PE, VA};
 
 pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
-    if let Some(optional_header) = pe.header.optional_header {
+    if let Some(optional_header) = pe.optional_header {
         let entry_point = optional_header.standard_fields.address_of_entry_point;
         if entry_point == 0 {
             return Ok(vec![]);

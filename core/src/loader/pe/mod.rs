@@ -50,9 +50,14 @@ pub struct DataDirectory {
 /// The `buf` field contains the raw data.
 /// The `module` field contains an address space as the PE would be loaded.
 pub struct PE {
-    pub buf:    Vec<u8>,
-    pub module: Module,
-    pub header: goblin::pe::header::Header,
+    pub buf:             Vec<u8>,
+    pub module:          Module,
+    /// Shortcut to Goblin's PE optional header structure.
+    ///
+    /// Access other PE fields via `PE.pe()`.
+    /// Can't inline many of them here due to circular lifetimes referencing
+    /// `buf`.
+    pub optional_header: Option<goblin::pe::optional_header::OptionalHeader>,
 }
 
 impl PE {
@@ -76,7 +81,7 @@ impl PE {
     pub fn get_data_directory(&self, data_directory: usize) -> Result<Option<DataDirectory>> {
         assert!(data_directory <= IMAGE_DIRECTORY_MAX);
 
-        let opt_header = match self.header.optional_header {
+        let opt_header = match self.optional_header {
             Some(opt_header) => opt_header,
             _ => return Ok(None),
         };
@@ -311,7 +316,7 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
     Ok(PE {
         buf: buf.to_vec(),
         module,
-        header: pe.header,
+        optional_header: pe.header.optional_header,
     })
 }
 
