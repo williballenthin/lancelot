@@ -2,7 +2,7 @@
 name = "lancelot"
 description = "binary analysis framework for x32/x64 PE files"
 license = "Apache-2.0"
-version = "0.9.2"
+version = "0.9.3"
 authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
@@ -36,7 +36,7 @@ fern = { version = "0.7", optional = true }
 bitvec = { version = "1" }
 
 # needed for flirt
-lancelot-flirt = { path = "../flirt", version = "0.9.2", optional = true}
+lancelot-flirt = { path = "../flirt", version = "0.9.3", optional = true}
 
 # needed for binexport2
 prost = "0.13"
