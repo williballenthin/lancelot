@@ -781,7 +781,11 @@ fn collect_call_graphs(
                 if let Some(target) = get_thunk_target(ws.cfg(), function_address) {
                     if let Some(&target_vertex_index) = vertex_index_by_address.get(&target) {
                         call_graph_edges.insert((source_vertex_index, target_vertex_index));
+                    } else {
+                        warn!("no vertex for address 0x{target:x}");
                     }
+                } else {
+                    warn!("no thunk target for thunk at 0x{function_address:x}");
                 }
             } else {
                 for block in ws.cfg().get_reaches_from(function_address) {
@@ -792,6 +796,8 @@ fn collect_call_graphs(
                     }
                 }
             }
+        } else {
+            warn!("no vertex for address 0x{function_address:x}");
         }
     }
 
