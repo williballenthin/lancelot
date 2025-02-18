@@ -31,11 +31,12 @@ pub fn get_thunk_target(cfg: &CFG, va: VA) -> Option<VA> {
             None
         } else if let Flow::UnconditionalJump(Target::Direct(target)) = succs[0] {
             Some(target)
+        } else if let Flow::UnconditionalJump(Target::Indirect(target)) = succs[0] {
+            // like thunk to import table entry
+            Some(target)
         } else {
             // cases:
             //   - not an unconditional jump
-            //   - not a direct target, such as `jmp eax` or via global pointer, like `jmp
-            //     [0x401000]`
             None
         }
     } else {
