@@ -51,10 +51,8 @@ impl Configuration for FileSystemConfiguration {
         Ok(FlirtSignatureSet::with_signatures(sigs))
     }
 
-    // not supported at this time
-    // its probably ok to make this return an empty list, as necessary
     fn get_function_hints(&self) -> Result<Vec<VA>> {
-        unimplemented!("FileSystemConfiguration::get_function_hints()")
+        Ok(vec![])
     }
 
     fn clone(&self) -> Box<dyn Configuration> {
