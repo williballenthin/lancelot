@@ -189,6 +189,15 @@ pub enum Target {
     Indirect(VA),
 }
 
+impl std::fmt::Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Target::Direct(va) => write!(f, "Direct(0x{:x})", va),
+            Target::Indirect(va) => write!(f, "Indirect(0x{:x})", va),
+        }
+    }
+}
+
 // for a memory operand, like `mov eax, [0x401000]`
 // fetch the pointer, rather than the dest,
 // so like `0x401000`.

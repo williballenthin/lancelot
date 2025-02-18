@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Not};
 
 use anyhow::Result;
 use log::debug;
@@ -12,7 +12,8 @@ use crate::{
         imports::{read_best_thunk_data, IMAGE_THUNK_DATA},
         PE,
     },
-    util, RVA, VA,
+    module::Permissions,
+    RVA, VA,
 };
 #[cfg(feature = "disassembler")]
 use std::collections::BTreeSet;
@@ -30,13 +31,13 @@ pub mod safeseh;
 #[cfg(feature = "disassembler")]
 pub mod noret_imports;
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub enum ImportedSymbol {
     Ordinal(u32),
     Name(String),
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct Import {
     /// the address of the First Thunk.
     /// that is, the thing that will be referenced by code.
@@ -54,11 +55,26 @@ impl std::fmt::Display for Import {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
+pub enum ThunkTarget {
+    Import(Import),
+    Function(VA),
+}
+
+impl std::fmt::Display for ThunkTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            ThunkTarget::Import(import) => write!(f, "Import({})", import),
+            ThunkTarget::Function(va) => write!(f, "Function(0x{:x})", va),
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Thunk {
     /// the address of the function thunk
     pub address: VA,
-    pub import:  Import,
+    pub target:  ThunkTarget,
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -122,6 +138,8 @@ pub fn get_imports(pe: &PE) -> Result<BTreeMap<VA, Import>> {
 
 #[cfg(feature = "disassembler")]
 pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &BTreeSet<VA>) -> Result<BTreeMap<VA, Thunk>> {
+    use super::dis::get_operand_xref;
+
     let mut thunks: BTreeMap<VA, Thunk> = Default::default();
     let decoder = dis::get_disassembler(&pe.module)?;
 
@@ -134,52 +152,37 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &BTreeSet
 
                 let op = dis::get_first_operand(&insn).expect("JMP has no target");
 
-                if let zydis::OperandType::MEMORY = op.ty {
-                    // 32-bit
-                    if op.mem.base == zydis::Register::NONE
-                        && op.mem.index == zydis::Register::NONE
-                        && op.mem.scale == 0
-                        && op.mem.disp.has_displacement
-                    {
-                        // the operand is a deref of a memory address.
-                        // for example: JMP [0x0]
-                        // this means: read the ptr from 0x0, and then jump to it.
+                if let Ok(Some(target)) = get_operand_xref(&pe.module, function, &insn, op) {
+                    match target {
+                        dis::Target::Direct(target) => {
+                            let thunk = if let Some(import) = imports.get(&target) {
+                                Thunk {
+                                    address: function,
+                                    target:  ThunkTarget::Import(import.clone()),
+                                }
+                            } else if functions.contains(&target) {
+                                Thunk {
+                                    address: function,
+                                    target:  ThunkTarget::Function(target),
+                                }
+                            } else {
+                                if pe.module.probe_va(target, Permissions::X).not() {
+                                    continue;
+                                }
 
-                        if op.mem.disp.displacement < 0 {
+                                // not a function found at this location yet.
+                                // but that should be ok. this is newly discovered code.
+                                Thunk {
+                                    address: function,
+                                    target:  ThunkTarget::Function(target),
+                                }
+                            };
+                            debug!("thunk: {:#x} -> {:}", thunk.address, thunk.target);
+                            thunks.insert(thunk.address, thunk);
+                        }
+                        dis::Target::Indirect(_) => {
+                            // unable to resolve, such as `jmp [0x0]` or `jmp eax`
                             continue;
-                        }
-                        let ptr: VA = op.mem.disp.displacement as u64;
-
-                        if let Some(import) = imports.get(&ptr) {
-                            let thunk = Thunk {
-                                address: function,
-                                import:  import.clone(),
-                            };
-                            debug!("thunk: {:#x} -> {}", thunk.address, thunk.import);
-                            thunks.insert(thunk.address, thunk);
-                        }
-                    } else if op.mem.base == zydis::Register::RIP
-                            // only valid on x64
-                            && op.mem.index == zydis::Register::NONE
-                            && op.mem.scale == 0
-                            && op.mem.disp.has_displacement
-                    {
-                        // this is RIP-relative addressing.
-                        // it works like a relative immediate,
-                        // that is: dst = *(rva + displacement + instruction len)
-
-                        let ptr = match util::va_add_signed(function + insn.length as u64, op.mem.disp.displacement) {
-                            None => continue,
-                            Some(ptr) => ptr,
-                        };
-
-                        if let Some(import) = imports.get(&ptr) {
-                            let thunk = Thunk {
-                                address: function,
-                                import:  import.clone(),
-                            };
-                            debug!("thunk: {:#x} -> {}", thunk.address, thunk.import);
-                            thunks.insert(thunk.address, thunk);
                         }
                     }
                 }
@@ -222,6 +225,18 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
     );
 
     let thunks = find_thunks(pe, &imports, &function_starts)?;
+
+    // ensure that all functions pointed to by a thunk are a function.
+    // some of these target functions may not be recongized by other passes.
+    for thunk in thunks.values() {
+        if let ThunkTarget::Function(target) = thunk.target {
+            debug!("found new function candidate from thunk target: 0x{target:x}");
+            function_starts.insert(target);
+        }
+    }
+    // TODO: in theory, we want to do this iteratively, until we reach a fixed
+    // point, to account for thunks to thunks to functions.
+
     debug!("functions: found {} function candidates", function_starts.len());
     debug!("functions: found {} thunks", thunks.len());
 
