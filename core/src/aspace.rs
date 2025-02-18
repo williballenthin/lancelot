@@ -74,6 +74,13 @@ pub trait AddressSpace<T> {
 pub trait WritableAddressSpace<T> {
     fn write(&mut self, addr: T, v: &[u8]) -> Result<()>;
 
+    fn write_u16(&mut self, addr: T, v: u16) -> Result<()> {
+        let mut src = [0u8; std::mem::size_of::<u16>()];
+        LittleEndian::write_u16(&mut src, v);
+
+        self.write(addr, &src[..])
+    }
+
     fn write_u32(&mut self, addr: T, v: u32) -> Result<()> {
         let mut src = [0u8; std::mem::size_of::<u32>()];
         LittleEndian::write_u32(&mut src, v);

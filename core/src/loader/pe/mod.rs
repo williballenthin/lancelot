@@ -5,6 +5,7 @@ use log::debug;
 use thiserror::Error;
 
 pub mod imports;
+pub mod reloc;
 pub mod rsrc;
 
 use crate::{
@@ -299,6 +300,12 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
         }
 
         address_space.map.writezx(rstart, &vbuf)?;
+
+        // We are tempted to use the PE section's pointer_to_relocations and
+        // number_of_relocations but these don't apply to PE files (but they do
+        // apply to COFF files). Instead, we have to parse the base relocation
+        // table, found in the .reloc section.
+        {}
 
         debug!(
             "pe: address space: mapped {:#x} - {:#x} {:?}",

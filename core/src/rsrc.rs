@@ -30,6 +30,8 @@ pub enum Rsrc {
     POSTDLLMAIN,
     /// EXE malware sample from VT
     DED0,
+    /// EXE from Assemblage dataset with relocations
+    CPP1,
 }
 
 /// Fetch the file system name of the given resource.
@@ -47,6 +49,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::_1MFCM140 => String::from("1.MFCM140.dll"),
         Rsrc::POSTDLLMAIN => String::from("postdllmain.obj"),
         Rsrc::DED0 => String::from("ded0ee29af97496f27d810f6c16d78a3031d8c2193d5d2a87355f3e3ca58f9b3"),
+        Rsrc::CPP1 => String::from("cpp1.exe_"),
     }
 }
 
