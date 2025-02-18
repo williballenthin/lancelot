@@ -224,18 +224,40 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
             .filter(|&va| heuristics::is_probably_code(&pe.module, &decoder, va)),
     );
 
-    let thunks = find_thunks(pe, &imports, &function_starts)?;
-
     // ensure that all functions pointed to by a thunk are a function.
     // some of these target functions may not be recongized by other passes.
-    for thunk in thunks.values() {
-        if let ThunkTarget::Function(target) = thunk.target {
-            debug!("found new function candidate from thunk target: 0x{target:x}");
-            function_starts.insert(target);
+    //
+    // we keep searching until we reach a fixed point,
+    // to ensure we account for thunks to thunks to functions.
+    let mut thunk_candidates = function_starts.clone();
+    let mut thunks: BTreeMap<VA, Thunk> = Default::default();
+    while thunk_candidates.is_empty().not() {
+        let confirmed_thunks = find_thunks(pe, &imports, &thunk_candidates)?;
+
+        // these are all the addresses pointed to by thunks,
+        // which we need to ensure are functions.
+        let function_thunk_targets = confirmed_thunks
+            .values()
+            .filter_map(|thunk| match thunk.target {
+                ThunkTarget::Function(target) => Some(target),
+                ThunkTarget::Import(_) => None,
+            })
+            .collect::<Vec<VA>>();
+
+        thunks.extend(confirmed_thunks.into_iter());
+
+        let mut next_candidates: BTreeSet<VA> = Default::default();
+        for &target in function_thunk_targets.iter() {
+            if function_starts.insert(target) {
+                debug!("found new function candidate from thunk target: 0x{target:x}");
+                next_candidates.insert(target);
+                // next loop we'll check if this target is a thunk, too.
+            }
         }
+
+        debug!("found {} thunk candidates this round", next_candidates.len());
+        thunk_candidates = next_candidates;
     }
-    // TODO: in theory, we want to do this iteratively, until we reach a fixed
-    // point, to account for thunks to thunks to functions.
 
     debug!("functions: found {} function candidates", function_starts.len());
     debug!("functions: found {} thunks", thunks.len());
@@ -265,6 +287,7 @@ pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
         .into_iter()
         .filter_map(|f| match f {
             Function::Local(va) => Some(va),
+            Function::Thunk(Thunk { address: va, .. }) => Some(va),
             _ => None,
         })
         .collect())
