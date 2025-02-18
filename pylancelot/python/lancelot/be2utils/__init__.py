@@ -148,6 +148,7 @@ class BinExport2Index:
     def _index_thunks(self):
         for addr, vertex_idx in self.vertex_index_by_address.items():
             vertex: BinExport2.CallGraph.Vertex = self.be2.call_graph.vertex[vertex_idx]
+
             if not is_thunk_vertex(vertex):
                 continue
 
@@ -208,7 +209,8 @@ class BinExport2Index:
 
         if is_thunk_vertex(vertex):
             if target := self.thunks.get(vertex.address):
-                name = f"j_{target:x}"
+                target_name = self.get_function_name_by_address(target)
+                name = f"j_{target_name}"
 
         if vertex.HasField("mangled_name") and not vertex.mangled_name.startswith("sub_"):
             name = vertex.mangled_name
