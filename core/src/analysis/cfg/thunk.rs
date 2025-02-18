@@ -4,7 +4,10 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    analysis::cfg::{flow::Flow, CFG},
+    analysis::{
+        cfg::{flow::Flow, CFG},
+        dis::Target,
+    },
     VA,
 };
 
@@ -19,6 +22,24 @@ pub fn is_thunk(cfg: &CFG, va: VA) -> bool {
         }
     } else {
         false
+    }
+}
+
+pub fn get_thunk_target(cfg: &CFG, va: VA) -> Option<VA> {
+    if let Some(succs) = cfg.flows.flows_by_src.get(&va) {
+        if succs.len() != 1 {
+            None
+        } else if let Flow::UnconditionalJump(Target::Direct(target)) = succs[0] {
+            Some(target)
+        } else {
+            // cases:
+            //   - not an unconditional jump
+            //   - not a direct target, such as `jmp eax` or via global pointer, like `jmp
+            //     [0x401000]`
+            None
+        }
+    } else {
+        None
     }
 }
 
