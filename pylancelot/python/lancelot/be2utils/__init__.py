@@ -9,7 +9,7 @@ https://github.com/google/binexport/blob/6916731/binexport2.proto
 
 import io
 import logging
-from typing import Iterator
+from collections.abc import Iterator
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -18,6 +18,17 @@ from elftools.elf.elffile import ELFFile
 from lancelot.be2utils.binexport2_pb2 import BinExport2
 
 logger = logging.getLogger(__name__)
+
+
+def is_vertex_type(vertex: BinExport2.CallGraph.Vertex, type_: BinExport2.CallGraph.Vertex.Type.ValueType) -> bool:
+    return vertex.HasField("type") and vertex.type == type_
+
+
+def is_thunk_vertex(vertex: BinExport2.CallGraph.Vertex) -> bool:
+    return is_vertex_type(vertex, BinExport2.CallGraph.Vertex.Type.THUNK)
+
+
+THUNK_CHAIN_DEPTH_DELTA = 5
 
 
 class BinExport2Index:
@@ -46,6 +57,9 @@ class BinExport2Index:
         self.insn_index_by_address: dict[int, int] = {}
         self.insn_by_address: dict[int, BinExport2.Instruction] = {}
 
+        # from thunk address to target function address
+        self.thunks: dict[int, int] = {}
+
         # must index instructions first
         self._index_insn_addresses()
         self._index_vertex_edges()
@@ -54,6 +68,7 @@ class BinExport2Index:
         self._index_call_graph_vertices()
         self._index_data_references()
         self._index_string_references()
+        self._index_thunks()
 
     def get_insn_address(self, insn_index: int) -> int:
         assert insn_index in self.insn_address_by_index, f"insn must be indexed, missing {insn_index}"
@@ -129,6 +144,38 @@ class BinExport2Index:
             self.insn_address_by_index[idx] = addr
             self.insn_index_by_address[addr] = idx
             self.insn_by_address[addr] = insn
+
+    def _index_thunks(self):
+        for addr, vertex_idx in self.vertex_index_by_address.items():
+            vertex: BinExport2.CallGraph.Vertex = self.be2.call_graph.vertex[vertex_idx]
+            if not is_thunk_vertex(vertex):
+                continue
+
+            curr_vertex_idx: int = vertex_idx
+            for _ in range(THUNK_CHAIN_DEPTH_DELTA):
+                thunk_callees: list[int] = self.callees_by_vertex_index[curr_vertex_idx]
+                # if this doesn't hold, then it doesn't seem like this is a thunk,
+                # because either, len is:
+                #    0 and the thunk doesn't point to anything, such as `jmp eax`, or
+                #   >1 and the thunk may end up at many functions.
+
+                if not thunk_callees:
+                    # maybe we have an indirect jump, like `jmp eax`
+                    # that we can't actually resolve here.
+                    break
+
+                assert len(thunk_callees) == 1, f"thunk @ {hex(addr)} failed"
+
+                thunked_vertex_idx: int = thunk_callees[0]
+                thunked_vertex: BinExport2.CallGraph.Vertex = self.be2.call_graph.vertex[thunked_vertex_idx]
+
+                if not is_thunk_vertex(thunked_vertex):
+                    assert thunked_vertex.HasField("address")
+
+                    self.thunks[addr] = thunked_vertex.address
+                    break
+
+                curr_vertex_idx = thunked_vertex_idx
 
     @staticmethod
     def instruction_indices(basic_block: BinExport2.BasicBlock) -> Iterator[int]:
