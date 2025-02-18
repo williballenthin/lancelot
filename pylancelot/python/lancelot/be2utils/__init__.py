@@ -205,10 +205,15 @@ class BinExport2Index:
     def get_function_name_by_vertex(self, vertex_index: int) -> str:
         vertex: BinExport2.CallGraph.Vertex = self.be2.call_graph.vertex[vertex_index]
         name: str = f"sub_{vertex.address:x}"
-        if vertex.HasField("mangled_name"):
+
+        if is_thunk_vertex(vertex):
+            if target := self.thunks.get(vertex.address):
+                name = f"j_{target:x}"
+
+        if vertex.HasField("mangled_name") and not vertex.mangled_name.startswith("sub_"):
             name = vertex.mangled_name
 
-        if vertex.HasField("demangled_name"):
+        if vertex.HasField("demangled_name") and not vertex.demangled_name.startswith("sub_"):
             name = vertex.demangled_name
 
         if vertex.HasField("library_index"):
