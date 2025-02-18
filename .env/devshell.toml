@@ -16,6 +16,7 @@ help = "pre-commit (manual)"
 
 [devshell]
 packages = [
+  "zydis",
   "bacon",
   # "protobuf",
   "just",
