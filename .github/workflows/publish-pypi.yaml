@@ -71,6 +71,9 @@ jobs:
             interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
             target: i686
             python-architecture: x86
+          - os: windows
+            interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
+            target: arm64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
