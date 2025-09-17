@@ -8,3 +8,4 @@
 
 pub mod coff;
 pub mod pe;
+pub mod elf;

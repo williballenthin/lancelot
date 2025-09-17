@@ -7,6 +7,7 @@ use std::{
 
 use anyhow::Result;
 use bitflags::bitflags;
+use goblin::elf;
 use log::warn;
 use thiserror::Error;
 
@@ -16,8 +17,7 @@ use crate::{
         pe::{Import, ImportedSymbol},
     },
     loader::{
-        coff::{SymbolKind, COFF},
-        pe::PE,
+        coff::{SymbolKind, COFF}, elf::ELF, pe::PE
     },
     module::Module,
     VA,
@@ -421,6 +421,172 @@ impl Workspace for COFFWorkspace {
     }
 }
 
+pub struct ELFWorkspace {
+    pub config:   Box<dyn config::Configuration>,
+    pub elf:      crate::loader::elf::ELF,
+    pub cfg:      CFG,
+    pub analysis: WorkspaceAnalysis,
+}
+
+impl ELFWorkspace {
+    pub fn from_elf(config: Box<dyn config::Configuration>, elf: crate::loader::elf::ELF) ->Result<ELFWorkspace> {
+        let mut insns: InstructionIndex = Default::default();
+        let mut function_starts: BTreeSet<VA> = Default::default();
+
+        function_starts.extend(config.get_function_hints()?);
+        function_starts.extend(crate::analysis::elf::find_function_starts(&elf)?);
+    
+        for &function in function_starts.iter() {
+            insns.build_index(&elf.module, function)?;
+        }
+
+        loop {
+            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&elf.module, &insns)?;
+            if new_code.is_empty() {
+                break;
+            }
+
+            for &function in new_code.iter() {
+                insns.build_index(&elf.module, function)?;
+
+                function_starts.insert(function);
+            }
+        }
+
+        let mut cfg = CFG::from_instructions(&elf.module, insns)?;
+
+        let mut noret = crate::analysis::elf::noret_imports::cfg_prune_noret_imports(&elf, &mut cfg)?;
+
+        let mut function_starts = function_starts
+            .into_iter()
+            .filter(|va| cfg.insns.insns_by_address.contains_key(va))
+            .collect::<BTreeSet<VA>>();
+
+        let call_targets = cfg
+            .basic_blocks
+            .blocks_by_address
+            .keys()
+            .cloned()
+            .filter(|bb| {
+                cfg.flows.flows_by_dst[bb]
+                    .iter()
+                    .any(|flow| matches!(flow, Flow::Call(_)))
+            })
+            .collect::<BTreeSet<VA>>();
+
+        function_starts.extend(call_targets);
+        let elf_imports = crate::analysis::elf::get_imports(&elf)?;
+
+        let mut names: NameIndex = Default::default();
+        for import in elf_imports.values() {
+            let name = format!("{}!{}", import.library, import.symbol.name);
+            names.insert(import.address, name);
+        }
+
+        // parse ELF for symbol names
+        let goblin_elf = elf::Elf::parse(&elf.buf)?;
+        for sym in goblin_elf.dynsyms.iter() {
+            if sym.st_value != 0 {
+                let addr = sym.st_value + elf.module.address_space.base_address;
+                if let Some(name) = goblin_elf.dynstrtab.get_at(sym.st_name) {
+                    if !name.is_empty() {
+                        names.insert(addr, name.to_string());
+                    }
+                }
+            }
+        }
+
+        // add symbols from symtab
+        for sym in goblin_elf.syms.iter() {
+            if sym.st_value != 0 {
+                let addr = sym.st_value + elf.module.address_space.base_address;
+                if let Some(name) = goblin_elf.strtab.get_at(sym.st_name) {
+                    if !name.is_empty() && !names.contains_address(addr) {
+                        names.insert(addr, name.to_string());
+                    }
+                }
+            }
+        }
+
+        let sigs = config.get_sigs()?;
+        for &function in function_starts.iter() {
+            let matches = crate::analysis::flirt::match_flirt(&elf.module, &sigs, function)?;
+            if !matches.is_empty() {
+                log::debug!("FLIRT matches for {:#x}: {}", function, matches.len());
+            }
+        }
+
+        // mark noret functions based on known exit functions
+        for name in [
+            "exit",
+            "_exit",
+            "__exit",
+            "_Exit",
+            "abort",
+        ] {
+            if let Some(&va) = names.addresses_by_name.get(name) {
+                noret.insert(va);
+            }
+        }
+
+        let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
+
+        let mut functions: BTreeMap<VA, FunctionAnalysis> = Default::default();
+        for va in function_starts {
+            let mut flags = FunctionFlags::empty();
+
+            if noret.contains(&va) {
+                flags |= FunctionFlags::NORET;
+            }
+
+            if thunks.contains(&va) {
+                flags |= FunctionFlags::THUNK;
+            }
+
+            functions.insert(va, FunctionAnalysis { flags });
+        }
+
+        // add names for functions that don't have names yet
+        for &function in functions.keys() {
+            if names.contains_address(function).not() {
+                let name = format!("sub_{:x}", function);
+                names.insert(function, name);
+            }
+        }
+
+        Ok(ELFWorkspace {
+            config,
+            elf,
+            cfg,
+            analysis: WorkspaceAnalysis {
+                functions,
+                imports: Default::default(),
+                externs: BTreeMap::new(),
+                names,
+            },
+        })
+
+    }
+}
+
+impl Workspace for ELFWorkspace {
+    fn config(&self) -> &Box<dyn config::Configuration> {
+        &self.config
+    }
+
+    fn cfg(&self) -> &CFG {
+        &self.cfg
+    }
+
+    fn analysis(&self) -> &WorkspaceAnalysis {
+        &self.analysis
+    }
+
+    fn module(&self) -> &Module {
+        &self.elf.module
+    }
+}
+
 pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) -> Result<Box<dyn Workspace>> {
     if buf.len() < 2 {
         return Err(WorkspaceError::BufferTooSmall.into());
@@ -445,6 +611,11 @@ pub fn workspace_from_bytes(config: Box<dyn config::Configuration>, buf: &[u8]) 
             Ok(Box::new(COFFWorkspace::from_coff(config, coff)?))
         }
         _ => {
+            // check for elf 
+            if buf.len() >= 4 && &buf[0..4] == b"\x7FELF" {
+                let elf = crate::loader::elf::ELF::from_bytes(buf)?;
+                return Ok(Box::new(ELFWorkspace::from_elf(config, elf)?));
+            }
             warn!("workspace: unknown file format: magic: {:02x} {:02x}", buf[0], buf[1]);
             Err(WorkspaceError::FormatNotSupported {
                 source: anyhow::anyhow!("unknown magic"),
