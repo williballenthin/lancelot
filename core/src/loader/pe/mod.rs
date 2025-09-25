@@ -75,7 +75,7 @@ impl PE {
         )
     }
 
-    pub fn pe(&self) -> Result<goblin::pe::PE> {
+    pub fn pe(&self) -> Result<goblin::pe::PE<'_>> {
         get_pe(&self.buf)
     }
 
@@ -97,7 +97,7 @@ impl PE {
     }
 }
 
-fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE> {
+fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE<'_>> {
     let pe = match goblin::pe::PE::parse(buf) {
         Ok(pe) => pe,
         Err(e) => {

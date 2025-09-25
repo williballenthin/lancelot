@@ -58,7 +58,7 @@ pub trait AddressSpace<T> {
 
     /// Create an address space thats backed by this address space,
     /// where all reads are relative to the given address.
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice>;
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>>;
 
     /// Read a NULL-terminated, ASCII-encoded string at the given offset.
     ///
@@ -173,7 +173,7 @@ impl AddressSpace<RVA> for RelativeAddressSpace {
         Ok(String::from_utf8(buf)?)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         Ok(AddressSpaceSlice {
             base_address: offset,
             inner:        Box::new(self),
@@ -271,7 +271,7 @@ impl AddressSpace<RVA> for &RelativeAddressSpace {
         (*self).read_ascii(offset, minimum_length)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         (*self).slice(offset)
     }
 }
@@ -327,7 +327,7 @@ impl AddressSpace<VA> for AbsoluteAddressSpace {
             .read_ascii((offset - self.base_address) as RVA, minimum_length)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         Ok(AddressSpaceSlice {
             base_address: offset,
             inner:        Box::new(self),
@@ -354,7 +354,7 @@ impl AddressSpace<VA> for &AbsoluteAddressSpace {
         (*self).read_ascii(offset, minimum_length)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         (*self).slice(offset)
     }
 }
@@ -382,7 +382,7 @@ impl AddressSpace<RVA> for AddressSpaceSlice<'_> {
         self.inner.read_ascii(offset, minimum_length)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         Ok(AddressSpaceSlice {
             base_address: offset,
             inner:        Box::new(self),
@@ -401,7 +401,7 @@ impl AddressSpace<RVA> for &AddressSpaceSlice<'_> {
         (*self).read_ascii(offset, minimum_length)
     }
 
-    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice> {
+    fn slice(&self, offset: RVA) -> Result<AddressSpaceSlice<'_>> {
         (*self).slice(offset)
     }
 }

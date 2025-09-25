@@ -280,7 +280,7 @@ impl std::fmt::Debug for FlirtSignature {
 }
 
 impl FlirtSignature {
-    pub fn create_matcher(&self) -> FlirtSignatureMatcher {
+    pub fn create_matcher(&self) -> FlirtSignatureMatcher<'_> {
         FlirtSignatureMatcher::new(self)
     }
 

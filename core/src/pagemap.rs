@@ -109,7 +109,7 @@ impl<T: Default + Copy> PageMap<T> {
         if page_offset(rva) != 0 {
             panic!("RVA must be page aligned");
         }
-        if items.len() % PAGE_SIZE != 0 {
+        if !items.len().is_multiple_of(PAGE_SIZE) {
             panic!("items must be page aligned");
         }
         for (i, chunk) in items.chunks_exact(PAGE_SIZE).enumerate() {
@@ -131,7 +131,7 @@ impl<T: Default + Copy> PageMap<T> {
         if page_offset(rva) != 0 {
             panic!("RVA must be page aligned");
         }
-        if size % PAGE_SIZE != 0 {
+        if !size.is_multiple_of(PAGE_SIZE) {
             panic!("invalid map buffer size");
         }
         self.write(rva, &vec![Default::default(); size])
