@@ -66,7 +66,11 @@ impl FlirtSignature {
                     }
                 };
 
-                let data = [name.into_pyobject(py).unwrap().into_any().unbind(), ty.into_pyobject(py).unwrap().into_any().unbind(), offset.into_pyobject(py).unwrap().into_any().unbind()];
+                let data = [
+                    name.into_pyobject(py).unwrap().into_any().unbind(),
+                    ty.into_pyobject(py).unwrap().into_any().unbind(),
+                    offset.into_pyobject(py).unwrap().into_any().unbind(),
+                ];
 
                 PyTuple::new(py, data.iter()).unwrap().into_any().unbind()
             })
