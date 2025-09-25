@@ -96,7 +96,7 @@ pub fn binexport2_from_bytes(
     let ws = ::lancelot::workspace::workspace_from_bytes(config, buf.as_bytes()).map_err(to_py_err)?;
     let hash = sha256::digest(buf.as_bytes());
     export_workspace_to_binexport2(&*ws, hash, executable_id)
-        .map(|buf| PyBytes::new_bound(py, &buf).into())
+    .map(|buf| PyBytes::new(py, &buf).unbind())
         .map_err(to_py_err)
 }
 

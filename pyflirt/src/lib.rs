@@ -49,7 +49,7 @@ pub struct FlirtSignature {
 #[pymethods]
 impl FlirtSignature {
     #[getter]
-    pub fn names(&self, py: Python) -> Vec<PyObject> {
+    pub fn names(&self, py: Python) -> Vec<Py<PyAny>> {
         self.inner
             .names
             .iter()
@@ -66,9 +66,9 @@ impl FlirtSignature {
                     }
                 };
 
-                let data = [name.into_py(py), ty.into_py(py), offset.into_py(py)];
+                let data = [name.into_pyobject(py).unwrap().into_any().unbind(), ty.into_pyobject(py).unwrap().into_any().unbind(), offset.into_pyobject(py).unwrap().into_any().unbind()];
 
-                PyTuple::new_bound(py, data.iter()).to_object(py)
+                PyTuple::new(py, data.iter()).unwrap().into_any().unbind()
             })
             .collect()
     }
@@ -122,8 +122,8 @@ impl FlirtMatcher {
 }
 
 #[pyfunction]
-pub fn compile(py: Python, sigs: &Bound<'_, PyList>) -> PyResult<FlirtMatcher> {
-    let sigs = match sigs.to_object(py).extract::<Vec<FlirtSignature>>(py) {
+pub fn compile(_py: Python, sigs: &Bound<'_, PyList>) -> PyResult<FlirtMatcher> {
+    let sigs = match sigs.extract::<Vec<FlirtSignature>>() {
         Err(_) => {
             return Err(pyo3::exceptions::PyValueError::new_err(String::from(
                 "must pass only `FlirtSignature` instances to `compile`",
