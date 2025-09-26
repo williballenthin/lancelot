@@ -95,7 +95,7 @@ fn load_elf(buf: &[u8]) -> Result<ELF>{
     // create and populate address space
     let mut address_space = RelativeAddressSpace::with_capacity(max_page_address);
 
-    for section in sections.iter().filter(|s| s.virtual_range.start >= base_address) {
+    for section in sections.iter_mut().filter(|s| s.virtual_range.start >= base_address) {
         let pstart = section.physical_range.start as usize;
         let pend = section.physical_range.end as usize;
 
@@ -127,25 +127,27 @@ fn load_elf(buf: &[u8]) -> Result<ELF>{
             vbuf.copy_from_slice(src);
         }
 
-        // check page alignment
-        // Temporarily disabled for testing with non-standard ELF files
-        // if aspace::page_offset(rstart) != 0 {
-        //     return Err(ELFError::FormatNotSupported("non-page aligned section".to_string()).into());
-        // }
-
-        // For testing: align the address to page boundary if needed
         let aligned_rstart = aspace::page_address(rstart);
+        let aligned_vstart = base_address + aligned_rstart;
+    
+        section.virtual_range.start = aligned_vstart;
+        section.virtual_range.end = aligned_vstart + vsize;
+        
         address_space.map.writezx(aligned_rstart, &vbuf)?;
 
         debug!(
             "elf: address space: mapped {:#x} - {:#x} {:?}",
-            vstart, section.virtual_range.end, section.permissions
+            section.virtual_range.start, section.virtual_range.end, section.permissions
         );
     }
 
+    let mapped_sections = sections.into_iter()
+        .filter(|s| s.virtual_range.start >= base_address)
+        .collect();
+
     let module = Module {
         arch,
-        sections,
+        sections: mapped_sections,
         address_space: address_space.into_absolute(base_address)?,
     };
 
@@ -200,4 +202,104 @@ pub fn load_elf_segments(buf: &[u8], elf: &goblin::elf::Elf) -> Vec<Section>{
             name
         }
     }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::identity_op)]
+
+    use anyhow::Result;
+
+    use crate::{aspace::AddressSpace, rsrc::*};
+
+    #[test]
+    fn elf_header_libcso6() -> Result<()> {
+        let buf = get_buf(Rsrc::LIBCSO6);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        // 0x7f followed by "ELF"
+        assert_eq!(0x7f, elf.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x45, elf.module.address_space.relative.read_u8(0x1)?);
+        assert_eq!(0x4c, elf.module.address_space.relative.read_u8(0x2)?);
+        assert_eq!(0x46, elf.module.address_space.relative.read_u8(0x3)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn elf_header_nopelf() -> Result<()> {
+        let buf = get_buf(Rsrc::NOPELF);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        assert_eq!(0x7f, elf.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x45, elf.module.address_space.relative.read_u8(0x1)?);
+        assert_eq!(0x4c, elf.module.address_space.relative.read_u8(0x2)?);
+        assert_eq!(0x46, elf.module.address_space.relative.read_u8(0x3)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn elf_header_tinyx64() -> Result<()> {
+        let buf = get_buf(Rsrc::TINYX64);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        assert_eq!(0x7f, elf.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x45, elf.module.address_space.relative.read_u8(0x1)?);
+        assert_eq!(0x4c, elf.module.address_space.relative.read_u8(0x2)?);
+        assert_eq!(0x46, elf.module.address_space.relative.read_u8(0x3)?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn read_each_section_libcso6() -> Result<()> {
+        let buf = get_buf(Rsrc::LIBCSO6);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        for section in elf.module.sections.iter() {
+            let start = section.virtual_range.start;
+            let size = section.virtual_range.end - section.virtual_range.start;
+            elf.module
+                .address_space
+                .read_bytes(start, size as usize)
+                .unwrap_or_else(|_| panic!("read section {} {:#x} {:#x}", section.name, start, size));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn read_each_section_nopelf() -> Result<()> {
+        let buf = get_buf(Rsrc::NOPELF);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        for section in elf.module.sections.iter() {
+            let start = section.virtual_range.start;
+            let size = section.virtual_range.end - section.virtual_range.start;
+            elf.module
+                .address_space
+                .read_bytes(start, size as usize)
+                .unwrap_or_else(|_| panic!("read section {} {:#x} {:#x}", section.name, start, size));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn read_each_section_tinyx64() -> Result<()> {
+        let buf = get_buf(Rsrc::TINYX64);
+        let elf = crate::loader::elf::ELF::from_bytes(&buf)?;
+
+        for section in elf.module.sections.iter() {
+            let start = section.virtual_range.start;
+            let size = section.virtual_range.end - section.virtual_range.start;
+            elf.module
+                .address_space
+                .read_bytes(start, size as usize)
+                .unwrap_or_else(|_| panic!("read section {} {:#x} {:#x}", section.name, start, size));
+        }
+
+        Ok(())
+    }
 }
