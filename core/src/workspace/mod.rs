@@ -479,8 +479,11 @@ impl ELFWorkspace {
 
         let mut names: NameIndex = Default::default();
         for import in elf_imports.values() {
-            let name = format!("{}!{}", import.library, import.symbol.name);
-            names.insert(import.address, name);
+            let addr = import.symbol.plt_address.or(import.symbol.got_address).unwrap_or(0);
+            if addr != 0 {
+                let name = format!("{}!{}", import.library, import.symbol.name);
+                names.insert(addr, name);
+            }
         }
 
         // parse ELF for symbol names
@@ -506,6 +509,25 @@ impl ELFWorkspace {
                     }
                 }
             }
+        }
+
+        // assign names to PLT entries based on dynsym
+        let mut plt_addr = 0x1020u64 + 16;
+        for sym in goblin_elf.dynsyms.iter() {
+            if sym.st_type() == goblin::elf::sym::STT_FUNC && sym.st_value == 0 {
+                if let Some(name) = goblin_elf.dynstrtab.get_at(sym.st_name) {
+                    if !name.is_empty() {
+                        names.insert(plt_addr, name.to_string());
+                        plt_addr += 16;
+                    }
+                }
+            }
+        }
+
+        // name the entry point if it doesn't have a name
+        let entry_point = goblin_elf.header.e_entry + elf.module.address_space.base_address;
+        if names.contains_address(entry_point).not() {
+            names.insert(entry_point, "<entry_point>".to_string());
         }
 
         let sigs = config.get_sigs()?;

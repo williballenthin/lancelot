@@ -67,12 +67,18 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
         }
     }
 
-    // add symbols from symbol table
-    for sym in goblin_elf.dynsyms.iter() {
-        if sym.st_type() == elf::sym::STT_FUNC && sym.st_value != 0 {
-            let addr = sym.st_value + elf.module.address_space.base_address;
-            debug!("elf: found function start in dynsym: {:#x} (sym value: {:#x})", addr, sym.st_value);
+    // add PLT entries as function starts
+    if let Some(plt_section) = goblin_elf.section_headers.iter().find(|sh| {
+        goblin_elf.shdr_strtab.get_at(sh.sh_name).map(|name| name == ".plt").unwrap_or(false)
+    }) {
+        let plt_start = plt_section.sh_addr;
+        let plt_size = plt_section.sh_size;
+        let entry_size = 16;
+        let mut addr = plt_start + entry_size;
+        while addr < plt_start + plt_size {
+            debug!("elf: found function start in PLT: {:#x}", addr);
             function_starts.insert(addr);
+            addr += entry_size;
         }
     }
 
@@ -91,7 +97,6 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
         let decoder = crate::analysis::dis::get_disassembler(&elf.module)?;
         let filtered_starts: Vec<VA> = function_starts
             .into_iter()
-            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va))
             .collect();
         Ok(filtered_starts)
     }
