@@ -5,9 +5,11 @@ use goblin::elf;
 use log::debug;
 
 use crate::{
-    loader::elf::{ELF, import::{read_import_libraries, ELFDynamicImport, ELFImportSymbol}},
+    loader::elf::{ELF, import::{read_import_libraries, ELFImportSymbol}},
     VA,
 };
+
+mod plt;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ELFImport {
@@ -52,7 +54,6 @@ pub fn get_imports(elf: &ELF) -> Result<BTreeMap<VA, ELFImport>> {
 #[cfg(feature = "disassembler")]
 pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     use std::collections::BTreeSet;
-    use crate::analysis::heuristics;
 
     let mut function_starts: BTreeSet<VA> = Default::default();
 
@@ -67,20 +68,8 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
         }
     }
 
-    // add PLT entries as function starts
-    if let Some(plt_section) = goblin_elf.section_headers.iter().find(|sh| {
-        goblin_elf.shdr_strtab.get_at(sh.sh_name).map(|name| name == ".plt").unwrap_or(false)
-    }) {
-        let plt_start = plt_section.sh_addr;
-        let plt_size = plt_section.sh_size;
-        let entry_size = 16;
-        let mut addr = plt_start + entry_size;
-        while addr < plt_start + plt_size {
-            debug!("elf: found function start in PLT: {:#x}", addr);
-            function_starts.insert(addr);
-            addr += entry_size;
-        }
-    }
+    // add PLT-related function starts
+    function_starts.extend(plt::find_plt_function_starts(elf, &goblin_elf)?);
 
     // add symbols from symtab if available
     for sym in goblin_elf.syms.iter() {
@@ -91,10 +80,18 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
         }
     }
 
+    // add exported functions from dynsym
+    for sym in goblin_elf.dynsyms.iter() {
+        if sym.st_type() == elf::sym::STT_FUNC && sym.st_shndx != elf::section_header::SHN_UNDEF as usize && sym.st_value != 0 {
+            let addr = sym.st_value + elf.module.address_space.base_address;
+            debug!("elf: found exported function start in dynsym: {:#x} (sym value: {:#x})", addr, sym.st_value);
+            function_starts.insert(addr);
+        }
+    }
+
     // filter to ensure addresses look like code
     #[cfg(feature = "disassembler")]
     {
-        let decoder = crate::analysis::dis::get_disassembler(&elf.module)?;
         let filtered_starts: Vec<VA> = function_starts
             .into_iter()
             .collect();

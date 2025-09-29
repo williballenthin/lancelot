@@ -121,13 +121,14 @@ pub fn read_import_symbols(elf: &goblin::elf::Elf) -> Vec<ELFImportSymbol> {
     
     // find PLT and GOT sections
     let plt_section = find_section_by_name(elf, ".plt");
+    let plt_got_section = find_section_by_name(elf, ".plt.got");
     let got_plt_section = find_section_by_name(elf, ".got.plt");
     let got_section = find_section_by_name(elf, ".got");
     
     // use .got.plt if available otherwise fall back to .got
     let got_section = got_plt_section.or(got_section);
     
-    if plt_section.is_none() && got_section.is_none() {
+    if plt_section.is_none() && plt_got_section.is_none() && got_section.is_none() {
         return symbols.into_iter()
             .filter(|sym| is_import_symbol(elf, sym))
             .collect();
@@ -140,12 +141,11 @@ pub fn read_import_symbols(elf: &goblin::elf::Elf) -> Vec<ELFImportSymbol> {
     for rel in elf.dynrels.iter() {
         let sym_idx = rel.r_sym;
         
-        // check if this relocation is in PLT range
-        let is_plt_reloc = if let Some(plt) = plt_section {
-            rel.r_offset >= plt.sh_addr && rel.r_offset < plt.sh_addr + plt.sh_size
-        } else {
-            false
-        };
+        // check if this relocation is in any PLT range
+        let is_plt_reloc = [plt_section, plt_got_section]
+            .iter()
+            .flatten()
+            .any(|plt| rel.r_offset >= plt.sh_addr && rel.r_offset < plt.sh_addr + plt.sh_size);
         
         // check if this relocation is in GOT range  
         let is_got_reloc = if let Some(got) = got_section {
@@ -166,15 +166,14 @@ pub fn read_import_symbols(elf: &goblin::elf::Elf) -> Vec<ELFImportSymbol> {
         }
     }
 
-    for rel in elf.dynrelas.iter().chain(elf.dynrelas.iter()){
+    for rel in elf.dynrelas.iter() {
         let sym_idx = rel.r_sym;
         
-        // check if this relocation is in PLT range
-        let is_plt_reloc = if let Some(plt) = plt_section {
-            rel.r_offset >= plt.sh_addr && rel.r_offset < plt.sh_addr + plt.sh_size
-        } else {
-            false
-        };
+        // check if this relocation is in any PLT range
+        let is_plt_reloc = [plt_section, plt_got_section]
+            .iter()
+            .flatten()
+            .any(|plt| rel.r_offset >= plt.sh_addr && rel.r_offset < plt.sh_addr + plt.sh_size);
         
         // check if this relocation is in GOT range  
         let is_got_reloc = if let Some(got) = got_section {
@@ -227,8 +226,13 @@ fn is_import_symbol(elf: &goblin::elf::Elf, symbol: &ELFImportSymbol) -> bool {
     for (idx, sym) in elf.dynsyms.iter().enumerate() {
         if let Some(sym_name) = elf.dynstrtab.get_at(sym.st_name) {
             if sym_name == symbol.name {
-                // import symbols are typically undefined
-                return sym.st_shndx == goblin::elf::section_header::SHN_UNDEF as usize && !symbol.name.is_empty();
+                // import symbols are typically undefined and have names
+                // Also include weak symbols that might be resolved at runtime
+                let is_undefined = sym.st_shndx == goblin::elf::section_header::SHN_UNDEF as usize;
+                let is_weak = sym.st_bind() == goblin::elf::sym::STB_WEAK;
+                let has_name = !symbol.name.is_empty();
+                
+                return (is_undefined || is_weak) && has_name;
             }
         }
     }
