@@ -10,6 +10,8 @@ use crate::{
 };
 
 mod plt;
+pub mod entrypoints;
+pub mod exports;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ELFImport {
@@ -60,13 +62,8 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     // parse the ELF file
     let goblin_elf = elf::Elf::parse(&elf.buf)?;
 
-    // add entry point
-    if let Some(entry) = goblin_elf.header.e_entry.checked_add(elf.module.address_space.base_address) {
-        if entry != elf.module.address_space.base_address {
-            debug!("elf: found function start at entry point: {:#x}", entry);
-            function_starts.insert(entry);
-        }
-    }
+    // add entry points using the dedicated entrypoints module
+    function_starts.extend(entrypoints::find_elf_entrypoint(elf)?);
 
     // add PLT-related function starts
     function_starts.extend(plt::find_plt_function_starts(elf, &goblin_elf)?);
