@@ -10,6 +10,7 @@ use crate::{
 };
 
 mod plt;
+mod fde;
 pub mod entrypoints;
 pub mod exports;
 
@@ -67,6 +68,9 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
 
     // add PLT-related function starts
     function_starts.extend(plt::find_plt_function_starts(elf, &goblin_elf)?);
+
+    // add FDE-related function starts
+    function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
 
     // add symbols from symtab if available
     for sym in goblin_elf.syms.iter() {

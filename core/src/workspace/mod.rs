@@ -474,7 +474,13 @@ impl ELFWorkspace {
             })
             .collect::<BTreeSet<VA>>();
 
-        function_starts.extend(call_targets);
+        let decoder = crate::analysis::dis::get_disassembler(&elf.module)?;
+        for &addr in call_targets.iter() {
+            if crate::analysis::heuristics::is_probably_code(&elf.module, &decoder, addr) {
+                function_starts.insert(addr);
+            }
+        }
+        
         let elf_imports = crate::analysis::elf::get_imports(&elf)?;
 
         let mut names: NameIndex = Default::default();
