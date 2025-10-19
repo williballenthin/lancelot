@@ -8,7 +8,7 @@ use std::{
 use anyhow::Result;
 use bitflags::bitflags;
 use goblin::elf;
-use log::warn;
+use log::{debug, warn};
 use thiserror::Error;
 
 use crate::{
@@ -462,6 +462,47 @@ impl ELFWorkspace {
             .filter(|va| cfg.insns.insns_by_address.contains_key(va))
             .collect::<BTreeSet<VA>>();
 
+        let elf_imports = crate::analysis::elf::get_imports(&elf)?;
+        
+        let goblin_elf = elf::Elf::parse(&elf.buf)?;
+        let base_address = elf.module.address_space.base_address;
+        
+        let mut plt_ranges: Vec<(VA, VA)> = Vec::new();
+        for section in goblin_elf.section_headers.iter() {
+            if let Some(name) = goblin_elf.shdr_strtab.get_at(section.sh_name) {
+                if name == ".plt" {
+                    // skip the first entry to avoid filtering out the PLT resolver
+                    let plt_entry_size = if elf.module.arch.pointer_size() == 8 { 16u64 } else { 16u64 };
+                    let start = section.sh_addr + base_address + plt_entry_size;
+                    let end = section.sh_addr + base_address + section.sh_size;
+                    if start < end {
+                        debug!("Found PLT section '{}': {:#x} - {:#x} (excluding header at {:#x})", 
+                               name, start, end, section.sh_addr + base_address);
+                        plt_ranges.push((start, end));
+                    }
+                } else if name == ".plt.got" || name == ".plt.sec" {
+                    let start = section.sh_addr + base_address;
+                    let end = start + section.sh_size;
+                    debug!("Found PLT section '{}': {:#x} - {:#x} (size: {:#x})", 
+                           name, start, end, section.sh_size);
+                    plt_ranges.push((start, end));
+                }
+            }
+        }
+        
+        // convert ELF imports to the common Import format
+        let mut imports: BTreeMap<VA, Import> = Default::default();
+        for (_, elf_import) in elf_imports.iter() {
+            let address = elf_import.address + base_address;
+            let import = Import {
+                address,
+                dll: elf_import.library.clone(),
+                symbol: ImportedSymbol::Name(elf_import.symbol.name.clone()),
+            };
+            
+            imports.insert(address, import);
+        }
+        
         let call_targets = cfg
             .basic_blocks
             .blocks_by_address
@@ -472,24 +513,27 @@ impl ELFWorkspace {
                     .iter()
                     .any(|flow| matches!(flow, Flow::Call(_)))
             })
+            .filter(|addr| {
+                // filter plt ranges
+                !plt_ranges.iter().any(|(start, end)| addr >= start && addr < end)
+            })
             .collect::<BTreeSet<VA>>();
-
-        let decoder = crate::analysis::dis::get_disassembler(&elf.module)?;
-        for &addr in call_targets.iter() {
-            if crate::analysis::heuristics::is_probably_code(&elf.module, &decoder, addr) {
-                function_starts.insert(addr);
-            }
-        }
+        function_starts.extend(call_targets);
         
-        let elf_imports = crate::analysis::elf::get_imports(&elf)?;
+        // remove any function starts
+        function_starts.retain(|addr| {
+            !plt_ranges.iter().any(|(start, end)| addr >= start && addr < end)
+        });
 
         let mut names: NameIndex = Default::default();
-        for import in elf_imports.values() {
-            let addr = import.symbol.plt_address.or(import.symbol.got_address).unwrap_or(0);
-            if addr != 0 {
-                let name = format!("{}!{}", import.library, import.symbol.name);
-                names.insert(addr, name);
-            }
+
+        // add names for imports
+        for import in imports.values() {
+            let name = format!("{}!{}", import.dll, match &import.symbol {
+                ImportedSymbol::Name(n) => n.clone(),
+                ImportedSymbol::Ordinal(o) => format!("#{}", o),
+            });
+            names.insert(import.address, name);
         }
 
         // parse ELF for symbol names
@@ -498,7 +542,7 @@ impl ELFWorkspace {
             if sym.st_value != 0 {
                 let addr = sym.st_value + elf.module.address_space.base_address;
                 if let Some(name) = goblin_elf.dynstrtab.get_at(sym.st_name) {
-                    if !name.is_empty() {
+                    if !name.is_empty() && !names.contains_address(addr) {
                         names.insert(addr, name.to_string());
                     }
                 }
@@ -512,19 +556,6 @@ impl ELFWorkspace {
                 if let Some(name) = goblin_elf.strtab.get_at(sym.st_name) {
                     if !name.is_empty() && !names.contains_address(addr) {
                         names.insert(addr, name.to_string());
-                    }
-                }
-            }
-        }
-
-        // assign names to PLT entries based on dynsym
-        let mut plt_addr = 0x1020u64 + 16;
-        for sym in goblin_elf.dynsyms.iter() {
-            if sym.st_type() == goblin::elf::sym::STT_FUNC && sym.st_value == 0 {
-                if let Some(name) = goblin_elf.dynstrtab.get_at(sym.st_name) {
-                    if !name.is_empty() {
-                        names.insert(plt_addr, name.to_string());
-                        plt_addr += 16;
                     }
                 }
             }
@@ -588,7 +619,7 @@ impl ELFWorkspace {
             cfg,
             analysis: WorkspaceAnalysis {
                 functions,
-                imports: Default::default(),
+                imports,
                 externs: BTreeMap::new(),
                 names,
             },

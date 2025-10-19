@@ -37,11 +37,7 @@ pub fn find_fde_function_starts(elf: &ELF, goblin_elf: &elf::Elf) -> Result<Vec<
                 
                 for fde in fdes {
                     let pc_begin = fde.pc_begin;
-
-                    // apply is_probably_code filter for subroutines
-                    if heuristics::is_probably_code(&elf.module, &decoder, pc_begin) {
-                        function_starts.push(pc_begin);
-                    }
+                    function_starts.push(pc_begin);
                 }
             }
         }

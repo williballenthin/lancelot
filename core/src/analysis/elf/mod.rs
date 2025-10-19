@@ -63,32 +63,8 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     // parse the ELF file
     let goblin_elf = elf::Elf::parse(&elf.buf)?;
 
-    // add entry points using the dedicated entrypoints module
-    function_starts.extend(entrypoints::find_elf_entrypoint(elf)?);
-
-    // add PLT-related function starts
-    function_starts.extend(plt::find_plt_function_starts(elf, &goblin_elf)?);
-
     // add FDE-related function starts
     function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
-
-    // add symbols from symtab if available
-    for sym in goblin_elf.syms.iter() {
-        if sym.st_type() == elf::sym::STT_FUNC && sym.st_value != 0 {
-            let addr = sym.st_value + elf.module.address_space.base_address;
-            debug!("elf: found function start in symtab: {:#x} (sym value: {:#x})", addr, sym.st_value);
-            function_starts.insert(addr);
-        }
-    }
-
-    // add exported functions from dynsym
-    for sym in goblin_elf.dynsyms.iter() {
-        if sym.st_type() == elf::sym::STT_FUNC && sym.st_shndx != elf::section_header::SHN_UNDEF as usize && sym.st_value != 0 {
-            let addr = sym.st_value + elf.module.address_space.base_address;
-            debug!("elf: found exported function start in dynsym: {:#x} (sym value: {:#x})", addr, sym.st_value);
-            function_starts.insert(addr);
-        }
-    }
 
     // filter to ensure addresses look like code
     #[cfg(feature = "disassembler")]
