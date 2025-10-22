@@ -2,17 +2,16 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use goblin::elf;
-use log::debug;
 
 use crate::{
     loader::elf::{ELF, import::{read_import_libraries, ELFImportSymbol}},
     VA,
 };
 
-mod plt;
 mod fde;
 pub mod entrypoints;
 pub mod exports;
+mod patterns;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ELFImport {
@@ -57,6 +56,7 @@ pub fn get_imports(elf: &ELF) -> Result<BTreeMap<VA, ELFImport>> {
 #[cfg(feature = "disassembler")]
 pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     use std::collections::BTreeSet;
+    use crate::analysis::{dis, heuristics};
 
     let mut function_starts: BTreeSet<VA> = Default::default();
 
@@ -64,16 +64,26 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     let goblin_elf = elf::Elf::parse(&elf.buf)?;
 
     // add FDE-related function starts
-    function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
+    //function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
 
-    // filter to ensure addresses look like code
-    #[cfg(feature = "disassembler")]
-    {
-        let filtered_starts: Vec<VA> = function_starts
-            .into_iter()
-            .collect();
-        Ok(filtered_starts)
+    // add entry points
+    let entrypoints = entrypoints::find_elf_entrypoint(elf)?;
+    for ep in entrypoints {
+        function_starts.insert(ep);
     }
+
+    // add patterns
+    let decoder = dis::get_disassembler(&elf.module)?;
+    function_starts.extend(
+        patterns::find_function_prologues(elf)?
+            .into_iter()
+            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va))
+    );
+    
+    let filtered_starts: Vec<VA> = function_starts
+        .into_iter()
+        .collect();
+    Ok(filtered_starts)
 }
 
 pub mod noret_imports;
