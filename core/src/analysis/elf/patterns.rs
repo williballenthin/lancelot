@@ -1,3 +1,5 @@
+//https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Processors/x86/data/patterns/x86-64gcc_patterns.xml
+
 #![allow(non_snake_case)]
 use anyhow::Result;
 use log::debug;
@@ -69,6 +71,91 @@ lazy_static! {
         // <data>0x8bff558bec</data>
         let P6 = r"\x8B\xFF\x55\x8B\xEC";
 
+        // x86-64gcc_patterns.xml#L1
+        //    PUSH RBP; MOV(EBP, ESP) (shared objects)
+        // <data>0x5589e5</data>
+        let P7 = r"\x55\x89\xE5";
+
+        // x86-64gcc_patterns.xml#L2
+        //    PUSH RBP; PUSH RBX; MOV(R12/3/4/5/xX,RxX)
+        // <data>0x55 0x53 0100100. 0x89 11......</data>
+        let P8 = r"\x55\x53[\x48-\x4F]\x89[\xC0-\xFF]";
+
+        // x86-64gcc_patterns.xml#L3
+        //    PUSH R12; PUSH RBP; MOV(R12/3/4/5/xX,RxX)
+        // <data>0x4154 0x55 0100100. 0x89 11......</data>
+        let P9 = r"\x41\x54\x55[\x48-\x4F]\x89[\xC0-\xFF]";
+
+        // x86-64gcc_patterns.xml#L4
+        //    PUSH R12; PUSH RBP; PUSH RBX; MOV(R12/3/4/5/xX,RxX)
+        // <data>0x4154 0x55 0x53 0100100. 0x89 11......</data>
+        let P10 = r"\x41\x54\x55\x53[\x48-\x4F]\x89[\xC0-\xFF]";
+
+        // x86-64gcc_patterns.xml#L5
+        //    PUSH RBX; SUB RSP, C
+        // <data>0x53 0x48 0x83 0xec 0....000</data>
+        let P11 = r"\x53\x48\x83\xEC.";
+
+        // x86-64gcc_patterns.xml#L6
+        //    SUB RSP, C
+        // <data>0x48 0x83 0xec .....000</data>
+        let P12 = r"\x48\x83\xEC.";
+
+        // x86-64gcc_patterns.xml#L7
+        //    SUB RSP, big C
+        // <data>0x48 0x81 0xec .....000 00...... 0x00</data>
+        let P13 = r"\x48\x81\xEC..\x00";
+
+        // x86-64gcc_patterns.xml#L8
+        //    PUSH RBP; PUSH RBX; SUB RSP, big/C
+        // <data>0x55 0x53 0x48 0x83 100000.1 0xec .....000</data>
+        let P14 = r"\x55\x53\x48\x83.\xEC.";
+
+        // x86-64gcc_patterns.xml#L9
+        //    PUSH RBP; MOV(RBP, RSP) (shared objects)
+        // <data>0x554889e5</data>
+        let P15 = r"\x55\x48\x89\xE5";
+
+        // x86-64gcc_patterns.xml#L10
+        //    PUSH RBP; MOV RBP, RSP; SUB RSP, big/C
+        // <data>0x55 0x48 0x89 0xe5 0x48 100000.1 0xec .....000</data>
+        let P16 = r"\x55\x48\x89\xE5\x48.\xEC.";
+
+        // x86-64gcc_patterns.xml#L11
+        //    PUSH RBP; MOV RBP, RSP; PUSH RBX
+        // <data>0x554889e553</data>
+        let P17 = r"\x55\x48\x89\xE5\x53";
+
+        // x86-64gcc_patterns.xml#L12
+        //    PUSH R15; PUSH R14; PUSH R13
+        // <data>0x4157 0x4156 0x4155</data>
+        let P20 = r"\x41\x57\x41\x56\x41\x55";
+
+        // x86-64gcc_patterns.xml#L13
+        //    PUSH R15; PUSH R14
+        // <data>0x4157 0x4156</data>
+        let P21 = r"\x41\x57\x41\x56";
+
+        // x86-64gcc_patterns.xml#L14
+        //    PUSH R14; PUSH R13
+        // <data>0x4156 0x4155</data>
+        let P22 = r"\x41\x56\x41\x55";
+
+        // x86-64gcc_patterns.xml#L15
+        //    PUSH R13; PUSH R12
+        // <data>0x41554154</data>
+        let P23 = r"\x41\x55\x41\x54";
+
+        // x86-64gcc_patterns.xml#L16
+        //    PUSH R12/3/4/5; MOV(R12/3/4/5/xX,RxX); PUSH(RBP)
+        // <data>0x41 010101.. 0100100. 0x89 11......</data>
+        let P24 = r"\x41[\x54-\x57][\x48-\x4F]\x89[\xC0-\xFF]\x55";
+
+        // x86-64gcc_patterns.xml#L17
+        //    PUSH R12/3/4/5; PUSH R12/3/4/5; MOV(R12/3/4/5/xX,RxX)
+        // <data>0x41 010101.. 0x41 010101.. 0100100. 0x89 11......</data>
+        let P25 = r"\x41[\x54-\x57]\x41[\x54-\x57][\x48-\x4F]\x89[\xC0-\xFF]";
+
         // x64 msvc prologue
         // see #100
         //
@@ -97,7 +184,7 @@ lazy_static! {
         ";
 
         let POSTPATTERN = format!("(?P<postpattern>{})", [
-            P0, P1, P2, P3, P4, P5, P6, P18, P19
+            P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11, P12, P13, P14, P15, P16, P17, P18, P19, P20, P21, P22, P23, P24, P25
         ].join("|"));
 
         let re = format!(
