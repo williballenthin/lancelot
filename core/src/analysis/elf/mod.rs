@@ -9,6 +9,7 @@ use crate::{
 };
 
 mod fde;
+mod symtab;
 pub mod entrypoints;
 pub mod exports;
 mod patterns;
@@ -65,6 +66,9 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
 
     // add FDE-related function starts
     function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
+
+    // add symtab/dynsym function starts
+    function_starts.extend(symtab::find_symtab_function_starts(elf, &goblin_elf)?);
 
     // add entry points
     let entrypoints = entrypoints::find_elf_entrypoint(elf)?;
