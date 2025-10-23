@@ -64,7 +64,7 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     let goblin_elf = elf::Elf::parse(&elf.buf)?;
 
     // add FDE-related function starts
-    //function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
+    function_starts.extend(fde::find_fde_function_starts(elf, &goblin_elf)?);
 
     // add entry points
     let entrypoints = entrypoints::find_elf_entrypoint(elf)?;

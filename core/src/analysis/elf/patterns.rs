@@ -14,37 +14,71 @@ use crate::{
 lazy_static! {
     static ref PATTERNS: Regex = {
 
-        // CC debug filler, x86win_patterns.xml#L4
-        let CC = r"\xCC";
-        // multiple CC filler bytes, x86win_patterns.xml#L5
-        let CCCC = r"\xCC\xCC";
-        // NOP filler, x86win_patterns.xml#L6
-        let NOP = r"\x90";
-        // RET filler, x86win_patterns.xml#L7
-        let RET = r"\xC3";
-        // LEAVE RET, x86win_patterns.xml#L8
+        // NOP NOP, x86-64gcc_patterns.xml
+        let NOP = r"\x90\x90";
+        // RET NOP, x86-64gcc_patterns.xml
+        let RET_NOP = r"\xC3\x90";
+        // two-byte nop, x86-64gcc_patterns.xml
+        let NOP2 = r"\x66\x90";
+        // LEAVE RET, x86-64gcc_patterns.xml
         let LEAVE_RET = r"\xC9\xC3";
-
-        // JMP DWORD PTR ds:????????
-        // mimikatz:0x46B674
-        let JMP_FAR = r"\xFF\x25....";
-
-        // RETN ???
-        // mimikatz:0x45D025
-        let RETN = r"\xC2..";
-
-        // x86win_patterns.xml#L9
-        // 0xC2 ......00 0x00
-        // let RET_LONGFORM =
+        // JMP xxx - after a shared jump target, x86-64gcc_patterns.xml
+        let JMP = r"\xE9....";
+        // JMP xxx, NOP - after a shared jump target, x86-64gcc_patterns.xml
+        let JMP_NOP = r"\xE9....\x90";
+        // JMP small, x86-64gcc_patterns.xml
+        let JMP_SMALL = r"\xEB..";
+        // JMP small, NOP, x86-64gcc_patterns.xml
+        let JMP_SMALL_NOP = r"\xEB..\x90";
+        // POP RBP, RET, x86-64gcc_patterns.xml
+        let POP_RBP_RET = r"\x5D\xC3";
+        // POP RBX, RET, x86-64gcc_patterns.xml
+        let POP_RBX_RET = r"\x5B\xC3";
+        // POP R12-15, RET, x86-64gcc_patterns.xml
+        let POP_R_RET = r"\x41[\x5C-\x5F]\xC3";
+        // XOR(EAX,EAX), RET, x86-64gcc_patterns.xml
+        let XOR_EAX_RET = r"\x31\xC0\xC3";
+        // ADD RSP, C; RET, x86-64gcc_patterns.xml
+        let ADD_RSP_RET = r"\x48\x83\xC4.\xC3";
+        // three-byte NOP, x86-64gcc_patterns.xml
+        let NOP3 = r"\x66\x66\x90";
+        // three-byte NOP, x86-64gcc_patterns.xml
+        let NOP3_ALT = r"\x0F\x1F\x00";
+        // four-byte NOP, x86-64gcc_patterns.xml
+        let NOP4 = r"\x0F\x1F\x40\x00";
+        // five-byte NOP, x86-64gcc_patterns.xml
+        let NOP5 = r"\x0F\x1F\x44\x00\x00";
+        // six-byte NOP, x86-64gcc_patterns.xml
+        let NOP6 = r"\x66\x0F\x1F\x44\x00\x00";
+        // seven-byte NOP, x86-64gcc_patterns.xml
+        let NOP7 = r"\x0F\x1F\x80\x00\x00\x00\x00";
+        // eight-byte NOP, x86-64gcc_patterns.xml
+        let NOP8 = r"\x0F\x1F\x84\x00\x00\x00\x00\x00";
+        // nine-byte NOP, x86-64gcc_patterns.xml
+        let NOP9 = r"\x66\x0F\x1F\x84\x00\x00\x00\x00\x00";
 
         let PREPATTERN = format!("(?P<prepattern>{})", [
-            CC,
-            CCCC,
             NOP,
-            RET,
+            RET_NOP,
+            NOP2,
             LEAVE_RET,
-            JMP_FAR,
-            RETN,
+            JMP,
+            JMP_NOP,
+            JMP_SMALL,
+            JMP_SMALL_NOP,
+            POP_RBP_RET,
+            POP_RBX_RET,
+            POP_R_RET,
+            XOR_EAX_RET,
+            ADD_RSP_RET,
+            NOP3,
+            NOP3_ALT,
+            NOP4,
+            NOP5,
+            NOP6,
+            NOP7,
+            NOP8,
+            NOP9,
         ].join("|"));
 
         // PUSH EBP; MOV EBP, ESP, x86win_patterns.xml#L12
