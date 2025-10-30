@@ -10,6 +10,7 @@ use crate::{
 
 mod fde;
 mod symtab;
+mod dwarf;
 pub mod entrypoints;
 pub mod exports;
 mod patterns;
@@ -69,6 +70,11 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
 
     // add symtab/dynsym function starts
     function_starts.extend(symtab::find_symtab_function_starts(elf, &goblin_elf)?);
+
+    // add DWARF debug info
+    if let Ok(dwarf_starts) = dwarf::find_dwarf_function_starts(elf) {
+        function_starts.extend(dwarf_starts);
+    }
 
     // add entry points
     let entrypoints = entrypoints::find_elf_entrypoint(elf)?;

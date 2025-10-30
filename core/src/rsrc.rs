@@ -39,6 +39,8 @@ pub enum Rsrc {
     /// Manually Constructed ELF file with some strange characteristics
     /// from: https://www.muppetlabs.com/~breadbox/software/tiny/somewhat.html
     TINYX64,
+    /// ELF file with DWARF debug information for testing
+    TESTDWARF,
 }
 
 /// Fetch the file system name of the given resource.
@@ -60,6 +62,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::LIBCSO6 => String::from("libc"),
         Rsrc::NOPELF => String::from("nop_elf"),
         Rsrc::TINYX64 => String::from("tiny-x64"),
+        Rsrc::TESTDWARF => String::from("test_DWARF"),
     }
 }
 
