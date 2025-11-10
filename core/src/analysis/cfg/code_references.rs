@@ -101,6 +101,10 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
                         dis::Target::Indirect(target) => target,
                     };
 
+                    if target == 0 {
+                        continue;
+                    }
+
                     if insns.insns_by_address.contains_key(&target) {
                         // this is already code.
                         continue;
