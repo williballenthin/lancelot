@@ -9,6 +9,14 @@ help = "show profile (rust)"
 # name = "CARGO_PROFILE_DEV_CODEGEN_BACKEND"
 # value = "cranelift"
 
+[[env]]
+name = "LIBRARY_PATH"
+eval = "$DEVSHELL_DIR/lib:/usr/lib"
+
+[[env]]
+name = "RUSTFLAGS"
+eval = "\"-L $DEVSHELL_DIR/lib\""
+
 [[commands]]
 name = "pc"
 command = "pre-commit run --all-files --hook-stage manual"
@@ -16,6 +24,7 @@ help = "pre-commit (manual)"
 
 [devshell]
 packages = [
+  "libiconv",
   "zydis",
   "bacon",
   # "protobuf",
