@@ -31,19 +31,19 @@ jobs:
           #
           - os: linux
             manylinux: auto
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
             target: x86_64
           - os: linux
             manylinux: auto
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
             target: aarch64
           - os: linux
             manylinux: auto
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
             target: i686
           - os: linux
             manylinux: auto
-            interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
+            interpreter: 3.10 3.11 3.12 3.13 3.14  # no pypy
             target: armv7
           # not supported by zydis/zycore:
           #   target: ppc64le
@@ -53,26 +53,26 @@ jobs:
           # macOS
           #
           - os: macos
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
             target: x86_64
           - os: macos
-            interpreter: 3.9 3.10 3.11 3.12 3.13 pypy3.9 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
             target: aarch64
 
           #
           # Windows
           #
           - os: windows
-            interpreter: 3.9 3.10 3.11 3.12 3.13  # no pypy
+            interpreter: 3.10 3.11 3.12 3.13 3.14  # no pypy
             # pypy doesn't seem to link today? needs investigation
             # https://github.com/williballenthin/lancelot/actions/runs/11592290081/job/32273843597
             target: x86_64
           - os: windows
-            interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
+            interpreter: 3.10 3.11 3.12 3.13 3.14 # no pypy
             target: i686
             python-architecture: x86
           - os: windows
-            interpreter: 3.9 3.10 3.11 3.12 3.13 # no pypy
+            interpreter: 3.10 3.11 3.12 3.13 3.14 # no pypy
             target: arm64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
@@ -82,7 +82,7 @@ jobs:
       - name: set up python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.14'
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
       - name: build pylancelot wheels
