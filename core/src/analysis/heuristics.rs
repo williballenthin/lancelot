@@ -182,7 +182,10 @@ pub fn is_pointer(module: &Module, va: VA) -> bool {
 // the given address contains a pointer, as does the previous or next address.
 pub fn is_pointer_table(module: &Module, va: VA) -> bool {
     let psize = module.arch.pointer_size();
-    is_pointer(module, va) && (is_pointer(module, va + psize as u64) || is_pointer(module, va - psize as u64))
+    let check_prev = va.checked_sub(psize as u64)
+        .map(|prev_va| is_pointer(module, prev_va))
+        .unwrap_or(false);
+    is_pointer(module, va) && (is_pointer(module, va + psize as u64) || check_prev)
 }
 
 pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {

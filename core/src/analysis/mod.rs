@@ -6,4 +6,5 @@ pub mod dis;
 pub mod flirt;
 #[cfg(feature = "disassembler")]
 pub mod heuristics;
+pub mod elf;
 pub mod pe;
