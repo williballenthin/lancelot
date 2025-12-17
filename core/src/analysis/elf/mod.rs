@@ -1,36 +1,3 @@
-//! ELF binary analysis including function detection.
-//!
-//! This module implements function detection using multiple strategies, including
-//! several concepts inspired by the Jima algorithm:
-//!
-//! ## Jima-Inspired Concepts:
-//!
-//! 1. **Call Target Analysis** (`call_targets` module):
-//!    - Uses call targets found during linear disassembly as initial function candidates
-//!    - Analyzes alignment patterns of call targets (90% threshold) to inform boundary detection
-//!
-//! 2. **Inflection Points** (implemented in `cfg::flow`):
-//!    - Inflection-out: instructions that leave sequential flow (jumps, returns, calls to terminal functions)
-//!    - Inflection-in: instructions that are targets of calls or jumps
-//!    - These form natural basic block boundaries
-//!
-//! 3. **Terminal Functions** (`noret_imports` module):
-//!    - Identifies non-returning functions (exit, abort, etc.)
-//!    - Treats calls to terminal functions as function exit points
-//!
-//! 4. **Function Boundary Heuristics** (`jima_heuristics` module):
-//!    - Jump over NOPs: detects jumps that skip NOP sequences, marking function end
-//!    - NOP padding: significant NOP sequences indicate function boundaries
-//!    - Alignment-based boundary detection using call target statistics
-//!
-//! ## Additional Detection Methods:
-//!
-//! - **FDE Analysis**: Frame Description Entries from .eh_frame section
-//! - **Symbol Tables**: Function symbols from symtab and dynsym
-//! - **DWARF Debug Info**: Function information from debug sections
-//! - **Entry Points**: Program entry points
-//! - **Pattern Matching**: Function prologue patterns
-
 use std::collections::BTreeMap;
 
 use anyhow::Result;
@@ -48,10 +15,11 @@ pub mod entrypoints;
 pub mod exports;
 mod patterns;
 mod call_targets;
+mod jump_targets;
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct ELFImport {
-    /// the address of the import (PLT or GOT entry)
+    // the address of the import (PLT or GOT entry)
     pub address: VA,
     pub library: String,
     pub symbol:  ELFImportSymbol,
@@ -121,7 +89,14 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     function_starts.extend(
         call_targets::find_elf_call_targets(elf)?
             .into_iter()
-            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va))
+            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va)),
+    );
+
+    // add jump targets
+    function_starts.extend(
+        jump_targets::find_elf_jump_targets(elf)?
+            .into_iter()
+            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va)),
     );
 
     // add patterns

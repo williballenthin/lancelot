@@ -234,7 +234,6 @@ lazy_static! {
 
 #[allow(dead_code)]
 const INDEX_ALL: usize = 0;
-#[allow(dead_code)]
 const INDEX_PREMATCH: usize = 2;
 const INDEX_MATCH: usize = 4;
 
