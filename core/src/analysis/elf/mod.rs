@@ -13,6 +13,7 @@ mod symtab;
 mod dwarf;
 pub mod entrypoints;
 pub mod exports;
+pub mod noret_imports;
 mod patterns;
 mod call_targets;
 mod jump_targets;
@@ -93,11 +94,11 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
     );
 
     // add jump targets
-    function_starts.extend(
-        jump_targets::find_elf_jump_targets(elf)?
-            .into_iter()
-            .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va)),
-    );
+    // function_starts.extend(
+    //     jump_targets::find_elf_jump_targets(elf)?
+    //         .into_iter()
+    //         .filter(|&va| heuristics::is_probably_code(&elf.module, &decoder, va)),
+    // );
 
     // add patterns
     function_starts.extend(
@@ -111,5 +112,3 @@ pub fn find_function_starts(elf: &ELF) -> Result<Vec<VA>> {
         .collect();
     Ok(filtered_starts)
 }
-
-pub mod noret_imports;

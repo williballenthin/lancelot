@@ -441,7 +441,7 @@ impl ELFWorkspace {
         }
 
         loop {
-            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&elf.module, &insns)?;
+            let new_code = crate::analysis::cfg::code_references::find_new_code_references_elf(&elf, &insns)?;
             if new_code.is_empty() {
                 break;
             }

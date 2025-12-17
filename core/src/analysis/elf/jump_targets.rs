@@ -10,8 +10,12 @@ pub fn find_elf_jump_targets(elf: &ELF) -> Result<BTreeSet<VA>> {
 
     let mut jump_count = 0usize;
     
-    for section in elf.module.sections.iter() {
-
+    for section in elf
+        .module
+        .sections
+        .iter()
+        .filter(|section| section.permissions.intersects(Permissions::X))
+    {
         let name = &section.name;
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;

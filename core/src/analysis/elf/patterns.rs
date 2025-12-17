@@ -8,6 +8,7 @@ use regex::bytes::Regex;
 use crate::{
     aspace::AddressSpace,
     loader::elf::ELF,
+    module::Permissions,
     VA
 };
 
@@ -240,7 +241,12 @@ const INDEX_MATCH: usize = 4;
 pub fn find_function_prologues(elf: &ELF) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
-    for section in elf.module.sections.iter() {
+    for section in elf
+        .module
+        .sections
+        .iter()
+        .filter(|section| section.permissions.intersects(Permissions::X))
+    {
         let name = &section.name;
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
