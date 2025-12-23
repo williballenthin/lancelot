@@ -1,5 +1,7 @@
 use anyhow::Result;
-use goblin::{elf, pe::debug};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
+use gimli::{RunTimeEndian, UnwindSection};
+use goblin::elf;
 use log::debug;
 
 use crate::{
@@ -8,125 +10,249 @@ use crate::{
 };
 
 pub fn find_fde_function_starts(elf: &ELF, goblin_elf: &elf::Elf) -> Result<Vec<VA>> {
-    use crate::analysis::{dis, heuristics};
-    
+    let base_address = elf.module.address_space.base_address;
+    let endian = if goblin_elf.header.endianness()? == goblin::container::Endian::Little {
+        RunTimeEndian::Little
+    } else {
+        RunTimeEndian::Big
+    };
+
     let mut function_starts = Vec::new();
 
-    let eh_frame_section = goblin_elf.section_headers.iter()
-        .find(|sh| {
-            if let Some(name) = goblin_elf.shdr_strtab.get_at(sh.sh_name) {
-                name == ".eh_frame"
-            } else {
-                false
+    let Some((eh_frame_data, eh_frame_addr, eh_frame_offset)) =
+        load_section(goblin_elf, &elf.buf, ".eh_frame")
+    else {
+        return Ok(function_starts);
+    };
+
+    let mut eh_frame_buf = eh_frame_data.to_vec();
+    dyn_reloc(&mut eh_frame_buf, eh_frame_addr, goblin_elf, base_address, endian);
+
+    let text_addr = load_section(goblin_elf, &elf.buf, ".text").map(|(_, addr, _)| addr);
+
+    debug!(
+        "elf: parsing .eh_frame section at offset {:#x}, size {:#x}, addr {:#x}",
+        eh_frame_offset,
+        eh_frame_data.len(),
+        eh_frame_addr
+    );
+
+    function_starts.extend(parse_eh_frame_gimli(
+        &eh_frame_buf,
+        eh_frame_addr,
+        text_addr,
+        endian,
+    )?);
+
+    function_starts.sort();
+    function_starts.dedup();
+    Ok(function_starts)
+}
+
+fn load_section<'a>(
+    goblin_elf: &goblin::elf::Elf,
+    buf: &'a [u8],
+    section_name: &str,
+) -> Option<(&'a [u8], u64, usize)> {
+    for section in &goblin_elf.section_headers {
+        if let Some(name) = goblin_elf.shdr_strtab.get_at(section.sh_name) {
+            if name == section_name {
+                let start = section.sh_offset as usize;
+                let end = start + section.sh_size as usize;
+                if end <= buf.len() {
+                    return Some((&buf[start..end], section.sh_addr, start));
+                }
+                return None;
             }
-        });
+        }
+    }
+    None
+}
 
-    if let Some(eh_frame_sh) = eh_frame_section {
-        let section_offset = eh_frame_sh.sh_offset as usize;
-        let section_size = eh_frame_sh.sh_size as usize;
-        let section_addr = eh_frame_sh.sh_addr;
-        
-        if section_offset + section_size <= elf.buf.len() {
-            let eh_frame_data = &elf.buf[section_offset..section_offset + section_size];
-            
-            debug!("elf: parsing .eh_frame section at offset {:#x}, size {:#x}, addr {:#x}", 
-                   section_offset, section_size, section_addr);
+fn parse_eh_frame_gimli( eh_frame_data: &[u8], eh_frame_addr: u64, text_addr: Option<u64>, endian: RunTimeEndian) -> Result<Vec<VA>> {
+    let mut starts = Vec::new();
 
-            if let Ok(fdes) = parse_eh_frame(eh_frame_data, section_addr, elf.module.address_space.base_address) {
-                let decoder = dis::get_disassembler(&elf.module)?;
-                
-                for fde in fdes {
-                    let pc_begin = fde.pc_begin;
-                    function_starts.push(pc_begin);
+    let eh_frame = gimli::EhFrame::new(eh_frame_data, endian);
+
+    let mut bases = gimli::BaseAddresses::default();
+    bases = bases.set_eh_frame(eh_frame_addr);
+    if let Some(text_addr) = text_addr {
+        bases = bases.set_text(text_addr);
+    }
+
+    let mut entries = eh_frame.entries(&bases);
+    while let Some(entry) = entries.next()? {
+        match entry {
+            gimli::CieOrFde::Cie(_) => {}
+            gimli::CieOrFde::Fde(partial) => {
+                let fde = partial.parse(|section, bases, offset| section.cie_from_offset(bases, offset))?;
+                let pc_begin = fde.initial_address();
+                let pc_range = fde.len();
+
+                if pc_begin != 0 && pc_range != 0 {
+                    starts.push(pc_begin as VA);
+                    debug!(
+                        "elf: gimli FDE - pc_begin: {:#x}, pc_range: {:#x}",
+                        pc_begin, pc_range
+                    );
                 }
             }
         }
     }
 
-    Ok(function_starts)
+    Ok(starts)
 }
 
-
-
-#[derive(Debug, Clone)]
-struct FrameDescriptorEntry {
-    pc_begin: VA,
-    pc_range: u64,
-}
-// parsing .eh_frame to extract FDEs
-fn parse_eh_frame(data: &[u8], section_addr: u64, base_address: VA) -> Result<Vec<FrameDescriptorEntry>> {
-    let mut fdes = Vec::new();
-    let mut offset = 0;
-
-    while offset + 8 <= data.len() {
-        let length = u32::from_le_bytes([
-            data[offset],
-            data[offset + 1],
-            data[offset + 2],
-            data[offset + 3],
-        ]) as usize;
-        if length == 0 {
-            break;
+fn dyn_reloc(eh_frame_buf: &mut [u8], eh_frame_addr: u64, goblin_elf: &goblin::elf::Elf, base_address: VA, endian: RunTimeEndian) {
+    let eh_len = eh_frame_buf.len() as u64;
+    let eh_start = eh_frame_addr;
+    let eh_end = eh_frame_addr.saturating_add(eh_len);
+    let read_u64 = |buf: &[u8]| -> u64 {
+        match endian {
+            RunTimeEndian::Little => LittleEndian::read_u64(buf),
+            RunTimeEndian::Big => BigEndian::read_u64(buf),
         }
-        if length == 0xffffffff {
-            offset += 4;
-            if offset + 8 > data.len() {
-                break;
-            }
+    };
+    let write_u64 = |buf: &mut [u8], value: u64| {
+        match endian {
+            RunTimeEndian::Little => LittleEndian::write_u64(buf, value),
+            RunTimeEndian::Big => BigEndian::write_u64(buf, value),
+        }
+    };
+    let read_u32 = |buf: &[u8]| -> u32 {
+        match endian {
+            RunTimeEndian::Little => LittleEndian::read_u32(buf),
+            RunTimeEndian::Big => BigEndian::read_u32(buf),
+        }
+    };
+    let write_u32 = |buf: &mut [u8], value: u32| {
+        match endian {
+            RunTimeEndian::Little => LittleEndian::write_u32(buf, value),
+            RunTimeEndian::Big => BigEndian::write_u32(buf, value),
+        }
+    };
+
+    for rela in goblin_elf.dynrelas.iter() {
+        let place = rela.r_offset;
+        if place < eh_start || place >= eh_end {
             continue;
         }
+        let off = (place - eh_start) as usize;
 
-        let record_start = offset;
-        offset += 4;
+        let addend_i64 = rela.r_addend.unwrap_or(0);
 
-        if offset + length > data.len() {
-            break;
-        }
-        let cie_id = u32::from_le_bytes([
-            data[offset],
-            data[offset + 1],
-            data[offset + 2],
-            data[offset + 3],
-        ]);
-        offset += 4;
-
-        if cie_id == 0 {
-            offset = record_start + 4 + length;
-            continue;
-        }
-
-        if offset + 16 <= data.len() {
-            let pc_begin_field_offset = offset;
-            let pc_begin_relative = i32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]) as i64;
-            offset += 4;
-            let pc_range = u32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]) as u64;
-            offset += 4;
-            let field_addr = section_addr + pc_begin_field_offset as u64;
-            let pc_begin_abs = (field_addr as i64 + pc_begin_relative) as u64;
-            let pc_begin = pc_begin_abs + base_address;
-
-            if pc_begin != 0 && pc_range != 0 {
-                fdes.push(FrameDescriptorEntry {
-                    pc_begin,
-                    pc_range,
-                });
-                debug!("elf: parsed FDE - pc_begin: {:#x}, pc_range: {:#x}", pc_begin, pc_range);
+        if goblin_elf.is_64 {
+            match rela.r_type {
+                goblin::elf::reloc::R_X86_64_RELATIVE => {
+                    if off + 8 <= eh_frame_buf.len() {
+                        let value = base_address.wrapping_add(addend_i64 as u64);
+                        write_u64(&mut eh_frame_buf[off..off + 8], value);
+                    }
+                }
+                goblin::elf::reloc::R_X86_64_64 => {
+                    if off + 8 <= eh_frame_buf.len() {
+                        let sym = goblin_elf.dynsyms.get(rela.r_sym);
+                        let s = sym.map(|s| s.st_value).unwrap_or(0);
+                        let value = s.wrapping_add(addend_i64 as u64);
+                        write_u64(&mut eh_frame_buf[off..off + 8], value);
+                    }
+                }
+                goblin::elf::reloc::R_X86_64_PC32 => {
+                    if off + 4 <= eh_frame_buf.len() {
+                        let sym = goblin_elf.dynsyms.get(rela.r_sym);
+                        let s = sym.map(|s| s.st_value).unwrap_or(0);
+                        let p = place;
+                        let value = (s as i64)
+                            .wrapping_add(addend_i64)
+                            .wrapping_sub(p as i64);
+                        write_u32(&mut eh_frame_buf[off..off + 4], value as i32 as u32);
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            match rela.r_type {
+                goblin::elf::reloc::R_386_RELATIVE => {
+                    if off + 4 <= eh_frame_buf.len() {
+                        let value = (base_address as u32).wrapping_add(addend_i64 as u32);
+                        write_u32(&mut eh_frame_buf[off..off + 4], value);
+                    }
+                }
+                goblin::elf::reloc::R_386_32 => {
+                    if off + 4 <= eh_frame_buf.len() {
+                        let sym = goblin_elf.dynsyms.get(rela.r_sym);
+                        let s = sym.map(|s| s.st_value as u32).unwrap_or(0);
+                        let value = s.wrapping_add(addend_i64 as u32);
+                        write_u32(&mut eh_frame_buf[off..off + 4], value);
+                    }
+                }
+                goblin::elf::reloc::R_386_PC32 => {
+                    if off + 4 <= eh_frame_buf.len() {
+                        let sym = goblin_elf.dynsyms.get(rela.r_sym);
+                        let s = sym.map(|s| s.st_value as u32).unwrap_or(0);
+                        let p = place as u32;
+                        let value = (s as i32)
+                            .wrapping_add(addend_i64 as i32)
+                            .wrapping_sub(p as i32);
+                        write_u32(&mut eh_frame_buf[off..off + 4], value as u32);
+                    }
+                }
+                _ => {}
             }
         }
-        offset = record_start + 4 + length;
     }
 
-    Ok(fdes)
+    for rel in goblin_elf.dynrels.iter() {
+        let place = rel.r_offset;
+        if place < eh_start || place >= eh_end {
+            continue;
+        }
+        let off = (place - eh_start) as usize;
+        if goblin_elf.is_64 {
+            if off + 8 > eh_frame_buf.len() {
+                continue;
+            }
+            let a = read_u64(&eh_frame_buf[off..off + 8]);
+            match rel.r_type {
+                goblin::elf::reloc::R_X86_64_RELATIVE => {
+                    let value = base_address.wrapping_add(a);
+                    write_u64(&mut eh_frame_buf[off..off + 8], value);
+                }
+                goblin::elf::reloc::R_X86_64_64 => {
+                    let sym = goblin_elf.dynsyms.get(rel.r_sym);
+                    let s = sym.map(|s| s.st_value).unwrap_or(0);
+                    let value = s.wrapping_add(a);
+                    write_u64(&mut eh_frame_buf[off..off + 8], value);
+                }
+                _ => {}
+            }
+        } else {
+            if off + 4 > eh_frame_buf.len() {
+                continue;
+            }
+            let a = read_u32(&eh_frame_buf[off..off + 4]);
+            match rel.r_type {
+                goblin::elf::reloc::R_386_RELATIVE => {
+                    let value = (base_address as u32).wrapping_add(a);
+                    write_u32(&mut eh_frame_buf[off..off + 4], value);
+                }
+                goblin::elf::reloc::R_386_32 => {
+                    let sym = goblin_elf.dynsyms.get(rel.r_sym);
+                    let s = sym.map(|s| s.st_value as u32).unwrap_or(0);
+                    let value = s.wrapping_add(a);
+                    write_u32(&mut eh_frame_buf[off..off + 4], value);
+                }
+                goblin::elf::reloc::R_386_PC32 => {
+                    let sym = goblin_elf.dynsyms.get(rel.r_sym);
+                    let s = sym.map(|s| s.st_value as u32).unwrap_or(0);
+                    let p = place as u32;
+                    let value = (s as i32).wrapping_add(a as i32).wrapping_sub(p as i32);
+                    write_u32(&mut eh_frame_buf[off..off + 4], value as u32);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]
