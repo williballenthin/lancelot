@@ -77,6 +77,10 @@ jobs:
             target: aarch64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
+    env:
+      # zydis 3.x bundles an old zydis-c with cmake_minimum_required < 3.5
+      # newer CMake versions reject this, so we need to override the policy
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
     steps:
       - uses: actions/checkout@v4
 
@@ -93,7 +97,7 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist --interpreter ${{ matrix.interpreter }} --manifest-path=./pylancelot/Cargo.toml
           rust-toolchain: stable
-          docker-options: -e CI
+          docker-options: -e CI -e CMAKE_POLICY_VERSION_MINIMUM
 
       - name: build pyflirt wheels
         uses: PyO3/maturin-action@v1
@@ -102,7 +106,7 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           args: --release --out dist --interpreter ${{ matrix.interpreter }} --manifest-path=./pyflirt/Cargo.toml
           rust-toolchain: stable
-          docker-options: -e CI
+          docker-options: -e CI -e CMAKE_POLICY_VERSION_MINIMUM
 
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
 
