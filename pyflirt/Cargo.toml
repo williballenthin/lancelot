@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lancelot-flirt = { path = "../flirt", version = "0.9.8" }
-pyo3 = { version = "0.27"}
+pyo3 = { version = "0.27", features = ["generate-import-lib"] }
 anyhow = "1"
 
 [features]
