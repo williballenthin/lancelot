@@ -1,6 +1,6 @@
 [project]
 name = "python-flirt"
-version = "0.9.8"
+version = "0.9.9"
 description = "A Python library for parsing, compiling, and matching Fast Library Identification and Recognition Technology (FLIRT) signatures."
 readme = "README.md"
 requires-python = ">=3.10"
