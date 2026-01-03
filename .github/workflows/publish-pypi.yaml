@@ -73,7 +73,7 @@ jobs:
             python-architecture: x86
           - os: windows
             interpreter: 3.10 3.11 3.12 3.13 3.14 # no pypy
-            target: arm64
+            target: aarch64
 
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
