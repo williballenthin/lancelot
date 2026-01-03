@@ -11,7 +11,7 @@ jobs:
     name: test
     runs-on: [ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           lfs: true
       - uses: actions-rs/toolchain@v1
@@ -25,13 +25,13 @@ jobs:
           toolchain: nightly
           override: true
           components: rustfmt, clippy
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
       - name: install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc make git cmake python3.11 protobuf-compiler
+          sudo apt-get install -y build-essential gcc make git cmake protobuf-compiler
       - name: check
         uses: actions-rs/cargo@v1
         with:
@@ -61,20 +61,12 @@ jobs:
       - name: test pylancelot
         working-directory: ./pylancelot/
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gcc cmake python3.11 python3.11-dev virtualenv
-          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.11 /tmp/vdir
-          source /tmp/vdir/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
       - name: test pyflirt
         working-directory: ./pyflirt/
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gcc cmake python3.11 python3.11-dev virtualenv
-          mkdir /tmp/vdir 2>/dev/null && virtualenv -p python3.11 /tmp/vdir
-          source /tmp/vdir/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
