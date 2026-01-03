@@ -3,6 +3,7 @@ on:
     types: [created, edited]
   pull_request:
     types: [opened, reopened]
+  workflow_dispatch:  # manual trigger for testing builds
 
 name: publish pypi
 
@@ -11,8 +12,8 @@ jobs:
   # https://github.com/pydantic/pydantic-core/blob/8568136ee9abdca8a1c8b631750a4896bb25522e/.github/workflows/ci.yml#L399
   build:
     name: build for ${{ matrix.os }} / ${{ matrix.target }} / ${{ matrix.interpreter }}
-    # only run on release or if PR has label "Full Build"
-    if: startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    # run on release, manual trigger, or if PR has label "Full Build"
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Full Build')
     strategy:
       fail-fast: true
       matrix:
