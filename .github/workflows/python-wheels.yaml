@@ -5,7 +5,7 @@ on:
     types: [opened, reopened]
   workflow_dispatch:  # manual trigger for testing builds
 
-name: publish pypi
+name: Python Wheels
 
 jobs:
   # derived from pydantic-core build:
@@ -111,11 +111,11 @@ jobs:
           name: pypi_files_${{ matrix.os }}_${{ matrix.target }}_${{ matrix.interpreter || 'all' }}_${{ matrix.manylinux }}
           path: dist
 
-  pypi-publish:
+  publish:
+    name: publish to PyPI
     runs-on: ubuntu-latest
-    # only run on release, not on any PR
-    if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [ build ]
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
     environment:
       name: release
     permissions:
@@ -124,13 +124,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
-      - name: move files to dist/
+      - name: collect wheels
         run: |
-          shopt -s globstar  # Enable recursive globbing (**)
+          shopt -s globstar
           rm -rf dist/
           mkdir dist/
           cp -r artifacts/**/*.whl dist/
-      - name: publish package
+      - name: publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
