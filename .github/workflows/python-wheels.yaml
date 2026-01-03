@@ -32,15 +32,15 @@ jobs:
           #
           - os: linux
             manylinux: auto
-            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
             target: x86_64
           - os: linux
             manylinux: auto
-            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
             target: aarch64
           - os: linux
             manylinux: auto
-            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
             target: i686
           - os: linux
             manylinux: auto
@@ -54,10 +54,10 @@ jobs:
           # macOS
           #
           - os: macos
-            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
             target: x86_64
           - os: macos
-            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.10
+            interpreter: 3.10 3.11 3.12 3.13 3.14 pypy3.11
             target: aarch64
 
           #
