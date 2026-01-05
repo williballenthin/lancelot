@@ -32,6 +32,15 @@ pub enum Rsrc {
     DED0,
     /// EXE from Assemblage dataset with relocations
     CPP1,
+    /// A version of LIBC from a Linux distro
+    LIBCSO6,
+    /// A version of true from a linux distro
+    NOPELF, 
+    /// Manually Constructed ELF file with some strange characteristics
+    /// from: https://www.muppetlabs.com/~breadbox/software/tiny/somewhat.html
+    TINYX64,
+    /// ELF file with DWARF debug information for testing
+    TESTDWARF,
 }
 
 /// Fetch the file system name of the given resource.
@@ -50,6 +59,10 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::POSTDLLMAIN => String::from("postdllmain.obj"),
         Rsrc::DED0 => String::from("ded0ee29af97496f27d810f6c16d78a3031d8c2193d5d2a87355f3e3ca58f9b3"),
         Rsrc::CPP1 => String::from("cpp1.exe_"),
+        Rsrc::LIBCSO6 => String::from("libc"),
+        Rsrc::NOPELF => String::from("nop_elf"),
+        Rsrc::TINYX64 => String::from("tiny-x64"),
+        Rsrc::TESTDWARF => String::from("test_DWARF"),
     }
 }
 

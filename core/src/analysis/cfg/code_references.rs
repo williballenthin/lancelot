@@ -16,6 +16,9 @@ use crate::{
     VA,
 };
 
+#[cfg(feature = "disassembler")]
+use crate::loader::elf::ELF;
+
 pub fn find_executable_pointers(module: &Module) -> Result<Vec<VA>> {
     // list of candidates: (address of pointer, address pointed to)
     let mut candidates: Vec<(VA, VA)> = vec![];
@@ -101,6 +104,10 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
                         dis::Target::Indirect(target) => target,
                     };
 
+                    if target == 0 {
+                        continue;
+                    }
+
                     if insns.insns_by_address.contains_key(&target) {
                         // this is already code.
                         continue;
@@ -117,6 +124,44 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
     }
 
     // TODO: do additional passes on the newly found code
+
+    Ok(new_code.into_iter().collect())
+}
+
+#[cfg(feature = "disassembler")]
+pub fn find_new_code_references_elf(elf: &ELF, insns: &cfg::InstructionIndex) -> Result<Vec<VA>> {
+    let decoder = dis::get_disassembler(&elf.module)?;
+    let mut reader: CachingPageReader = Default::default();
+    let mut new_code: BTreeSet<VA> = Default::default();
+
+    for &va in insns.insns_by_address.keys() {
+        if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &elf.module.address_space, va, &decoder) {
+            for op in dis::get_operands(&insn) {
+                if let Ok(Some(xref)) = dis::get_operand_xref(&elf.module, va, &insn, op) {
+                    let target = match xref {
+                        dis::Target::Direct(target) => target,
+                        dis::Target::Indirect(target) => target,
+                    };
+
+                    if target == 0 || insns.insns_by_address.contains_key(&target) {
+                        continue;
+                    }
+
+                    // check if target is in an executable section
+                    let in_exec_section = elf.module.sections.iter().any(|section| {
+                        section.permissions.intersects(Permissions::X)
+                            && section.virtual_range.contains(&target)
+                            && !section.name.starts_with(".ro")
+                    });
+
+                    if in_exec_section && heuristics::is_probably_code(&elf.module, &decoder, target) {
+                        log::debug!("code references (ELF): found new likely code at {:#x}", target);
+                        new_code.insert(target);
+                    }
+                }
+            }
+        }
+    }
 
     Ok(new_code.into_iter().collect())
 }
