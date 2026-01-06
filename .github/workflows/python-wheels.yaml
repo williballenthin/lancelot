@@ -115,11 +115,40 @@ jobs:
           name: pypi_files_${{ matrix.os }}_${{ matrix.target }}_${{ matrix.interpreter || 'all' }}_${{ matrix.manylinux }}
           path: dist
 
+  build-sdist:
+    name: build sdist
+    # run on release, manual trigger, or if PR has label "Full Build"
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: install build tool
+        run: pip install build
+
+      - name: build pylancelot sdist
+        run: python -m build --sdist --outdir ${PWD}/dist ./pylancelot
+
+      - name: build pyflirt sdist
+        run: python -m build --sdist --outdir ${PWD}/dist ./pyflirt
+
+      - run: ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi_files_sdist
+          path: dist
+ 
   publish:
     name: publish to PyPI
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [build]
+    needs: [build, build-sdist]
     environment:
       name: release
     permissions:
@@ -134,6 +163,7 @@ jobs:
           rm -rf dist/
           mkdir dist/
           cp -r artifacts/**/*.whl dist/
+          cp -r artifacts/**/*.tar.gz dist/
       - name: publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
