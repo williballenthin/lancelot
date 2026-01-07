@@ -61,12 +61,16 @@ jobs:
       - name: test pylancelot
         working-directory: ./pylancelot/
         run: |
+          python -m venv .venv
+          source .venv/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
       - name: test pyflirt
         working-directory: ./pyflirt/
         run: |
+          python -m venv .venv
+          source .venv/bin/activate
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
