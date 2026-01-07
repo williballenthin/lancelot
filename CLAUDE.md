@@ -1,11 +1,33 @@
 # Claude Code Memory
 
-## Version Bumps
+## Development Commands
 
-Use the version bump script to ensure all locations are updated:
+**Always use the justfile for all operations. Never invoke cargo directly.**
+
+Run `just` to see all available commands. Common operations:
 
 ```bash
-.github/workflows/bump-version.sh <version>
+just build          # Build debug (with cranelift for speed)
+just build-release  # Build release
+just check          # Fast compilation check
+just lint           # Run all lints (check, clippy, fmt-check)
+just fmt            # Format code
+just test           # Run all tests
+just test-rust      # Run Rust tests only (no Python)
+just test-core      # Test lancelot-core only
+just test-flirt     # Test lancelot-flirt only
+just all            # Run lint + test (use before committing)
+just clean          # Clean build artifacts
+just warmup         # Populate rustc cache with various builds
+```
+
+## Version Bumps
+
+Use the justfile recipe (or script directly) to ensure all locations are updated:
+
+```bash
+just bump-version <version>
+# or: .github/workflows/bump-version.sh <version>
 ```
 
 This updates versions in all Cargo.toml and pyproject.toml files, including dependency references.
@@ -13,10 +35,7 @@ This updates versions in all Cargo.toml and pyproject.toml files, including depe
 ## CI Workflows
 
 ### ci.yml
-Runs on push/PR. Jobs:
-- `cargo check`, `cargo fmt` (nightly), `cargo clippy` (nightly)
-- `cargo test` for lancelot and lancelot-flirt
-- pytest for pylancelot and pyflirt (Python 3.14)
+Runs on push/PR. Jobs: check, fmt (nightly), clippy (nightly), test for lancelot/lancelot-flirt, pytest for pylancelot/pyflirt (Python 3.14)
 
 ### python-wheels.yaml
 Builds Python wheels. Triggers: release, manual (`workflow_dispatch`), or PR with "Full Build" label.
