@@ -334,7 +334,9 @@ fn get_coff_extern_names(obj: &object::File) -> BTreeSet<String> {
                 match (symbol.kind(), symbol.section()) {
                     (
                         object::SymbolKind::Data | object::SymbolKind::Text,
-                        object::SymbolSection::Undefined | object::SymbolSection::Common,
+                        object::SymbolSection::Undefined
+                            | object::SymbolSection::Common
+                            | object::SymbolSection::Unknown,
                     ) => {
                         debug!("coff: reloc: extern: symbol: {}", name);
                         externs.insert(name.to_string());
