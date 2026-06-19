@@ -1244,9 +1244,7 @@ mod tests {
             // when both 0x00 and 0x05 are batched as PruneNoretCall,
             // pruning 0x00's fallthrough removes 0x05 (its only incoming flow).
             // the second PruneNoretCall(0x05) must not panic.
-            let module = load_shellcode32(
-                b"\xE8\x0B\x00\x00\x00\xE8\x06\x00\x00\x00\x90\x90\x90\x90\x90\x90\xC3",
-            );
+            let module = load_shellcode32(b"\xE8\x0B\x00\x00\x00\xE8\x06\x00\x00\x00\x90\x90\x90\x90\x90\x90\xC3");
             let mut insns: InstructionIndex = Default::default();
             insns.build_index(&module, 0x0)?;
             let mut cfg = CFG::from_instructions(&module, insns)?;

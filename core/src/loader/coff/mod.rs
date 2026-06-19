@@ -335,8 +335,8 @@ fn get_coff_extern_names(obj: &object::File) -> BTreeSet<String> {
                     (
                         object::SymbolKind::Data | object::SymbolKind::Text,
                         object::SymbolSection::Undefined
-                            | object::SymbolSection::Common
-                            | object::SymbolSection::Unknown,
+                        | object::SymbolSection::Common
+                        | object::SymbolSection::Unknown,
                     ) => {
                         debug!("coff: reloc: extern: symbol: {}", name);
                         externs.insert(name.to_string());
@@ -521,9 +521,7 @@ fn get_coff_fixups(
                 (
                     // we place these extern symbols in a fake section named "UNDEF".
                     object::SymbolKind::Data | object::SymbolKind::Text,
-                    object::SymbolSection::Undefined
-                        | object::SymbolSection::Common
-                        | object::SymbolSection::Unknown,
+                    object::SymbolSection::Undefined | object::SymbolSection::Common | object::SymbolSection::Unknown,
                 ) => {
                     let Ok(name) = symbol.name() else {
                         warn!("coff: reloc: no name: {:?}", symbol);
