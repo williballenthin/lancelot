@@ -244,7 +244,7 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
             })
             .collect::<Vec<VA>>();
 
-        thunks.extend(confirmed_thunks.into_iter());
+        thunks.extend(confirmed_thunks);
 
         let mut next_candidates: BTreeSet<VA> = Default::default();
         for &target in function_thunk_targets.iter() {

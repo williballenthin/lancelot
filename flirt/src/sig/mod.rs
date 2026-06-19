@@ -609,7 +609,7 @@ fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
 
         let (input_, sigs) = node(input, header, pattern)?;
         input = input_;
-        ret.extend(sigs.into_iter());
+        ret.extend(sigs);
     }
 
     Ok((input, ret))

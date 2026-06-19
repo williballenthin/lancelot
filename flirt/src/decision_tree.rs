@@ -309,7 +309,7 @@ impl Node {
                 }
 
                 let other = if !wildcards.is_empty() {
-                    for (_, v) in choices.iter_mut() {
+                    for v in choices.values_mut() {
                         v.extend(wildcards.iter());
                     }
                     Some(Box::new(build_decision_tree_inner(patterns, wildcards)))
