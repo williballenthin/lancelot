@@ -212,12 +212,7 @@ impl<T: Default + Copy> PageMap<T> {
             return None;
         }
 
-        let page = match &self.pages[page(rva)] {
-            // page is not mapped
-            None => return None,
-            // page is mapped
-            Some(page) => page,
-        };
+        let page = self.pages[page(rva)].as_ref()?;
 
         Some(page.elements[page_offset(rva)])
     }
@@ -245,12 +240,7 @@ impl<T: Default + Copy> PageMap<T> {
             return None;
         }
 
-        let page = match &mut self.pages[page(rva)] {
-            // page is not mapped
-            None => return None,
-            // page is mapped
-            Some(page) => page,
-        };
+        let page = self.pages[page(rva)].as_mut()?;
 
         Some(&mut page.elements[page_offset(rva)])
     }

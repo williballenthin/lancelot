@@ -545,55 +545,49 @@ impl CFG {
         }
 
         std::iter::from_fn(move || loop {
-            if let Some(bbva) = queue.pop_front() {
-                if seen.contains(&bbva) {
-                    continue;
-                }
-                log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}", va, bbva);
+            let bbva = queue.pop_front()?;
+            if seen.contains(&bbva) {
+                continue;
+            }
+            log::debug!("cfg: reachable from: {:#x}: basic block: {:#x}", va, bbva);
 
-                let bb = &self.basic_blocks.blocks_by_address[&bbva];
+            let bb = &self.basic_blocks.blocks_by_address[&bbva];
 
-                let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
-                for succ in edge_targets(direct_edges(edges(succs))) {
-                    if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
-                        // there's a flow to an address that isn't a basic block
-                        // such as where we failed to decode an instruction.
-                        log::warn!(
-                            "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)",
-                            va,
-                            bbva,
-                            succ
-                        );
-                        // don't keep exploring at that address.
-                    } else {
-                        log::debug!(
-                            "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x}",
-                            va,
-                            bbva,
-                            succ
-                        );
-                        queue.push_back(succ);
-                    }
-                }
-
-                let preds = &self.flows.flows_by_dst[&bb.address];
-                for pred in
-                    edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
-                {
-                    log::debug!(
-                        "cfg: reachable from: {:#x}: basic block: {:#x}: pred: {:#x}",
+            let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
+            for succ in edge_targets(direct_edges(edges(succs))) {
+                if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
+                    log::warn!(
+                        "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x} (invalid)",
                         va,
                         bbva,
-                        pred
+                        succ
                     );
-                    queue.push_back(pred);
+                } else {
+                    log::debug!(
+                        "cfg: reachable from: {:#x}: basic block: {:#x}: succ: {:#x}",
+                        va,
+                        bbva,
+                        succ
+                    );
+                    queue.push_back(succ);
                 }
-
-                seen.insert(bbva);
-                return Some(bb);
-            } else {
-                return None;
             }
+
+            let preds = &self.flows.flows_by_dst[&bb.address];
+            for pred in
+                edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
+            {
+                log::debug!(
+                    "cfg: reachable from: {:#x}: basic block: {:#x}: pred: {:#x}",
+                    va,
+                    bbva,
+                    pred
+                );
+                queue.push_back(pred);
+            }
+
+            seen.insert(bbva);
+            return Some(bb);
         })
     }
 
@@ -606,29 +600,22 @@ impl CFG {
         }
 
         std::iter::from_fn(move || loop {
-            if let Some(bbva) = queue.pop_front() {
-                if seen.contains(&bbva) {
-                    continue;
-                }
-
-                let bb = &self.basic_blocks.blocks_by_address[&bbva];
-
-                let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
-                for succ in edge_targets(direct_edges(edges(succs))) {
-                    if self.basic_blocks.blocks_by_address.contains_key(&succ).not() {
-                        // there's a flow to an address that isn't a basic block
-                        // such as where we failed to decode an instruction.
-                        // don't keep exploring at that address.
-                    } else {
-                        queue.push_back(succ);
-                    }
-                }
-
-                seen.insert(bbva);
-                return Some(bb);
-            } else {
-                return None;
+            let bbva = queue.pop_front()?;
+            if seen.contains(&bbva) {
+                continue;
             }
+
+            let bb = &self.basic_blocks.blocks_by_address[&bbva];
+
+            let succs = &self.flows.flows_by_src[&bb.address_of_last_insn];
+            for succ in edge_targets(direct_edges(edges(succs))) {
+                if self.basic_blocks.blocks_by_address.contains_key(&succ) {
+                    queue.push_back(succ);
+                }
+            }
+
+            seen.insert(bbva);
+            return Some(bb);
         })
     }
 
@@ -641,25 +628,22 @@ impl CFG {
         }
 
         std::iter::from_fn(move || loop {
-            if let Some(bbva) = queue.pop_front() {
-                if seen.contains(&bbva) {
-                    continue;
-                }
-
-                let bb = &self.basic_blocks.blocks_by_address[&bbva];
-
-                let preds = &self.flows.flows_by_dst[&bb.address];
-                for pred in
-                    edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
-                {
-                    queue.push_back(pred);
-                }
-
-                seen.insert(bbva);
-                return Some(bb);
-            } else {
-                return None;
+            let bbva = queue.pop_front()?;
+            if seen.contains(&bbva) {
+                continue;
             }
+
+            let bb = &self.basic_blocks.blocks_by_address[&bbva];
+
+            let preds = &self.flows.flows_by_dst[&bb.address];
+            for pred in
+                edge_targets(direct_edges(edges(preds))).map(|pred| self.basic_blocks.blocks_by_last_address[&pred])
+            {
+                queue.push_back(pred);
+            }
+
+            seen.insert(bbva);
+            return Some(bb);
         })
     }
 }

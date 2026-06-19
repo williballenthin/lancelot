@@ -160,7 +160,7 @@ pub fn hexdump(buf: &[u8], offset: usize) -> String {
         line.push('\n');
 
         ret.push_str(line.as_str());
-        line.truncate(0x0);
+        line.clear();
         remaining_count -= line_elem_count;
     }
 
