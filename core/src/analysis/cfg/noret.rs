@@ -59,8 +59,11 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
         };
         log::debug!("mark noret: {:#x}: caller: {:#x}", va, src);
 
-        batch.prune_noret_call(src);
         callers.push(src);
+    }
+
+    for &src in &callers {
+        batch.prune_noret_call(src);
     }
     cfg.commit(batch);
 
@@ -78,6 +81,11 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
     //
     // recurse.
     for call_insn in callers.into_iter() {
+        // This caller may have been cascade-removed during the batch commit
+        // above: when caller A's fallthrough is pruned, `prune_flow` removes
+        // any instruction whose incoming flows all disappear — which may
+        // include another caller B on the same fallthrough chain or reachable
+        // only through flows from the removed region.
         if !cfg.insns.insns_by_address.contains_key(&call_insn) {
             continue;
         }

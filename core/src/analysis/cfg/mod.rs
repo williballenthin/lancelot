@@ -798,12 +798,7 @@ impl CFG {
         //   - fallthrough
         // keep the call, prune the fallthrough
 
-        // a prior change in the same batch may have already removed this
-        // instruction (e.g. it was the fallthrough target of another noret call
-        // that was pruned first).
-        if !self.insns.insns_by_address.contains_key(&va) {
-            return;
-        }
+        assert!(self.insns.insns_by_address.contains_key(&va));
 
         // use a copy so we can modify the indices.
         let succs = self.flows.flows_by_src[&va].clone();
@@ -822,7 +817,18 @@ impl CFG {
         for change in batch.changes.into_iter() {
             match change {
                 Change::PruneFlow { va, flow } => self.prune_flow(va, &flow),
-                Change::PruneNoretCall { va } => self.prune_noret_call(va),
+                Change::PruneNoretCall { va } => {
+                    // When a batch contains multiple PruneNoretCall entries,
+                    // an earlier entry's cascade (via prune_flow) can remove
+                    // instructions queued for later processing. This happens
+                    // when two callers share a fallthrough chain or are
+                    // connected through flows where intermediaries have no
+                    // other incoming edges.
+                    if !self.insns.insns_by_address.contains_key(&va) {
+                        continue;
+                    }
+                    self.prune_noret_call(va);
+                }
             }
         }
 
@@ -1219,15 +1225,17 @@ mod tests {
         }
 
         #[test]
-        fn prune_noret_call_batch_removes_later_target() -> Result<()> {
+        fn prune_noret_call_batch_cascade_removal() -> Result<()> {
             // 0x00: call 0x10   ; E8 0B 00 00 00
             // 0x05: call 0x10   ; E8 06 00 00 00
             // 0x0A: nop (x6)
             // 0x10: ret         ; C3
             //
-            // when both 0x00 and 0x05 are batched as PruneNoretCall,
-            // pruning 0x00's fallthrough removes 0x05 (its only incoming flow).
-            // the second PruneNoretCall(0x05) must not panic.
+            // Both 0x00 and 0x05 call the same target.
+            // PruneNoretCall(0x00) prunes fallthrough to 0x05, which
+            // cascade-removes 0x05 (its only incoming flow was that
+            // fallthrough). commit() skips the subsequent
+            // PruneNoretCall(0x05) since the instruction no longer exists.
             let module = load_shellcode32(b"\xE8\x0B\x00\x00\x00\xE8\x06\x00\x00\x00\x90\x90\x90\x90\x90\x90\xC3");
             let mut insns: InstructionIndex = Default::default();
             insns.build_index(&module, 0x0)?;
