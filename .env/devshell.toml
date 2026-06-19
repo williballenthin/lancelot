@@ -25,11 +25,12 @@ help = "pre-commit (manual)"
 [devshell]
 packages = [
   "libiconv",
-  "zydis",
+  # zydis: omitted — nix has v4 whose libZydis.a shadows the Rust crate's bundled v3
+  # (ZydisDecoderDecodeBuffer was renamed to ZydisDecoderDecodeFull in v4)
   "bacon",
   # "protobuf",
   "just",
-  "gcc",
+  "stdenv.cc",
   "python312",
   "uv",
   # rust/cargo installed by rustup
