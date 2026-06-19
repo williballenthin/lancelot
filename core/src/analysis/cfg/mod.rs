@@ -814,9 +814,12 @@ impl CFG {
         //   - fallthrough
         // keep the call, prune the fallthrough
 
-        // ensure this is an instruction
-        // or programming error.
-        assert!(self.insns.insns_by_address.contains_key(&va));
+        // a prior change in the same batch may have already removed this
+        // instruction (e.g. it was the fallthrough target of another noret call
+        // that was pruned first).
+        if !self.insns.insns_by_address.contains_key(&va) {
+            return;
+        }
 
         // use a copy so we can modify the indices.
         let succs = self.flows.flows_by_src[&va].clone();
@@ -1227,6 +1230,40 @@ mod tests {
             assert!(cfg.insns.insns_by_address.contains_key(&0x5));
             assert!(cfg.insns.insns_by_address.contains_key(&0x7).not());
             assert!(cfg.insns.insns_by_address.contains_key(&0xC));
+
+            Ok(())
+        }
+
+        #[test]
+        fn prune_noret_call_batch_removes_later_target() -> Result<()> {
+            // 0x00: call 0x10   ; E8 0B 00 00 00
+            // 0x05: call 0x10   ; E8 06 00 00 00
+            // 0x0A: nop (x6)
+            // 0x10: ret         ; C3
+            //
+            // when both 0x00 and 0x05 are batched as PruneNoretCall,
+            // pruning 0x00's fallthrough removes 0x05 (its only incoming flow).
+            // the second PruneNoretCall(0x05) must not panic.
+            let module = load_shellcode32(
+                b"\xE8\x0B\x00\x00\x00\xE8\x06\x00\x00\x00\x90\x90\x90\x90\x90\x90\xC3",
+            );
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x00));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x05));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x10));
+
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_noret_call(0x00);
+            batch.prune_noret_call(0x05);
+            cfg.commit(batch);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x00));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x05).not());
+            assert!(cfg.insns.insns_by_address.contains_key(&0x0A).not());
+            assert!(cfg.insns.insns_by_address.contains_key(&0x10));
 
             Ok(())
         }

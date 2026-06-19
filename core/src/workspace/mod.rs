@@ -743,4 +743,20 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn ws_issue_236_a() -> Result<()> {
+        let buf = get_buf(Rsrc::I236A);
+        let config = get_config();
+        let _ws = workspace_from_bytes(config, &buf)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ws_issue_236_b() -> Result<()> {
+        let buf = get_buf(Rsrc::I236B);
+        let config = get_config();
+        let _ws = workspace_from_bytes(config, &buf)?;
+        Ok(())
+    }
 }

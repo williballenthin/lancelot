@@ -78,6 +78,10 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
     //
     // recurse.
     for call_insn in callers.into_iter() {
+        if !cfg.insns.insns_by_address.contains_key(&call_insn) {
+            continue;
+        }
+
         // the basic block that ends with a call to noret function at given va.
         let leaf_block = cfg.basic_blocks.blocks_by_last_address[&call_insn];
 

@@ -32,6 +32,10 @@ pub enum Rsrc {
     DED0,
     /// EXE from Assemblage dataset with relocations
     CPP1,
+    /// PE from issue #236 (noret batch panic)
+    I236A,
+    /// PE from issue #236 (noret batch panic)
+    I236B,
 }
 
 /// Fetch the file system name of the given resource.
@@ -50,6 +54,8 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::POSTDLLMAIN => String::from("postdllmain.obj"),
         Rsrc::DED0 => String::from("ded0ee29af97496f27d810f6c16d78a3031d8c2193d5d2a87355f3e3ca58f9b3"),
         Rsrc::CPP1 => String::from("cpp1.exe_"),
+        Rsrc::I236A => String::from("20805f98.exe_"),
+        Rsrc::I236B => String::from("f72ee834.exe_"),
     }
 }
 
