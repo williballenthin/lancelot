@@ -1088,4 +1088,15 @@ mod tests {
 
         Ok(())
     }
+
+    // regression: issue #235
+    #[test]
+    fn weak_external_unknown_section() -> Result<()> {
+        let buf = get_buf(Rsrc::CRYPTOPP_OAEP);
+        let coff = crate::loader::coff::COFF::from_bytes(&buf)?;
+
+        assert!(coff.externs.contains_key("__cxa_pure_virtual"));
+
+        Ok(())
+    }
 }

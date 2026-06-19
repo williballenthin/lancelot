@@ -36,6 +36,8 @@ pub enum Rsrc {
     I236A,
     /// PE from issue #236 (noret batch panic)
     I236B,
+    /// COFF from issue #235 (weak external C++ symbols)
+    CRYPTOPP_OAEP,
 }
 
 /// Fetch the file system name of the given resource.
@@ -56,6 +58,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::CPP1 => String::from("cpp1.exe_"),
         Rsrc::I236A => String::from("20805f98.exe_"),
         Rsrc::I236B => String::from("f72ee834.exe_"),
+        Rsrc::CRYPTOPP_OAEP => String::from("cryptopp-oaep.obj"),
     }
 }
 
