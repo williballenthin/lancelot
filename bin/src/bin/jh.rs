@@ -703,21 +703,24 @@ mod tests {
         features.insert(
             0x401000,
             FunctionDescriptor {
-                name:     "?fn@Namespace@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ".to_string(),
+                name:     "?fn@Namespace@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ"
+                    .to_string(),
                 address:  0x401000,
                 features: Features {
                     numbers: BTreeSet::new(),
                     apis:    BTreeSet::new(),
-                    strings: BTreeSet::from([
-                        "%<>{}|\\^\"!*'()$".to_string(),
-                        "line\nbreak".to_string(),
-                    ]),
+                    strings: BTreeSet::from(["%<>{}|\\^\"!*'()$".to_string(), "line\nbreak".to_string()]),
                 },
             },
         );
 
         let mut buf: Vec<u8> = Vec::new();
-        output_functions_features(&build, "Foundation/CMakeFiles/Foundation.dir/src/URI.cpp.obj", &features, &mut buf)?;
+        output_functions_features(
+            &build,
+            "Foundation/CMakeFiles/Foundation.dir/src/URI.cpp.obj",
+            &features,
+            &mut buf,
+        )?;
         let output = String::from_utf8(buf)?;
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 2);
