@@ -311,30 +311,65 @@ struct BuildSettings {
     profile:  String,
 }
 
-fn output_functions_features(build: &BuildSettings, path: &str, features: &FunctionsFeatures) -> Result<()> {
+fn output_functions_features<W: std::io::Write>(
+    build: &BuildSettings,
+    path: &str,
+    features: &FunctionsFeatures,
+    writer: &mut W,
+) -> Result<()> {
     for desc in features.values() {
         for v in desc.features.numbers.iter() {
-            print!(
-                "{},{},{},{},{},",
-                build.triplet, build.compiler, build.library, build.version, build.profile
-            );
-            println!("{},{},number,0x{:08x}", path, desc.name, v);
+            writeln!(
+                writer,
+                "{}",
+                json!({
+                    "triplet": build.triplet,
+                    "compiler": build.compiler,
+                    "library": build.library,
+                    "version": build.version,
+                    "profile": build.profile,
+                    "path": path,
+                    "function": desc.name,
+                    "type": "number",
+                    "value": format!("0x{:08x}", v),
+                })
+            )?;
         }
 
         for v in desc.features.apis.iter() {
-            print!(
-                "{},{},{},{},{},",
-                build.triplet, build.compiler, build.library, build.version, build.profile
-            );
-            println!("{},{},api,{}", path, desc.name, v);
+            writeln!(
+                writer,
+                "{}",
+                json!({
+                    "triplet": build.triplet,
+                    "compiler": build.compiler,
+                    "library": build.library,
+                    "version": build.version,
+                    "profile": build.profile,
+                    "path": path,
+                    "function": desc.name,
+                    "type": "api",
+                    "value": v,
+                })
+            )?;
         }
 
         for v in desc.features.strings.iter() {
-            print!(
-                "{},{},{},{},{},",
-                build.triplet, build.compiler, build.library, build.version, build.profile
-            );
-            println!("{},{},string,{}", path, desc.name, json!(v));
+            writeln!(
+                writer,
+                "{}",
+                json!({
+                    "triplet": build.triplet,
+                    "compiler": build.compiler,
+                    "library": build.library,
+                    "version": build.version,
+                    "profile": build.profile,
+                    "path": path,
+                    "function": desc.name,
+                    "type": "string",
+                    "value": v,
+                })
+            )?;
         }
     }
 
@@ -425,12 +460,10 @@ fn _main() -> Result<()> {
 
         let features = extract_buf_features(config.clone(), &buf)?;
 
-        println!("# triplet,compiler,library,version,profile,path,function,type,value");
-        output_functions_features(&build, "/", &features)?;
+        output_functions_features(&build, "/", &features, &mut std::io::stdout())?;
     } else if buf.starts_with(b"!<arch>\n") {
         // archive file
 
-        println!("# triplet,compiler,library,version,profile,path,function,type,value");
         let mut ar = ar::Archive::new(buf.as_slice());
         while let Some(entry_result) = ar.next_entry() {
             let mut entry = match entry_result {
@@ -463,7 +496,7 @@ fn _main() -> Result<()> {
                 }
             };
 
-            output_functions_features(&build, &path, &features)?;
+            output_functions_features(&build, &path, &features, &mut std::io::stdout())?;
         }
     } else {
         error!("unrecognized file format");
@@ -606,6 +639,95 @@ mod tests {
         );
 
         assert_eq!(ws.analysis().names.addresses_by_name[".CRTMP$XCY"], 0x20016000);
+
+        Ok(())
+    }
+
+    fn test_build_settings() -> BuildSettings {
+        BuildSettings {
+            triplet:  "x64-windows-static".to_string(),
+            compiler: "msvc143".to_string(),
+            library:  "poco".to_string(),
+            version:  "1.14.1#2".to_string(),
+            profile:  "release".to_string(),
+        }
+    }
+
+    #[test]
+    fn output_functions_features_jsonl() -> Result<()> {
+        let build = test_build_settings();
+
+        let mut features: FunctionsFeatures = BTreeMap::new();
+        features.insert(
+            0x401000,
+            FunctionDescriptor {
+                name:     "fn1".to_string(),
+                address:  0x401000,
+                features: Features {
+                    numbers: BTreeSet::from([0x1234]),
+                    apis:    BTreeSet::from(["kernel32!CreateFileW".to_string()]),
+                    strings: BTreeSet::from(["hello, world\"".to_string()]),
+                },
+            },
+        );
+
+        let mut buf: Vec<u8> = Vec::new();
+        output_functions_features(&build, "path/to/obj.cpp.obj", &features, &mut buf)?;
+        let output = String::from_utf8(buf)?;
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3);
+
+        let number: serde_json::Value = serde_json::from_str(lines[0])?;
+        assert_eq!(number["type"], "number");
+        assert_eq!(number["value"], "0x00001234");
+        assert_eq!(number["function"], "fn1");
+        assert_eq!(number["path"], "path/to/obj.cpp.obj");
+        assert_eq!(number["triplet"], "x64-windows-static");
+
+        let api: serde_json::Value = serde_json::from_str(lines[1])?;
+        assert_eq!(api["type"], "api");
+        assert_eq!(api["value"], "kernel32!CreateFileW");
+
+        let string: serde_json::Value = serde_json::from_str(lines[2])?;
+        assert_eq!(string["type"], "string");
+        assert_eq!(string["value"], "hello, world\"");
+
+        Ok(())
+    }
+
+    #[test]
+    fn output_functions_features_jsonl_escapes_special_characters() -> Result<()> {
+        let build = test_build_settings();
+
+        let mut features: FunctionsFeatures = BTreeMap::new();
+        features.insert(
+            0x401000,
+            FunctionDescriptor {
+                name:     "?fn@Namespace@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ".to_string(),
+                address:  0x401000,
+                features: Features {
+                    numbers: BTreeSet::new(),
+                    apis:    BTreeSet::new(),
+                    strings: BTreeSet::from([
+                        "%<>{}|\\^\"!*'()$".to_string(),
+                        "line\nbreak".to_string(),
+                    ]),
+                },
+            },
+        );
+
+        let mut buf: Vec<u8> = Vec::new();
+        output_functions_features(&build, "Foundation/CMakeFiles/Foundation.dir/src/URI.cpp.obj", &features, &mut buf)?;
+        let output = String::from_utf8(buf)?;
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        // Each line must be valid JSON and round-trip the original value.
+        let first: serde_json::Value = serde_json::from_str(lines[0])?;
+        assert_eq!(first["value"].as_str().unwrap(), "%<>{}|\\^\"!*'()$");
+
+        let second: serde_json::Value = serde_json::from_str(lines[1])?;
+        assert_eq!(second["value"].as_str().unwrap(), "line\nbreak");
 
         Ok(())
     }
