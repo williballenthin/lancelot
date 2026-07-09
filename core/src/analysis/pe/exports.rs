@@ -55,6 +55,17 @@ mod tests {
     }
 
     #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+
+        let fns = crate::analysis::pe::exports::find_pe_exports(&pe)?;
+        assert_eq!(0, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
     fn cpp1() -> Result<()> {
         let buf = get_buf(Rsrc::CPP1);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;

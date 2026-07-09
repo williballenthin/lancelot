@@ -11,9 +11,8 @@ pub enum Rsrc {
     /// since it doesn't have any sections or optional header, good for testing
     /// corner cases.
     ///
-    /// note: goblin 0.9.3+ rejects this file, because its PE header overlaps
-    /// its DOS header (`e_lfanew` is 0x4), so lancelot cannot currently load
-    /// it. see the expected-failure test `loader::pe::tests::tiny`.
+    /// note: its PE header overlaps its DOS header (`e_lfanew` is 0x4), which
+    /// goblin only accepts in its permissive parse mode (see `get_pe`).
     TINY,
     /// from: https://joenord.com/apps/nop/
     NOP,

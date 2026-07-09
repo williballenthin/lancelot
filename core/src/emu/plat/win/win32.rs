@@ -180,7 +180,7 @@ mod tests {
         emu.load_pe(&pe)?;
 
         let opt = pe.optional_header.unwrap();
-        let ep = opt.windows_fields.image_base + opt.standard_fields.address_of_entry_point;
+        let ep = opt.windows_fields.image_base + opt.standard_fields.address_of_entry_point as u64;
         emu.set_pc(ep);
 
         emu.mem().mmap(0x5000, 0x2000, Permissions::RW)?;

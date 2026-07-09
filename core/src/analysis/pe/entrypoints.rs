@@ -12,7 +12,7 @@ pub fn find_pe_entrypoint(pe: &PE) -> Result<Vec<VA>> {
         if entry_point == 0 {
             return Ok(vec![]);
         }
-        let entry_point = optional_header.windows_fields.image_base + entry_point;
+        let entry_point = optional_header.windows_fields.image_base + entry_point as u64;
         debug!("entry point: {entry_point:#x}");
         Ok(vec![entry_point])
     } else {
@@ -32,6 +32,17 @@ mod tests {
 
         let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
         assert_eq!(1, fns.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tiny() -> Result<()> {
+        let buf = get_buf(Rsrc::TINY);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+
+        let fns = crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?;
+        assert_eq!(0, fns.len());
 
         Ok(())
     }

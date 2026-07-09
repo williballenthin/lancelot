@@ -98,7 +98,12 @@ impl PE {
 }
 
 fn get_pe(buf: &[u8]) -> Result<goblin::pe::PE<'_>> {
-    let pe = match goblin::pe::PE::parse(buf) {
+    // use permissive parsing so that goblin accepts unusual files that the
+    // Windows loader tolerates, such as tiny.exe with its collapsed header
+    // (PE header overlapping the DOS header). in strict mode (the default),
+    // goblin 0.9.3+ rejects these.
+    let opts = goblin::pe::options::ParseOptions::default().with_parse_mode(goblin::pe::options::ParseMode::Permissive);
+    let pe = match goblin::pe::PE::parse_with_opts(buf, &opts) {
         Ok(pe) => pe,
         Err(e) => {
             // goblin failed to parse the PE file
@@ -372,34 +377,20 @@ mod tests {
         Ok(())
     }
 
-    /// expected failure: we cannot load tiny.exe today.
-    ///
     /// tiny.exe is a handmade, minimal PE with a collapsed header:
     /// its `e_lfanew` is 0x4, so the PE header overlaps the DOS header.
-    /// the Windows loader accepts such files, and goblin 0.9.2 and prior
-    /// parsed them, too.
+    /// the Windows loader accepts such files.
     ///
-    /// however, goblin 0.9.3 started parsing the DOS stub as the region
-    /// `[0x40, e_lfanew)` and rejects files whose PE pointer is less
-    /// than 0x40, so `PE::from_bytes` now fails for this file.
-    ///
-    /// goblin 0.10 still rejects it in the default strict mode, but has a
-    /// permissive parse mode (`ParseOptions`/`ParseMode::Permissive`) that
-    /// skips the DOS stub validation. so upgrading goblin and opting into
-    /// permissive parsing may restore support.
-    ///
-    /// if this test fails because parsing *succeeds*: great! goblin can
-    /// handle collapsed headers again. flip this test back to asserting
-    /// that the module loads (see git history) and drop this comment.
+    /// goblin rejects the overlapping headers in its default strict parse
+    /// mode (since 0.9.3), so we rely on `ParseMode::Permissive` in `get_pe`
+    /// for this file to load. this test guards that behavior.
     #[test]
     fn tiny() -> Result<()> {
         let buf = get_buf(Rsrc::TINY);
-        let err = match crate::loader::pe::PE::from_bytes(&buf) {
-            Ok(_) => panic!("goblin can parse tiny.exe again!"),
-            Err(err) => err,
-        };
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
-        assert!(err.to_string().contains("malformed PE file"));
+        assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
+        assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
 
         Ok(())
     }
