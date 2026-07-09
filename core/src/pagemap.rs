@@ -112,7 +112,7 @@ impl<T: Default + Copy> PageMap<T> {
         if !items.len().is_multiple_of(PAGE_SIZE) {
             panic!("items must be page aligned");
         }
-        for (i, chunk) in items.chunks_exact(PAGE_SIZE).enumerate() {
+        for (i, chunk) in items.as_chunks::<PAGE_SIZE>().0.iter().enumerate() {
             self.write_page(rva + (i * PAGE_SIZE) as u64, chunk)?;
         }
         Ok(())
