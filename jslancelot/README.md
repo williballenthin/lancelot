@@ -89,3 +89,11 @@ $ npm test        # requires Node >= 18
 
 cross-compiling the bundled Zydis C library requires clang and cmake;
 see the "WebAssembly" section of the top-level README.
+
+the `npm package` GitHub Actions workflow builds the package tarball
+(`npm pack`) and attaches it to GitHub releases, so the package can be
+fetched from a release and installed directly:
+
+```console
+$ npm install ./jslancelot-0.9.10.tgz
+```
