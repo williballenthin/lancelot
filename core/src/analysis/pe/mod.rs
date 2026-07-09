@@ -145,7 +145,7 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &BTreeSet
 
     for &function in functions.iter() {
         if let Ok(insn_buf) = pe.module.address_space.read_bytes(function, 0x10) {
-            if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
+            if let Ok(Some(insn)) = dis::decode(&decoder, &insn_buf) {
                 if insn.mnemonic != zydis::Mnemonic::JMP {
                     continue;
                 }

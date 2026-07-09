@@ -67,7 +67,7 @@ fn is_empty(module: &Module, va: VA) -> bool {
     }
 }
 
-pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
+pub fn get_call_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CALL, then its a programming error. panic!
     // all CALLs should have an operand.
     let op = dis::get_first_operand(insn).expect("CALL has no operand");
@@ -106,7 +106,7 @@ pub fn get_call_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     Ok(smallvec![])
 }
 
-pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
+pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     // if this is not a JMP, then its a programming error. panic!
     // all JMPs should have an operand.
     let op = dis::get_first_operand(insn).expect("JMP has no target");
@@ -145,7 +145,7 @@ pub fn get_jmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstructi
     Ok(smallvec![])
 }
 
-pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
+pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CJMP, then its a programming error. panic!
     // all conditional jumps should have an operand.
     let op = dis::get_first_operand(insn).expect("CJMP has no target");
@@ -175,7 +175,7 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruct
     Ok(smallvec![])
 }
 
-pub fn get_insn_flow(module: &Module, va: VA, insn: &zydis::DecodedInstruction) -> Result<Flows> {
+pub fn get_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     let mut flows = match insn.mnemonic {
         zydis::Mnemonic::CALL => get_call_insn_flow(module, va, insn)?,
 

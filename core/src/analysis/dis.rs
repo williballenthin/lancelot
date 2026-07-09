@@ -13,10 +13,19 @@ use crate::{
     util, VA,
 };
 
+/// a decoded instruction with all (explicit and implicit) operands.
+pub type DecodedInstruction = zydis::Instruction<zydis::AllOperands>;
+pub use zydis::ffi::{DecodedOperand, DecodedOperandKind};
+
+/// decode a single instruction, including all its implicit operands.
+pub fn decode(decoder: &zydis::Decoder, buf: &[u8]) -> zydis::Result<Option<DecodedInstruction>> {
+    decoder.decode_first::<zydis::AllOperands>(buf)
+}
+
 pub fn get_disassembler(module: &Module) -> Result<zydis::Decoder> {
     let mut decoder = match module.arch {
-        Arch::X64 => zydis::Decoder::new(zydis::MachineMode::LONG_64, zydis::AddressWidth::_64)?,
-        Arch::X32 => zydis::Decoder::new(zydis::MachineMode::LEGACY_32, zydis::AddressWidth::_32)?,
+        Arch::X64 => zydis::Decoder::new(zydis::MachineMode::LONG_64, zydis::StackWidth::_64)?,
+        Arch::X32 => zydis::Decoder::new(zydis::MachineMode::LEGACY_32, zydis::StackWidth::_32)?,
     };
 
     // modes described here: https://github.com/zyantific/zydis/blob/5af06d64432aaa3f6af3cd3e120eefa061b790ab/include/Zydis/Decoder.h#L55
@@ -40,7 +49,7 @@ pub fn get_disassembler(module: &Module) -> Result<zydis::Decoder> {
 pub fn linear_disassemble<'a>(
     decoder: &'a zydis::Decoder,
     buf: &'a [u8],
-) -> impl Iterator<Item = (usize, zydis::Result<Option<zydis::DecodedInstruction>>)> + 'a {
+) -> impl Iterator<Item = (usize, zydis::Result<Option<DecodedInstruction>>)> + 'a {
     let mut offset = 0usize;
     let iter = std::iter::from_fn(move || {
         if offset >= buf.len() {
@@ -49,7 +58,7 @@ pub fn linear_disassemble<'a>(
 
         let insn_offset = offset;
         let insn_buf = &buf[insn_offset..];
-        let insn = decoder.decode(insn_buf);
+        let insn = decode(decoder, insn_buf);
 
         if let Ok(Some(insn)) = &insn {
             // see discussion of linear vs thorough disassemble in this module doc for
@@ -71,7 +80,7 @@ pub fn linear_disassemble<'a>(
     Box::new(iter)
 }
 
-pub fn is_control_flow_instruction(insn: &zydis::DecodedInstruction) -> bool {
+pub fn is_control_flow_instruction(insn: &DecodedInstruction) -> bool {
     use zydis::Mnemonic;
 
     matches!(
@@ -107,7 +116,7 @@ pub fn is_control_flow_instruction(insn: &zydis::DecodedInstruction) -> bool {
 }
 
 /// Does the given instruction have a fallthrough flow?
-pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
+pub fn does_insn_fallthrough(insn: &DecodedInstruction) -> bool {
     match insn.mnemonic {
         zydis::Mnemonic::JMP => false,
         zydis::Mnemonic::RET => false,
@@ -124,21 +133,24 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
         // see aadtb.dll:0x180001940 for an example.
         zydis::Mnemonic::INT3 => false,
         zydis::Mnemonic::INT => {
-            match insn.operands[0].imm.value {
-                // handled by nt!KiFastFailDispatch on Win8+
-                // see: https://doar-e.github.io/blog/2013/10/12/having-a-look-at-the-windows-userkernel-exceptions-dispatcher/
-                0x29 => false,
+            match &insn.operands()[0].kind {
+                DecodedOperandKind::Imm(imm) => match imm.value {
+                    // handled by nt!KiFastFailDispatch on Win8+
+                    // see: https://doar-e.github.io/blog/2013/10/12/having-a-look-at-the-windows-userkernel-exceptions-dispatcher/
+                    0x29 => false,
 
-                // handled by nt!KiRaiseAssertion
-                // see: http://www.osronline.com/article.cfm%5Earticle=474.htm
-                0x2C => false,
+                    // handled by nt!KiRaiseAssertion
+                    // see: http://www.osronline.com/article.cfm%5Earticle=474.htm
+                    0x2C => false,
 
-                // probably indicates bad code,
-                // but this hasn't be thoroughly vetted yet.
-                _ => {
-                    debug!("{:#x?}", insn);
-                    true
-                }
+                    // probably indicates bad code,
+                    // but this hasn't be thoroughly vetted yet.
+                    _ => {
+                        debug!("{:#x?}", insn);
+                        true
+                    }
+                },
+                _ => true,
             }
         }
         // TODO: call may not fallthrough if function is noret.
@@ -148,7 +160,7 @@ pub fn does_insn_fallthrough(insn: &zydis::DecodedInstruction) -> bool {
     }
 }
 
-fn print_op(_op: &zydis::DecodedOperand) {
+fn print_op(_op: &DecodedOperand) {
     /*
     if cfg!(feature = "dump_serde") {
         use serde_json;
@@ -161,8 +173,8 @@ fn print_op(_op: &zydis::DecodedOperand) {
     //}
 }
 
-pub fn get_operands(insn: &zydis::DecodedInstruction) -> impl Iterator<Item = &zydis::DecodedOperand> + '_ {
-    insn.operands
+pub fn get_operands(insn: &DecodedInstruction) -> impl Iterator<Item = &DecodedOperand> + '_ {
+    insn.operands()
         .iter()
         // explicit operands are guaranteed to be first:
         // https://github.com/zyantific/zydis/blob/6a17c48576e1b016ce098c4bdbd001a1403b6a0a/include/Zydis/DecoderTypes.h#L1005-L1007
@@ -172,7 +184,7 @@ pub fn get_operands(insn: &zydis::DecodedInstruction) -> impl Iterator<Item = &z
 /// zydis supports implicit operands,
 /// which we don't currently use in our analysis.
 /// so, fetch the first explicit operand to an instruction.
-pub fn get_first_operand(insn: &zydis::DecodedInstruction) -> Option<&zydis::DecodedOperand> {
+pub fn get_first_operand(insn: &DecodedInstruction) -> Option<&DecodedOperand> {
     get_operands(insn).next()
 }
 
@@ -202,15 +214,16 @@ impl std::fmt::Display for Target {
 // fetch the pointer, rather than the dest,
 // so like `0x401000`.
 #[allow(clippy::if_same_then_else)]
-pub fn get_memory_operand_ptr(
-    va: VA,
-    insn: &zydis::DecodedInstruction,
-    op: &zydis::DecodedOperand,
-) -> Result<Option<VA>> {
-    if op.mem.base == zydis::Register::NONE
-        && op.mem.index == zydis::Register::NONE
-        && op.mem.scale == 0
-        && op.mem.disp.has_displacement
+pub fn get_memory_operand_ptr(va: VA, insn: &DecodedInstruction, op: &DecodedOperand) -> Result<Option<VA>> {
+    let mem = match &op.kind {
+        DecodedOperandKind::Mem(mem) => mem,
+        _ => panic!("not a memory operand"),
+    };
+
+    if mem.base == zydis::Register::NONE
+        && mem.index == zydis::Register::NONE
+        && mem.scale == 0
+        && mem.disp.has_displacement
     {
         // the operand is a deref of a memory address.
         // for example: JMP [0x0]
@@ -222,31 +235,31 @@ pub fn get_memory_operand_ptr(
         //
         // see doctest: [test simple memory ptr operand]()
 
-        if op.mem.disp.displacement < 0 {
+        if mem.disp.displacement < 0 {
             Ok(None)
         } else {
-            Ok(Some(op.mem.disp.displacement as VA))
+            Ok(Some(mem.disp.displacement as VA))
         }
-    } else if op.mem.base == zydis::Register::RIP
+    } else if mem.base == zydis::Register::RIP
         // only valid on x64
-        && op.mem.index == zydis::Register::NONE
-        && op.mem.scale == 0
-        && op.mem.disp.has_displacement
+        && mem.index == zydis::Register::NONE
+        && mem.scale == 0
+        && mem.disp.has_displacement
     {
         // this is RIP-relative addressing.
         // it works like a relative immediate,
         // that is: dst = *(rva + displacement + instruction len)
 
-        match util::va_add_signed(va + insn.length as u64, op.mem.disp.displacement) {
+        match util::va_add_signed(va + insn.length as u64, mem.disp.displacement) {
             None => Ok(None),
             Some(ptr) => Ok(Some(ptr)),
         }
-    } else if op.mem.base != zydis::Register::NONE {
+    } else if mem.base != zydis::Register::NONE {
         // this is something like `CALL [eax+4]`
         // can't resolve without emulation
         // TODO: add test
         Ok(None)
-    } else if op.mem.scale > 0 {
+    } else if mem.scale > 0 {
         // this is something like `JMP [0x1000+eax*4]` (32-bit)
         Ok(None)
     } else {
@@ -263,8 +276,8 @@ pub fn get_memory_operand_ptr(
 pub fn get_memory_operand_xref(
     module: &Module,
     va: VA,
-    insn: &zydis::DecodedInstruction,
-    op: &zydis::DecodedOperand,
+    insn: &DecodedInstruction,
+    op: &DecodedOperand,
 ) -> Result<Option<VA>> {
     if let Some(ptr) = get_memory_operand_ptr(va, insn, op)? {
         let dst = match module.read_va_at_va(ptr) {
@@ -285,7 +298,7 @@ pub fn get_memory_operand_xref(
     }
 }
 
-pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>> {
+pub fn get_pointer_operand_xref(op: &DecodedOperand) -> Result<Option<VA>> {
     // ref: https://c9x.me/x86/html/file_module_x86_id_147.html
     //
     // > Far Jumps in Real-Address or Virtual-8086 Mode.
@@ -298,16 +311,25 @@ pub fn get_pointer_operand_xref(op: &zydis::DecodedOperand) -> Result<Option<VA>
     // > encoded in the instruction, using a 4-byte (16-bit operand size) or
     // > 6-byte (32-bit operand size) far address immediate.
     // TODO: do something intelligent with the segment.
-    Ok(Some(op.ptr.offset as u64))
+    let ptr = match &op.kind {
+        DecodedOperandKind::Ptr(ptr) => ptr,
+        _ => panic!("not a pointer operand"),
+    };
+    Ok(Some(ptr.offset as u64))
 }
 
 pub fn get_immediate_operand_xref(
     module: &Module,
     va: VA,
-    insn: &zydis::DecodedInstruction,
-    op: &zydis::DecodedOperand,
+    insn: &DecodedInstruction,
+    op: &DecodedOperand,
 ) -> Result<Option<VA>> {
-    if op.imm.is_relative {
+    let imm = match &op.kind {
+        DecodedOperandKind::Imm(imm) => imm,
+        _ => panic!("not an immediate operand"),
+    };
+
+    if imm.is_relative {
         // the operand is an immediate constant relative to $PC.
         // destination = $pc + immediate + insn.len
         //
@@ -330,15 +352,15 @@ pub fn get_immediate_operand_xref(
     } else {
         // the operand is an immediate absolute address.
 
-        let dst = if op.imm.is_signed {
-            let imm = util::u64_i64(op.imm.value);
-            if imm < 0 {
+        let dst = if imm.is_signed {
+            let v = util::u64_i64(imm.value);
+            if v < 0 {
                 // obviously this isn't an address if negative.
                 return Ok(None);
             }
-            imm as u64
+            v as u64
         } else {
-            op.imm.value
+            imm.value
         };
 
         // must be mapped
@@ -354,13 +376,13 @@ pub fn get_immediate_operand_xref(
 pub fn get_operand_xref(
     module: &Module,
     va: VA,
-    insn: &zydis::DecodedInstruction,
-    op: &zydis::DecodedOperand,
+    insn: &DecodedInstruction,
+    op: &DecodedOperand,
 ) -> Result<Option<Target>> {
-    match op.ty {
+    match &op.kind {
         // like: .text:0000000180001041 FF 15 D1 78 07 00      call    cs:__imp_RtlVirtualUnwind_0
         //           0x0000000000001041:                       call    [0x0000000000079980]
-        zydis::OperandType::MEMORY => match get_memory_operand_ptr(va, insn, op) {
+        DecodedOperandKind::Mem(_) => match get_memory_operand_ptr(va, insn, op) {
             Ok(Some(ptr)) => Ok(Some(Target::Indirect(ptr))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
@@ -371,13 +393,13 @@ pub fn get_operand_xref(
         //    "segment": 16512,
         //    "offset": 1622790707
         // },
-        zydis::OperandType::POINTER => match get_pointer_operand_xref(op) {
+        DecodedOperandKind::Ptr(_) => match get_pointer_operand_xref(op) {
             Ok(Some(ptr)) => Ok(Some(Target::Indirect(ptr))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
         },
 
-        zydis::OperandType::IMMEDIATE => match get_immediate_operand_xref(module, va, insn, op) {
+        DecodedOperandKind::Imm(_) => match get_immediate_operand_xref(module, va, insn, op) {
             Ok(Some(va)) => Ok(Some(Target::Direct(va))),
             Ok(None) => Ok(None),
             Err(e) => Err(e),
@@ -385,9 +407,9 @@ pub fn get_operand_xref(
 
         // like: CALL [rax]
         // which cannot be resolved without emulation.
-        zydis::OperandType::REGISTER => Ok(Some(Target::Indirect(0x0))),
+        DecodedOperandKind::Reg(_) => Ok(Some(Target::Indirect(0x0))),
 
-        zydis::OperandType::UNUSED => Ok(None),
+        DecodedOperandKind::Unused => Ok(None),
     }
 }
 
@@ -484,38 +506,34 @@ mod tests {
         let buf = get_buf(Rsrc::K32);
         let pe = crate::loader::pe::PE::from_bytes(&buf).unwrap();
 
-        let mut formatter = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
-
         struct UserData {
             names:                  std::collections::BTreeMap<VA, String>,
             orig_print_address_abs: Option<zydis::Hook>,
         }
 
-        let mut userdata = Box::new(UserData {
+        let mut formatter = zydis::Formatter::<UserData>::new_custom_userdata(zydis::FormatterStyle::INTEL);
+
+        let mut userdata = UserData {
             names:                  Default::default(),
             orig_print_address_abs: None,
-        });
+        };
 
         let orig = formatter
             .set_print_address_abs(Box::new(
-                |formatter: &zydis::Formatter,
-                 buf: &mut zydis::FormatterBuffer,
-                 ctx: &mut zydis::FormatterContext,
-                 userdata: Option<&mut dyn core::any::Any>|
+                |formatter: &zydis::Formatter<UserData>,
+                 buf: &mut zydis::ffi::FormatterBuffer,
+                 ctx: &mut zydis::ffi::FormatterContext,
+                 userdata: Option<&mut UserData>|
                  -> zydis::Result<()> {
                     // programming error: userdata must be provided.
                     // TODO: enforce via types.
                     let userdata = userdata.expect("no userdata");
 
-                    // programming error: userdata must be a Box<UserData>.
-                    // TODO: enforce via types.
-                    let userdata = userdata.downcast_ref::<Box<UserData>>().expect("incorrect userdata");
-
                     let absolute_address = unsafe {
                         // safety: the insn and operands come from zydis, so we assume they contain
                         // valid data.
-                        let insn: &zydis::DecodedInstruction = &*ctx.instruction;
-                        let op: &zydis::DecodedOperand = &*ctx.operand;
+                        let insn: &zydis::ffi::DecodedInstruction = &*ctx.instruction;
+                        let op: &zydis::ffi::DecodedOperand = &*ctx.operand;
                         insn.calc_absolute_address(ctx.runtime_address, op)
                             .expect("failed to calculate absolute address")
                     };
@@ -531,16 +549,11 @@ mod tests {
                         // TODO: enforce via types.
                         let orig = userdata.orig_print_address_abs.as_ref().expect("no original hook");
 
-                        if let zydis::Hook::PrintAddressAbs(Some(f)) = orig {
-                            // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
-                            // here: https://docs.rs/zydis/3.1.2/src/zydis/formatter.rs.html#306
-                            let status =
-                                unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
-                            if status.is_error() {
-                                return Err(status);
-                            } else {
-                                return Ok(());
-                            }
+                        if let zydis::Hook::PrintAddressAbs(f) = orig {
+                            // safety: the original hook was returned by zydis when installing
+                            // ours, so it is a valid callback for this formatter.
+                            let status = unsafe { f(formatter.raw() as *const _, buf as *mut _, ctx as *mut _) };
+                            return status.as_result();
                         } else {
                             // I'm not sure how this could ever be the case, as zydis initializes the hook
                             // with a default. I suppose if you explicitly set
@@ -568,7 +581,7 @@ mod tests {
         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
         let insn = read_insn(&pe.module, 0x1800134D4);
         formatter
-            .format_instruction(&insn, &mut buffer, Some(0x1800134D4), Some(&mut userdata))
+            .format_ex(Some(0x1800134D4), &insn, &mut buffer, Some(&mut userdata))
             .unwrap();
         assert_eq!(buffer.as_str().unwrap(), "call [KernelBaseGetGlobalData]");
 
@@ -584,7 +597,7 @@ mod tests {
         let mut buffer = zydis::OutputBuffer::new(&mut buffer[..]);
         let insn = read_insn(&pe.module, 0x180019961);
         formatter
-            .format_instruction(&insn, &mut buffer, Some(0x180019961), Some(&mut userdata))
+            .format_ex(Some(0x180019961), &insn, &mut buffer, Some(&mut userdata))
             .unwrap();
         assert_eq!(buffer.as_str().unwrap(), "call [0x0000000180077138]");
     }

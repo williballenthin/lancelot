@@ -65,13 +65,13 @@ pub fn load_shellcode64(buf: &[u8]) -> Module {
 
 /// this is for testing, so will panic on error.
 #[cfg(feature = "disassembler")]
-pub fn read_insn(module: &Module, va: VA) -> zydis::DecodedInstruction {
+pub fn read_insn(module: &Module, va: VA) -> crate::analysis::dis::DecodedInstruction {
     use crate::analysis::dis;
 
     let decoder = dis::get_disassembler(module).unwrap();
     let mut insn_buf = [0u8; 16];
     module.address_space.read_into(va, &mut insn_buf).unwrap();
-    decoder.decode(&insn_buf).unwrap().unwrap()
+    dis::decode(&decoder, &insn_buf).unwrap().unwrap()
 }
 
 pub fn emu_from_shellcode64(code: &[u8]) -> crate::emu::Emulator {

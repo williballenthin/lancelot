@@ -113,8 +113,7 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
                             .address_space
                             .read_into(block.address_of_last_insn, &mut insn_buf)
                             .unwrap();
-                        let insn = decoder
-                            .decode(&insn_buf)
+                        let insn = dis::decode(&decoder, &insn_buf)
                             .expect("invalid instruction")
                             .expect("missing instruction");
                         matches!(insn.mnemonic, zydis::Mnemonic::RET)

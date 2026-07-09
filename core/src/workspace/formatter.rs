@@ -34,8 +34,11 @@ pub struct FormatterOptions {
     mnemonic_width: usize,
 }
 
-struct UserData<'a> {
-    ws:      &'a dyn Workspace,
+struct UserData {
+    // the workspace reference is extended to 'static so that it can be
+    // stored here and passed through zydis as userdata.
+    // see the safety discussion in `Formatter::format_instruction`.
+    ws:      &'static dyn Workspace,
     orig:    OriginalHooks,
     options: FormatterOptions,
 }
@@ -66,7 +69,7 @@ impl FormatterBuilder {
 
 pub struct Formatter {
     options: FormatterOptions,
-    inner:   zydis::Formatter,
+    inner:   zydis::Formatter<UserData>,
     orig:    OriginalHooks,
 }
 
@@ -120,24 +123,20 @@ impl Formatter {
     }
 
     pub fn from_options(options: FormatterOptions) -> Formatter {
-        let mut inner = zydis::Formatter::new(zydis::FormatterStyle::INTEL).unwrap();
+        let mut inner = zydis::Formatter::<UserData>::new_custom_userdata(zydis::FormatterStyle::INTEL);
 
         let mut orig: OriginalHooks = Default::default();
 
         let f = inner
             .set_pre_instruction(Box::new(
-                |_formatter: &zydis::Formatter,
-                 buf: &mut zydis::FormatterBuffer,
-                 ctx: &mut zydis::FormatterContext,
-                 userdata: Option<&mut dyn core::any::Any>|
+                |_formatter: &zydis::Formatter<UserData>,
+                 buf: &mut zydis::ffi::FormatterBuffer,
+                 ctx: &mut zydis::ffi::FormatterContext,
+                 userdata: Option<&mut UserData>|
                  -> zydis::Result<()> {
                     // programming error: userdata must be provided. this is guaranteed within
                     // Formatter.
                     let userdata = userdata.expect("no userdata");
-
-                    // programming error: userdata must be a Box<UserData>. this is guaranteed
-                    // within Formatter.
-                    let userdata = userdata.downcast_ref::<UserData>().expect("incorrect userdata");
 
                     let va = ctx.runtime_address;
 
@@ -219,24 +218,20 @@ impl Formatter {
 
         let f = inner
             .set_print_address_abs(Box::new(
-                |formatter: &zydis::Formatter,
-                 buf: &mut zydis::FormatterBuffer,
-                 ctx: &mut zydis::FormatterContext,
-                 userdata: Option<&mut dyn core::any::Any>|
+                |formatter: &zydis::Formatter<UserData>,
+                 buf: &mut zydis::ffi::FormatterBuffer,
+                 ctx: &mut zydis::ffi::FormatterContext,
+                 userdata: Option<&mut UserData>|
                  -> zydis::Result<()> {
                     // programming error: userdata must be provided. this is guaranteed within
                     // Formatter.
                     let userdata = userdata.expect("no userdata");
 
-                    // programming error: userdata must be a Box<UserData>. this is guaranteed
-                    // within Formatter.
-                    let userdata = userdata.downcast_ref::<UserData>().expect("incorrect userdata");
-
                     let absolute_address = unsafe {
                         // safety: the insn and operands come from zydis, so we assume they contain
                         // valid data.
-                        let insn: &zydis::DecodedInstruction = &*ctx.instruction;
-                        let op: &zydis::DecodedOperand = &*ctx.operand;
+                        let insn: &zydis::ffi::DecodedInstruction = &*ctx.instruction;
+                        let op: &zydis::ffi::DecodedOperand = &*ctx.operand;
                         insn.calc_absolute_address(ctx.runtime_address, op)
                             .expect("failed to calculate absolute address")
                     };
@@ -253,16 +248,11 @@ impl Formatter {
                         // within Formatter.
                         let orig = userdata.orig.print_address_abs.as_ref().expect("no original hook");
 
-                        if let zydis::Hook::PrintAddressAbs(Some(f)) = orig {
-                            // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
-                            // here: https://docs.rs/zydis/3.1.2/src/zydis/formatter.rs.html#306
-                            let status =
-                                unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
-                            if status.is_error() {
-                                Err(status)
-                            } else {
-                                Ok(())
-                            }
+                        if let zydis::Hook::PrintAddressAbs(f) = orig {
+                            // safety: the original hook was returned by zydis when installing
+                            // ours, so it is a valid callback for this formatter.
+                            let status = unsafe { f(formatter.raw() as *const _, buf as *mut _, ctx as *mut _) };
+                            status.as_result()
                         } else {
                             // I'm not sure how this could ever be the case, as zydis initializes the hook
                             // with a default. I suppose if you explicitly set
@@ -277,35 +267,29 @@ impl Formatter {
 
         let f = inner
             .set_print_mnemonic(Box::new(
-                |formatter: &zydis::Formatter,
-                 buf: &mut zydis::FormatterBuffer,
-                 ctx: &mut zydis::FormatterContext,
-                 userdata: Option<&mut dyn core::any::Any>|
+                |formatter: &zydis::Formatter<UserData>,
+                 buf: &mut zydis::ffi::FormatterBuffer,
+                 ctx: &mut zydis::ffi::FormatterContext,
+                 userdata: Option<&mut UserData>|
                  -> zydis::Result<()> {
                     // programming error: userdata must be provided. this is guaranteed within
                     // Formatter.
                     let userdata = userdata.expect("no userdata");
 
-                    // programming error: userdata must be a Box<UserData>. this is guaranteed
-                    // within Formatter.
-                    let userdata = userdata.downcast_ref::<UserData>().expect("incorrect userdata");
-
                     let orig = userdata.orig.print_mnemonic.as_ref().expect("no original hook");
 
-                    if let zydis::Hook::PrintMnemonic(Some(f)) = orig {
-                        // safety: zydis::Formatter <-> zydis::ffi::ZydisFormatter is safe according to
-                        // here: https://docs.rs/zydis/3.1.2/src/zydis/formatter.rs.html#306
-                        let status = unsafe { f(formatter as *const _ as *const zydis::ffi::ZydisFormatter, buf, ctx) };
-                        if status.is_error() {
-                            return Err(status);
-                        }
+                    if let zydis::Hook::PrintMnemonic(f) = orig {
+                        // safety: the original hook was returned by zydis when installing
+                        // ours, so it is a valid callback for this formatter.
+                        let status = unsafe { f(formatter.raw() as *const _, buf as *mut _, ctx as *mut _) };
+                        status.as_result()?;
 
-                        let (_, mnemonic) = buf.get_token()?.get_value()?;
+                        let mnemonic_len = buf.get_token()?.value()?.1.len();
 
-                        if mnemonic.len() < userdata.options.mnemonic_width {
+                        if mnemonic_len < userdata.options.mnemonic_width {
                             let mut padding = String::new();
 
-                            for _ in 0..userdata.options.mnemonic_width - mnemonic.len() {
+                            for _ in 0..userdata.options.mnemonic_width - mnemonic_len {
                                 padding.write_str(" ").unwrap();
                             }
 
@@ -368,7 +352,12 @@ impl Formatter {
         Ok(())
     }
 
-    pub fn format_instruction(&self, ws: &dyn Workspace, insn: &zydis::DecodedInstruction, va: VA) -> Result<String> {
+    pub fn format_instruction(
+        &self,
+        ws: &dyn Workspace,
+        insn: &crate::analysis::dis::DecodedInstruction,
+        va: VA,
+    ) -> Result<String> {
         let mut buffer = [0u8; 400];
 
         // we pass our userdata to ZydisFormatterFormatInstruction.
@@ -396,10 +385,7 @@ impl Formatter {
         };
 
         let mut out = String::new();
-        for (token, s) in self
-            .inner
-            .tokenize_instruction(insn, &mut buffer, Some(va), Some(&mut ud))?
-        {
+        for (token, s) in self.inner.tokenize(Some(va), insn, &mut buffer, Some(&mut ud))? {
             self.render_token(&mut out, token, s)?;
         }
 

@@ -74,3 +74,23 @@ jobs:
           pip install -U pip setuptools maturin pytest pefile
           maturin develop
           pytest
+
+  wasm:
+    name: wasm
+    runs-on: [ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential make git cmake clang protobuf-compiler
+          rustup target add wasm32-unknown-unknown
+      - name: build core for wasm32-unknown-unknown
+        run: |
+          CMAKE_TOOLCHAIN_FILE=$(pwd)/wasm32-toolchain.cmake \
+            cargo build -p lancelot --target wasm32-unknown-unknown

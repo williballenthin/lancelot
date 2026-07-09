@@ -3,7 +3,7 @@ use std::ops::Not;
 use crate::{
     analysis::{
         dis,
-        dis::zydis::{DecodedInstruction, Decoder},
+        dis::{zydis::Decoder, DecodedInstruction},
     },
     aspace::AddressSpace,
     module::{Module, Permissions},
