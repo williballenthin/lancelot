@@ -1,0 +1,64 @@
+on:
+  release:
+    types: [created, edited]
+  workflow_dispatch:  # manual trigger for testing builds
+
+name: npm package
+
+permissions:
+  # upload the package tarball as a release asset
+  contents: write
+
+jobs:
+  build:
+    name: build jslancelot npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # jslancelot tests use pylancelot's LFS-tracked test fixtures
+          lfs: true
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential make git cmake clang protobuf-compiler
+          rustup target add wasm32-unknown-unknown
+
+      - name: install wasm-bindgen-cli
+        # keep this version in sync with the wasm-bindgen pin in jslancelot/Cargo.toml
+        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+
+      - name: build
+        working-directory: ./jslancelot/
+        run: npm run build
+
+      - name: test
+        working-directory: ./jslancelot/
+        run: npm test
+
+      - name: pack
+        working-directory: ./jslancelot/
+        run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm_package
+          path: jslancelot/*.tgz
+
+      - name: attach to release
+        if: github.event_name == 'release'
+        run: gh release upload "${TAG}" ./jslancelot/*.tgz --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}

@@ -29,5 +29,10 @@ Builds Python wheels. Triggers: release, manual (`workflow_dispatch`), or PR wit
 - Python versions: 3.10-3.14, PyPy 3.11 (where supported)
 - Publishes to PyPI on tagged releases
 
+### npm-package.yaml
+Builds the jslancelot npm package (wasm + `npm pack`). Triggers: release, manual (`workflow_dispatch`).
+- Runs the Node tests, uploads the .tgz as a workflow artifact, and attaches it to the release when triggered by one
+- Does NOT publish to npm; to release manually: `npm publish jslancelot-<version>.tgz`
+
 ### publish-cargo.yaml
 Publishes to crates.io on release. Order: flirt → core → bin (with 60s delays for propagation)
