@@ -29,6 +29,8 @@ jobs:
         with:
           node-version: '22'
 
+      - uses: extractions/setup-just@v2
+
       - name: install deps
         run: |
           sudo apt-get update
@@ -41,11 +43,11 @@ jobs:
 
       - name: build
         working-directory: ./jslancelot/
-        run: npm run build
+        run: just build
 
       - name: test
         working-directory: ./jslancelot/
-        run: npm test
+        run: just test
 
       - name: pack
         working-directory: ./jslancelot/

@@ -21,7 +21,7 @@ Runs on push/PR. Jobs:
 
 ## jslancelot
 
-JavaScript bindings for npm at `jslancelot/`, mirroring pylancelot's API (bytes in, BinExport2 bytes out) but running the wasm build of the core library, so the same package works in both Node and the browser. `jslancelot/build.sh` compiles the crate to wasm32-unknown-unknown and generates the JS glue with wasm-bindgen (the wasm-bindgen-cli version must match the `wasm-bindgen` pin in `jslancelot/Cargo.toml`).
+JavaScript bindings for npm at `jslancelot/`, mirroring pylancelot's API (bytes in, BinExport2 bytes out) but running the wasm build of the core library, so the same package works in both Node and the browser. `just build` in `jslancelot/` compiles the crate to wasm32-unknown-unknown and generates the JS glue with wasm-bindgen (the wasm-bindgen-cli version must match the `wasm-bindgen` pin in `jslancelot/Cargo.toml`).
 
 ### python-wheels.yaml
 Builds Python wheels. Triggers: release, manual (`workflow_dispatch`), or PR with "Full Build" label.

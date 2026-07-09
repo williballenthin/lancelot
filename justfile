@@ -108,11 +108,11 @@ test-pyflirt: test-pyflirt-rs test-pyflirt-py
 
 # Build the jslancelot wasm package (requires clang, cmake, wasm-bindgen-cli)
 build-jslancelot:
-    bash jslancelot/build.sh
+    cd jslancelot && just build
 
 # Test jslancelot (wasm build + Node tests)
 test-jslancelot: build-jslancelot
-    cd jslancelot && npm test
+    cd jslancelot && just test
 
 # ============================================================================
 # CI recipe - run the full pipeline
