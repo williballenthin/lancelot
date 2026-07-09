@@ -204,8 +204,13 @@ pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
                 ret.push(function_start);
             } else {
                 // just read an entry filled with zeros.
-                // assume this means we reached the end of the table.
-                break;
+                //
+                // incrementally linked binaries pad the exception directory
+                // with zero entries (possibly hundreds, at the front), with
+                // the real entries following. so don't treat a zero entry as
+                // the end of the table: skip it and keep scanning. the loop
+                // is bounded by the directory size, so this always terminates.
+                continue;
             }
         }
     }
@@ -247,8 +252,10 @@ mod tests {
         let buf = get_buf(Rsrc::CPP1);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
+        // cpp1.exe_ is incrementally linked: its exception directory starts
+        // with hundreds of zero entries, with the real entries after.
         let fns = crate::analysis::pe::runtime_functions::find_pe_runtime_functions(&pe)?;
-        assert_eq!(0, fns.len());
+        assert_eq!(131, fns.len());
 
         Ok(())
     }
