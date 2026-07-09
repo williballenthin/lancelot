@@ -80,6 +80,9 @@ jobs:
     runs-on: [ubuntu-22.04]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # jslancelot tests use pylancelot's LFS-tracked test fixtures
+          lfs: true
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -94,3 +97,14 @@ jobs:
         run: |
           CMAKE_TOOLCHAIN_FILE=$(pwd)/wasm32-toolchain.cmake \
             cargo build -p lancelot --target wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: install wasm-bindgen-cli
+        # keep this version in sync with the wasm-bindgen pin in jslancelot/Cargo.toml
+        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+      - name: test jslancelot
+        working-directory: ./jslancelot/
+        run: |
+          npm run build
+          npm test

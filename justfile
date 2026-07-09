@@ -27,6 +27,7 @@ help:
     @echo "  test-flirt     - Test lancelot-flirt library"
     @echo "  test-pylancelot - Test pylancelot (Rust + Python)"
     @echo "  test-pyflirt   - Test pyflirt (Rust + Python)"
+    @echo "  test-jslancelot - Test jslancelot (wasm build + Node tests)"
     @echo ""
     @echo "Development recipes (uses cranelift for faster builds, requires nightly):"
     @echo "  dev-build      - Fast build with cranelift"
@@ -73,7 +74,7 @@ lint: check clippy fmt-check
 # ============================================================================
 
 # Run all tests
-test: test-core test-flirt test-pylancelot test-pyflirt
+test: test-core test-flirt test-pylancelot test-pyflirt test-jslancelot
 
 # Test lancelot core library
 test-core:
@@ -104,6 +105,14 @@ test-pyflirt-py:
 
 # Test pyflirt (both Rust and Python)
 test-pyflirt: test-pyflirt-rs test-pyflirt-py
+
+# Build the jslancelot wasm package (requires clang, cmake, wasm-bindgen-cli)
+build-jslancelot:
+    bash jslancelot/build.sh
+
+# Test jslancelot (wasm build + Node tests)
+test-jslancelot: build-jslancelot
+    cd jslancelot && npm test
 
 # ============================================================================
 # CI recipe - run the full pipeline
