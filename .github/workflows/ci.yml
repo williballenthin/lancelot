@@ -100,11 +100,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: extractions/setup-just@v2
       - name: install wasm-bindgen-cli
         # keep this version in sync with the wasm-bindgen pin in jslancelot/Cargo.toml
         run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
       - name: test jslancelot
         working-directory: ./jslancelot/
         run: |
-          npm run build
-          npm test
+          just build
+          just test

@@ -83,8 +83,9 @@ await init(fetch("/assets/jslancelot_bg.wasm"));
 ```console
 $ rustup target add wasm32-unknown-unknown
 $ cargo install wasm-bindgen-cli --version 0.2.100 --locked
-$ npm run build   # runs build.sh: cargo build + wasm-bindgen
-$ npm test        # requires Node >= 18
+$ just build   # cargo build + wasm-bindgen
+$ just test    # requires Node >= 18
+$ just pack    # produce the jslancelot-<version>.tgz npm tarball
 ```
 
 cross-compiling the bundled Zydis C library requires clang and cmake;

@@ -1,0 +1,32 @@
+# build the jslancelot npm package:
+#   1. compile the Rust crate to wasm32-unknown-unknown
+#   2. generate the JS/TS glue with wasm-bindgen into ./wasm/
+#   3. copy the BinExport2 .proto schema into the package
+#
+# requires:
+#   - rustup target add wasm32-unknown-unknown
+#   - clang and cmake (to cross-compile the bundled Zydis C library)
+#   - wasm-bindgen-cli matching the wasm-bindgen version pinned in Cargo.toml:
+#     cargo install wasm-bindgen-cli --version 0.2.100 --locked
+build:
+    # the bundled Zydis C library is cross-compiled by clang via cmake,
+    # which needs a toolchain file so that cmake doesn't try to link
+    # executables during its compiler sanity checks.
+    # see the "WebAssembly" section in the top-level README.md.
+    CMAKE_TOOLCHAIN_FILE={{justfile_directory()}}/../wasm32-toolchain.cmake \
+        cargo build -p jslancelot --release --target wasm32-unknown-unknown
+    wasm-bindgen \
+        --target web \
+        --out-dir wasm \
+        --out-name jslancelot \
+        ../target/wasm32-unknown-unknown/release/jslancelot.wasm
+    cp ../core/src/workspace/export/binexport2.proto binexport2.proto
+    du -h wasm/jslancelot_bg.wasm
+
+# run the Node tests against the current build
+test:
+    npm test
+
+# produce the jslancelot-<version>.tgz npm tarball
+pack: build
+    npm pack

@@ -39,8 +39,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "bash ./build.sh",
-    "prepack": "bash ./build.sh",
+    "build": "just build",
+    "prepack": "just build",
     "test": "node --test \"tests/*.mjs\""
   }
 }
