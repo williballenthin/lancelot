@@ -1,0 +1,46 @@
+{
+  "name": "jslancelot",
+  "version": "0.9.10",
+  "description": "binary analysis framework for x32/x64 PE files: analyze bytes, produce a BinExport2 protobuf. runs entirely in WebAssembly, in both Node and the browser.",
+  "license": "Apache-2.0",
+  "author": "Willi Ballenthin <william.ballenthin@mandiant.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/williballenthin/lancelot.git",
+    "directory": "jslancelot"
+  },
+  "homepage": "https://github.com/williballenthin/lancelot/tree/master/jslancelot",
+  "keywords": [
+    "disassembler",
+    "binexport2",
+    "reverse-engineering",
+    "pe",
+    "coff",
+    "flirt",
+    "wasm"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./binexport2.proto": "./binexport2.proto"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "wasm/",
+    "binexport2.proto"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "bash ./build.sh",
+    "prepack": "bash ./build.sh",
+    "test": "node --test \"tests/*.mjs\""
+  }
+}

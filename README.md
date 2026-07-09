@@ -45,6 +45,9 @@ $ CMAKE_TOOLCHAIN_FILE=$(pwd)/wasm32-toolchain.cmake \
 
 this requires clang (gcc can't emit wasm) and cmake.
 
+the [jslancelot](./jslancelot/) package wraps this wasm build with
+JavaScript bindings for npm, usable from both Node and the browser.
+
 ## maintenance
 
 ```
