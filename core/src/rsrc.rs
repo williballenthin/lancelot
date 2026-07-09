@@ -10,6 +10,10 @@ pub enum Rsrc {
     /// from: https://www.bigmessowires.com/2015/10/08/a-handmade-executable-file/
     /// since it doesn't have any sections or optional header, good for testing
     /// corner cases.
+    ///
+    /// note: goblin 0.9.3+ rejects this file, because its PE header overlaps
+    /// its DOS header (`e_lfanew` is 0x4), so lancelot cannot currently load
+    /// it. see the expected-failure test `loader::pe::tests::tiny`.
     TINY,
     /// from: https://joenord.com/apps/nop/
     NOP,

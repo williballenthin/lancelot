@@ -106,8 +106,8 @@ mod tests {
     }
 
     #[test]
-    fn tiny() -> Result<()> {
-        let buf = get_buf(Rsrc::TINY);
+    fn cpp1() -> Result<()> {
+        let buf = get_buf(Rsrc::CPP1);
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
 
         let fns = crate::analysis::pe::safeseh::find_pe_safeseh_handlers(&pe)?;
