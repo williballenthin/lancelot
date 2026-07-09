@@ -1282,37 +1282,40 @@ mod tests {
         // would want to use `#[should_panic]`
         // however it still prints the panic stack trace
         // which makes it look like the test failed.
-        // so we'll catch the panic ourselves.
-
-        // hide the panic stack trace
-        // ref: https://stackoverflow.com/a/35559417/87207
+        // so we'll catch the panic ourselves,
+        // temporarily silencing the panic hook while we do so.
+        //
+        // note: don't be tempted to call `std::process::exit(0)` from a panic
+        // hook here: the hook is process-global, and exiting terminates the
+        // whole test binary early with a success status, masking failures in
+        // other tests (this happened, and CI was green while tests failed).
+        let prev_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_info| {
-            // explicitly exit with zero status (success).
-            // this is necessary because the unwind is not guaranteed to be caught.
-            // but this hook will be invoked. so now's our chance to say things are ok.
-            std::process::exit(0);
+            // silence the expected panic message.
         }));
 
         // catch expected panic
         // ref: https://stackoverflow.com/a/42649833/87207
-        assert!(
+        let result = std::panic::catch_unwind(|| {
             // this doesn't work under cranelift (at least today),
             // probably because it doesn't support unwinding.
-            std::panic::catch_unwind(|| {
-                // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
-                let mut uc = uc::uc_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
-                uc.step().unwrap();
 
-                // 0:  48 c7 c0 01 00 00 00    mov    rax,0x2
-                let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x02\x00\x00\x00"[..]);
-                emu.step().unwrap();
+            // 0:  48 c7 c0 01 00 00 00    mov    rax,0x1
+            let mut uc = uc::uc_from_shellcode64(&b"\x48\xC7\xC0\x01\x00\x00\x00"[..]);
+            uc.step().unwrap();
 
-                // 1 vs 2 -> failure
-                uc.check(&emu);
-            })
-            .is_err(),
-            "should have failed the uc.check"
-        );
+            // 0:  48 c7 c0 01 00 00 00    mov    rax,0x2
+            let mut emu = emu_from_shellcode64(&b"\x48\xC7\xC0\x02\x00\x00\x00"[..]);
+            emu.step().unwrap();
+
+            // 1 vs 2 -> failure
+            uc.check(&emu);
+        });
+
+        // restore the previous hook so other tests report panics normally.
+        std::panic::set_hook(prev_hook);
+
+        assert!(result.is_err(), "should have failed the uc.check");
     }
 
     /// emulate the given code using both Unicorn and our emulator,
