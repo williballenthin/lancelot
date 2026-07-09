@@ -164,7 +164,16 @@ jobs:
           mkdir dist/
           cp -r artifacts/**/*.whl dist/
           cp -r artifacts/**/*.tar.gz dist/
-      - name: publish to PyPI
+      - name: publish to PyPI (attempt 1)
+        id: publish_attempt_1
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+          verbose: true
+          print-hash: true
+      - name: publish to PyPI (retry)
+        if: steps.publish_attempt_1.outcome == 'failure'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
