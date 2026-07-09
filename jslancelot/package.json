@@ -1,6 +1,6 @@
 {
   "name": "jslancelot",
-  "version": "0.9.10",
+  "version": "0.10.0",
   "description": "binary analysis framework for x32/x64 PE files: analyze bytes, produce a BinExport2 protobuf. runs entirely in WebAssembly, in both Node and the browser.",
   "license": "Apache-2.0",
   "author": "Willi Ballenthin <william.ballenthin@mandiant.com>",
