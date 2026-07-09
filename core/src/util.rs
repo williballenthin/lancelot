@@ -231,7 +231,9 @@ pub fn find_unicode_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, S
         // this had better be ASCII, and therefore able to be decoded.
         let bytes = mat.as_bytes();
         let words: Vec<u16> = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|w| u16::from(w[1]) << 8 | u16::from(w[0]))
             .collect();
 
