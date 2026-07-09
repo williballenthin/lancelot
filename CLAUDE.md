@@ -17,6 +17,7 @@ Runs on push/PR. Jobs:
 - `cargo check`, `cargo fmt` (nightly), `cargo clippy` (nightly)
 - `cargo test` for lancelot and lancelot-flirt
 - pytest for pylancelot and pyflirt (Python 3.14)
+- wasm: `cargo build -p lancelot --target wasm32-unknown-unknown` using clang and `wasm32-toolchain.cmake`
 
 ### python-wheels.yaml
 Builds Python wheels. Triggers: release, manual (`workflow_dispatch`), or PR with "Full Build" label.

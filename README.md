@@ -29,6 +29,22 @@ $ env CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift mold -run cargo build -Zcodege
 If it doesn't work with your (read: Willi's) nix setup,
 use it just for incremental builds.
 
+## WebAssembly
+
+the core library (including the zydis-based disassembler) builds for
+`wasm32-unknown-unknown`, so lancelot can run entirely in the browser.
+the bundled Zydis C library is cross-compiled by clang via cmake,
+which needs a toolchain file so that cmake doesn't try to link
+executables during its compiler sanity checks:
+
+```console
+$ rustup target add wasm32-unknown-unknown
+$ CMAKE_TOOLCHAIN_FILE=$(pwd)/wasm32-toolchain.cmake \
+    cargo build -p lancelot --target wasm32-unknown-unknown
+```
+
+this requires clang (gcc can't emit wasm) and cmake.
+
 ## maintenance
 
 ```

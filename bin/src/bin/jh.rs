@@ -28,7 +28,7 @@ struct Features {
     apis:    BTreeSet<String>,
 }
 
-fn is_jump(insn: &dis::zydis::DecodedInstruction) -> bool {
+fn is_jump(insn: &dis::DecodedInstruction) -> bool {
     matches!(
         insn.mnemonic,
         dis::zydis::Mnemonic::JB
@@ -58,7 +58,7 @@ fn is_jump(insn: &dis::zydis::DecodedInstruction) -> bool {
 
 fn extract_insn_features(
     ws: &dyn lancelot::workspace::Workspace,
-    insn: &dis::zydis::DecodedInstruction,
+    insn: &dis::DecodedInstruction,
     va: VA,
 ) -> Result<Features> {
     let mut strings: BTreeSet<String> = Default::default();
@@ -76,9 +76,9 @@ fn extract_insn_features(
                 continue;
             }
 
-            let n = match op.ty {
-                dis::zydis::OperandType::IMMEDIATE => op.imm.value,
-                // maybe also consider: dis::zydis::OperandType::MEMORY => {
+            let n = match &op.kind {
+                dis::DecodedOperandKind::Imm(imm) => imm.value,
+                // maybe also consider: dis::DecodedOperandKind::Mem(mem) => {
                 _ => continue,
             };
 
@@ -90,8 +90,10 @@ fn extract_insn_features(
             let op0 = get_first_operand(insn).expect("no operands");
 
             if matches!(insn.mnemonic, dis::zydis::Mnemonic::ADD)
-                && matches!(op0.ty, dis::zydis::OperandType::REGISTER)
-                && matches!(op0.reg, dis::zydis::Register::RSP | dis::zydis::Register::ESP)
+                && matches!(
+                    op0.kind,
+                    dis::DecodedOperandKind::Reg(dis::zydis::Register::RSP | dis::zydis::Register::ESP)
+                )
             {
                 // skip function epilog.
                 // skip things like:
@@ -102,8 +104,10 @@ fn extract_insn_features(
             }
 
             if matches!(insn.mnemonic, dis::zydis::Mnemonic::SUB)
-                && matches!(op0.ty, dis::zydis::OperandType::REGISTER)
-                && matches!(op0.reg, dis::zydis::Register::RSP | dis::zydis::Register::ESP)
+                && matches!(
+                    op0.kind,
+                    dis::DecodedOperandKind::Reg(dis::zydis::Register::RSP | dis::zydis::Register::ESP)
+                )
             {
                 // skip function prolog.
                 continue;

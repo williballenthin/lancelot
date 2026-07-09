@@ -146,7 +146,7 @@ fn add_reg(
 ) -> i32 {
     let expression = expressions.add(pb::bin_export2::Expression {
         r#type:        Some(pb::bin_export2::expression::Type::Register.into()),
-        symbol:        reg.get_string().map(|v| v.to_string()),
+        symbol:        reg.static_string().map(|v| v.to_string()),
         immediate:     None,
         parent_index:  Some(parent),
         is_relocation: Some(false),
@@ -200,7 +200,7 @@ fn collect_instruction_references(
     ws: &dyn Workspace,
     instruction_index: usize,
     insn_va: u64,
-    insn: &dis::zydis::DecodedInstruction,
+    insn: &dis::DecodedInstruction,
     strings: &mut ValueIndex<String>,
     string_references: &mut Vec<pb::bin_export2::Reference>,
     data_references: &mut Vec<pb::bin_export2::DataReference>,
@@ -337,21 +337,21 @@ fn collect_vertices(
 fn collect_instruction_operands(
     ws: &dyn Workspace,
     insn_va: VA,
-    insn: &dis::zydis::DecodedInstruction,
+    insn: &dis::DecodedInstruction,
     expressions: &mut ValueIndex<pb::bin_export2::Expression>,
     operands: &mut ValueIndex<pb::bin_export2::Operand>,
 ) -> Vec<i32> {
     let mut operand_indexes: Vec<i32> = vec![];
     for op in dis::get_operands(insn) {
-        let expression_indexes: Vec<i32> = match op.ty {
-            dis::zydis::OperandType::UNUSED => {
+        let expression_indexes: Vec<i32> = match &op.kind {
+            dis::DecodedOperandKind::Unused => {
                 continue;
             }
-            dis::zydis::OperandType::IMMEDIATE => {
-                let v = if op.imm.is_signed {
-                    util::u64_i64(op.imm.value) as u64
+            dis::DecodedOperandKind::Imm(imm) => {
+                let v = if imm.is_signed {
+                    util::u64_i64(imm.value) as u64
                 } else {
-                    op.imm.value
+                    imm.value
                 };
 
                 // TODO: how is FP handled? XMM?
@@ -364,14 +364,14 @@ fn collect_instruction_operands(
                     is_relocation: Some(false),
                 })]
             }
-            dis::zydis::OperandType::REGISTER => vec![expressions.add(pb::bin_export2::Expression {
+            dis::DecodedOperandKind::Reg(reg) => vec![expressions.add(pb::bin_export2::Expression {
                 r#type:        Some(pb::bin_export2::expression::Type::Register.into()),
-                symbol:        op.reg.get_string().map(|v| v.to_string()),
+                symbol:        reg.static_string().map(|v| v.to_string()),
                 immediate:     None,
                 parent_index:  None,
                 is_relocation: Some(false),
             })],
-            dis::zydis::OperandType::MEMORY => {
+            dis::DecodedOperandKind::Mem(mem) => {
                 let mut expression_indexes: Vec<i32> = Default::default();
                 let mut current_expression: Option<i32> = None;
 
@@ -407,10 +407,10 @@ fn collect_instruction_operands(
                     expression_indexes.push(current_expression.unwrap());
                 }
 
-                if op.mem.segment != dis::zydis::Register::NONE {
+                if mem.segment != dis::zydis::Register::NONE {
                     // like dis::zydis::Register:DS
 
-                    let reg_name = op.mem.segment.get_string().expect("reg has no name");
+                    let reg_name = mem.segment.static_string().expect("reg has no name");
                     let reg_name = reg_name.to_lowercase();
                     let symbol = format!("{reg_name}:");
 
@@ -434,10 +434,10 @@ fn collect_instruction_operands(
                 expression_indexes.push(current_expression.unwrap());
 
                 // base + (index * scale) + disp
-                let has_base = op.mem.base != dis::zydis::Register::NONE;
-                let has_index = op.mem.index != dis::zydis::Register::NONE;
-                let has_scale = op.mem.scale != 0;
-                let has_disp = op.mem.disp.has_displacement;
+                let has_base = mem.base != dis::zydis::Register::NONE;
+                let has_index = mem.index != dis::zydis::Register::NONE;
+                let has_scale = mem.scale != 0;
+                let has_disp = mem.disp.has_displacement;
 
                 match (has_base, has_index, has_scale, has_disp) {
                     // ```
@@ -458,22 +458,22 @@ fn collect_instruction_operands(
                     //           -        A
                     // ```
                     (true, true, true, true) => {
-                        let (a_sym, disp) = if op.mem.disp.displacement < 0 {
-                            ("-", -op.mem.disp.displacement as u64)
+                        let (a_sym, disp) = if mem.disp.displacement < 0 {
+                            ("-", -mem.disp.displacement as u64)
                         } else {
-                            ("+", op.mem.disp.displacement as u64)
+                            ("+", mem.disp.displacement as u64)
                         };
 
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, a_sym, current_expression.unwrap());
                         let b_expr = add_operator(expressions, &mut expression_indexes, "+", a_expr);
 
-                        add_reg(expressions, &mut expression_indexes, op.mem.base, b_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.base, b_expr);
 
                         let c_expr = add_operator(expressions, &mut expression_indexes, "*", b_expr);
 
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, c_expr);
-                        add_int(expressions, &mut expression_indexes, 1 << op.mem.scale, c_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, c_expr);
+                        add_int(expressions, &mut expression_indexes, 1 << mem.scale, c_expr);
 
                         add_int(expressions, &mut expression_indexes, disp, a_expr);
                     }
@@ -492,18 +492,18 @@ fn collect_instruction_operands(
                     //           -        A
                     // ```
                     (true, true, false, true) => {
-                        let (a_sym, disp) = if op.mem.disp.displacement < 0 {
-                            ("-", -op.mem.disp.displacement as u64)
+                        let (a_sym, disp) = if mem.disp.displacement < 0 {
+                            ("-", -mem.disp.displacement as u64)
                         } else {
-                            ("+", op.mem.disp.displacement as u64)
+                            ("+", mem.disp.displacement as u64)
                         };
 
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, a_sym, current_expression.unwrap());
                         let b_expr = add_operator(expressions, &mut expression_indexes, "+", a_expr);
 
-                        add_reg(expressions, &mut expression_indexes, op.mem.base, b_expr);
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, b_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.base, b_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, b_expr);
                         add_int(expressions, &mut expression_indexes, disp, a_expr);
                     }
 
@@ -517,10 +517,10 @@ fn collect_instruction_operands(
                     (true, true, true, false) => {
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, "+", current_expression.unwrap());
-                        add_reg(expressions, &mut expression_indexes, op.mem.base, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.base, a_expr);
                         let b_expr = add_operator(expressions, &mut expression_indexes, "*", a_expr);
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, b_expr);
-                        add_int(expressions, &mut expression_indexes, 1 << op.mem.scale, b_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, b_expr);
+                        add_int(expressions, &mut expression_indexes, 1 << mem.scale, b_expr);
                     }
 
                     // ```
@@ -531,8 +531,8 @@ fn collect_instruction_operands(
                     (true, true, false, false) => {
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, "+", current_expression.unwrap());
-                        add_reg(expressions, &mut expression_indexes, op.mem.base, a_expr);
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.base, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, a_expr);
                     }
 
                     // ds:[eax]
@@ -540,7 +540,7 @@ fn collect_instruction_operands(
                         add_reg(
                             expressions,
                             &mut expression_indexes,
-                            op.mem.base,
+                            mem.base,
                             current_expression.unwrap(),
                         );
                     }
@@ -550,7 +550,7 @@ fn collect_instruction_operands(
                         add_reg(
                             expressions,
                             &mut expression_indexes,
-                            op.mem.index,
+                            mem.index,
                             current_expression.unwrap(),
                         );
                     }
@@ -563,8 +563,8 @@ fn collect_instruction_operands(
                     (false, true, true, false) => {
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, "*", current_expression.unwrap());
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, a_expr);
-                        add_int(expressions, &mut expression_indexes, 1 << op.mem.scale, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, a_expr);
+                        add_int(expressions, &mut expression_indexes, 1 << mem.scale, a_expr);
                     }
 
                     // ds:[0x401000]
@@ -572,7 +572,7 @@ fn collect_instruction_operands(
                         add_int(
                             expressions,
                             &mut expression_indexes,
-                            util::i64_u64(op.mem.disp.displacement),
+                            util::i64_u64(mem.disp.displacement),
                             current_expression.unwrap(),
                         );
                     }
@@ -591,17 +591,17 @@ fn collect_instruction_operands(
                     //         -      A
                     // ```
                     (false, true, true, true) => {
-                        let (a_sym, disp) = if op.mem.disp.displacement < 0 {
-                            ("-", -op.mem.disp.displacement as u64)
+                        let (a_sym, disp) = if mem.disp.displacement < 0 {
+                            ("-", -mem.disp.displacement as u64)
                         } else {
-                            ("+", op.mem.disp.displacement as u64)
+                            ("+", mem.disp.displacement as u64)
                         };
 
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, a_sym, current_expression.unwrap());
                         let b_expr = add_operator(expressions, &mut expression_indexes, "*", a_expr);
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, b_expr);
-                        add_int(expressions, &mut expression_indexes, 1 << op.mem.scale, b_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, b_expr);
+                        add_int(expressions, &mut expression_indexes, 1 << mem.scale, b_expr);
                         add_int(expressions, &mut expression_indexes, disp, a_expr);
                     }
 
@@ -615,15 +615,15 @@ fn collect_instruction_operands(
                     //       -       A
                     // ```
                     (false, true, false, true) => {
-                        let (a_sym, disp) = if op.mem.disp.displacement < 0 {
-                            ("-", -op.mem.disp.displacement as u64)
+                        let (a_sym, disp) = if mem.disp.displacement < 0 {
+                            ("-", -mem.disp.displacement as u64)
                         } else {
-                            ("+", op.mem.disp.displacement as u64)
+                            ("+", mem.disp.displacement as u64)
                         };
 
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, a_sym, current_expression.unwrap());
-                        add_reg(expressions, &mut expression_indexes, op.mem.index, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.index, a_expr);
                         add_int(expressions, &mut expression_indexes, disp, a_expr);
                     }
 
@@ -637,15 +637,15 @@ fn collect_instruction_operands(
                     //       -       A
                     // ```
                     (true, false, false, true) => {
-                        let (a_sym, disp) = if op.mem.disp.displacement < 0 {
-                            ("-", -op.mem.disp.displacement as u64)
+                        let (a_sym, disp) = if mem.disp.displacement < 0 {
+                            ("-", -mem.disp.displacement as u64)
                         } else {
-                            ("+", op.mem.disp.displacement as u64)
+                            ("+", mem.disp.displacement as u64)
                         };
 
                         let a_expr =
                             add_operator(expressions, &mut expression_indexes, a_sym, current_expression.unwrap());
-                        add_reg(expressions, &mut expression_indexes, op.mem.base, a_expr);
+                        add_reg(expressions, &mut expression_indexes, mem.base, a_expr);
                         add_int(expressions, &mut expression_indexes, disp, a_expr);
                     }
 
@@ -658,7 +658,7 @@ fn collect_instruction_operands(
             }
             // Lancelot doesn't support this operand type in its analysis
             // so we also don't know what to do here.
-            dis::zydis::OperandType::POINTER => {
+            dis::DecodedOperandKind::Ptr(_) => {
                 warn!("unsupported: pointer operand: 0x{insn_va:x}");
                 Default::default()
             }
@@ -924,7 +924,7 @@ pub fn export_workspace_to_binexport2(
                     &mut call_targets_by_basic_block,
                 );
 
-                let mnemonic_index = mnemonics.add(insn.mnemonic.get_string().unwrap().to_string());
+                let mnemonic_index = mnemonics.add(insn.mnemonic.static_string().unwrap().to_string());
 
                 collect_instruction_references(
                     ws,

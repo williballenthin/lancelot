@@ -11,7 +11,9 @@ use crate::{
 };
 use lancelot_flirt::*;
 
-const EMPTY_CONTEXT: zydis::ffi::RegisterContext = zydis::ffi::RegisterContext { values: [0u64; 257] };
+const EMPTY_CONTEXT: zydis::ffi::RegisterContext = zydis::ffi::RegisterContext {
+    values: [0u64; zydis::REGISTER_MAX_VALUE + 1],
+};
 
 /// make a best guess for the reference target, found at `ref_offset` from `va`.
 ///
@@ -50,15 +52,15 @@ fn guess_reference_target(
         let mut insn_buf = [0u8; 16];
 
         if module.address_space.read_into(candidate_insn_va, &mut insn_buf).is_ok() {
-            if let Ok(Some(insn)) = decoder.decode(&insn_buf) {
+            if let Ok(Some(insn)) = dis::decode(decoder, &insn_buf) {
                 // we assume the pointer will be found in the first two explicit operands,
                 // which works well for x86.
                 for (j, op) in dis::get_operands(&insn).take(2).enumerate() {
-                    match op.ty {
-                        zydis::OperandType::MEMORY => {
-                            if (op.mem.base == zydis::Register::NONE || op.mem.base == zydis::Register::RIP)
-                                && op.mem.disp.has_displacement
-                                && insn.raw.disp_offset == i as u8
+                    match &op.kind {
+                        dis::DecodedOperandKind::Mem(mem) => {
+                            if (mem.base == zydis::Register::NONE || mem.base == zydis::Register::RIP)
+                                && mem.disp.has_displacement
+                                && insn.raw.disp.offset == i as u8
                             {
                                 if let Ok(target) = insn.calc_absolute_address_ex(candidate_insn_va, op, &EMPTY_CONTEXT)
                                 {
@@ -69,7 +71,7 @@ fn guess_reference_target(
                             }
                             continue;
                         }
-                        zydis::OperandType::IMMEDIATE => {
+                        dis::DecodedOperandKind::Imm(_) => {
                             if insn.raw.imm[j].offset == i as u8 {
                                 if let Ok(target) = insn.calc_absolute_address(candidate_insn_va, op) {
                                     if module.probe_va(target, perms) {
@@ -79,9 +81,9 @@ fn guess_reference_target(
                             }
                             continue;
                         }
-                        zydis::OperandType::POINTER => continue,
-                        zydis::OperandType::REGISTER => continue,
-                        zydis::OperandType::UNUSED => continue,
+                        dis::DecodedOperandKind::Ptr(_) => continue,
+                        dis::DecodedOperandKind::Reg(_) => continue,
+                        dis::DecodedOperandKind::Unused => continue,
                     }
                 }
             }

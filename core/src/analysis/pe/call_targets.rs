@@ -57,10 +57,10 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<BTreeSet<VA>> {
                 }
 
                 let insn_va: VA = vstart + insn_offset as u64;
-                let op0 = &insn.operands[0];
+                let op0 = &insn.operands()[0];
 
-                match op0.ty {
-                    zydis::OperandType::POINTER => {
+                match &op0.kind {
+                    dis::DecodedOperandKind::Ptr(ptr) => {
                         // the follow is *not* an actual instruction, but does decode ok.
                         // its located within a switch table in the .text section,
                         // so linear disassembly confuses it.
@@ -88,13 +88,13 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<BTreeSet<VA>> {
                         // > in the instruction, using a 4-byte (16-bit operand size) or
                         // > 6-byte (32-bit operand size) far address immediate.
 
-                        let target = op0.ptr.offset as u64;
+                        let target = ptr.offset as u64;
                         if pe.module.probe_va(target, Permissions::X) {
                             ret.insert(target);
                         }
                     }
-                    zydis::OperandType::IMMEDIATE => {
-                        if op0.imm.is_relative {
+                    dis::DecodedOperandKind::Imm(imm) => {
+                        if imm.is_relative {
                             //     nop.exe:.text:0040100C  E8 1A 00 00 00  call  _printf (0x40102B)
                             //       ty: IMMEDIATE
                             //       imm: ImmediateInfo {
@@ -102,10 +102,10 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<BTreeSet<VA>> {
                             //         is_relative: true,
                             //         value: 26,
                             //       },
-                            let imm = if op0.imm.is_signed {
-                                util::u64_i64(op0.imm.value)
+                            let imm = if imm.is_signed {
+                                util::u64_i64(imm.value)
                             } else {
-                                op0.imm.value as i64
+                                imm.value as i64
                             };
 
                             if imm == 0 {

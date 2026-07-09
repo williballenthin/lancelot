@@ -73,14 +73,14 @@ pub fn read_insn_with_cache(
     address_space: &AbsoluteAddressSpace,
     va: VA,
     decoder: &zydis::Decoder,
-) -> Result<Option<zydis::DecodedInstruction>> {
+) -> Result<Option<dis::DecodedInstruction>> {
     if va & 0xFFFF_FFFF_FFFF_F000 <= (PAGE_SIZE - 0x10) as u64 {
         // common case: instruction doesn't split two pages (max insn size: 0x10).
         //
         // so we read from the page cache, which we expect to be pretty fast.
         let page = reader.read(address_space, va)?;
         let insn_buf = &page[(va & PAGE_MASK) as usize..];
-        match decoder.decode(insn_buf) {
+        match dis::decode(decoder, insn_buf) {
             Ok(i) => Ok(i),
             Err(e) => Err(e.into()),
         }
@@ -94,7 +94,7 @@ pub fn read_insn_with_cache(
         //   2. we have to reach into the address space, which isn't free.
         let mut insn_buf = [0u8; 0x10];
         address_space.read_into(va, &mut insn_buf)?;
-        match decoder.decode(&insn_buf) {
+        match dis::decode(decoder, &insn_buf) {
             Ok(i) => Ok(i),
             Err(e) => Err(e.into()),
         }
