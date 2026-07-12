@@ -210,19 +210,11 @@ impl PEWorkspace {
             }
         }
 
-        for name in [
-            "kernel32.dll!ExitProcess",
-            "kernel32.dll!ExitThread",
-            "exit",
-            "_exit",
-            "__exit",
-            "__amsg_exit",
-        ] {
-            if let Some(&va) = names.addresses_by_name.get(name) {
-                log::info!("noret via name: {}: {:#x}", name, va);
-                noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(&pe.module, &mut cfg, va)?);
-            }
-        }
+        noret.extend(crate::analysis::cfg::noret::cfg_prune_noret_by_name(
+            &pe.module,
+            &mut cfg,
+            &names.addresses_by_name,
+        )?);
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
@@ -350,21 +342,8 @@ impl COFFWorkspace {
             .collect::<BTreeSet<VA>>();
         function_starts.extend(call_targets);
 
-        let mut noret: BTreeSet<VA> = Default::default();
-
-        for name in [
-            "kernel32.dll!ExitProcess",
-            "kernel32.dll!ExitThread",
-            "exit",
-            "_exit",
-            "__exit",
-            "__amsg_exit",
-        ] {
-            if let Some(&va) = names.addresses_by_name.get(name) {
-                log::info!("noret via name: {}: {:#x}", name, va);
-                noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(&coff.module, &mut cfg, va)?);
-            }
-        }
+        let noret =
+            crate::analysis::cfg::noret::cfg_prune_noret_by_name(&coff.module, &mut cfg, &names.addresses_by_name)?;
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
