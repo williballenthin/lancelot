@@ -100,15 +100,16 @@ impl std::ops::IndexMut<PFN> for PageFrames {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct PageFlags: u32 {
         /// matches [crate::module::Permissions]
         const PERM_R = 0b00000001;
         const PERM_W = 0b00000010;
         const PERM_X = 0b00000100;
-        const PERM_RW = Self::PERM_R.bits | Self::PERM_W.bits;
-        const PERM_RX =  Self::PERM_R.bits | Self::PERM_X.bits;
-        const PERM_WX =  Self::PERM_W.bits | Self::PERM_X.bits;
-        const PERM_RWX =  Self::PERM_R.bits | Self::PERM_W.bits | Self::PERM_X.bits;
+        const PERM_RW = Self::PERM_R.bits() | Self::PERM_W.bits();
+        const PERM_RX = Self::PERM_R.bits() | Self::PERM_X.bits();
+        const PERM_WX = Self::PERM_W.bits() | Self::PERM_X.bits();
+        const PERM_RWX = Self::PERM_R.bits() | Self::PERM_W.bits() | Self::PERM_X.bits();
 
         /// a zero page, not backed by a Page Frame.
         /// upon write, allocate Page Frame on demand.

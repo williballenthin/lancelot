@@ -44,6 +44,7 @@ pub enum WorkspaceError {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FunctionFlags: u8 {
         const NORET = 0b0000_0001;
         const THUNK = 0b0000_0010;

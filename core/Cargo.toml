@@ -18,15 +18,14 @@ goblin = { version = "0.10", features = ["std", "pe32"], default-features = fals
 object = "0.36"
 zydis = { features = ["serialization", "nolibc"], optional = true, version = "4.1.1" }
 byteorder = "1"
-bitflags = "1"
-lazy_static = "1"
+bitflags = "2"
 anyhow = "1"
 thiserror = "2"
 regex = "1"
 smallvec = "1"
 widestring = "1.0"
 smol_str = "0.3"
-ansi_term = "0.12"
+nu-ansi-term = "0.50"
 chrono = { version = "0.4", features = ["clock"], default-features = false}
 
 # fern is only needed by tests, but because of the need for a feature named

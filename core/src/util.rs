@@ -198,9 +198,7 @@ pub fn read_file(filename: &str) -> Result<Vec<u8>> {
 }
 
 pub fn find_ascii_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, String)> + '_ {
-    lazy_static! {
-        static ref ASCII_RE: Regex = Regex::new("[ -~]{4,}").unwrap();
-    }
+    static ASCII_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new("[ -~]{4,}").unwrap());
 
     ASCII_RE.captures_iter(buf).map(|cap| {
         // guaranteed to have at least one hit
@@ -220,9 +218,7 @@ pub fn find_ascii_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, Str
 }
 
 pub fn find_unicode_strings(buf: &[u8]) -> impl Iterator<Item = (Range<usize>, String)> + '_ {
-    lazy_static! {
-        static ref UNICODE_RE: Regex = Regex::new("([ -~]\x00){4,}").unwrap();
-    }
+    static UNICODE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new("([ -~]\x00){4,}").unwrap());
 
     UNICODE_RE.captures_iter(buf).map(|cap| {
         // guaranteed to have at least one hit

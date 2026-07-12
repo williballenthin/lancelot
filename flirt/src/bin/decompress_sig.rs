@@ -12,14 +12,14 @@ fn run(sig_path: &str, output_path: &str) -> Result<()> {
 fn main() {
     better_panic::install();
 
-    let matches = clap::App::new("decompress_sig")
+    let matches = clap::Command::new("decompress_sig")
         .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("decompress a FLIRT .sig file with compression into one without compression")
         .arg(
             clap::Arg::new("verbose")
                 .short('v')
                 .long("verbose")
-                .multiple_occurrences(true)
+                .action(clap::ArgAction::Count)
                 .help("log verbose messages"),
         )
         .arg(clap::Arg::new("sig").required(true).index(1).help("path to .sig file"))
@@ -31,7 +31,7 @@ fn main() {
         )
         .get_matches();
 
-    let log_level = match matches.occurrences_of("verbose") {
+    let log_level = match matches.get_count("verbose") {
         0 => log::LevelFilter::Info,
         1 => log::LevelFilter::Debug,
         2 => log::LevelFilter::Trace,
@@ -57,7 +57,10 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(matches.value_of("sig").unwrap(), matches.value_of("output").unwrap()) {
+    if let Err(e) = run(
+        matches.get_one::<String>("sig").unwrap(),
+        matches.get_one::<String>("output").unwrap(),
+    ) {
         eprintln!("error: {e}");
     }
 }

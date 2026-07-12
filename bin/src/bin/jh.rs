@@ -383,22 +383,9 @@ fn output_functions_features<W: std::io::Write>(
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::App::new("jh")
+    let matches = lancelot_bin::cli::add_common_args(clap::Command::new("jh"))
         .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("extract interesting features from functions")
-        .arg(
-            clap::Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .multiple_occurrences(true)
-                .help("log verbose messages"),
-        )
-        .arg(
-            clap::Arg::new("quiet")
-                .short('q')
-                .long("quiet")
-                .help("disable informational messages"),
-        )
         .arg(clap::Arg::new("triplet").required(true).index(1))
         .arg(clap::Arg::new("compiler").required(true).index(2))
         .arg(clap::Arg::new("library").required(true).index(3))
@@ -412,50 +399,20 @@ fn _main() -> Result<()> {
         )
         .get_matches();
 
-    // --quiet overrides --verbose
-    let log_level = if matches.is_present("quiet") {
-        log::LevelFilter::Error
-    } else {
-        match matches.occurrences_of("verbose") {
-            0 => log::LevelFilter::Info,
-            1 => log::LevelFilter::Debug,
-            2 => log::LevelFilter::Trace,
-            _ => log::LevelFilter::Trace,
-        }
-    };
+    // ignore warnings like: workspace: unknown file format: magic: 00 00
+    lancelot_bin::cli::configure_logging(&matches, &["lancelot::workspace"]);
 
     let build = BuildSettings {
-        triplet:  matches.value_of("triplet").unwrap().to_string(),
-        compiler: matches.value_of("compiler").unwrap().to_string(),
-        library:  matches.value_of("library").unwrap().to_string(),
-        version:  matches.value_of("version").unwrap().to_string(),
-        profile:  matches.value_of("profile").unwrap().to_string(),
+        triplet:  matches.get_one::<String>("triplet").unwrap().to_string(),
+        compiler: matches.get_one::<String>("compiler").unwrap().to_string(),
+        library:  matches.get_one::<String>("library").unwrap().to_string(),
+        version:  matches.get_one::<String>("version").unwrap().to_string(),
+        profile:  matches.get_one::<String>("profile").unwrap().to_string(),
     };
-
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{:5}] {} {}",
-                record.level(),
-                if log_level == log::LevelFilter::Trace {
-                    record.target()
-                } else {
-                    ""
-                },
-                message
-            ))
-        })
-        .level(log_level)
-        .chain(std::io::stderr())
-        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
-        // ignore warnings like: workspace: unknown file format: magic: 00 00
-        .filter(|metadata| !metadata.target().starts_with("lancelot::workspace"))
-        .apply()
-        .expect("failed to configure logging");
 
     let config = empty();
 
-    let filename = matches.value_of("input").unwrap();
+    let filename = matches.get_one::<String>("input").unwrap();
 
     let buf = util::read_file(filename)?;
 
