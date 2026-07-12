@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
 
@@ -17,6 +17,84 @@ use crate::{
 // TODO: add cfg_check_noret(module, cfg, va) that optionally marks as noret, if
 // valid.
 
+/// names of functions that are known to never return.
+///
+/// keep this list strictly to routines that terminate the process/thread or
+/// unwind (throw), never "usually fatal" routines like TerminateProcess.
+/// each entry here lets the CFG pass prune the dead bytes following a call,
+/// so a wrong entry would remove valid code.
+///
+/// entries are bare function names; they're matched against both plain names
+/// (COFF symbols, FLIRT matches) and the function part of import names like
+/// `kernel32.dll!ExitProcess`. x86 decorated variants (leading underscore,
+/// stdcall `@N` suffixes) are listed explicitly where they occur in practice.
+pub const NORET_NAMES: &[&str] = &[
+    // win32
+    "ExitProcess",
+    "ExitThread",
+    "FatalExit",
+    "FatalAppExitA",
+    "FatalAppExitW",
+    // ntdll
+    "RtlExitUserThread",
+    "RtlExitUserProcess",
+    // C runtime: process termination
+    "exit",
+    "_exit",
+    "__exit",
+    "_Exit",
+    "__Exit",
+    "quick_exit",
+    "_quick_exit",
+    "abort",
+    "_abort",
+    "_amsg_exit",
+    "__amsg_exit",
+    // C runtime: fatal error handlers
+    "_invalid_parameter_noinfo_noreturn",
+    "__invalid_parameter_noinfo_noreturn",
+    "_invoke_watson",
+    "__invoke_watson",
+    "__report_gsfailure",
+    "___report_gsfailure",
+    "__report_rangecheckfailure",
+    "___report_rangecheckfailure",
+    "__fastfail",
+    "___fastfail",
+    "_purecall",
+    "__purecall",
+    // C++ runtime: exception unwinding/termination
+    "_CxxThrowException",
+    "__CxxThrowException@8",
+    "?terminate@@YAXXZ",
+];
+
+/// prune CFG flows following calls to functions that are known, by name,
+/// to never return (see [`NORET_NAMES`]).
+///
+/// names are given as a map from name to address, such as
+/// `WorkspaceAnalysis.names.addresses_by_name`: plain names for local
+/// functions, and `dll!symbol` for imports.
+///
+/// returns the set of addresses recognized as noret, including callers that
+/// are found to never return as a consequence (see [`cfg_mark_noret`]).
+pub fn cfg_prune_noret_by_name(module: &Module, cfg: &mut CFG, names: &BTreeMap<String, VA>) -> Result<BTreeSet<VA>> {
+    let mut noret: BTreeSet<VA> = Default::default();
+
+    for (name, &va) in names.iter() {
+        // for import names like `kernel32.dll!ExitProcess`,
+        // match against the function name part.
+        let function_name = name.rsplit('!').next().unwrap_or(name);
+
+        if NORET_NAMES.contains(&function_name) {
+            log::info!("noret via name: {}: {:#x}", name, va);
+            noret.extend(cfg_mark_noret(module, cfg, va)?);
+        }
+    }
+
+    Ok(noret)
+}
+
 // With the given function address,
 // either as the target of a direct or indirect call,
 // consider it to be non-returning (such as ExitProcess).
@@ -27,9 +105,22 @@ use crate::{
 //
 // Returns the set of functions newly recognized as noret.
 pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet<VA>> {
+    let mut seen: BTreeSet<VA> = Default::default();
+    cfg_mark_noret_inner(module, cfg, va, &mut seen)
+}
+
+fn cfg_mark_noret_inner(module: &Module, cfg: &mut CFG, va: VA, seen: &mut BTreeSet<VA>) -> Result<BTreeSet<VA>> {
     log::debug!("mark noret: {:#x}", va);
     let mut ret: BTreeSet<VA> = Default::default();
     let mut batch: ChangeBatch = Default::default();
+
+    if !seen.insert(va) {
+        // already visited during this walk.
+        // this breaks infinite recursion when a noret function flows to
+        // itself (e.g. terminates with `jmp $`) or when noret functions
+        // flow into each other in a cycle.
+        return Ok(ret);
+    }
 
     // the given address is the target to either direct or indirect calls (import).
     // for each of these, remove any fallthrough flows from that call instruction.
@@ -128,9 +219,97 @@ pub fn cfg_mark_noret(module: &Module, cfg: &mut CFG, va: VA) -> Result<BTreeSet
     }
 
     for &caller in ret.clone().iter() {
-        ret.extend(cfg_mark_noret(module, cfg, caller)?);
+        ret.extend(cfg_mark_noret_inner(module, cfg, caller, seen)?);
     }
     ret.insert(va);
 
     Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Not;
+
+    use super::*;
+    use crate::{analysis::cfg::InstructionIndex, test::*};
+
+    #[test]
+    fn noret_by_local_name() -> Result<()> {
+        // a call to a function named `abort` never returns,
+        // so the bytes following the call must be pruned.
+        //
+        // 0x0: E8 06 00 00 00    call 0xB (abort)
+        // 0x5: 90                nop      (dead: must be pruned)
+        // 0x6: C3                ret      (dead: must be pruned)
+        // 0x7: CC CC CC CC       padding
+        // 0xB: EB FE             jmp $    (abort's body, irrelevant)
+        let module = load_shellcode32(b"\xE8\x06\x00\x00\x00\x90\xC3\xCC\xCC\xCC\xCC\xEB\xFE");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        let mut cfg = CFG::from_instructions(&module, insns)?;
+
+        assert!(cfg.insns.insns_by_address.contains_key(&0x5));
+
+        let mut names: BTreeMap<String, VA> = Default::default();
+        names.insert("abort".to_string(), 0xB);
+
+        let noret = cfg_prune_noret_by_name(&module, &mut cfg, &names)?;
+
+        assert!(noret.contains(&0xB));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x5).not());
+        assert!(cfg.insns.insns_by_address.contains_key(&0x6).not());
+
+        Ok(())
+    }
+
+    #[test]
+    fn noret_by_import_name() -> Result<()> {
+        // same, via an indirect call through a pointer named like an import.
+        //
+        // 0x0:  FF 15 10 00 00 00   call [0x10] (ExitProcess)
+        // 0x6:  90                  nop         (dead: must be pruned)
+        // 0x7:  C3                  ret         (dead: must be pruned)
+        // 0x8:  CC x8               padding
+        // 0x10: 44 33 22 11         (pointer data)
+        let module =
+            load_shellcode32(b"\xFF\x15\x10\x00\x00\x00\x90\xC3\xCC\xCC\xCC\xCC\xCC\xCC\xCC\xCC\x44\x33\x22\x11");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        let mut cfg = CFG::from_instructions(&module, insns)?;
+
+        assert!(cfg.insns.insns_by_address.contains_key(&0x6));
+
+        let mut names: BTreeMap<String, VA> = Default::default();
+        names.insert("kernel32.dll!ExitProcess".to_string(), 0x10);
+
+        let noret = cfg_prune_noret_by_name(&module, &mut cfg, &names)?;
+
+        assert!(noret.contains(&0x10));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x6).not());
+        assert!(cfg.insns.insns_by_address.contains_key(&0x7).not());
+
+        Ok(())
+    }
+
+    #[test]
+    fn returning_names_untouched() -> Result<()> {
+        // a call to a function not on the noret list must keep its fallthrough.
+        let module = load_shellcode32(b"\xE8\x06\x00\x00\x00\x90\xC3\xCC\xCC\xCC\xCC\xEB\xFE");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        let mut cfg = CFG::from_instructions(&module, insns)?;
+
+        let mut names: BTreeMap<String, VA> = Default::default();
+        names.insert("memcpy".to_string(), 0xB);
+
+        let noret = cfg_prune_noret_by_name(&module, &mut cfg, &names)?;
+
+        assert!(noret.is_empty());
+        assert!(cfg.insns.insns_by_address.contains_key(&0x5));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x6));
+
+        Ok(())
+    }
 }
