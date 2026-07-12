@@ -120,5 +120,6 @@ fn main() {
         error!("{:?}", e);
         #[cfg(not(debug_assertions))]
         error!("{:}", e);
+        std::process::exit(1);
     }
 }

@@ -503,8 +503,7 @@ fn _main() -> Result<()> {
             output_functions_features(&build, &path, &features, &mut std::io::stdout())?;
         }
     } else {
-        error!("unrecognized file format");
-        return Ok(());
+        return Err(anyhow::anyhow!("unrecognized file format"));
     }
 
     Ok(())
@@ -516,6 +515,7 @@ fn main() {
         error!("{:?}", e);
         #[cfg(not(debug_assertions))]
         error!("{:}", e);
+        std::process::exit(1);
     }
 }
 
