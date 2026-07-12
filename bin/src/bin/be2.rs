@@ -11,28 +11,9 @@ use lancelot::{
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::App::new("lancelot")
+    let matches = lancelot_bin::cli::add_config_arg(lancelot_bin::cli::add_common_args(clap::Command::new("be2")))
         .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("Binary analysis framework")
-        .arg(
-            clap::Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .multiple_occurrences(true)
-                .help("log verbose messages"),
-        )
-        .arg(
-            clap::Arg::new("quiet")
-                .short('q')
-                .long("quiet")
-                .help("disable informational messages"),
-        )
-        .arg(
-            clap::Arg::new("configuration")
-                .long("config")
-                .takes_value(true)
-                .help("path to configuration directory"),
-        )
         .arg(
             clap::Arg::new("input")
                 .required(true)
@@ -41,55 +22,11 @@ fn _main() -> Result<()> {
         )
         .get_matches();
 
-    // --quiet overrides --verbose
-    let log_level = if matches.is_present("quiet") {
-        log::LevelFilter::Error
-    } else {
-        match matches.occurrences_of("verbose") {
-            0 => log::LevelFilter::Info,
-            1 => log::LevelFilter::Debug,
-            2 => log::LevelFilter::Trace,
-            _ => log::LevelFilter::Trace,
-        }
-    };
+    lancelot_bin::cli::configure_logging(&matches, &[]);
 
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "{} [{:5}] {} {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                if log_level == log::LevelFilter::Trace {
-                    record.target()
-                } else {
-                    ""
-                },
-                message
-            ))
-        })
-        .level(log_level)
-        .chain(std::io::stderr())
-        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
-        .apply()
-        .expect("failed to configure logging");
+    let config = lancelot_bin::cli::configuration_from_matches(&matches);
 
-    // Enable ANSI support for Windows
-    // via: https://github.com/sharkdp/hexyl/blob/d1ae68585fe743d225bb39361bd383cb925b61f7/src/bin/hexyl.rs#L261
-    #[cfg(windows)]
-    let _ = ansi_term::enable_ansi_support();
-
-    let config = if matches.is_present("configuration") {
-        let path = matches.value_of("configuration").unwrap();
-        log::info!("configuration: {}", path);
-        Box::new(lancelot::workspace::config::FileSystemConfiguration::from_path(
-            &std::path::PathBuf::from(path),
-        ))
-    } else {
-        log::info!("using default, empty configuration");
-        lancelot::workspace::config::empty()
-    };
-
-    let filename = matches.value_of("input").unwrap();
+    let filename = matches.get_one::<String>("input").unwrap();
     debug!("input: {}", filename);
 
     let buf = util::read_file(filename)?;

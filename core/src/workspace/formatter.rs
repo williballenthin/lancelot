@@ -79,25 +79,25 @@ pub const TOKEN_USER_HEX: zydis::Token = zydis::Token(zydis::TOKEN_USER.0 + 2);
 impl Formatter {
     // default theme
     // TODO: move this to a struct that can be configured
-    const COLOR_ADDRESS_ABS: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_ADDRESS_REL: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_DECORATOR: ansi_term::Color = Formatter::GREY;
-    const COLOR_DELIMITER: ansi_term::Color = Formatter::GREY;
-    const COLOR_DISPLACEMENT: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_HEX: ansi_term::Color = ansi_term::Color::Cyan;
-    const COLOR_IMMEDIATE: ansi_term::Color = ansi_term::Color::Blue;
-    const COLOR_INVALID: ansi_term::Color = ansi_term::Color::Red;
-    const COLOR_MNEMONIC: ansi_term::Color = ansi_term::Color::Green;
-    const COLOR_PARENTHESIS_CLOSE: ansi_term::Color = Formatter::GREY;
-    const COLOR_PARENTHESIS_OPEN: ansi_term::Color = Formatter::GREY;
-    const COLOR_PREFIX: ansi_term::Color = Formatter::GREY;
-    const COLOR_REGISTER: ansi_term::Color = ansi_term::Color::Yellow;
-    const COLOR_SYMBOL: ansi_term::Color = Formatter::GREY;
-    const COLOR_SYMBOLNAME: ansi_term::Color = ansi_term::Color::Purple;
-    const COLOR_TYPECAST: ansi_term::Color = Formatter::GREY;
-    const COLOR_USER: ansi_term::Color = Formatter::GREY;
-    const COLOR_WHITESPACE: ansi_term::Color = ansi_term::Color::Black;
-    const GREY: ansi_term::Color = ansi_term::Color::Fixed(242);
+    const COLOR_ADDRESS_ABS: nu_ansi_term::Color = nu_ansi_term::Color::Blue;
+    const COLOR_ADDRESS_REL: nu_ansi_term::Color = nu_ansi_term::Color::Blue;
+    const COLOR_DECORATOR: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_DELIMITER: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_DISPLACEMENT: nu_ansi_term::Color = nu_ansi_term::Color::Blue;
+    const COLOR_HEX: nu_ansi_term::Color = nu_ansi_term::Color::Cyan;
+    const COLOR_IMMEDIATE: nu_ansi_term::Color = nu_ansi_term::Color::Blue;
+    const COLOR_INVALID: nu_ansi_term::Color = nu_ansi_term::Color::Red;
+    const COLOR_MNEMONIC: nu_ansi_term::Color = nu_ansi_term::Color::Green;
+    const COLOR_PARENTHESIS_CLOSE: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_PARENTHESIS_OPEN: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_PREFIX: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_REGISTER: nu_ansi_term::Color = nu_ansi_term::Color::Yellow;
+    const COLOR_SYMBOL: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_SYMBOLNAME: nu_ansi_term::Color = nu_ansi_term::Color::Purple;
+    const COLOR_TYPECAST: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_USER: nu_ansi_term::Color = Formatter::GREY;
+    const COLOR_WHITESPACE: nu_ansi_term::Color = nu_ansi_term::Color::Black;
+    const GREY: nu_ansi_term::Color = nu_ansi_term::Color::Fixed(242);
 
     #[must_use]
     pub fn new() -> Formatter {
@@ -312,7 +312,7 @@ impl Formatter {
         Formatter { options, inner, orig }
     }
 
-    fn get_token_color(token: zydis::Token) -> ansi_term::Color {
+    fn get_token_color(token: zydis::Token) -> nu_ansi_term::Color {
         match token {
             zydis::TOKEN_INVALID => Formatter::COLOR_INVALID,
             zydis::TOKEN_WHITESPACE => Formatter::COLOR_WHITESPACE,

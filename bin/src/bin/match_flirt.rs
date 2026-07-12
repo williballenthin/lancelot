@@ -11,22 +11,9 @@ use lancelot_flirt::*;
 fn _main() -> Result<()> {
     better_panic::install();
 
-    let matches = clap::App::new("match_flirt")
+    let matches = lancelot_bin::cli::add_common_args(clap::Command::new("match_flirt"))
         .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("Show FLIRT matches in the given file")
-        .arg(
-            clap::Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .multiple_occurrences(true)
-                .help("log verbose messages"),
-        )
-        .arg(
-            clap::Arg::new("quiet")
-                .short('q')
-                .long("quiet")
-                .help("disable informational messages"),
-        )
         .arg(
             clap::Arg::new("input")
                 .required(true)
@@ -37,45 +24,15 @@ fn _main() -> Result<()> {
             clap::Arg::new("sig")
                 .required(true)
                 .index(2)
-                .multiple_values(true)
+                .num_args(1..)
                 .help("path to file to analyze"),
         )
         .get_matches();
 
-    // --quiet overrides --verbose
-    let log_level = if matches.is_present("quiet") {
-        log::LevelFilter::Error
-    } else {
-        match matches.occurrences_of("verbose") {
-            0 => log::LevelFilter::Info,
-            1 => log::LevelFilter::Debug,
-            2 => log::LevelFilter::Trace,
-            _ => log::LevelFilter::Trace,
-        }
-    };
-
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "{} [{:5}] {} {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                if log_level == log::LevelFilter::Trace {
-                    record.target()
-                } else {
-                    ""
-                },
-                message
-            ))
-        })
-        .level(log_level)
-        .chain(std::io::stderr())
-        .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
-        .apply()
-        .expect("failed to configure logging");
+    lancelot_bin::cli::configure_logging(&matches, &[]);
 
     let mut sigs = vec![];
-    for sigpath in matches.values_of("sig").unwrap() {
+    for sigpath in matches.get_many::<String>("sig").unwrap() {
         if sigpath.ends_with(".pat") {
             sigs.extend(pat::parse(&String::from_utf8(util::read_file(sigpath)?)?)?);
         } else if sigpath.ends_with(".sig") {
@@ -86,7 +43,7 @@ fn _main() -> Result<()> {
     }
     let sigs = FlirtSignatureSet::with_signatures(sigs);
 
-    let filename = matches.value_of("input").unwrap();
+    let filename = matches.get_one::<String>("input").unwrap();
     debug!("input: {}", filename);
 
     let buf = util::read_file(filename)?;

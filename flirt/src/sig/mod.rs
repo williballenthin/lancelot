@@ -25,6 +25,7 @@ pub enum SigError {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct Features: u16 {
         const STARTUP        = 0b0000_0001;
         const CTYPE_CRC      = 0b0000_0010;
@@ -292,6 +293,7 @@ fn wildcard_mask(input: &[u8], length: u16) -> IResult<&[u8], u64> {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct ParsingFlags: u8 {
         const MORE_PUBLIC_NAMES = 0b0000_0001;
         const TAIL_BYTES = 0b0000_0010;
@@ -302,6 +304,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct NameFlags: u8 {
         const UNK1  = 0b0000_0001;
         const LOCAL = 0b0000_0010;
