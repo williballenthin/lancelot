@@ -93,6 +93,18 @@ fn guess_reference_target(
     None
 }
 
+/// the maximum number of bytes read from the function start for signature
+/// matching.
+///
+/// a FLIRT signature only ever examines a bounded prefix of a function:
+/// the 32-byte pattern, up to 255 CRC16 bytes, and tail bytes/footer at
+/// small offsets beyond that. this cap is far beyond any of those.
+///
+/// without a cap, each candidate function reads from its start to the end
+/// of its section, which is O(functions × section size) bytes of copying
+/// per FLIRT pass (and again for each recursive reference match).
+const MATCH_WINDOW_SIZE: u64 = 0x8000;
+
 /// match the given flirt signatures at the given address.
 /// returns a list of the signatures that match.
 pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<Vec<FlirtSignature>> {
@@ -109,7 +121,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
             .find(|sec| sec.virtual_range.start <= va && va < sec.virtual_range.end)
             .unwrap();
 
-        let size = sec.virtual_range.end - va;
+        let size = u64::min(sec.virtual_range.end - va, MATCH_WINDOW_SIZE);
         let buf = module.address_space.read_bytes(va, size as usize)?;
 
         debug!("flirt: matching: {:#x}", va);
@@ -208,4 +220,28 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
     let decoder = dis::get_disassembler(module)?;
     let mut cache = Default::default();
     match_flirt_inner(module, sigs, &decoder, va, &mut cache)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rsrc::*;
+    use anyhow::Result;
+
+    #[test]
+    fn match_flirt_nop() -> Result<()> {
+        // recognize _exit in nop.exe via the msvc runtime signatures,
+        // end to end against a real PE, within the bounded match window.
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let sigs = get_config().get_sigs()?;
+
+        let matches = match_flirt(&pe.module, &sigs, 0x401DA9)?;
+        assert!(
+            matches.iter().any(|m| m.get_name() == Some("_exit")),
+            "expected _exit at 0x401DA9, got: {matches:?}"
+        );
+
+        Ok(())
+    }
 }
