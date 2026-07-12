@@ -32,6 +32,12 @@ pub fn init_logging() {
 
 /// this is for testing, so will panic on error.
 pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Module {
+    load_shellcode_at(arch, buf, 0x0)
+}
+
+/// load the given shellcode at the given base address.
+/// this is for testing, so will panic on error.
+pub fn load_shellcode_at(arch: Arch, buf: &[u8], base_address: VA) -> Module {
     let mut address_space = RelativeAddressSpace::with_capacity(buf.len() as u64);
     address_space.map.writezx(0x0, buf).unwrap();
 
@@ -45,11 +51,11 @@ pub fn load_shellcode(arch: Arch, buf: &[u8]) -> Module {
                 end:   buf.len() as RVA,
             },
             virtual_range:  std::ops::Range {
-                start: 0x0,
-                end:   buf.len() as RVA,
+                start: base_address,
+                end:   base_address + buf.len() as VA,
             },
         }],
-        address_space: address_space.into_absolute(0x0).unwrap(),
+        address_space: address_space.into_absolute(base_address).unwrap(),
     }
 }
 

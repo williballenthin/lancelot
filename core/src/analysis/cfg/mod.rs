@@ -74,7 +74,7 @@ pub fn read_insn_with_cache(
     va: VA,
     decoder: &zydis::Decoder,
 ) -> Result<Option<dis::DecodedInstruction>> {
-    if va & 0xFFFF_FFFF_FFFF_F000 <= (PAGE_SIZE - 0x10) as u64 {
+    if va & PAGE_MASK <= (PAGE_SIZE - 0x10) as u64 {
         // common case: instruction doesn't split two pages (max insn size: 0x10).
         //
         // so we read from the page cache, which we expect to be pretty fast.
@@ -93,10 +93,22 @@ pub fn read_insn_with_cache(
         //   1. we have read from two pages, and
         //   2. we have to reach into the address space, which isn't free.
         let mut insn_buf = [0u8; 0x10];
-        address_space.read_into(va, &mut insn_buf)?;
-        match dis::decode(decoder, &insn_buf) {
-            Ok(i) => Ok(i),
-            Err(e) => Err(e.into()),
+        if address_space.read_into(va, &mut insn_buf).is_ok() {
+            match dis::decode(decoder, &insn_buf) {
+                Ok(i) => Ok(i),
+                Err(e) => Err(e.into()),
+            }
+        } else {
+            // the subsequent page is not mapped,
+            // such as an instruction found at the very end of a section.
+            // decode from the remainder of the current page,
+            // which is enough for any instruction that's actually mapped.
+            let page = reader.read(address_space, va)?;
+            let insn_buf = &page[(va & PAGE_MASK) as usize..];
+            match dis::decode(decoder, insn_buf) {
+                Ok(i) => Ok(i),
+                Err(e) => Err(e.into()),
+            }
         }
     }
 }
@@ -999,6 +1011,69 @@ mod tests {
         // [jmp] -> [rol, ret]
         // [inc, ret]
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn insns_at_high_base_address() -> Result<()> {
+        // the page-split check in `read_insn_with_cache` used to compute the
+        // page *base* instead of the offset within the page, so the page-cache
+        // fast path was never taken for modules based above 0x1000
+        // (i.e. any real module; the shellcode tests load at 0x0 and hid this).
+        //
+        // lay out two pages of NOPs with a RET at the very end, based at 0x401000,
+        // so that the now-live fast path is exercised at a realistic address,
+        // and instructions near the end of the first page exercise the
+        // page-splitting slow path with a mapped subsequent page.
+        let mut code = vec![0x90u8; 0x2000];
+        code[0x1FFF] = 0xC3; // RET
+        let module = crate::test::load_shellcode_at(crate::arch::Arch::X32, &code, 0x401000);
+
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x401000)?;
+
+        // 0x1FFF NOPs and one RET.
+        assert_eq!(insns.insns_by_address.len(), 0x2000);
+        assert!(insns.insns_by_address.contains_key(&0x401000));
+        assert!(insns.insns_by_address.contains_key(&0x402FFF));
+
+        Ok(())
+    }
+
+    #[test]
+    fn insn_at_end_of_mapped_region() -> Result<()> {
+        // regression test: an instruction within the final 15 bytes of the last
+        // mapped page used to be dropped, because the page-splitting slow path
+        // unconditionally read 0x10 bytes, which failed when the read crossed
+        // into the unmapped subsequent page.
+        //
+        // note that the loaders map sections via `writezx`, which pads a full
+        // extra zero page after page-aligned data, hiding this case. so map
+        // exactly one page by hand, with a RET as the very last byte.
+        let mut code = vec![0xCCu8; PAGE_SIZE];
+        code[PAGE_SIZE - 1] = 0xC3; // RET
+
+        let mut address_space = crate::aspace::RelativeAddressSpace::with_capacity(PAGE_SIZE as u64);
+        address_space.map.write(0x0, &code).unwrap();
+        assert!(!address_space.map.probe(PAGE_SIZE as u64), "next page must be unmapped");
+
+        let module = Module {
+            arch:          crate::arch::Arch::X32,
+            sections:      vec![crate::module::Section {
+                name:           "shellcode".to_string(),
+                permissions:    Permissions::RWX,
+                physical_range: 0x0..PAGE_SIZE as u64,
+                virtual_range:  0x401000..0x401000 + PAGE_SIZE as u64,
+            }],
+            address_space: address_space.into_absolute(0x401000).unwrap(),
+        };
+
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x401FFF)?;
+
+        assert!(insns.insns_by_address.contains_key(&0x401FFF));
+        assert_eq!(insns.insns_by_address.len(), 1);
 
         Ok(())
     }
