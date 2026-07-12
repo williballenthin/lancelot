@@ -216,6 +216,12 @@ impl PEWorkspace {
             &names.addresses_by_name,
         )?);
 
+        noret.extend(crate::analysis::cfg::noret::cfg_prune_noret_functions(
+            &pe.module,
+            &mut cfg,
+            &function_starts,
+        )?);
+
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
         let mut functions: BTreeMap<VA, FunctionAnalysis> = Default::default();
@@ -342,8 +348,14 @@ impl COFFWorkspace {
             .collect::<BTreeSet<VA>>();
         function_starts.extend(call_targets);
 
-        let noret =
+        let mut noret =
             crate::analysis::cfg::noret::cfg_prune_noret_by_name(&coff.module, &mut cfg, &names.addresses_by_name)?;
+
+        noret.extend(crate::analysis::cfg::noret::cfg_prune_noret_functions(
+            &coff.module,
+            &mut cfg,
+            &function_starts,
+        )?);
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
