@@ -41,6 +41,10 @@ pub enum Rsrc {
     I236B,
     /// COFF from issue #235 (weak external C++ symbols)
     CRYPTOPP_OAEP,
+    /// synthetic PE with a `.text` section with `VirtualSize == 0`,
+    /// for which the Windows loader falls back to `SizeOfRawData`.
+    /// see: https://github.com/mandiant/flare-floss/issues/1345
+    ZEROSEC,
 }
 
 /// Fetch the file system name of the given resource.
@@ -62,6 +66,7 @@ pub fn get_name(rsrc: Rsrc) -> String {
         Rsrc::I236A => String::from("20805f98.exe_"),
         Rsrc::I236B => String::from("f72ee834.exe_"),
         Rsrc::CRYPTOPP_OAEP => String::from("cryptopp-oaep.obj"),
+        Rsrc::ZEROSEC => String::from("zero_length_section.exe_"),
     }
 }
 

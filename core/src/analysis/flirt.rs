@@ -103,11 +103,21 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
         va: VA,
         cache: &mut BTreeMap<VA, Vec<FlirtSignature>>,
     ) -> Result<Vec<FlirtSignature>> {
-        let sec = module
+        let sec = match module
             .sections
             .iter()
             .find(|sec| sec.virtual_range.start <= va && va < sec.virtual_range.end)
-            .unwrap();
+        {
+            Some(sec) => sec,
+            None => {
+                // the address isn't found within any section,
+                // such as a malformed PE whose entrypoint points outside of mapped memory.
+                // there's no code here, so there's nothing to match.
+                // see: https://github.com/mandiant/flare-floss/issues/1345
+                debug!("flirt: {:#x}: address not within any section", va);
+                return Ok(Default::default());
+            }
+        };
 
         let size = sec.virtual_range.end - va;
         let buf = module.address_space.read_bytes(va, size as usize)?;
@@ -208,4 +218,35 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
     let decoder = dis::get_disassembler(module)?;
     let mut cache = Default::default();
     match_flirt_inner(module, sigs, &decoder, va, &mut cache)
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+
+    use crate::rsrc::*;
+
+    /// a PE with a `.text` section with `VirtualSize == 0` used to panic
+    /// during FLIRT matching, because no mapped section contained the
+    /// entrypoint.
+    /// see: https://github.com/mandiant/flare-floss/issues/1345
+    #[test]
+    fn zero_length_section() -> Result<()> {
+        let buf = get_buf(Rsrc::ZEROSEC);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+
+        let sigs = lancelot_flirt::FlirtSignatureSet::with_signatures(vec![]);
+
+        // must not panic, even if a function start (like the entrypoint)
+        // falls outside of all mapped sections.
+        for va in crate::analysis::pe::find_function_starts(&pe)? {
+            super::match_flirt(&pe.module, &sigs, va)?;
+        }
+
+        // must not panic for addresses outside of all mapped sections,
+        // such as when a malformed PE has an entrypoint in unmapped memory.
+        assert!(super::match_flirt(&pe.module, &sigs, 0x999_9000)?.is_empty());
+
+        Ok(())
+    }
 }
