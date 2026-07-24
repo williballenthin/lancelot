@@ -296,6 +296,8 @@ fn load_pe(buf: &[u8]) -> Result<PE> {
         let vend = vstart + vsize;
         let mut vbuf = vec![0u8; vsize as usize];
 
+        // the number of raw bytes copied is clamped to min(physical, virtual) size, so a virtual
+        // region larger than the physical data is zero-padded and a larger physical range is truncated.
         if vsize as usize >= psize {
             // vsize > psize, so there will be NULL bytes padding the physical data.
             let dest = &mut vbuf[0..psize];
