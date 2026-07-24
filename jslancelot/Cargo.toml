@@ -1,6 +1,6 @@
 [package]
 name = "jslancelot"
-version = "0.10.0"
+version = "0.10.1"
 authors = ["Willi Ballenthin <william.ballenthin@mandiant.com>"]
 edition = "2021"
 homepage = "https://github.com/williballenthin/lancelot"
@@ -12,8 +12,8 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-lancelot = { path = "../core", version = "0.10.0" }
-lancelot-flirt = { path = "../flirt", version = "0.10.0" }
+lancelot = { path = "../core", version = "0.10.1" }
+lancelot-flirt = { path = "../flirt", version = "0.10.1" }
 anyhow = "1"
 sha2 = "0.10"
 
