@@ -222,7 +222,11 @@ fn load_pe_section(
     Ok(Section {
         physical_range: std::ops::Range {
             start: section.pointer_to_raw_data as u64,
-            end:   (section.pointer_to_raw_data + section.size_of_raw_data) as u64,
+            // widen to u64 *before* adding: a malformed PE can specify a
+            // `size_of_raw_data` (e.g. 0xFFFFFFFF) that overflows the u32 sum,
+            // yielding `end < start` and later panicking when used to slice
+            // the input buffer. see flare-floss#1346.
+            end:   section.pointer_to_raw_data as u64 + section.size_of_raw_data as u64,
         },
         virtual_range: std::ops::Range {
             start: base_address + section.virtual_address as u64,
@@ -419,6 +423,29 @@ mod tests {
 
         assert_eq!(0x4d, pe.module.address_space.relative.read_u8(0x0)?);
         assert_eq!(0x5a, pe.module.address_space.relative.read_u8(0x1)?);
+
+        Ok(())
+    }
+
+    /// A section whose `size_of_raw_data` overflows `pointer_to_raw_data + size_of_raw_data`
+    /// (e.g. `0xFFFFFFFF`) must not cause the loader to panic. See flare-floss#1346.
+    #[test]
+    fn overflowing_section_size() -> Result<()> {
+        let mut buf = get_buf(Rsrc::NOP);
+
+        // locate the section table and clobber the first section's
+        // `size_of_raw_data` field with 0xFFFFFFFF, which overflows when
+        // added to `pointer_to_raw_data`.
+        let e_lfanew = u32::from_le_bytes(buf[0x3c..0x40].try_into().unwrap()) as usize;
+        let size_of_optional_header =
+            u16::from_le_bytes(buf[e_lfanew + 4 + 16..e_lfanew + 4 + 18].try_into().unwrap()) as usize;
+        let section_table = e_lfanew + 4 + 20 + size_of_optional_header;
+        // within a section header, `size_of_raw_data` is at offset 16.
+        let size_of_raw_data = section_table + 16;
+        buf[size_of_raw_data..size_of_raw_data + 4].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+
+        // must not panic (previously: "slice index starts at N but ends at N-1").
+        let _ = crate::loader::pe::PE::from_bytes(&buf)?;
 
         Ok(())
     }
