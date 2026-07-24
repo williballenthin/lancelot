@@ -194,7 +194,13 @@ fn load_pe_section(
         .unwrap_or_else(|| trimmed_name)
         .to_string();
 
-    let virtual_size = util::align(section.virtual_size as u64, section_alignment);
+    // when VirtualSize is zero, the Windows loader maps SizeOfRawData bytes
+    // instead, see: https://github.com/mandiant/flare-floss/issues/1345
+    let virtual_size = match section.virtual_size {
+        0 => section.size_of_raw_data as u64,
+        virtual_size => virtual_size as u64,
+    };
+    let virtual_size = util::align(virtual_size, section_alignment);
 
     let mut perms = Permissions::empty();
     if section.characteristics & IMAGE_SCN_MEM_READ > 0 {
