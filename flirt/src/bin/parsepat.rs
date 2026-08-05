@@ -13,20 +13,20 @@ fn run(pat_path: &str) -> Result<()> {
 fn main() {
     better_panic::install();
 
-    let matches = clap::App::new("parsepat")
+    let matches = clap::Command::new("parsepat")
         .author("Willi Ballenthin <william.ballenthin@mandiant.com>")
         .about("parse a .pat file and... do nothing.")
         .arg(
             clap::Arg::new("verbose")
                 .short('v')
                 .long("verbose")
-                .multiple_occurrences(true)
+                .action(clap::ArgAction::Count)
                 .help("log verbose messages"),
         )
         .arg(clap::Arg::new("pat").required(true).index(1).help("path to .pat file"))
         .get_matches();
 
-    let log_level = match matches.occurrences_of("verbose") {
+    let log_level = match matches.get_count("verbose") {
         0 => log::LevelFilter::Info,
         1 => log::LevelFilter::Debug,
         2 => log::LevelFilter::Trace,
@@ -52,7 +52,7 @@ fn main() {
         .apply()
         .expect("failed to configure logging");
 
-    if let Err(e) = run(matches.value_of("pat").unwrap()) {
+    if let Err(e) = run(matches.get_one::<String>("pat").unwrap()) {
         eprintln!("error: {e:}");
     }
 }
