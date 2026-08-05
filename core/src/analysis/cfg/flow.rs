@@ -164,7 +164,7 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstructio
             return Ok(smallvec![]);
         }
 
-        if is_empty(module, va) {
+        if is_empty(module, dst) {
             // region exists on disk, but it starts with a NULL byte,
             // which isn't a reasonable x86 instruction.
             return Ok(smallvec![]);
@@ -289,6 +289,30 @@ mod tests {
         assert_eq!(flows.len(), 2);
         assert_eq!(flows[0], Flow::ConditionalJump(0x3));
         assert_eq!(flows[1], Flow::Fallthrough(0x2));
+    }
+
+    #[test]
+    fn test_get_cjmp_insn_flow_null_target() {
+        // regression test: the NULL-byte guard used to check the first byte of
+        // the conditional jump instruction itself (always a nonzero opcode)
+        // rather than the jump target, so conditional jumps into zero-filled
+        // regions were accepted while calls and unconditional jumps to the
+        // same target were filtered.
+        //
+        // 75 02 JNZ $+4
+        // C3    RET
+        // 90    NOP
+        // 00 00 (zero-filled region at the jump target)
+        let module = load_shellcode32(b"\x75\x02\xC3\x90\x00\x00");
+        let insn = read_insn(&module, 0x0);
+
+        let flows = get_cjmp_insn_flow(&module, 0x0, &insn).unwrap();
+        assert!(flows.is_empty(), "cjmp to NULL byte must not produce a flow");
+
+        let flows = get_insn_flow(&module, 0x0, &insn).unwrap();
+        // just the fallthrough; the jump target is not reasonable code.
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0], Flow::Fallthrough(0x2));
     }
 
     #[test]
