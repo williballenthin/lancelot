@@ -351,8 +351,8 @@ impl<T: Default + Copy> PageMap<T> {
         if page(start) != page(end) - 1 {
             let start_index = page(start) + 1;
             let end_index = page(end);
-            for page_index in start_index..end_index {
-                let page = self.pages[page_index].as_ref().expect("slice_into_split: two");
+            for page in &self.pages[start_index..end_index] {
+                let page = page.as_ref().expect("slice_into_split: two");
                 let elements = &page.elements[..];
                 {
                     let dst = &mut buf[offset..offset + elements.len()];
