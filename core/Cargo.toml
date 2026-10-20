@@ -24,7 +24,6 @@ thiserror = "2"
 regex = "1"
 smallvec = "1"
 widestring = "1.0"
-smol_str = "0.3"
 nu-ansi-term = "0.50"
 chrono = { version = "0.4", features = ["clock"], default-features = false}
 
