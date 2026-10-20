@@ -183,7 +183,15 @@ impl PEWorkspace {
         }
 
         let sigs = config.get_sigs()?;
-        for &function in function_starts.iter() {
+        // matching reads from each function start to the end of its section,
+        // so skip it when there are no signatures.
+        let no_functions = BTreeSet::new();
+        let flirt_candidates = if sigs.is_empty() {
+            &no_functions
+        } else {
+            &function_starts
+        };
+        for &function in flirt_candidates.iter() {
             let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, function)?;
 
             match matches.len().cmp(&1) {
