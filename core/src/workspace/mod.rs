@@ -126,8 +126,7 @@ impl PEWorkspace {
         }
 
         // heuristic that we trust:
-        //   - find_new_code_references: existing instruction operands that reference
-        //     likely code.
+        //   - find_new_code_references: existing instruction operands that reference likely code.
 
         loop {
             let new_code = crate::analysis::cfg::code_references::find_new_code_references(&pe.module, &insns)?;

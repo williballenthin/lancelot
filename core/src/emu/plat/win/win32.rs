@@ -146,12 +146,9 @@ mod tests {
     };
 
     /// Errors:
-    ///   - FetchError::InvalidInstruction for instructions that cannot be
-    ///     decoded.
-    ///   - FetchError::AddressNotMapped when the instruction address is not
-    ///     mapped.
-    ///   - FetchError::AccessViolation when the instruction address is not
-    ///     executable.
+    ///   - FetchError::InvalidInstruction for instructions that cannot be decoded.
+    ///   - FetchError::AddressNotMapped when the instruction address is not mapped.
+    ///   - FetchError::AccessViolation when the instruction address is not executable.
     ///   - WriteError::AddressNotMapped when a memory address is not mapped.
     ///   - WriteError::AccessViolation when a memory address is not executable.
     ///   - ReadError::AddressNotMapped when a memory address is not mapped.

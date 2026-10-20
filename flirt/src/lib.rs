@@ -207,8 +207,7 @@ pub struct FlirtSignature {
     ///
     /// means:
     ///  - relative offset 0x0 is public name `__common_dsin_cout_rare`
-    ///  - relative offset 0x45 should be a reference (^) to symbol
-    ///    `_vmldSinHATab`
+    ///  - relative offset 0x45 should be a reference (^) to symbol `_vmldSinHATab`
     pub names: Vec<Symbol>,
 
     /// the .pat file format uses a ByteSignature-style to specify a footer mask
