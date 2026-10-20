@@ -471,8 +471,7 @@ fn get_coff_fixups(
             //
             // there are three supported cases today:
             //   1. code/data found in a section target is address of the section.
-            //   2. code/data found in an external symbol, target is the address of
-            //      thesymbol (in UNDEF section).
+            //   2. code/data found in an external symbol, target is the address of thesymbol (in UNDEF section).
             //   3. a known section, like .text, target is ??TODO??.
             let target: i64 = match (symbol.kind(), symbol.section()) {
                 (
