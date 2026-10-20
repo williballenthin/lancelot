@@ -556,6 +556,10 @@ impl FlirtSignatureSet {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.sigs_by_pattern.is_empty()
+    }
+
     pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
         self.matcher
             .r#match(buf)
@@ -774,5 +778,10 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].get_name().unwrap(), "__fseek_lk");
+    }
+
+    #[test]
+    fn test_empty_signature_set() {
+        assert!(FlirtSignatureSet::with_signatures(vec![]).is_empty());
     }
 }
