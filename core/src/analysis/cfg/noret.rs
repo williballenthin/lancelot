@@ -24,9 +24,11 @@ use crate::{
 /// (COFF symbols, FLIRT matches) and the function part of import names like
 /// `kernel32.dll!ExitProcess`. x86 decorated variants (leading underscore,
 /// stdcall `@N` suffixes) are listed explicitly where they occur in practice.
+/// an entry may also be a full import name, for imports by ordinal.
 pub const NORET_NAMES: &[&str] = &[
     // win32
     "ExitProcess",
+    "kernel32.dll!#171", // ExitProcess by ordinal
     "ExitThread",
     "FatalExit",
     "FatalAppExitA",
@@ -68,9 +70,10 @@ pub const NORET_NAMES: &[&str] = &[
 /// prune CFG flows following calls to functions that are known, by name,
 /// to never return (see [`NORET_NAMES`]).
 ///
-/// names are given as a map from name to address, such as
-/// `WorkspaceAnalysis.names.addresses_by_name`: plain names for local
-/// functions, and `dll!symbol` for imports.
+/// names are given as a map from address to name, such as
+/// `WorkspaceAnalysis.names.names_by_address`: plain names for local
+/// functions, and `dll!symbol` for imports. the map is keyed by address
+/// because two import slots can have the same name.
 ///
 /// `noret` is the set of addresses known to never return. it's extended with
 /// the functions recognized here, including callers that are found to never
@@ -78,17 +81,17 @@ pub const NORET_NAMES: &[&str] = &[
 pub fn cfg_prune_noret_by_name(
     module: &Module,
     cfg: &mut CFG,
-    names: &BTreeMap<String, VA>,
+    names: &BTreeMap<VA, String>,
     noret: &mut BTreeSet<VA>,
 ) -> Result<()> {
     let mut found: Vec<VA> = Default::default();
 
-    for (name, &va) in names.iter() {
+    for (&va, name) in names.iter() {
         // for import names like `kernel32.dll!ExitProcess`,
-        // match against the function name part.
+        // match against the function name part, too.
         let function_name = name.rsplit('!').next().unwrap_or(name);
 
-        if NORET_NAMES.contains(&function_name) {
+        if NORET_NAMES.contains(&name.as_str()) || NORET_NAMES.contains(&function_name) {
             log::info!("noret via name: {}: {:#x}", name, va);
             found.push(va);
         }
@@ -394,7 +397,11 @@ mod tests {
     use std::ops::Not;
 
     use super::*;
-    use crate::{analysis::cfg::InstructionIndex, test::*};
+    use crate::{
+        analysis::{cfg::InstructionIndex, pe::ImportedSymbol},
+        rsrc::*,
+        test::*,
+    };
 
     fn build_cfg(module: &Module) -> Result<CFG> {
         let mut insns: InstructionIndex = Default::default();
@@ -403,7 +410,7 @@ mod tests {
     }
 
     fn prune_by_name(module: &Module, cfg: &mut CFG, names: &[(VA, &str)]) -> Result<BTreeSet<VA>> {
-        let names = names.iter().map(|&(va, name)| (name.to_string(), va)).collect();
+        let names = names.iter().map(|&(va, name)| (va, name.to_string())).collect();
         let mut noret = BTreeSet::new();
         cfg_prune_noret_by_name(module, cfg, &names, &mut noret)?;
         Ok(noret)
@@ -771,6 +778,105 @@ mod tests {
         assert!(noret.is_empty());
         assert!(cfg.insns.insns_by_address.contains_key(&0x5));
         assert!(cfg.insns.insns_by_address.contains_key(&0x6));
+
+        Ok(())
+    }
+
+    #[test]
+    fn noret_imports_nop() -> Result<()> {
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let mut insns: InstructionIndex = Default::default();
+
+        for &ep in crate::analysis::pe::entrypoints::find_pe_entrypoint(&pe)?.iter() {
+            insns.build_index(&pe.module, ep)?;
+        }
+
+        for &exp in crate::analysis::pe::exports::find_pe_exports(&pe)?.iter() {
+            insns.build_index(&pe.module, exp)?;
+        }
+
+        let mut cfg = CFG::from_instructions(&pe.module, insns)?;
+
+        // name the imports like the workspace does: `dll!symbol`.
+        let mut names: BTreeMap<VA, String> = Default::default();
+        for import in crate::analysis::pe::get_imports(&pe)?.values() {
+            let name = match &import.symbol {
+                ImportedSymbol::Name(name) => format!("{}!{}", import.dll, name),
+                ImportedSymbol::Ordinal(ordinal) => format!("{}!#{}", import.dll, ordinal),
+            };
+            names.insert(import.address, name);
+        }
+
+        let mut norets: BTreeSet<VA> = Default::default();
+        cfg_prune_noret_by_name(&pe.module, &mut cfg, &names, &mut norets)?;
+
+        const EXIT_PROCESS: VA = 0x40600C;
+        assert!(norets.contains(&EXIT_PROCESS));
+
+        // there are two calls to ExitProcess().
+        //
+        // *************************
+        // First call to ExitProcess
+        // *************************
+        //
+        //     .text:00401C73  push  [esp+uExitCode] ; uExitCode
+        //     .text:00401C77  call  ds:ExitProcess
+        //     .text:00401C7D  CC  align 2
+        //
+        assert!(cfg.insns.insns_by_address.contains_key(&0x401C77));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x401C7D).not());
+        //
+        // this is the end of ___crtExitProcess().
+        // and IDA detects this function as:
+        //
+        //    .text:00401C4E  ; Attributes: library function noreturn
+        //    .text:00401C4E  ; void __cdecl __noreturn __crtExitProcess(UINT)
+        //
+        // this is a noret function because it ends with a call to ExitProcess.
+        assert!(norets.contains(&0x401C4E));
+        // ___crtExitProcess() has a call to it like:
+        //
+        //     .text:00401161  call  __NMSG_WRITE
+        //     .text:00401166  push  0FFh  ; uExitCode
+        //     .text:0040116B  call  ___crtExitProcess
+        //     .text:00401170  db  59h ; Y
+        //     .text:00401171  db  59h ; Y
+        //
+        // this is part of start():
+        //
+        //     .text:00401081  ; int start()
+        //     .text:00401081  public start
+        //     .text:00401081  start proc near
+        //
+        // note start() is *not* noret
+        assert!(norets.contains(&0x401081).not());
+        //
+        // however, this leaf BB is terminated by the noret call.
+        assert!(cfg.insns.insns_by_address.contains_key(&0x40116B));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x401170).not());
+
+        // **************************
+        // Second call to ExitProcess
+        // **************************
+        //
+        //     .text:00402D69  push  3  ; uExitCode
+        //     .text:00402D6B  call  ds:ExitProcess
+        //     .text:00402D71  CC  align 2
+        //
+        // this is part of _report_failure (0x402D41)
+        // which is part of __security_check_cookie (0x402D72) that tailcalls to
+        // _report_failure. IDA detects it as such:
+        //
+        //     .text:00402D72  ; Attributes: library function
+        //     .text:00402D72  ; void __fastcall __security_check_cookie(size_t)
+        //
+        // _report_failure is noret, but __security_check_cookie is *not*.
+        assert!(norets.contains(&0x402D72).not());
+        //
+        // however, this leaf BB is terminated by the noret call.
+        assert!(cfg.insns.insns_by_address.contains_key(&0x402D6B));
+        assert!(cfg.insns.insns_by_address.contains_key(&0x402D71).not());
 
         Ok(())
     }

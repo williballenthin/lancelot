@@ -151,8 +151,28 @@ impl PEWorkspace {
 
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
 
+        let imports = crate::analysis::pe::get_imports(&pe)?;
+
+        let mut names: NameIndex = Default::default();
+        for import in imports.values() {
+            let name = match &import.symbol {
+                ImportedSymbol::Name(name) => format!("{}!{}", import.dll, name),
+                ImportedSymbol::Ordinal(ordinal) => format!("{}!#{}", import.dll, ordinal),
+            };
+
+            names.insert(import.address, name);
+        }
+
+        // prune the code after calls to noret imports before collecting
+        // function starts, so that a function that begins right after such a
+        // call is seen as a call target rather than as a fallthrough.
         let mut noret: BTreeSet<VA> = Default::default();
-        crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg, &mut noret)?;
+        crate::analysis::cfg::noret::cfg_prune_noret_by_name(
+            &pe.module,
+            &mut cfg,
+            &names.names_by_address,
+            &mut noret,
+        )?;
 
         let mut function_starts = function_starts
             .into_iter()
@@ -170,18 +190,6 @@ impl PEWorkspace {
             })
             .collect::<BTreeSet<VA>>();
         function_starts.extend(call_targets);
-
-        let imports = crate::analysis::pe::get_imports(&pe)?;
-
-        let mut names: NameIndex = Default::default();
-        for import in imports.values() {
-            let name = match &import.symbol {
-                ImportedSymbol::Name(name) => format!("{}!{}", import.dll, name),
-                ImportedSymbol::Ordinal(ordinal) => format!("{}!#{}", import.dll, ordinal),
-            };
-
-            names.insert(import.address, name);
-        }
 
         let sigs = config.get_sigs()?;
         // matching reads from each function start to the end of its section,
@@ -219,10 +227,11 @@ impl PEWorkspace {
             }
         }
 
+        // again, now with the names recognized by FLIRT.
         crate::analysis::cfg::noret::cfg_prune_noret_by_name(
             &pe.module,
             &mut cfg,
-            &names.addresses_by_name,
+            &names.names_by_address,
             &mut noret,
         )?;
 
@@ -358,7 +367,7 @@ impl COFFWorkspace {
         crate::analysis::cfg::noret::cfg_prune_noret_by_name(
             &coff.module,
             &mut cfg,
-            &names.addresses_by_name,
+            &names.names_by_address,
             &mut noret,
         )?;
 
