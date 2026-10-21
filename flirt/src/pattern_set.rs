@@ -99,7 +99,7 @@ impl std::convert::From<&str> for Pattern {
 
 pub struct PatternSet {
     patterns: Vec<Pattern>,
-    dt: super::decision_tree::DecisionTree,
+    dt:       super::decision_tree::DecisionTree,
 }
 
 impl std::fmt::Debug for PatternSet {

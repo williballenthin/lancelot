@@ -188,7 +188,7 @@ enum Node {
     },
     Branch {
         /// the index of the symbol to use to branch.
-        index: SymbolIndex,
+        index:   SymbolIndex,
         /// decision values. if the value is seen, transition to the child node.
         // conceptually, this is a btree, but since we dont a expect a large branching factor,
         // especially near the leaves, we dont want the overhead of a full btree node (64 elements?).
@@ -197,7 +197,7 @@ enum Node {
         /// rather than create a choice for each of the ~200 remaining values,
         /// place them all into other.
         /// if this is not None, then this node captures all remaining values.
-        other: Option<Box<Node>>,
+        other:   Option<Box<Node>>,
     },
 }
 
@@ -385,7 +385,7 @@ pub struct DecisionTree {
     // mapping from pattern size to root node.
     // each bucket contains only the patterns of that size.
     // during matching, need to do a match against each bucket with the haystack size and smaller.
-    buckets: BTreeMap<usize, (Vec<PatternId>, Node)>,
+    buckets:  BTreeMap<usize, (Vec<PatternId>, Node)>,
 }
 
 impl DecisionTree {
