@@ -78,7 +78,7 @@ enum Offset {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
     pub offset: i64,
-    pub name:   String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,7 +101,7 @@ impl std::fmt::Display for Symbol {
 #[derive(Debug, Clone)]
 struct TailByte {
     offset: u64,
-    value:  u8,
+    value: u8,
 }
 
 impl std::fmt::Display for TailByte {
@@ -142,7 +142,7 @@ pub struct FlirtSignature {
     // must be 0x2828.
     /// number of bytes passed to the CRC16 checksum
     pub size_of_bytes_crc16: u8, // max: 0xFF
-    pub crc16:               u16,
+    pub crc16: u16,
 
     /// then size of function.
     ///
@@ -417,7 +417,7 @@ impl FlirtSignature {
 }
 
 pub struct FlirtSignatureMatcher<'a> {
-    re:  Regex,
+    re: Regex,
     sig: &'a FlirtSignature,
 }
 
@@ -518,7 +518,7 @@ impl<'a> FlirtSignatureMatcher<'a> {
 
 pub struct FlirtSignatureSet {
     sigs_by_pattern: HashMap<pattern_set::Pattern, Vec<FlirtSignature>>,
-    matcher:         pattern_set::PatternSet,
+    matcher: pattern_set::PatternSet,
 }
 
 impl std::convert::From<&FlirtSignature> for pattern_set::Pattern {

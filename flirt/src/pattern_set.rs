@@ -99,7 +99,7 @@ impl std::convert::From<&str> for Pattern {
 
 pub struct PatternSet {
     patterns: Vec<Pattern>,
-    dt:       super::decision_tree::DecisionTree,
+    dt: super::decision_tree::DecisionTree,
 }
 
 impl std::fmt::Debug for PatternSet {
@@ -143,12 +143,29 @@ impl PatternSetBuilder {
         // otherwise, programming error.
         // must reject invalid patterns when deserializing from pat/sig.
 
-        let mut patterns = vec![];
-        for pattern in self.patterns.iter() {
-            patterns.push(format!("{pattern}"));
-        }
+        use super::decision_tree as dt;
 
-        let dt = super::decision_tree::DecisionTree::new(&patterns);
+        let patterns = self
+            .patterns
+            .iter()
+            .map(|pattern| {
+                dt::Pattern(
+                    pattern
+                        .0
+                        .iter()
+                        .map(|&symbol| {
+                            if symbol == WILDCARD {
+                                dt::Symbol::Wildcard
+                            } else {
+                                dt::Symbol::Byte(symbol.0 as u8)
+                            }
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let dt = dt::DecisionTree::from_patterns(patterns);
 
         PatternSet {
             patterns: self.patterns,

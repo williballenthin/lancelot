@@ -45,12 +45,12 @@ enum HeaderExtra {
     },
     V8_9 {
         functions_count: u32,
-        pattern_size:    u16,
+        pattern_size: u16,
     },
     V10 {
         functions_count: u32,
-        pattern_size:    u16,
-        unknown:         u16,
+        pattern_size: u16,
+        unknown: u16,
     },
 }
 
@@ -69,23 +69,23 @@ impl HeaderExtra {
 #[derive(Debug)]
 struct Header {
     // offset 6
-    version:      u8,
+    version: u8,
     // offset 7
-    arch:         u8,
+    arch: u8,
     // offset 8
-    file_types:   u32,
+    file_types: u32,
     // offset 0xC
-    os_types:     u16,
+    os_types: u16,
     // offset 0xE
-    app_types:    u16,
+    app_types: u16,
     // offset: 0x10
-    features:     Features,
+    features: Features,
     // offset: 0x14
-    crc16:        u16,
+    crc16: u16,
     // offset: 0x23
     ctypes_crc16: u16,
     // offset 0x25
-    extra:        HeaderExtra,
+    extra: HeaderExtra,
     library_name: String,
 }
 
@@ -351,7 +351,7 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
 #[derive(Debug)]
 struct ReferencedName {
     offset: u64,
-    name:   String,
+    name: String,
 }
 
 /// parse a referenced name definition.
@@ -401,8 +401,8 @@ fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], V
 #[derive(Debug)]
 struct Name {
     offset: i64,
-    flags:  NameFlags,
-    name:   String,
+    flags: NameFlags,
+    name: String,
 }
 
 /// parse a name definition.
@@ -487,12 +487,12 @@ fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
                 if name.flags.intersects(NameFlags::LOCAL) {
                     names.push(super::Symbol::Local(super::Name {
                         offset: name.offset,
-                        name:   name.name,
+                        name: name.name,
                     }));
                 } else {
                     names.push(super::Symbol::Public(super::Name {
                         offset: name.offset,
-                        name:   name.name,
+                        name: name.name,
                     }));
                 }
 
@@ -519,7 +519,7 @@ fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
                 for ref_name in ref_names.into_iter() {
                     names.push(super::Symbol::Reference(super::Name {
                         offset: ref_name.offset as i64,
-                        name:   ref_name.name,
+                        name: ref_name.name,
                     }));
                 }
             }
