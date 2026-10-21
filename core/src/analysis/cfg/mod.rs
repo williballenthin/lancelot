@@ -31,6 +31,11 @@ pub struct InstructionDescriptor {
 #[derive(Default, Clone)]
 pub struct InstructionIndex {
     pub insns_by_address: BTreeMap<VA, InstructionDescriptor>,
+    /// the addresses from which instructions were explored (see `build_index`):
+    /// entry points, exports, symbols, pointer references, ...
+    /// these are known to be code without any flow reaching them,
+    /// so pruning flows never removes them.
+    pub roots:            BTreeSet<VA>,
 }
 
 pub const PAGE_SIZE: usize = 0x1000;
@@ -116,6 +121,7 @@ pub fn read_insn_with_cache(
 impl InstructionIndex {
     pub fn build_index(&mut self, module: &Module, va: VA) -> Result<()> {
         let decoder = dis::get_disassembler(module)?;
+        self.roots.insert(va);
         // we prefer to read via a page cache,
         // assuming that instruction fetches are often localized within one page.
         let mut reader: CachingPageReader = Default::default();
@@ -777,9 +783,27 @@ impl CFG {
         // so its no longer an instruction.
         // remove it, and recurse any flows from it.
         if self.flows.flows_by_dst[&target].is_empty() {
+            if self.insns.roots.contains(&target) {
+                // the target is known to be code on its own account
+                // (an entry point, export, symbol, pointer reference, ...),
+                // so it stays, even with no flows to it.
+                //
+                // for example, a Go function's stack-growth stub is
+                // `call runtime.morestack_noctxt; jmp <function start>`:
+                // if the call is pruned as noret, the jump goes, but the
+                // function (found via its pdata entry) must not.
+                log::debug!("cfg: prune: {:x?} at {:#x}: target: {:#x}: root", flow, va, target);
+                return;
+            }
+
             log::debug!("cfg: prune: {:x?} at {:#x}: target: {:#x}: now empty", flow, va, target);
-            for flow in self.flows.flows_by_src[&target].clone().iter() {
-                self.prune_flow(target, flow);
+            // the target may not be an instruction at all:
+            // a fallthrough or jump to bytes that didn't decode has a
+            // flows_by_dst entry but no instruction and no flows of its own.
+            if let Some(flows) = self.flows.flows_by_src.get(&target).cloned() {
+                for flow in flows.iter() {
+                    self.prune_flow(target, flow);
+                }
             }
 
             self.insns.insns_by_address.remove(&target);
@@ -1166,6 +1190,65 @@ mod tests {
 
     mod prune {
         use super::*;
+
+        #[test]
+        fn prune_flow_into_undecodable_bytes() -> Result<()> {
+            // 0: 90 nop
+            // |
+            // V fallthrough
+            // 1: 90 nop
+            // |
+            // V fallthrough
+            // 2: 06 (invalid in 64-bit mode: not an instruction)
+            //
+            // pruning the fallthrough into the undecodable bytes must not
+            // panic.
+            let module = load_shellcode64(b"\x90\x90\x06");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x2).not());
+
+            let fallthrough = cfg.flows.flows_by_src[&0x0][0];
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x0, fallthrough);
+            cfg.commit(batch);
+
+            assert_eq!(cfg.insns.insns_by_address.len(), 1);
+            assert!(cfg.insns.insns_by_address.contains_key(&0x0));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x1).not());
+
+            Ok(())
+        }
+
+        #[test]
+        fn prune_flow_keeps_roots() -> Result<()> {
+            // 0: EB 02 jmp 4
+            // 2: 90 90 (padding)
+            // 4: 90 nop     <- also a root: explored on its own
+            // 5: C3 ret
+            //
+            // pruning the jump leaves the root with no flows to it,
+            // but it must stay, along with what follows it.
+            let module = load_shellcode32(b"\xEB\x02\x90\x90\x90\xC3");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            insns.build_index(&module, 0x4)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            let jump = cfg.flows.flows_by_src[&0x0][0];
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x0, jump);
+            cfg.commit(batch);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x4));
+            assert!(cfg.insns.insns_by_address.contains_key(&0x5));
+            assert!(cfg.flows.flows_by_dst[&0x4].is_empty());
+            assert!(cfg.basic_blocks.blocks_by_address.contains_key(&0x4));
+
+            Ok(())
+        }
 
         #[test]
         fn prune_flow_simple_bb() -> Result<()> {
