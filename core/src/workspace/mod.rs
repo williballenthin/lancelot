@@ -235,7 +235,21 @@ impl PEWorkspace {
             &mut noret,
         )?;
 
-        crate::analysis::cfg::noret::cfg_prune_noret_functions(&pe.module, &mut cfg, &function_starts, &mut noret)?;
+        // disabled: the noret-by-CFG pass is not precise enough, it is slow,
+        // and its results are not critical.
+        //
+        // the pass evaluates every function start, so a binary with few noret
+        // call sites only pays for it. on capa-testfiles, debug build: a
+        // Delphi sample goes from 2.3s to 3.6s and a Go sample from 3.9s to
+        // 4.6s, and the second round of the fixpoint costs 0.2s to 0.4s on
+        // the largest samples while it finds at most one function.
+        //
+        // crate::analysis::cfg::noret::cfg_prune_noret_functions(
+        //     &pe.module,
+        //     &mut cfg,
+        //     &function_starts,
+        //     &mut noret,
+        // )?;
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
@@ -371,7 +385,21 @@ impl COFFWorkspace {
             &mut noret,
         )?;
 
-        crate::analysis::cfg::noret::cfg_prune_noret_functions(&coff.module, &mut cfg, &function_starts, &mut noret)?;
+        // disabled: the noret-by-CFG pass is not precise enough, it is slow,
+        // and its results are not critical.
+        //
+        // the pass evaluates every function start, so a binary with few noret
+        // call sites only pays for it. on capa-testfiles, debug build: a
+        // Delphi sample goes from 2.3s to 3.6s and a Go sample from 3.9s to
+        // 4.6s, and the second round of the fixpoint costs 0.2s to 0.4s on
+        // the largest samples while it finds at most one function.
+        //
+        // crate::analysis::cfg::noret::cfg_prune_noret_functions(
+        //     &coff.module,
+        //     &mut cfg,
+        //     &function_starts,
+        //     &mut noret,
+        // )?;
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
