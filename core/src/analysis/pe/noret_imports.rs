@@ -11,8 +11,13 @@ use crate::{
     VA,
 };
 
-pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
-    let mut noret = pe::get_imports(pe)?
+/// prune CFG flows following calls to imports that are known to never return.
+///
+/// `noret` is the set of addresses known to never return. it's extended with
+/// the import pointers recognized here, and with callers that are found to
+/// never return as a consequence (see `cfg_mark_noret`).
+pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG, noret: &mut BTreeSet<VA>) -> Result<()> {
+    let noret_imports = pe::get_imports(pe)?
         .values()
         .filter(|imp| match (&*imp.dll, &imp.symbol) {
             ("kernel32.dll", ImportedSymbol::Name(symbol)) if symbol == "ExitProcess" => true,
@@ -23,16 +28,11 @@ pub fn cfg_prune_noret_imports(pe: &PE, cfg: &mut CFG) -> Result<BTreeSet<VA>> {
         .map(|imp| imp.address)
         .collect::<BTreeSet<_>>();
 
-    for &noret_import in noret.clone().iter() {
+    for &noret_import in noret_imports.iter() {
         log::debug!("noret import {:#x}", noret_import);
-        noret.extend(crate::analysis::cfg::noret::cfg_mark_noret(
-            &pe.module,
-            cfg,
-            noret_import,
-        )?);
     }
 
-    Ok(noret)
+    crate::analysis::cfg::noret::cfg_mark_noret(&pe.module, cfg, noret_imports, noret)
 }
 
 #[cfg(test)]
@@ -57,7 +57,8 @@ mod tests {
         }
 
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
-        let norets = cfg_prune_noret_imports(&pe, &mut cfg)?;
+        let mut norets: BTreeSet<VA> = Default::default();
+        cfg_prune_noret_imports(&pe, &mut cfg, &mut norets)?;
 
         const EXIT_PROCESS: VA = 0x40600C;
         assert!(norets.contains(&EXIT_PROCESS));

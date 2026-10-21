@@ -151,7 +151,8 @@ impl PEWorkspace {
 
         let mut cfg = CFG::from_instructions(&pe.module, insns)?;
 
-        let mut noret = crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg)?;
+        let mut noret: BTreeSet<VA> = Default::default();
+        crate::analysis::pe::noret_imports::cfg_prune_noret_imports(&pe, &mut cfg, &mut noret)?;
 
         let mut function_starts = function_starts
             .into_iter()
@@ -218,11 +219,14 @@ impl PEWorkspace {
             }
         }
 
-        noret.extend(crate::analysis::cfg::noret::cfg_prune_noret_by_name(
+        crate::analysis::cfg::noret::cfg_prune_noret_by_name(
             &pe.module,
             &mut cfg,
             &names.addresses_by_name,
-        )?);
+            &mut noret,
+        )?;
+
+        crate::analysis::cfg::noret::cfg_prune_noret_functions(&pe.module, &mut cfg, &function_starts, &mut noret)?;
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
@@ -350,8 +354,15 @@ impl COFFWorkspace {
             .collect::<BTreeSet<VA>>();
         function_starts.extend(call_targets);
 
-        let noret =
-            crate::analysis::cfg::noret::cfg_prune_noret_by_name(&coff.module, &mut cfg, &names.addresses_by_name)?;
+        let mut noret: BTreeSet<VA> = Default::default();
+        crate::analysis::cfg::noret::cfg_prune_noret_by_name(
+            &coff.module,
+            &mut cfg,
+            &names.addresses_by_name,
+            &mut noret,
+        )?;
+
+        crate::analysis::cfg::noret::cfg_prune_noret_functions(&coff.module, &mut cfg, &function_starts, &mut noret)?;
 
         let thunks = crate::analysis::cfg::thunk::find_thunks(&cfg, function_starts.iter());
 
