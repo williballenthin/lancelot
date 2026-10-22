@@ -897,11 +897,13 @@ pub fn export_workspace_to_binexport2(
 
     let decoder = dis::get_disassembler(ws.module()).unwrap();
     for bb in ws.cfg().basic_blocks.blocks_by_address.values() {
-        // Need to over-read the bb buffer, to account for the final instructions.
+        // Need to over-read the bb buffer, to account for the final instructions,
+        // unless the basic block ends right at the end of the address space.
         let buf = ws
             .module()
             .address_space
-            .read_bytes(bb.address, bb.length as usize + 0x10)?;
+            .read_bytes(bb.address, bb.length as usize + 0x10)
+            .or_else(|_| ws.module().address_space.read_bytes(bb.address, bb.length as usize))?;
 
         let mut instruction_indexes: Vec<usize> = vec![];
 
