@@ -298,6 +298,43 @@ fn has_clean_flow(module: &Module, decoder: &Decoder, va: VA) -> bool {
     true
 }
 
+fn is_text(c: u8) -> bool {
+    (0x20..0x7F).contains(&c) || matches!(c, b'\t' | b'\n' | b'\r')
+}
+
+/// Does the buffer start with a UTF-16LE string of at least 4 characters?
+/// Like `45 00 52 00 52 00 4F 00` ("ERRO"), which decodes as `inc ebp; add [edx+0x0], dl; ...`.
+fn is_utf16_string(buf: &[u8]) -> bool {
+    buf.len() >= 8 && buf[..8].chunks(2).all(|c| is_text(c[0]) && c[1] == 0)
+}
+
+/// Does the buffer start with an ASCII string:
+/// at least 8 printable characters and a NULL, or at least 16 printable characters?
+///
+/// shorter runs are common in code, such as `6A 2C 68 ...` (`push 0x2C; push offset ...`).
+fn is_ascii_string(buf: &[u8]) -> bool {
+    let n = buf.iter().take_while(|&&c| (0x20..0x7F).contains(&c)).count();
+    n >= 16 || (n >= 8 && buf.get(n) == Some(&0))
+}
+
+/// Does the buffer start with two RVAs into the module,
+/// such as the import name table or an export table?
+fn is_rva_table(module: &Module, buf: &[u8]) -> bool {
+    let image_size = module
+        .sections
+        .iter()
+        .map(|section| section.virtual_range.end)
+        .max()
+        .unwrap_or(0)
+        - module.address_space.base_address;
+
+    buf.len() >= 8
+        && buf[..8].chunks(4).all(|c| {
+            let rva = u32::from_le_bytes([c[0], c[1], c[2], c[3]]) as u64;
+            (0x1000..image_size).contains(&rva)
+        })
+}
+
 pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
     if module.probe_va(va, Permissions::X).not() {
         // this is not code because its not executable.
@@ -320,6 +357,12 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
     }
 
     if let Ok(buf) = module.address_space.read_bytes(va, 256) {
+        if is_utf16_string(&buf) || is_ascii_string(&buf) || is_rva_table(module, &buf) {
+            // this is a string or a table, not code.
+            // they often decode as a valid first basic block.
+            return false;
+        }
+
         let features = extract_code_features(decoder, &buf);
 
         if features.has_invalid_instruction {
