@@ -1,9 +1,16 @@
-use std::ops::Not;
+use std::{
+    collections::{BTreeSet, VecDeque},
+    ops::Not,
+};
 
 use crate::{
     analysis::{
+        cfg::{
+            flow::{self, Flow},
+            read_insn_with_cache, CachingPageReader,
+        },
         dis,
-        dis::{zydis::Decoder, DecodedInstruction},
+        dis::{zydis::Decoder, DecodedInstruction, Target},
     },
     aspace::AddressSpace,
     module::{Module, Permissions},
@@ -185,6 +192,112 @@ pub fn is_pointer_table(module: &Module, va: VA) -> bool {
     is_pointer(module, va) && (is_pointer(module, va + psize as u64) || is_pointer(module, va - psize as u64))
 }
 
+/// Is this an instruction that compilers don't emit in user-mode code,
+/// but that shows up often when decoding data as code?
+/// For example, the ASCII letters `l` through `o` decode as `insb`, `insd`, `outsb`, and `outsd`,
+/// and `b` and `c` decode as `bound` and `arpl`.
+fn is_unlikely_instruction(insn: &DecodedInstruction) -> bool {
+    use zydis::{Mnemonic::*, Register};
+
+    match insn.mnemonic {
+        AAA | AAS | AAD | AAM | DAA | DAS | SALC | ARPL | BOUND | INTO | LES | LDS | INSB | INSW | INSD | OUTSB
+        | OUTSW | OUTSD => true,
+        // pop into a segment register
+        POP => matches!(
+            insn.operands().first().map(|op| &op.kind),
+            Some(dis::DecodedOperandKind::Reg(Register::ES | Register::SS | Register::DS))
+        ),
+        _ => false,
+    }
+}
+
+/// Is there a pointer table at the given address, possibly after some alignment padding?
+fn is_padded_pointer_table(module: &Module, va: VA) -> bool {
+    let mut va = va;
+    while let Ok(0x90 | 0xCC) = module.address_space.read_u8(va) {
+        va += 1;
+    }
+    is_pointer_table(module, va)
+}
+
+/// Is this a call or (conditional) jump? That is, a control flow instruction with a target operand.
+fn is_branch(insn: &DecodedInstruction) -> bool {
+    dis::is_control_flow_instruction(insn)
+        && !matches!(
+            insn.mnemonic,
+            zydis::Mnemonic::RET | zydis::Mnemonic::IRET | zydis::Mnemonic::IRETD | zydis::Mnemonic::IRETQ
+        )
+}
+
+/// The number of instructions to decode when checking the flow from a candidate function start.
+const FLOW_CHECK_INSTRUCTION_COUNT: usize = 256;
+
+/// Does the code reachable from the given address within its function
+/// (fallthroughs and jumps, but not calls) decode cleanly,
+/// up to FLOW_CHECK_INSTRUCTION_COUNT instructions?
+///
+/// Data decoded as code soon reaches an invalid instruction,
+/// an instruction that compilers don't emit,
+/// or a branch to somewhere that isn't code.
+/// The first basic block alone often looks fine, so we look further.
+fn has_clean_flow(module: &Module, decoder: &Decoder, va: VA) -> bool {
+    let mut reader: CachingPageReader = Default::default();
+    let mut seen: BTreeSet<VA> = Default::default();
+    let mut queue: VecDeque<VA> = Default::default();
+    queue.push_back(va);
+
+    while let Some(va) = queue.pop_front() {
+        if !seen.insert(va) {
+            continue;
+        }
+
+        if seen.len() > FLOW_CHECK_INSTRUCTION_COUNT {
+            return true;
+        }
+
+        let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, decoder) else {
+            return false;
+        };
+
+        if is_unlikely_instruction(&insn) {
+            return false;
+        }
+
+        if is_branch(&insn) {
+            if let Some(op) = dis::get_first_operand(&insn) {
+                match dis::get_operand_xref(module, va, &insn, op) {
+                    Ok(Some(Target::Direct(target))) if !flow::is_valid_target(module, target) => return false,
+                    // a relative branch outside of the module.
+                    Ok(None) if matches!(op.kind, dis::DecodedOperandKind::Imm(_)) => return false,
+                    _ => {}
+                }
+            }
+        }
+
+        let Ok(flows) = flow::get_insn_flow(module, va, &insn) else {
+            return false;
+        };
+        for flow in flows.iter() {
+            match flow {
+                Flow::Fallthrough(target)
+                    if insn.mnemonic == zydis::Mnemonic::CALL && is_padded_pointer_table(module, *target) =>
+                {
+                    // the call doesn't return, and a jump table follows it.
+                    // we don't know about noret functions yet.
+                }
+                Flow::Fallthrough(target) => queue.push_front(*target),
+                Flow::ConditionalJump(target) => queue.push_back(*target),
+                Flow::UnconditionalJump(Target::Direct(target)) => queue.push_back(*target),
+                // calls are checked when the callee is considered,
+                // and we can't follow indirect flows.
+                Flow::Call(_) | Flow::UnconditionalJump(Target::Indirect(_)) => {}
+            }
+        }
+    }
+
+    true
+}
+
 pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
     if module.probe_va(va, Permissions::X).not() {
         // this is not code because its not executable.
@@ -218,6 +331,10 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
         }
 
         if features.has_uncommon_instruction {
+            return false;
+        }
+
+        if !has_clean_flow(module, decoder, va) {
             return false;
         }
 

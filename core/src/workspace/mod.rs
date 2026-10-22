@@ -798,4 +798,32 @@ mod tests {
         let _ws = workspace_from_bytes(config, &buf)?;
         Ok(())
     }
+
+    #[test]
+    fn ws_issue_279_data_mapped_executable() -> Result<()> {
+        // like a memory dump of a packed program,
+        // where the data sections are mapped RWX alongside the code.
+        // instruction operands reference strings and tables in .rdata,
+        // which must not become functions.
+        let buf = get_buf(Rsrc::MIMI);
+        let mut pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        for section in pe.module.sections.iter_mut() {
+            section.permissions.insert(crate::module::Permissions::X);
+        }
+        let text = pe
+            .module
+            .sections
+            .iter()
+            .find(|section| section.name == ".text")
+            .unwrap()
+            .virtual_range
+            .clone();
+
+        let ws = PEWorkspace::from_pe(get_config(), pe)?;
+
+        let outside = ws.analysis.functions.keys().filter(|va| !text.contains(va)).count();
+        assert!(outside < 32, "{outside} functions outside of .text");
+
+        Ok(())
+    }
 }
