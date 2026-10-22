@@ -153,6 +153,50 @@ fn read_unwind_info(pe: &PE, offset: VA) -> Result<UnwindInfo> {
     })
 }
 
+/// Read the RUNTIME_FUNCTION at the given address and follow its chained
+/// UNWIND_INFO to the start of the function.
+/// Returns None for an entry filled with zeros.
+fn read_function_start(pe: &PE, va: VA) -> Result<Option<VA>> {
+    let Some(runtime_function) = read_runtime_function(pe, va)? else {
+        return Ok(None);
+    };
+
+    debug!("pdata: found RUNTIME_FUNCTION@{:#x}", va);
+    let mut unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
+
+    debug!(
+        "pdata: RUNTIME_FUNCTION@{:#x} with UNWIND_INFO@{:#x}",
+        va, runtime_function.unwind_info_address
+    );
+
+    // if the UNWIND_INFO is chained,
+    // keep following it until it reaches the "primary entry".
+    let mut function_start = runtime_function.function_start;
+    let mut unwind_info_address = runtime_function.unwind_info_address;
+    while let UnwindInfoData::ChainedUnwindInfo(runtime_function) = unwind_info.data {
+        debug!(
+            "pdata: UNWIND_INFO@{:#x} chained to {:#x}",
+            unwind_info_address, runtime_function.unwind_info_address
+        );
+
+        unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
+
+        function_start = runtime_function.function_start;
+        unwind_info_address = runtime_function.unwind_info_address
+    }
+
+    if !pe.module.probe_va(function_start, Permissions::X) {
+        return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
+    }
+
+    debug!(
+        "pdata: RUNTIME_FUNCTION@{:#x} points to function {:#x}",
+        va, function_start
+    );
+
+    Ok(Some(function_start))
+}
+
 pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
     let mut ret = vec![];
 
@@ -167,50 +211,25 @@ pub fn find_pe_runtime_functions(pe: &PE) -> Result<Vec<VA>> {
         for va in (exception_directory.address..exception_directory.address + exception_directory.size)
             .step_by(sizeof_RUNTIME_FUNCTION)
         {
-            if let Some(runtime_function) = read_runtime_function(pe, va)? {
-                debug!("pdata: found RUNTIME_FUNCTION@{:#x}", va);
-                let mut unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
-
-                debug!(
-                    "pdata: RUNTIME_FUNCTION@{:#x} with UNWIND_INFO@{:#x}",
-                    va, runtime_function.unwind_info_address
-                );
-
-                // if the UNWIND_INFO is chained,
-                // keep following it until it reaches the "primary entry".
-                let mut function_start = runtime_function.function_start;
-                let mut unwind_info_address = runtime_function.unwind_info_address;
-                while let UnwindInfoData::ChainedUnwindInfo(runtime_function) = unwind_info.data {
-                    debug!(
-                        "pdata: UNWIND_INFO@{:#x} chained to {:#x}",
-                        unwind_info_address, runtime_function.unwind_info_address
-                    );
-
-                    unwind_info = read_unwind_info(pe, runtime_function.unwind_info_address)?;
-
-                    function_start = runtime_function.function_start;
-                    unwind_info_address = runtime_function.unwind_info_address
+            match read_function_start(pe, va) {
+                Ok(Some(function_start)) => ret.push(function_start),
+                Ok(None) => {
+                    // just read an entry filled with zeros.
+                    //
+                    // incrementally linked binaries pad the exception directory
+                    // with zero entries (possibly hundreds, at the front), with
+                    // the real entries following. so don't treat a zero entry as
+                    // the end of the table: skip it and keep scanning. the loop
+                    // is bounded by the directory size, so this always terminates.
+                    continue;
                 }
-
-                if !pe.module.probe_va(function_start, Permissions::X) {
-                    return Err(RuntimeFunctionError::InvalidRuntimeFunction.into());
+                Err(e) => {
+                    // such as a packed program, whose exception directory
+                    // describes code that hasn't been unpacked yet.
+                    // skip the entry rather than failing the whole analysis.
+                    debug!("pdata: invalid RUNTIME_FUNCTION@{:#x}: {}", va, e);
+                    continue;
                 }
-
-                debug!(
-                    "pdata: RUNTIME_FUNCTION@{:#x} points to function {:#x}",
-                    va, function_start
-                );
-
-                ret.push(function_start);
-            } else {
-                // just read an entry filled with zeros.
-                //
-                // incrementally linked binaries pad the exception directory
-                // with zero entries (possibly hundreds, at the front), with
-                // the real entries following. so don't treat a zero entry as
-                // the end of the table: skip it and keep scanning. the loop
-                // is bounded by the directory size, so this always terminates.
-                continue;
             }
         }
     }
