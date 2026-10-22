@@ -50,6 +50,15 @@ pub fn linear_disassemble<'a>(
     decoder: &'a zydis::Decoder,
     buf: &'a [u8],
 ) -> impl Iterator<Item = (usize, zydis::Result<Option<DecodedInstruction>>)> + 'a {
+    linear_disassemble_as::<zydis::AllOperands>(decoder, buf)
+}
+
+/// like `linear_disassemble`, but decode only the given operands.
+/// decoding without operands (`zydis::NoOperands`) is approximately one third faster.
+pub fn linear_disassemble_as<'a, O: zydis::Operands>(
+    decoder: &'a zydis::Decoder,
+    buf: &'a [u8],
+) -> impl Iterator<Item = (usize, zydis::Result<Option<zydis::Instruction<O>>>)> + 'a {
     let mut offset = 0usize;
     let iter = std::iter::from_fn(move || {
         if offset >= buf.len() {
@@ -58,7 +67,7 @@ pub fn linear_disassemble<'a>(
 
         let insn_offset = offset;
         let insn_buf = &buf[insn_offset..];
-        let insn = decode(decoder, insn_buf);
+        let insn = decoder.decode_first::<O>(insn_buf);
 
         if let Ok(Some(insn)) = &insn {
             // see discussion of linear vs thorough disassemble in this module doc for

@@ -79,13 +79,24 @@ pub fn read_insn_with_cache(
     va: VA,
     decoder: &zydis::Decoder,
 ) -> Result<Option<dis::DecodedInstruction>> {
+    read_insn_with_cache_as::<zydis::AllOperands>(reader, address_space, va, decoder)
+}
+
+/// like `read_insn_with_cache`, but decode only the given operands.
+/// decoding without operands (`zydis::NoOperands`) is approximately one third faster.
+pub fn read_insn_with_cache_as<O: zydis::Operands>(
+    reader: &mut CachingPageReader,
+    address_space: &AbsoluteAddressSpace,
+    va: VA,
+    decoder: &zydis::Decoder,
+) -> Result<Option<zydis::Instruction<O>>> {
     if va & PAGE_MASK <= (PAGE_SIZE - 0x10) as u64 {
         // common case: instruction doesn't split two pages (max insn size: 0x10).
         //
         // so we read from the page cache, which we expect to be pretty fast.
         let page = reader.read(address_space, va)?;
         let insn_buf = &page[(va & PAGE_MASK) as usize..];
-        match dis::decode(decoder, insn_buf) {
+        match decoder.decode_first::<O>(insn_buf) {
             Ok(i) => Ok(i),
             Err(e) => Err(e.into()),
         }
@@ -99,7 +110,7 @@ pub fn read_insn_with_cache(
         //   2. we have to reach into the address space, which isn't free.
         let mut insn_buf = [0u8; 0x10];
         if address_space.read_into(va, &mut insn_buf).is_ok() {
-            match dis::decode(decoder, &insn_buf) {
+            match decoder.decode_first::<O>(&insn_buf) {
                 Ok(i) => Ok(i),
                 Err(e) => Err(e.into()),
             }
@@ -110,7 +121,7 @@ pub fn read_insn_with_cache(
             // which is enough for any instruction that's actually mapped.
             let page = reader.read(address_space, va)?;
             let insn_buf = &page[(va & PAGE_MASK) as usize..];
-            match dis::decode(decoder, insn_buf) {
+            match decoder.decode_first::<O>(insn_buf) {
                 Ok(i) => Ok(i),
                 Err(e) => Err(e.into()),
             }
@@ -150,20 +161,30 @@ impl InstructionIndex {
                 continue;
             }
 
-            let insn = match read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
-                Ok(Some(insn)) => {
-                    // common happy case: valid instruction that doesn't split two pages.
-                    insn
-                }
-                Err(e) => {
-                    // invalid instruction
-                    log::warn!("cfg: invalid instruction: {:#x}: {:#?}", va, e);
-                    continue;
-                }
-                Ok(None) => continue,
-            };
+            // decode without operands first, which is faster.
+            // most instructions only fall through, and only the others need their operands.
+            let insn =
+                match read_insn_with_cache_as::<zydis::NoOperands>(&mut reader, &module.address_space, va, &decoder) {
+                    Ok(Some(insn)) => {
+                        // common happy case: valid instruction that doesn't split two pages.
+                        insn
+                    }
+                    Err(e) => {
+                        // invalid instruction
+                        log::warn!("cfg: invalid instruction: {:#x}: {:#?}", va, e);
+                        continue;
+                    }
+                    Ok(None) => continue,
+                };
 
-            let successors: Flows = flow::get_insn_flow(module, va, &insn)?;
+            let successors: Flows = if flow::needs_operands(insn.mnemonic) {
+                match read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
+                    Ok(Some(insn)) => flow::get_insn_flow(module, va, &insn)?,
+                    _ => continue,
+                }
+            } else {
+                smallvec::smallvec![Flow::Fallthrough(va + insn.length as u64)]
+            };
 
             // place fallthroughs at the very front (expecting: most local)
             // then non-fallthroughs after fallthroughs.
