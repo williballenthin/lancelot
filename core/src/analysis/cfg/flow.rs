@@ -181,6 +181,44 @@ pub fn get_cjmp_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstructio
     Ok(smallvec![])
 }
 
+/// Does `get_insn_flow` need the operands of an instruction with the given mnemonic?
+/// For any other instruction, the only flow is the fallthrough.
+/// This lets callers decode without operands, which is faster, and decode again only when necessary.
+pub fn needs_operands(mnemonic: zydis::Mnemonic) -> bool {
+    use zydis::Mnemonic::*;
+    matches!(
+        mnemonic,
+        CALL | JMP
+            | RET
+            | IRET
+            | IRETD
+            | IRETQ
+            | INT
+            | INT3
+            | JB
+            | JBE
+            | JCXZ
+            | JECXZ
+            | JKNZD
+            | JKZD
+            | JL
+            | JLE
+            | JNB
+            | JNBE
+            | JNL
+            | JNLE
+            | JNO
+            | JNP
+            | JNS
+            | JNZ
+            | JO
+            | JP
+            | JRCXZ
+            | JS
+            | JZ
+    )
+}
+
 pub fn get_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     let mut flows = match insn.mnemonic {
         zydis::Mnemonic::CALL => get_call_insn_flow(module, va, insn)?,

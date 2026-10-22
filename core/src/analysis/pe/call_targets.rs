@@ -50,11 +50,17 @@ pub fn find_pe_call_targets(pe: &PE) -> Result<BTreeSet<VA>> {
         let vstart: VA = section.virtual_range.start;
         let vsize = (section.virtual_range.end - section.virtual_range.start) as usize;
         let sec_buf = pe.module.address_space.read_bytes(vstart, vsize)?;
-        for (insn_offset, insn) in dis::linear_disassemble(&decoder, &sec_buf) {
+        // decode without operands, which is faster,
+        // and decode again with operands only for the calls.
+        for (insn_offset, insn) in dis::linear_disassemble_as::<zydis::NoOperands>(&decoder, &sec_buf) {
             if let Ok(Some(insn)) = insn {
                 if insn.meta.category != zydis::InstructionCategory::CALL {
                     continue;
                 }
+
+                let Ok(Some(insn)) = dis::decode(&decoder, &sec_buf[insn_offset..]) else {
+                    continue;
+                };
 
                 let insn_va: VA = vstart + insn_offset as u64;
                 let op0 = &insn.operands()[0];

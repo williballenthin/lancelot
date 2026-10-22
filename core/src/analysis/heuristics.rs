@@ -7,7 +7,7 @@ use crate::{
     analysis::{
         cfg::{
             flow::{self, Flow},
-            read_insn_with_cache, CachingPageReader,
+            read_insn_with_cache, read_insn_with_cache_as, CachingPageReader,
         },
         dis,
         dis::{zydis::Decoder, DecodedInstruction, Target},
@@ -52,8 +52,8 @@ struct CodeFeatures {
     has_uncommon_instruction: bool,
 }
 
-fn extract_mnemonic_feature(insn: &DecodedInstruction) -> MnemonicDescriptor {
-    match insn.mnemonic {
+fn extract_mnemonic_feature(mnemonic: zydis::Mnemonic) -> MnemonicDescriptor {
+    match mnemonic {
         zydis::Mnemonic::PUSH => MnemonicDescriptor::PUSH,
         zydis::Mnemonic::POP => MnemonicDescriptor::POP,
 
@@ -140,13 +140,14 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     let mut has_invalid_instruction = false;
     let mut has_zero_instruction = false;
     let mut has_uncommon_instruction = false;
-    for (offset, insn) in dis::linear_disassemble(decoder, buf) {
+    // only the mnemonics matter here, so decode without operands, which is faster.
+    for (offset, insn) in dis::linear_disassemble_as::<zydis::NoOperands>(decoder, buf) {
         if let (Some(0x0), Some(0x0)) = (buf.get(offset), buf.get(offset + 1)) {
             has_zero_instruction = true;
         }
 
         if let Ok(Some(insn)) = insn {
-            let mnem = extract_mnemonic_feature(&insn);
+            let mnem = extract_mnemonic_feature(insn.mnemonic);
 
             if matches!(mnem, MnemonicDescriptor::OTHER) {
                 has_uncommon_instruction = true;
@@ -200,15 +201,39 @@ fn is_unlikely_instruction(insn: &DecodedInstruction) -> bool {
     use zydis::{Mnemonic::*, Register};
 
     match insn.mnemonic {
-        AAA | AAS | AAD | AAM | DAA | DAS | SALC | ARPL | BOUND | INTO | LES | LDS | INSB | INSW | INSD | OUTSB
-        | OUTSW | OUTSD => true,
         // pop into a segment register
         POP => matches!(
             insn.operands().first().map(|op| &op.kind),
             Some(dis::DecodedOperandKind::Reg(Register::ES | Register::SS | Register::DS))
         ),
-        _ => false,
+        mnemonic => is_unlikely_mnemonic(mnemonic),
     }
+}
+
+/// like `is_unlikely_instruction`, for the instructions that we can recognize without their operands.
+fn is_unlikely_mnemonic(mnemonic: zydis::Mnemonic) -> bool {
+    use zydis::Mnemonic::*;
+
+    matches!(
+        mnemonic,
+        AAA | AAS
+            | AAD
+            | AAM
+            | DAA
+            | DAS
+            | SALC
+            | ARPL
+            | BOUND
+            | INTO
+            | LES
+            | LDS
+            | INSB
+            | INSW
+            | INSD
+            | OUTSB
+            | OUTSW
+            | OUTSD
+    )
 }
 
 /// Is there a pointer table at the given address, possibly after some alignment padding?
@@ -253,6 +278,22 @@ fn has_clean_flow(module: &Module, decoder: &Decoder, va: VA) -> bool {
 
         if seen.len() > FLOW_CHECK_INSTRUCTION_COUNT {
             return true;
+        }
+
+        // decode without operands first, which is faster.
+        // most instructions only fall through, and only the others need their operands.
+        let Ok(Some(insn)) =
+            read_insn_with_cache_as::<zydis::NoOperands>(&mut reader, &module.address_space, va, decoder)
+        else {
+            return false;
+        };
+
+        if !flow::needs_operands(insn.mnemonic) && insn.mnemonic != zydis::Mnemonic::POP {
+            if is_unlikely_mnemonic(insn.mnemonic) {
+                return false;
+            }
+            queue.push_front(va + insn.length as u64);
+            continue;
         }
 
         let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, decoder) else {
