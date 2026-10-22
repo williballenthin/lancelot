@@ -377,10 +377,7 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
             return false;
         }
 
-        // data mapped executable happens in packed programs and memory dumps,
-        // which map their sections writable and executable.
-        // compilers don't emit writable code, so skip the slower check there.
-        if module.probe_va(va, Permissions::W) && !has_clean_flow(module, decoder, va) {
+        if !has_clean_flow(module, decoder, va) {
             return false;
         }
 
