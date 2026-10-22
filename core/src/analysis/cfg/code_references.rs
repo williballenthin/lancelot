@@ -95,12 +95,27 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
 /// so after a round of exploration, only the newly added instructions can reference new code.
 pub fn find_new_code_references_from(module: &Module, insns: &cfg::InstructionIndex, scan: &[VA]) -> Result<Vec<VA>> {
     let decoder = dis::get_disassembler(module)?;
+    Ok(find_code_reference_candidates_from(module, insns, scan)?
+        .into_iter()
+        .filter(|&target| heuristics::is_probably_code(module, &decoder, target))
+        .inspect(|target| log::debug!("code references: found new likely code at {:#x}", target))
+        .collect())
+}
+
+/// The addresses that the operands of the given instructions reference,
+/// and that aren't already code.
+/// These may not be code, so check them, such as with `heuristics::is_probably_code`.
+pub fn find_code_reference_candidates_from(
+    module: &Module,
+    insns: &cfg::InstructionIndex,
+    scan: &[VA],
+) -> Result<Vec<VA>> {
+    let decoder = dis::get_disassembler(module)?;
     // we prefer to read via a page cache,
     // assuming that when we read instructions ordered by address,
     // fetches will often be localized within one page.
     let mut reader: CachingPageReader = Default::default();
 
-    let mut new_code: BTreeSet<VA> = Default::default();
     let mut candidates: BTreeSet<VA> = Default::default();
     for &va in scan.iter() {
         if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
@@ -123,16 +138,8 @@ pub fn find_new_code_references_from(module: &Module, insns: &cfg::InstructionIn
     }
 
     // many instructions reference the same address,
-    // so check each referenced address only once.
-    for target in candidates.into_iter() {
-        if heuristics::is_probably_code(module, &decoder, target) {
-            // finally, we think we have some new code.
-            log::debug!("code references: found new likely code at {:#x}", target);
-            new_code.insert(target);
-        }
-    }
-
-    Ok(new_code.into_iter().collect())
+    // so report each referenced address only once.
+    Ok(candidates.into_iter().collect())
 }
 
 #[cfg(test)]

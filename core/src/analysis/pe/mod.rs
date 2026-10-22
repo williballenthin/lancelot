@@ -190,36 +190,54 @@ pub fn find_thunks(pe: &PE, imports: &BTreeMap<VA, Import>, functions: &BTreeSet
     Ok(thunks)
 }
 
-#[cfg(feature = "disassembler")]
-pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
-    use crate::analysis::heuristics;
-
-    let imports = get_imports(pe)?;
-    debug!("imports: found {} imports", imports.len());
-    for (va, import) in imports.iter() {
-        debug!("imports: {va:#x}: {import}");
-    }
-
+/// The function starts that the file format describes:
+/// the entry point, exports, SafeSEH handlers, runtime functions (.pdata), and CFG functions.
+pub fn find_structured_function_starts(pe: &PE) -> Result<BTreeSet<VA>> {
     let mut function_starts: BTreeSet<VA> = Default::default();
     function_starts.extend(crate::analysis::pe::entrypoints::find_pe_entrypoint(pe)?);
     function_starts.extend(crate::analysis::pe::exports::find_pe_exports(pe)?);
     function_starts.extend(crate::analysis::pe::safeseh::find_pe_safeseh_handlers(pe)?);
     function_starts.extend(crate::analysis::pe::runtime_functions::find_pe_runtime_functions(pe)?);
     function_starts.extend(crate::analysis::pe::control_flow_guard::find_pe_cfguard_functions(pe)?);
+    Ok(function_starts)
+}
+
+/// Possible function starts found by heuristics: the targets of call instructions, and function prologues.
+/// These may not be code, so check them, such as with `heuristics::is_probably_code`.
+#[cfg(feature = "disassembler")]
+pub fn find_function_start_candidates(pe: &PE) -> Result<BTreeSet<VA>> {
+    let mut candidates = crate::analysis::pe::call_targets::find_pe_call_targets(pe)?;
+    candidates.extend(crate::analysis::pe::patterns::find_function_prologues(pe)?);
+    Ok(candidates)
+}
+
+#[cfg(feature = "disassembler")]
+pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
+    use crate::analysis::heuristics;
+
+    let mut function_starts = find_structured_function_starts(pe)?;
 
     // the following are heuristics,
     // so ensure the found addresses look like code.
     let decoder = dis::get_disassembler(&pe.module)?;
     function_starts.extend(
-        crate::analysis::pe::call_targets::find_pe_call_targets(pe)?
+        find_function_start_candidates(pe)?
             .into_iter()
             .filter(|&va| heuristics::is_probably_code(&pe.module, &decoder, va)),
     );
-    function_starts.extend(
-        crate::analysis::pe::patterns::find_function_prologues(pe)?
-            .into_iter()
-            .filter(|&va| heuristics::is_probably_code(&pe.module, &decoder, va)),
-    );
+
+    find_functions_from_starts(pe, function_starts)
+}
+
+/// Collect the local functions, thunks, and imports, given the function starts.
+/// The targets of thunks become function starts, too.
+#[cfg(feature = "disassembler")]
+pub fn find_functions_from_starts(pe: &PE, mut function_starts: BTreeSet<VA>) -> Result<Vec<Function>> {
+    let imports = get_imports(pe)?;
+    debug!("imports: found {} imports", imports.len());
+    for (va, import) in imports.iter() {
+        debug!("imports: {va:#x}: {import}");
+    }
 
     // ensure that all functions pointed to by a thunk are a function.
     // some of these target functions may not be recongized by other passes.
@@ -280,12 +298,23 @@ pub fn find_functions(pe: &PE) -> Result<Vec<Function>> {
 
 #[cfg(feature = "disassembler")]
 pub fn find_function_starts(pe: &PE) -> Result<Vec<VA>> {
-    Ok(find_functions(pe)?
+    Ok(local_and_thunk_starts(find_functions(pe)?))
+}
+
+/// Like `find_function_starts`, given the function starts, such as from `find_functions_from_starts`.
+#[cfg(feature = "disassembler")]
+pub fn find_function_starts_from(pe: &PE, function_starts: BTreeSet<VA>) -> Result<Vec<VA>> {
+    Ok(local_and_thunk_starts(find_functions_from_starts(pe, function_starts)?))
+}
+
+#[cfg(feature = "disassembler")]
+fn local_and_thunk_starts(functions: Vec<Function>) -> Vec<VA> {
+    functions
         .into_iter()
         .filter_map(|f| match f {
             Function::Local(va) => Some(va),
             Function::Thunk(Thunk { address: va, .. }) => Some(va),
             _ => None,
         })
-        .collect())
+        .collect()
 }
