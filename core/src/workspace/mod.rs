@@ -816,7 +816,7 @@ mod tests {
         let buf = get_buf(Rsrc::MIMI);
         let mut pe = crate::loader::pe::PE::from_bytes(&buf)?;
         for section in pe.module.sections.iter_mut() {
-            section.permissions.insert(crate::module::Permissions::X);
+            section.permissions.insert(crate::module::Permissions::RWX);
         }
         let text = pe
             .module
