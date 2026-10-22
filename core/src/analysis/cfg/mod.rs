@@ -120,6 +120,11 @@ pub fn read_insn_with_cache(
 
 impl InstructionIndex {
     pub fn build_index(&mut self, module: &Module, va: VA) -> Result<()> {
+        self.build_index_and_record(module, va, &mut Vec::new())
+    }
+
+    /// like `build_index`, and also record the address of each instruction that it adds to the index.
+    pub fn build_index_and_record(&mut self, module: &Module, va: VA, new_insns: &mut Vec<VA>) -> Result<()> {
         let decoder = dis::get_disassembler(module)?;
         self.roots.insert(va);
         // we prefer to read via a page cache,
@@ -190,6 +195,7 @@ impl InstructionIndex {
             };
 
             self.insns_by_address.insert(va, desc);
+            new_insns.push(va);
         }
 
         Ok(())

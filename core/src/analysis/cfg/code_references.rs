@@ -85,6 +85,15 @@ pub fn find_executable_pointers(module: &Module) -> Result<Vec<VA>> {
 }
 
 pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) -> Result<Vec<VA>> {
+    let scan: Vec<VA> = insns.insns_by_address.keys().cloned().collect();
+    find_new_code_references_from(module, insns, &scan)
+}
+
+/// like `find_new_code_references`, but only inspect the operands of the given instructions.
+///
+/// whether an address is probably code doesn't depend on what's already in the index,
+/// so after a round of exploration, only the newly added instructions can reference new code.
+pub fn find_new_code_references_from(module: &Module, insns: &cfg::InstructionIndex, scan: &[VA]) -> Result<Vec<VA>> {
     let decoder = dis::get_disassembler(module)?;
     // we prefer to read via a page cache,
     // assuming that when we read instructions ordered by address,
@@ -93,7 +102,7 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
 
     let mut new_code: BTreeSet<VA> = Default::default();
     let mut candidates: BTreeSet<VA> = Default::default();
-    for &va in insns.insns_by_address.keys() {
+    for &va in scan.iter() {
         if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
             for op in dis::get_operands(&insn) {
                 if let Ok(Some(xref)) = dis::get_operand_xref(module, va, &insn, op) {
@@ -122,8 +131,6 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
             new_code.insert(target);
         }
     }
-
-    // TODO: do additional passes on the newly found code
 
     Ok(new_code.into_iter().collect())
 }

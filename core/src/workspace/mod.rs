@@ -128,14 +128,18 @@ impl PEWorkspace {
         // heuristic that we trust:
         //   - find_new_code_references: existing instruction operands that reference likely code.
 
+        // each round, only the instructions added in the previous round can reference new code.
+        let mut scan: Vec<VA> = insns.insns_by_address.keys().cloned().collect();
         loop {
-            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&pe.module, &insns)?;
+            let new_code =
+                crate::analysis::cfg::code_references::find_new_code_references_from(&pe.module, &insns, &scan)?;
             if new_code.is_empty() {
                 break;
             }
 
+            scan.clear();
             for &function in new_code.iter() {
-                insns.build_index(&pe.module, function)?;
+                insns.build_index_and_record(&pe.module, function, &mut scan)?;
 
                 function_starts.insert(function);
                 // is this the right thing to do? are these guaranteed to be
@@ -344,14 +348,18 @@ impl COFFWorkspace {
             insns.build_index(&coff.module, function)?;
         }
 
+        // each round, only the instructions added in the previous round can reference new code.
+        let mut scan: Vec<VA> = insns.insns_by_address.keys().cloned().collect();
         loop {
-            let new_code = crate::analysis::cfg::code_references::find_new_code_references(&coff.module, &insns)?;
+            let new_code =
+                crate::analysis::cfg::code_references::find_new_code_references_from(&coff.module, &insns, &scan)?;
             if new_code.is_empty() {
                 break;
             }
 
+            scan.clear();
             for &function in new_code.iter() {
-                insns.build_index(&coff.module, function)?;
+                insns.build_index_and_record(&coff.module, function, &mut scan)?;
 
                 // see note in PE workspace about whether this is the right idea or note.
                 function_starts.insert(function);
