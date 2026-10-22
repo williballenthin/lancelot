@@ -119,26 +119,53 @@ impl PEWorkspace {
 
         function_starts.extend(config.get_function_hints()?);
 
-        function_starts.extend(crate::analysis::pe::find_function_starts(&pe)?);
+        let mut pe_function_starts = crate::analysis::pe::find_structured_function_starts(&pe)?;
+        for &function in function_starts.iter().chain(pe_function_starts.iter()) {
+            insns.build_index(&pe.module, function)?;
+        }
 
+        // the heuristic candidates may not be code, so check each one before we explore it.
+        // but a candidate that we've already decoded is code, so don't check it.
+        // exploring a candidate decodes its callees, which are often candidates, too,
+        // so this saves most of the checks.
+        // in tests, going from high to low addresses saved the most.
+        let decoder = crate::analysis::dis::get_disassembler(&pe.module)?;
+        for &candidate in crate::analysis::pe::find_function_start_candidates(&pe)?.iter().rev() {
+            if insns.insns_by_address.contains_key(&candidate)
+                || crate::analysis::heuristics::is_probably_code(&pe.module, &decoder, candidate)
+            {
+                insns.build_index(&pe.module, candidate)?;
+                pe_function_starts.insert(candidate);
+            }
+        }
+
+        // add the thunks and their targets.
+        function_starts.extend(crate::analysis::pe::find_function_starts_from(&pe, pe_function_starts)?);
         for &function in function_starts.iter() {
             insns.build_index(&pe.module, function)?;
         }
 
         // heuristic that we trust:
-        //   - find_new_code_references: existing instruction operands that reference likely code.
+        //   - code references: existing instruction operands that reference likely code.
 
         // each round, only the instructions added in the previous round can reference new code.
         let mut scan: Vec<VA> = insns.insns_by_address.keys().cloned().collect();
         loop {
-            let new_code =
-                crate::analysis::cfg::code_references::find_new_code_references_from(&pe.module, &insns, &scan)?;
-            if new_code.is_empty() {
+            let candidates =
+                crate::analysis::cfg::code_references::find_code_reference_candidates_from(&pe.module, &insns, &scan)?;
+            if candidates.is_empty() {
                 break;
             }
 
+            // as above: check only the candidates that we haven't decoded yet.
             scan.clear();
-            for &function in new_code.iter() {
+            for &function in candidates.iter().rev() {
+                if !insns.insns_by_address.contains_key(&function)
+                    && !crate::analysis::heuristics::is_probably_code(&pe.module, &decoder, function)
+                {
+                    continue;
+                }
+
                 insns.build_index_and_record(&pe.module, function, &mut scan)?;
 
                 function_starts.insert(function);
