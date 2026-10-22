@@ -67,6 +67,12 @@ fn is_empty(module: &Module, va: VA) -> bool {
     }
 }
 
+/// Is the given address a reasonable destination for a direct call or jump?
+/// This is the same check that the flow helpers below apply to direct targets.
+pub fn is_valid_target(module: &Module, va: VA) -> bool {
+    is_executable(module, va) && module.is_in_image(va) && !is_empty(module, va)
+}
+
 pub fn get_call_insn_flow(module: &Module, va: VA, insn: &dis::DecodedInstruction) -> Result<Flows> {
     // if this is not a CALL, then its a programming error. panic!
     // all CALLs should have an operand.

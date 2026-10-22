@@ -92,6 +92,7 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
     let mut reader: CachingPageReader = Default::default();
 
     let mut new_code: BTreeSet<VA> = Default::default();
+    let mut candidates: BTreeSet<VA> = Default::default();
     for &va in insns.insns_by_address.keys() {
         if let Ok(Some(insn)) = read_insn_with_cache(&mut reader, &module.address_space, va, &decoder) {
             for op in dis::get_operands(&insn) {
@@ -106,13 +107,19 @@ pub fn find_new_code_references(module: &Module, insns: &cfg::InstructionIndex) 
                         continue;
                     }
 
-                    if heuristics::is_probably_code(module, &decoder, target) {
-                        // finally, we think we have some new code.
-                        log::debug!("code references: found new likely code at {:#x}", target);
-                        new_code.insert(target);
-                    }
+                    candidates.insert(target);
                 }
             }
+        }
+    }
+
+    // many instructions reference the same address,
+    // so check each referenced address only once.
+    for target in candidates.into_iter() {
+        if heuristics::is_probably_code(module, &decoder, target) {
+            // finally, we think we have some new code.
+            log::debug!("code references: found new likely code at {:#x}", target);
+            new_code.insert(target);
         }
     }
 
