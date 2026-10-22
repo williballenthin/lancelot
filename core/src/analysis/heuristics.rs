@@ -230,7 +230,7 @@ fn is_branch(insn: &DecodedInstruction) -> bool {
 }
 
 /// The number of instructions to decode when checking the flow from a candidate function start.
-const FLOW_CHECK_INSTRUCTION_COUNT: usize = 256;
+const FLOW_CHECK_INSTRUCTION_COUNT: usize = 64;
 
 /// Does the code reachable from the given address within its function
 /// (fallthroughs and jumps, but not calls) decode cleanly,
