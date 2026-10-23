@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    ops::Not,
+    ops::{Not, RangeBounds},
 };
 
 use anyhow::Result;
@@ -41,6 +41,7 @@ pub struct InstructionIndex {
 
 pub const PAGE_SIZE: usize = 0x1000;
 const PAGE_MASK: u64 = 0xFFF;
+const MAX_INSN_LENGTH: u64 = 0xF;
 
 pub struct CachingPageReader {
     page:         [u8; PAGE_SIZE],
@@ -380,14 +381,15 @@ fn empty<'a, T>(mut i: impl Iterator<Item = T> + 'a) -> bool {
     i.next().is_none()
 }
 
-// iterate over the tuples (va, insn, preds, succs)
+// iterate over the tuples (va, insn, preds, succs) for the instructions in the given range.
 fn iter_insn_flows<'a>(
     insns: &'a InstructionIndex,
     flows: &'a FlowIndex,
+    range: impl RangeBounds<VA> + Clone + 'a,
 ) -> impl Iterator<Item = (VA, &'a InstructionDescriptor, &'a Flows, &'a Flows)> + 'a {
-    let mut insns_iter = insns.insns_by_address.iter();
-    let mut flows_by_src_iter = flows.flows_by_src.iter();
-    let mut flows_by_dst_iter = flows.flows_by_dst.iter();
+    let mut insns_iter = insns.insns_by_address.range(range.clone());
+    let mut flows_by_src_iter = flows.flows_by_src.range(range.clone());
+    let mut flows_by_dst_iter = flows.flows_by_dst.range(range);
 
     std::iter::from_fn(move || {
         if let Some((&insnva, insn)) = insns_iter.next() {
@@ -400,8 +402,6 @@ fn iter_insn_flows<'a>(
             while insnva > *va2 {
                 (va2, predecessors) = flows_by_dst_iter.next().expect("flow index (dst) out of sync");
             }
-
-            // hint: if there are issues above, its because insns can now flow to non-code.
 
             Some((insnva, insn, predecessors, successors))
         } else {
@@ -424,9 +424,19 @@ bitflags! {
     }
 }
 
-/// find all the basic blocks.
-fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBlock> {
-    // an instruction, and the properties of its flows.
+/// find the basic blocks that start within the given address range.
+///
+/// a basic block that starts before the range isn't found, even if it extends into the range,
+/// so the range should start where a basic block starts.
+///
+/// returns None if a basic block extends past the end of the range.
+/// that doesn't happen for the whole address space.
+fn find_basic_blocks(
+    insns: &InstructionIndex,
+    flows: &FlowIndex,
+    range: impl RangeBounds<VA> + Clone,
+) -> Option<Vec<BasicBlock>> {
+    // an instruction in the range, and the properties of its flows.
     #[derive(Clone, Copy)]
     struct Insn {
         va:     VA,
@@ -452,7 +462,7 @@ fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBl
         }
     }
 
-    // the instructions, sorted by address.
+    // the instructions in the range, sorted by address.
     let mut found: Vec<Insn> = Default::default();
 
     // find all the basic block start addresses.
@@ -462,13 +472,16 @@ fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBl
     //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
     //  3. multiple instructions fallthrough to it (they must be overlapping), or
     //  4. the prior instruction also branched elsewhere
-    for (va, insn, preds, succs) in iter_insn_flows(insns, flows) {
+    for (va, insn, preds, succs) in iter_insn_flows(insns, flows, range) {
         let start = empty(edges(preds))
             || joins(preds)
             || edge_targets(fallthrough_edges(preds)).any(|pred| {
-                // a fallthrough comes from a lower address, so we've seen it already.
-                let i = find(&found, found.len().saturating_sub(1), pred).expect("fallthrough from an instruction");
-                found[i].flags.contains(InsnFlags::BRANCHES)
+                // a fallthrough comes from a lower address,
+                // so we've seen it already, unless it's before the range.
+                match find(&found, found.len().saturating_sub(1), pred) {
+                    Some(i) => found[i].flags.contains(InsnFlags::BRANCHES),
+                    None => branches(&flows.flows_by_src[&pred]),
+                }
             });
 
         let mut flags = InsnFlags::empty();
@@ -496,8 +509,15 @@ fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBl
             true
         } else {
             let next_va = insn.va + insn.length as u64;
-            match find(&found, i + 1, next_va).map(|j| found[j].flags.contains(InsnFlags::JOINS)) {
-                Some(joins) => joins,
+            let next_joins = match find(&found, i + 1, next_va) {
+                Some(j) => Some(found[j].flags.contains(InsnFlags::JOINS)),
+                None => insns
+                    .insns_by_address
+                    .contains_key(&next_va)
+                    .then(|| joins(&flows.flows_by_dst[&next_va])),
+            };
+            match next_joins {
+                Some(next_joins) => next_joins,
                 None => {
                     // there is not a subsequent instruction, so end of bb.
                     // e.g. flow to a non-instruction.
@@ -532,7 +552,8 @@ fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBl
                 break;
             }
             // the next instruction exists, otherwise this would be a last.
-            j = find(&found, j + 1, insn.va + insn.length as u64).expect("missing bb last");
+            // it isn't in the range when the basic block extends past the range.
+            j = find(&found, j + 1, insn.va + insn.length as u64)?;
         }
 
         blocks.push(BasicBlock {
@@ -542,12 +563,65 @@ fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBl
         });
     }
 
-    blocks
+    Some(blocks)
+}
+
+/// the addresses whose flows changed while modifying the CFG.
+#[derive(Default)]
+struct Changes {
+    /// the instructions whose successors changed.
+    srcs:    Vec<VA>,
+    /// the addresses whose predecessors changed.
+    dsts:    Vec<VA>,
+    /// the instructions that were removed, and their lengths.
+    removed: BTreeMap<VA, u8>,
+}
+
+impl Changes {
+    /// the addresses where a basic block may now start or end, sorted.
+    ///
+    /// whether an instruction starts a basic block depends on the flows to it,
+    /// and on whether the instruction that falls through to it also branches.
+    /// whether an instruction ends a basic block depends on the flows from it,
+    /// and on the flows to the next instruction.
+    fn addresses(&self, insns: &InstructionIndex, flows: &FlowIndex) -> Vec<VA> {
+        let mut addresses: Vec<VA> = Vec::with_capacity(2 * (self.srcs.len() + self.dsts.len()));
+        for &src in self.srcs.iter() {
+            addresses.push(src);
+            if let Some(succs) = flows.flows_by_src.get(&src) {
+                addresses.extend(edge_targets(fallthrough_edges(succs)));
+            }
+        }
+        for &dst in self.dsts.iter() {
+            addresses.push(dst);
+            // the instructions that end right at it (more than one, if they overlap).
+            for (&prev, insn) in insns.insns_by_address.range(dst.saturating_sub(MAX_INSN_LENGTH)..dst) {
+                if prev + insn.length as u64 == dst {
+                    addresses.push(prev);
+                }
+            }
+        }
+        addresses.sort_unstable();
+        addresses.dedup();
+        addresses
+    }
+
+    /// did an instruction, before the changes, start before the given address and end after it?
+    fn overlaps(&self, insns: &InstructionIndex, va: VA) -> bool {
+        let before = va.saturating_sub(MAX_INSN_LENGTH)..va;
+        insns
+            .insns_by_address
+            .range(before.clone())
+            .map(|(&start, insn)| (start, insn.length))
+            .chain(self.removed.range(before).map(|(&start, &length)| (start, length)))
+            .any(|(start, length)| start + length as u64 > va)
+    }
 }
 
 impl BasicBlockIndex {
     fn build_index(insns: &InstructionIndex, flows: &FlowIndex) -> Result<BasicBlockIndex> {
-        let blocks = find_basic_blocks(insns, flows);
+        let blocks =
+            find_basic_blocks(insns, flows, ..).expect("a basic block extends past the end of the address space");
 
         let blocks_by_last_address = blocks.iter().map(|bb| (bb.address_of_last_insn, bb.address)).collect();
         let blocks_by_address = blocks.into_iter().map(|bb| (bb.address, bb)).collect();
@@ -556,6 +630,86 @@ impl BasicBlockIndex {
             blocks_by_address,
             blocks_by_last_address,
         })
+    }
+
+    /// update the basic blocks around the given changes to the flows,
+    /// rather than finding all of them again.
+    ///
+    /// the changes must only remove flows and instructions.
+    ///
+    /// returns false, having changed nothing, when basic blocks overlap around the changes,
+    /// which is rare, and then the caller should find all the basic blocks again.
+    fn update(&mut self, insns: &InstructionIndex, flows: &FlowIndex, changes: &Changes) -> bool {
+        let Some(ranges) = self.ranges_containing(insns, flows, changes) else {
+            return false;
+        };
+
+        // find all the new basic blocks before changing the index, so that it's unchanged on failure.
+        // a basic block extends past its range only if it overlaps another.
+        let Some(blocks) = ranges
+            .iter()
+            .map(|&(start, end)| find_basic_blocks(insns, flows, start..end))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+
+        for &(start, end) in ranges.iter() {
+            let starts: Vec<VA> = self.blocks_by_address.range(start..end).map(|(&va, _)| va).collect();
+            for va in starts {
+                let bb = self.blocks_by_address.remove(&va).expect("basic block exists");
+                self.blocks_by_last_address.remove(&bb.address_of_last_insn);
+            }
+        }
+
+        for bb in blocks.into_iter().flatten() {
+            self.blocks_by_last_address.insert(bb.address_of_last_insn, bb.address);
+            self.blocks_by_address.insert(bb.address, bb);
+        }
+
+        true
+    }
+
+    /// the address ranges of the basic blocks that contain the addresses
+    /// where a basic block may now start or end, sorted.
+    ///
+    /// a basic block grows only when the next one no longer starts a basic block,
+    /// and then that start is one of these addresses, so its range is here, too.
+    /// adjacent ranges are joined, so that the basic blocks found in each don't extend past it.
+    ///
+    /// returns None when basic blocks overlap around these addresses,
+    /// since then an address may be in more than one basic block.
+    fn ranges_containing(
+        &self,
+        insns: &InstructionIndex,
+        flows: &FlowIndex,
+        changes: &Changes,
+    ) -> Option<Vec<(VA, VA)>> {
+        let mut ranges: Vec<(VA, VA)> = Default::default();
+        for va in changes.addresses(insns, flows) {
+            if ranges.last().is_some_and(|&(_, end)| va < end) {
+                continue;
+            }
+
+            let Some((&start, bb)) = self.blocks_by_address.range(..=va).next_back() else {
+                continue;
+            };
+            // another basic block that contains the address would start earlier and overlap this one,
+            // so one of its instructions would overlap the first instruction of this one.
+            if changes.overlaps(insns, start) {
+                return None;
+            }
+            let end = start + bb.length;
+            if va >= end {
+                continue;
+            }
+
+            match ranges.last_mut() {
+                Some((_, last_end)) if *last_end >= start => *last_end = end.max(*last_end),
+                _ => ranges.push((start, end)),
+            }
+        }
+        Some(ranges)
     }
 }
 
@@ -698,14 +852,13 @@ impl CFG {
 // 3. commit batch, applying changes.
 //
 // this lets us collect a bunch of operations and apply them together,
-// rebuilding the basic blocks as a finalization step (we expect to be
-// semi-expensive).
+// updating the basic blocks around the changes as a finalization step.
 //
 //
 //     let mut batch: ChangeBatch = Default::default();
-//     batch.prune_notret_call(0x401000);
-//     batch.prune_notret_call(0x401103);
-//     batch.prune_notret_call(0x401205);
+//     batch.prune_noret_call(0x401000);
+//     batch.prune_noret_call(0x401103);
+//     batch.prune_noret_call(0x401205);
 //     cfg.commit(batch);
 //
 impl CFG {
@@ -713,7 +866,7 @@ impl CFG {
     // private implementations of change handling.
     //
     // these map to the members of the enum `Change`,
-    // and are dispatched to within `ChangeBatch.commit()`.
+    // and are dispatched to within `CFG::commit()`.
     //
 
     // remove a flow from a given address.
@@ -740,7 +893,9 @@ impl CFG {
     // note, this removes flows recursively "downwards",
     // that is, following flows from src to dst.
     // it does not remove flows "upwards".
-    fn prune_flow(&mut self, va: VA, flow: &Flow) {
+    //
+    // records the addresses whose flows changed in `changes`.
+    fn prune_flow(&mut self, va: VA, flow: &Flow, changes: &mut Changes) {
         // remove flow from insn[va].flows
         // remove flow from flows.flows_by_src[va]
         // remove flow from flows.flows_by_dst[va]
@@ -775,6 +930,8 @@ impl CFG {
             Flow::UnconditionalJump(Target::Indirect(ptr)) => *ptr,
         };
         log::debug!("cfg: prune: {:x?} at {:#x}: target: {:#x}", flow, va, target);
+        changes.srcs.push(va);
+        changes.dsts.push(target);
 
         self.flows.flows_by_dst.entry(target).and_modify(|preds| {
             *preds = preds.clone().into_iter().filter(|s| s != &flow.swap(va)).collect();
@@ -826,11 +983,13 @@ impl CFG {
             // flows_by_dst entry but no instruction and no flows of its own.
             if let Some(flows) = self.flows.flows_by_src.get(&target).cloned() {
                 for flow in flows.iter() {
-                    self.prune_flow(target, flow);
+                    self.prune_flow(target, flow, changes);
                 }
             }
 
-            self.insns.insns_by_address.remove(&target);
+            if let Some(insn) = self.insns.insns_by_address.remove(&target) {
+                changes.removed.insert(target, insn.length);
+            }
             self.flows.flows_by_src.remove(&target);
             self.flows.flows_by_dst.remove(&target);
             // TODO: this won't break a cycle/loop. but that sounds generally
@@ -851,7 +1010,7 @@ impl CFG {
     // so, call `prune_noret_call` at 0x2 to remove the fallthrough
     // (and ending the basic block)
     // while maintaining the flow to ExitProcess.
-    fn prune_noret_call(&mut self, va: VA) {
+    fn prune_noret_call(&mut self, va: VA, changes: &mut Changes) {
         // va should be a call instruction.
         // it should have two flows:
         //   - call func
@@ -863,7 +1022,7 @@ impl CFG {
         // use a copy so we can modify the indices.
         let succs = self.flows.flows_by_src[&va].clone();
         for fallthrough in fallthrough_edges(&succs) {
-            self.prune_flow(va, fallthrough);
+            self.prune_flow(va, fallthrough, changes);
         }
     }
 
@@ -874,9 +1033,10 @@ impl CFG {
     }
 
     pub fn commit(&mut self, batch: ChangeBatch) {
+        let mut changes: Changes = Default::default();
         for change in batch.changes.into_iter() {
             match change {
-                Change::PruneFlow { va, flow } => self.prune_flow(va, &flow),
+                Change::PruneFlow { va, flow } => self.prune_flow(va, &flow, &mut changes),
                 Change::PruneNoretCall { va } => {
                     // When a batch contains multiple PruneNoretCall entries,
                     // an earlier entry's cascade (via prune_flow) can remove
@@ -887,12 +1047,16 @@ impl CFG {
                     if !self.insns.insns_by_address.contains_key(&va) {
                         continue;
                     }
-                    self.prune_noret_call(va);
+                    self.prune_noret_call(va, &mut changes);
                 }
             }
         }
 
-        self.rebuild();
+        // the changes are usually few and local,
+        // so update the basic blocks around them, rather than finding all the basic blocks again.
+        if !self.basic_blocks.update(&self.insns, &self.flows, &changes) {
+            self.rebuild();
+        }
     }
 }
 
@@ -1259,6 +1423,20 @@ mod tests {
     mod prune {
         use super::*;
 
+        /// assert that the basic blocks, after updates, are the same as when found from scratch.
+        fn assert_blocks_consistent(cfg: &CFG) {
+            let full = BasicBlockIndex::build_index(&cfg.insns, &cfg.flows).unwrap();
+            let blocks = |index: &BasicBlockIndex| {
+                index
+                    .blocks_by_address
+                    .values()
+                    .map(|bb| (bb.address, bb.length, bb.address_of_last_insn))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(blocks(&cfg.basic_blocks), blocks(&full));
+            assert_eq!(cfg.basic_blocks.blocks_by_last_address, full.blocks_by_last_address);
+        }
+
         #[test]
         fn prune_flow_into_undecodable_bytes() -> Result<()> {
             // 0: 90 nop
@@ -1282,6 +1460,7 @@ mod tests {
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x0, fallthrough);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             assert_eq!(cfg.insns.insns_by_address.len(), 1);
             assert!(cfg.insns.insns_by_address.contains_key(&0x0));
@@ -1309,6 +1488,7 @@ mod tests {
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x0, jump);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             assert!(cfg.insns.insns_by_address.contains_key(&0x4));
             assert!(cfg.insns.insns_by_address.contains_key(&0x5));
@@ -1339,6 +1519,7 @@ mod tests {
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x1, fallthrough);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             // 0: 90 nop
             // |
@@ -1388,6 +1569,7 @@ mod tests {
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x7, *fallthrough);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             //    ┌─────────────────────────────────┐
             //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
@@ -1421,6 +1603,7 @@ mod tests {
             let mut batch: ChangeBatch = Default::default();
             batch.prune_flow(0x5, *fallthrough);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             //    ┌─────────────────────────────────┐
             //    │ 0: B8 01 00 00 00  mov eax, 0x1 │
@@ -1475,6 +1658,7 @@ mod tests {
             batch.prune_noret_call(0x00);
             batch.prune_noret_call(0x05);
             cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
 
             assert!(cfg.insns.insns_by_address.contains_key(&0x00));
             assert!(cfg.insns.insns_by_address.contains_key(&0x05).not());
@@ -1482,6 +1666,173 @@ mod tests {
             assert!(cfg.insns.insns_by_address.contains_key(&0x10));
 
             Ok(())
+        }
+
+        #[test]
+        fn prune_merges_blocks() -> Result<()> {
+            // 0x0: E8 1B 00 00 00 call 0x20 (noret)
+            // 0x5: EB 04          jmp 0xB  (dead: only reached by the fallthrough)
+            // 0x7: 90             nop      <- also a root: explored on its own
+            // 0x8: 90 90 90       nop
+            // 0xB: 90             nop      (jump target, starts a basic block)
+            // 0xC: C3             ret
+            // 0xD: CC ...         padding
+            // 0x20: EB FE         jmp $
+            //
+            // pruning the call's fallthrough removes the jump,
+            // so the basic blocks at 0x7 and 0xB merge.
+            let mut code = b"\xE8\x1B\x00\x00\x00\xEB\x04\x90\x90\x90\x90\x90\xC3".to_vec();
+            code.resize(0x20, 0xCC);
+            code.extend_from_slice(b"\xEB\xFE");
+            let module = load_shellcode32(&code);
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            insns.build_index(&module, 0x7)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x7].length, 4);
+            assert!(cfg.basic_blocks.blocks_by_address.contains_key(&0xB));
+
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_noret_call(0x0);
+            cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x5).not());
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x0].length, 5);
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x7].length, 6);
+            assert!(cfg.basic_blocks.blocks_by_address.contains_key(&0xB).not());
+
+            Ok(())
+        }
+
+        #[test]
+        fn prune_overlapping_instructions() -> Result<()> {
+            // 00: EB FF    jmp $+1
+            // 01: FF C0    inc eax  (only reached by the jump)
+            // 03: C3       ret
+            //
+            // 02: C0 C3 C3 rol bl, 0xC3  <- also a root: explored on its own
+            // 05: C3       ret
+            //
+            // the basic blocks overlap. pruning the jump removes [inc, ret].
+            let module = load_shellcode32(b"\xEB\xFF\xC0\xC3\xC3\xC3");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            insns.build_index(&module, 0x2)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+            assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 3);
+
+            let jump = cfg.flows.flows_by_src[&0x0][0];
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x0, jump);
+            cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
+
+            assert!(cfg.insns.insns_by_address.contains_key(&0x1).not());
+            assert!(cfg.insns.insns_by_address.contains_key(&0x3).not());
+            assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 2);
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x2].length, 4);
+
+            Ok(())
+        }
+
+        #[test]
+        fn prune_in_overlapped_block() -> Result<()> {
+            // 0: B8 C3 90 90 90  mov eax, 0x909090C3
+            // 5: 90              nop
+            // 6: 90              nop
+            // 7: C3              ret
+            //
+            // 1: C3              ret  <- also a root: explored on its own
+            //
+            // the basic block at 0x1 is within the one at 0x0, so it's the closest one before 0x6.
+            // pruning the fallthrough to 0x6 must still update the basic block at 0x0.
+            let module = load_shellcode32(b"\xB8\xC3\x90\x90\x90\x90\x90\xC3");
+            let mut insns: InstructionIndex = Default::default();
+            insns.build_index(&module, 0x0)?;
+            insns.build_index(&module, 0x1)?;
+            let mut cfg = CFG::from_instructions(&module, insns)?;
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x0].length, 8);
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x1].length, 1);
+
+            let fallthrough = cfg.flows.flows_by_src[&0x5][0];
+            let mut batch: ChangeBatch = Default::default();
+            batch.prune_flow(0x5, fallthrough);
+            cfg.commit(batch);
+            assert_blocks_consistent(&cfg);
+
+            assert_eq!(cfg.basic_blocks.blocks_by_address[&0x0].length, 6);
+
+            Ok(())
+        }
+
+        /// in rounds, prune the fallthrough of some of the calls, like noret analysis does,
+        /// and some single flows, and check the updated basic blocks each time.
+        fn check_updates(rsrc: Rsrc) -> Result<()> {
+            let buf = get_buf(rsrc);
+            let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+            let mut ws = crate::workspace::PEWorkspace::from_pe(crate::workspace::config::empty(), pe)?;
+            let cfg = &mut ws.cfg;
+
+            for round in 0..4 {
+                let calls: Vec<VA> = cfg
+                    .flows
+                    .flows_by_src
+                    .iter()
+                    .filter(|(_, flows)| flows.iter().any(|flow| matches!(flow, Flow::Call(_))))
+                    .map(|(&va, _)| va)
+                    .collect();
+                let mut batch: ChangeBatch = Default::default();
+                for &va in calls.iter().step_by(13 + round) {
+                    batch.prune_noret_call(va);
+                }
+                cfg.commit(batch);
+                assert_blocks_consistent(cfg);
+
+                // prune single jumps and fallthroughs, which may merge basic blocks.
+                let flows: Vec<(VA, Flow)> = cfg
+                    .flows
+                    .flows_by_src
+                    .iter()
+                    .flat_map(|(&va, flows)| flows.iter().map(move |&flow| (va, flow)))
+                    .filter(|(_, flow)| !matches!(flow, Flow::Call(_)))
+                    .step_by(cfg.flows.flows_by_src.len() / 16 + round)
+                    .collect();
+                for (va, flow) in flows {
+                    if !cfg
+                        .flows
+                        .flows_by_src
+                        .get(&va)
+                        .is_some_and(|flows| flows.contains(&flow))
+                    {
+                        continue;
+                    }
+                    let mut batch: ChangeBatch = Default::default();
+                    batch.prune_flow(va, flow);
+                    cfg.commit(batch);
+                    assert_blocks_consistent(cfg);
+                }
+            }
+
+            Ok(())
+        }
+
+        #[test]
+        fn update_nop() -> Result<()> {
+            check_updates(Rsrc::NOP)
+        }
+
+        #[test]
+        fn update_mimikatz() -> Result<()> {
+            check_updates(Rsrc::MIMI)
+        }
+
+        #[test]
+        fn update_overlapping() -> Result<()> {
+            // these have instructions, and basic blocks, that overlap.
+            check_updates(Rsrc::I236A)?;
+            check_updates(Rsrc::I236B)
         }
     }
 }
