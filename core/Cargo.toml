@@ -38,7 +38,7 @@ bitvec = { version = "1" }
 lancelot-flirt = { path = "../flirt", version = "0.10.2", optional = true}
 
 # needed for binexport2
-prost = "0.13"
+prost = "0.14"
 
 [dev-dependencies]
 criterion = "0.5"
