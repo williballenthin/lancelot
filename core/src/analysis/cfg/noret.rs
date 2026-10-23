@@ -170,7 +170,13 @@ pub fn is_provably_noret(module: &Module, cfg: &CFG, decoder: &zydis::Decoder, v
         let mut insn_va = bb.address;
         let mut after_call = false;
         let insn = loop {
-            let insn = match cfg::read_insn_with_cache(&mut reader, &module.address_space, insn_va, decoder) {
+            // only the category, mnemonic, and length matter here, so decode without operands, which is faster.
+            let insn = match cfg::read_insn_with_cache_as::<zydis::NoOperands>(
+                &mut reader,
+                &module.address_space,
+                insn_va,
+                decoder,
+            ) {
                 Ok(Some(insn)) => insn,
                 _ => return unknown(va, insn_va, "undecodable instruction"),
             };
