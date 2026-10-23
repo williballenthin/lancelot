@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use bitflags::bitflags;
 
 pub mod flow;
 
@@ -356,98 +357,95 @@ fn iter_insn_flows<'a>(
     })
 }
 
-impl BasicBlockIndex {
-    fn build_index(insns: &InstructionIndex, flows: &FlowIndex) -> Result<BasicBlockIndex> {
-        let mut blocks_by_address: BTreeMap<VA, BasicBlock> = Default::default();
-        let mut blocks_by_last_address: BTreeMap<VA, VA> = Default::default();
+bitflags! {
+    /// the properties of an instruction's flows that decide where basic blocks start and end.
+    #[derive(Clone, Copy)]
+    struct InsnFlags: u8 {
+        const FALLS_THROUGH = 1 << 0;
+        /// a non-fallthrough edge from here, like a jump.
+        const BRANCHES = 1 << 1;
+        /// a non-fallthrough edge, or more than one fallthrough, to here.
+        const JOINS = 1 << 2;
+        const START = 1 << 3;
+        const LAST = 1 << 4;
+    }
+}
 
-        // find all the basic block start addresses.
-        //
-        // scan through all instructions, looking for:
-        //  1. instruction with nothing before it, or
-        //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
-        //  3. the prior instruction also branched elsewhere
-        //
-        // note: the resulting iterator is sorted by address.
-        let starts = iter_insn_flows(insns, flows)
-            .filter(|(_, _, preds, _)| {
-                if empty(edges(preds)) {
-                    // its a root, which is a start, because nothing flows here.
-                    return true;
-                }
+/// find all the basic blocks.
+fn find_basic_blocks(insns: &InstructionIndex, flows: &FlowIndex) -> Vec<BasicBlock> {
+    // an instruction, and the properties of its flows.
+    #[derive(Clone, Copy)]
+    struct Insn {
+        va:     VA,
+        length: u8,
+        flags:  InsnFlags,
+    }
 
-                // its a bb start, because there's a branch to here.
-                if !empty(non_fallthrough_edges(preds)) {
-                    return true;
-                }
+    fn branches(succs: &Flows) -> bool {
+        !empty(non_fallthrough_edges(succs))
+    }
 
-                // multiple instructions fallthrough here (they must be overlapping).
-                // so its a bb start.
-                if fallthrough_edges(preds).count() > 1 {
-                    return true;
-                }
+    fn joins(preds: &Flows) -> bool {
+        !empty(non_fallthrough_edges(preds)) || fallthrough_edges(preds).count() > 1
+    }
 
-                // its a bb start, because the instruction that fallthrough here
-                // also branched somewhere else.
-                for pred in edge_targets(fallthrough_edges(preds)) {
-                    if !empty(non_fallthrough_edges(&flows.flows_by_src[&pred])) {
-                        return true;
-                    }
-                }
+    // find the index of the instruction at the given address,
+    // which is usually at the given index, unless instructions overlap.
+    fn find(found: &[Insn], hint: usize, va: VA) -> Option<usize> {
+        if found.get(hint).is_some_and(|insn| insn.va == va) {
+            Some(hint)
+        } else {
+            found.binary_search_by_key(&va, |insn| insn.va).ok()
+        }
+    }
 
-                false
-            })
-            .map(|(insnva, _, _, _)| insnva);
+    // the instructions, sorted by address.
+    let mut found: Vec<Insn> = Default::default();
 
-        // find all the basic block last addresses.
-        //
-        // scan through all instructions, looking for:
-        //  1. instruction with nothing before it, or
-        //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
-        //  3. the prior instruction also branched elsewhere
-        //
-        // the resulting iterator is sorted by address.
-        let lasts = iter_insn_flows(insns, flows)
-            .filter(|(insnva, insn, _, succs)| {
-                if succs.is_empty() {
-                    // its a last, because nothing flows from here.
-                    return true;
-                }
+    // find all the basic block start addresses.
+    //
+    // scan through all instructions, looking for:
+    //  1. instruction with nothing before it, or
+    //  2. instruction with a non-fallthrough flow to it (e.g. jmp target), or
+    //  3. multiple instructions fallthrough to it (they must be overlapping), or
+    //  4. the prior instruction also branched elsewhere
+    for (va, insn, preds, succs) in iter_insn_flows(insns, flows) {
+        let start = empty(edges(preds))
+            || joins(preds)
+            || edge_targets(fallthrough_edges(preds)).any(|pred| {
+                // a fallthrough comes from a lower address, so we've seen it already.
+                let i = find(&found, found.len().saturating_sub(1), pred).expect("fallthrough from an instruction");
+                found[i].flags.contains(InsnFlags::BRANCHES)
+            });
 
-                // there is no fallthrough here, so end of bb.
-                // for example: ret has no fallthrough, and is end of basic block.
-                if empty(fallthrough_edges(succs)) {
-                    return true;
-                }
+        let mut flags = InsnFlags::empty();
+        flags.set(InsnFlags::FALLS_THROUGH, !empty(fallthrough_edges(succs)));
+        flags.set(InsnFlags::BRANCHES, branches(succs));
+        flags.set(InsnFlags::JOINS, joins(preds));
+        flags.set(InsnFlags::START, start);
+        found.push(Insn {
+            va,
+            length: insn.length,
+            flags,
+        });
+    }
 
-                // there is a non-fallthrough flow, so end of bb.
-                // for example: jnz has a non-fallthrough flow from it.
-                if !empty(non_fallthrough_edges(succs)) {
-                    return true;
-                }
-
-                // now we need to check the next instruction.
-                // if its the start of a basic block,
-                // then the current basic block must end.
-
-                let next_va = insnva + (insn.length as u64);
-
-                if let (Some(next_preds), Some(_)) =
-                    (flows.flows_by_dst.get(&next_va), insns.insns_by_address.get(&next_va))
-                {
-                    // the next instruction has other flows to it, so its a new bb.
-                    // the next instruction is not part of this bb.
-                    // for example, the target of a fallthrough AND a jump from elsewhere.
-                    if !empty(non_fallthrough_edges(next_preds)) {
-                        return true;
-                    }
-
-                    // next instruction has multiple fallthroughs to it.
-                    // (this instruction must overlap with another).
-                    if fallthrough_edges(next_preds).count() > 1 {
-                        return true;
-                    }
-                } else {
+    // find all the basic block last addresses.
+    //
+    // scan through all instructions, looking for:
+    //  1. instruction with nothing after it, or
+    //  2. instruction with no fallthrough (e.g. ret), or
+    //  3. instruction with a non-fallthrough flow from it (e.g. jnz), or
+    //  4. the next instruction starts a basic block, because of a jump or multiple fallthroughs to it.
+    for i in 0..found.len() {
+        let insn = found[i];
+        let last = if insn.flags.contains(InsnFlags::BRANCHES) || !insn.flags.contains(InsnFlags::FALLS_THROUGH) {
+            true
+        } else {
+            let next_va = insn.va + insn.length as u64;
+            match find(&found, i + 1, next_va).map(|j| found[j].flags.contains(InsnFlags::JOINS)) {
+                Some(joins) => joins,
+                None => {
                     // there is not a subsequent instruction, so end of bb.
                     // e.g. flow to a non-instruction.
                     //
@@ -457,101 +455,49 @@ impl BasicBlockIndex {
                     //  1. pretend the current BB is ok, or
                     //  2. fail the whole analysis
                     // for right now, we're doing (1).
-                    log::warn!("cfg: {:#x}: no subsequent instruction at {:#x}", insnva, next_va);
-                    return true;
-                }
-
-                false
-            })
-            .map(|(insnva, _, _, _)| insnva)
-            .collect::<Vec<_>>();
-
-        // we don't simplify the lasts directly to an iter above
-        // because below we'll create a bunch of clones of the iter,
-        // and the iterator is not Clone.
-        //
-        // so, we realize `lasts` to a vec and then iter over that
-        // (and clones should be cheap).
-        let mut lasts = lasts.iter().peekable();
-
-        for start in starts {
-            // drop all the lasts less than start.
-            // because a basic block cannot end before it starts.
-            //
-            // I think the only reason this would be the case should be
-            // overlapping instructions (and therefore, basic blocks).
-            //
-            // precondition: starts is sorted.
-            // precondition: lasts is sorted.
-            //
-            // postcondition: `lasts.next() >= start`
-            while start > **lasts.peek().expect("missing bb last") {
-                lasts.next();
-            }
-
-            let mut length: u64 = 0;
-            let mut current = start;
-
-            loop {
-                let insn = &insns.insns_by_address[&current];
-                length += insn.length as u64;
-
-                // step through lasts, seeing if the current instruction is there.
-                // short circuit when: current is found, or cannot exist.
-                // because lasts is sorted, we can stop when lasts.peek() > current.
-                let is_last: bool;
-                // perf: this clone looks expensive, however, its not.
-                // I profiled an alternative implementation with a clone-per-start
-                // and there was not a measurable difference.
-                // I think this routine is more intuitive, so we keep this clone.
-                let mut cursor = lasts.clone();
-                'next_cursor: loop {
-                    // same as above: there should always be a last for each start.
-                    // otherwise, programming error.
-                    let last = **cursor.peek().expect("missing bb last");
-
-                    match last.cmp(&current) {
-                        std::cmp::Ordering::Less => {
-                            // least common case: an overlapping instruction ends a BB in the middle of this
-                            // instruction.
-                            cursor.next();
-                            continue 'next_cursor;
-                        }
-                        std::cmp::Ordering::Equal => {
-                            // common case: this instruction is the last in the basic block.
-                            // we'll break from all loops and insert the basic block.
-                            is_last = true;
-                            break 'next_cursor;
-                        }
-                        std::cmp::Ordering::Greater => {
-                            // most common case: this instruction does not end the basic block.
-                            // we'll break from this inner loop and step to the next instruction to try
-                            // again.
-                            is_last = false;
-                            break 'next_cursor;
-                        }
-                    }
-                }
-
-                if is_last {
-                    break;
-                } else {
-                    // instruction did not end basic block.
-                    // step to next instruction and try again.
-                    current += insn.length as u64;
-                    continue;
+                    log::warn!("cfg: {:#x}: no subsequent instruction at {:#x}", insn.va, next_va);
+                    true
                 }
             }
-            blocks_by_address.insert(
-                start,
-                BasicBlock {
-                    address: start,
-                    length,
-                    address_of_last_insn: current,
-                },
-            );
-            blocks_by_last_address.insert(current, start);
+        };
+        found[i].flags.set(InsnFlags::LAST, last);
+    }
+
+    // walk from each start to the next last.
+    let mut blocks: Vec<BasicBlock> = Default::default();
+    for (i, first) in found.iter().enumerate() {
+        if !first.flags.contains(InsnFlags::START) {
+            continue;
         }
+
+        let mut j = i;
+        let mut length: u64 = 0;
+        loop {
+            let insn = &found[j];
+            length += insn.length as u64;
+            if insn.flags.contains(InsnFlags::LAST) {
+                break;
+            }
+            // the next instruction exists, otherwise this would be a last.
+            j = find(&found, j + 1, insn.va + insn.length as u64).expect("missing bb last");
+        }
+
+        blocks.push(BasicBlock {
+            address: first.va,
+            length,
+            address_of_last_insn: found[j].va,
+        });
+    }
+
+    blocks
+}
+
+impl BasicBlockIndex {
+    fn build_index(insns: &InstructionIndex, flows: &FlowIndex) -> Result<BasicBlockIndex> {
+        let blocks = find_basic_blocks(insns, flows);
+
+        let blocks_by_last_address = blocks.iter().map(|bb| (bb.address_of_last_insn, bb.address)).collect();
+        let blocks_by_address = blocks.into_iter().map(|bb| (bb.address, bb)).collect();
 
         Ok(BasicBlockIndex {
             blocks_by_address,
