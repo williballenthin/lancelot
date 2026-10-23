@@ -229,20 +229,34 @@ pub struct FlowIndex {
 
 impl FlowIndex {
     fn build_index(module: &Module, insns: &InstructionIndex) -> Result<FlowIndex> {
-        let mut idx = FlowIndex {
-            // each of these maps is guaranteed to have an entry for each of the given instructions.
-            flows_by_src: Default::default(),
-            flows_by_dst: Default::default(),
-        };
+        // each of these maps is guaranteed to have an entry for each of the given instructions.
+        //
+        // we build both maps from sorted lists,
+        // which is much faster than inserting each flow into a map.
+        let flows_by_src: BTreeMap<VA, Flows> = insns
+            .insns_by_address
+            .iter()
+            .map(|(&src, insn)| (src, insn.successors.clone()))
+            .collect();
 
+        // the flows to each destination, as (destination, order, flow),
+        // where order is the position of the flow among the flows of all the instructions,
+        // which orders the predecessors of each destination by their address.
+        //
+        // fallthroughs are most of the flows, and they're already sorted by destination
+        // (unless instructions overlap), so only the other flows need to be sorted.
+        let mut fallthroughs: Vec<(VA, u32, Flow)> = Vec::with_capacity(insns.insns_by_address.len());
+        let mut others: Vec<(VA, u32, Flow)> = Default::default();
+        let mut order: u32 = 0;
         for (&src, insn) in insns.insns_by_address.iter() {
-            idx.flows_by_src.insert(src, insn.successors.clone());
-            idx.flows_by_dst.entry(src).or_default();
-
             for succ in insn.successors.iter() {
+                order += 1;
                 let dst = match succ {
                     // direct flows
-                    Flow::Fallthrough(va) => va,
+                    Flow::Fallthrough(va) => {
+                        fallthroughs.push((*va, order, succ.swap(src)));
+                        continue;
+                    }
                     Flow::Call(Target::Direct(va)) => va,
                     Flow::UnconditionalJump(Target::Direct(va)) => va,
                     Flow::ConditionalJump(va) => va,
@@ -258,12 +272,51 @@ impl FlowIndex {
                         }
                     }
                 };
-
-                idx.flows_by_dst.entry(*dst).or_default().push(succ.swap(src));
+                others.push((*dst, order, succ.swap(src)));
             }
         }
+        if !fallthroughs.is_sorted_by_key(|&(dst, _, _)| dst) {
+            fallthroughs.sort_unstable_by_key(|&(dst, order, _)| (dst, order));
+        }
+        others.sort_unstable_by_key(|&(dst, order, _)| (dst, order));
 
-        Ok(idx)
+        // merge the instructions (each has an entry, even with no flows to it),
+        // the fallthroughs, and the other flows.
+        let mut flows_by_dst: Vec<(VA, Flows)> = Vec::with_capacity(insns.insns_by_address.len());
+        let mut insns = insns.insns_by_address.keys().peekable();
+        let mut fallthroughs = fallthroughs.into_iter().peekable();
+        let mut others = others.into_iter().peekable();
+        while let Some(dst) = [
+            insns.peek().map(|&&va| va),
+            fallthroughs.peek().map(|&(dst, _, _)| dst),
+            others.peek().map(|&(dst, _, _)| dst),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        {
+            insns.next_if(|&&va| va == dst);
+
+            let mut preds: Flows = Default::default();
+            loop {
+                let fallthrough = fallthroughs.peek().filter(|&&(d, _, _)| d == dst);
+                let other = others.peek().filter(|&&(d, _, _)| d == dst);
+                let next = match (fallthrough, other) {
+                    (Some((_, a, _)), Some((_, b, _))) if a < b => fallthroughs.next(),
+                    (Some(_), None) => fallthroughs.next(),
+                    (_, Some(_)) => others.next(),
+                    (None, None) => break,
+                };
+                preds.push(next.expect("peeked").2);
+            }
+
+            flows_by_dst.push((dst, preds));
+        }
+
+        Ok(FlowIndex {
+            flows_by_src,
+            flows_by_dst: flows_by_dst.into_iter().collect(),
+        })
     }
 }
 
@@ -1091,6 +1144,50 @@ mod tests {
 
         assert_eq!(cfg.insns.insns_by_address.len(), 84368);
         assert_eq!(cfg.basic_blocks.blocks_by_address.len(), 17857);
+
+        Ok(())
+    }
+
+    #[test]
+    fn flow_index() -> Result<()> {
+        // the flow index has the same flows, in the same order,
+        // as when we insert each flow into the maps, one at a time.
+        for rsrc in [Rsrc::K32, Rsrc::I236B] {
+            let buf = get_buf(rsrc);
+            let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+            let mut insns: InstructionIndex = Default::default();
+            for function in crate::analysis::pe::find_functions(&pe)?.iter() {
+                if let crate::analysis::pe::Function::Local(va) = function {
+                    insns.build_index(&pe.module, *va)?;
+                }
+            }
+
+            let mut flows_by_src: BTreeMap<VA, Flows> = Default::default();
+            let mut flows_by_dst: BTreeMap<VA, Flows> = Default::default();
+            for (&src, insn) in insns.insns_by_address.iter() {
+                flows_by_src.insert(src, insn.successors.clone());
+                flows_by_dst.entry(src).or_default();
+                for succ in insn.successors.iter() {
+                    let dst = match succ {
+                        Flow::Fallthrough(va)
+                        | Flow::Call(Target::Direct(va))
+                        | Flow::UnconditionalJump(Target::Direct(va))
+                        | Flow::ConditionalJump(va) => *va,
+                        Flow::Call(Target::Indirect(ptr)) | Flow::UnconditionalJump(Target::Indirect(ptr)) => {
+                            if !pe.module.probe_va(*ptr, Permissions::RWX) {
+                                continue;
+                            }
+                            *ptr
+                        }
+                    };
+                    flows_by_dst.entry(dst).or_default().push(succ.swap(src));
+                }
+            }
+
+            let flows = FlowIndex::build_index(&pe.module, &insns)?;
+            assert_eq!(flows.flows_by_src, flows_by_src);
+            assert_eq!(flows.flows_by_dst, flows_by_dst);
+        }
 
         Ok(())
     }
