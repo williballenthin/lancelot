@@ -119,14 +119,12 @@ fn dead_end(va: VA, at: VA, what: &str) {
 /// (fallthroughs and jumps, not calls) and classifies how each path ends:
 ///
 ///   - a RET: the function returns.
-///   - a known dead end: a call or tail jump to a function in `noret` (so its
-///     fallthrough was already pruned), `int 0x29`/`int 0x2c`, or an `int3`
-///     directly after a call, which is what MSVC and clang emit after a call to
-///     a function declared `noreturn`.
-///   - something we can't see through: an indirect jump (a tail call through
-///     the import table or a register, or an unrecovered switch table), a jump
-///     whose target was dropped while building the CFG, a flow to bytes that
-///     didn't decode, or an `int3` reached some other way than from a call.
+///   - a known dead end: a call or tail jump to a function in `noret` (so its fallthrough was already pruned), `int
+///     0x29`/`int 0x2c`, or an `int3` directly after a call, which is what MSVC and clang emit after a call to a
+///     function declared `noreturn`.
+///   - something we can't see through: an indirect jump (a tail call through the import table or a register, or an
+///     unrecovered switch table), a jump whose target was dropped while building the CFG, a flow to bytes that didn't
+///     decode, or an `int3` reached some other way than from a call.
 ///
 /// only when every path ends in a known dead end, or never ends at all (an
 /// infinite loop), is the function noret. an incomplete analysis never is,
