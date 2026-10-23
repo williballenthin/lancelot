@@ -130,12 +130,10 @@ pub fn read_insn_with_cache_as<O: zydis::Operands>(
 }
 
 impl InstructionIndex {
-    pub fn build_index(&mut self, module: &Module, va: VA) -> Result<()> {
-        self.build_index_and_record(module, va, &mut Vec::new())
-    }
-
-    /// like `build_index`, and also record the address of each instruction that it adds to the index.
-    pub fn build_index_and_record(&mut self, module: &Module, va: VA, new_insns: &mut Vec<VA>) -> Result<()> {
+    /// explore the instructions reachable from the given address and add them to the index.
+    /// returns the addresses of the instructions that were added.
+    pub fn build_index(&mut self, module: &Module, va: VA) -> Result<Vec<VA>> {
+        let mut new_insns: Vec<VA> = Default::default();
         let decoder = dis::get_disassembler(module)?;
         self.roots.insert(va);
         // we prefer to read via a page cache,
@@ -219,7 +217,7 @@ impl InstructionIndex {
             new_insns.push(va);
         }
 
-        Ok(())
+        Ok(new_insns)
     }
 }
 

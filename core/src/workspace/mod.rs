@@ -166,7 +166,7 @@ impl PEWorkspace {
                     continue;
                 }
 
-                insns.build_index_and_record(&pe.module, function, &mut scan)?;
+                scan.extend(insns.build_index(&pe.module, function)?);
 
                 function_starts.insert(function);
                 // is this the right thing to do? are these guaranteed to be
@@ -386,7 +386,7 @@ impl COFFWorkspace {
 
             scan.clear();
             for &function in new_code.iter() {
-                insns.build_index_and_record(&coff.module, function, &mut scan)?;
+                scan.extend(insns.build_index(&coff.module, function)?);
 
                 // see note in PE workspace about whether this is the right idea or note.
                 function_starts.insert(function);
