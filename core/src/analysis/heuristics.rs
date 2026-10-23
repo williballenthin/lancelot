@@ -48,7 +48,8 @@ struct CodeFeatures {
     has_zero_instruction: bool,
 
     // when disassembling the first basic block,
-    // do we encounter an instruction in the "OTHER" category?
+    // do we encounter an instruction in the "OTHER" category,
+    // that isn't otherwise common (see `is_common_instruction`)?
     has_uncommon_instruction: bool,
 }
 
@@ -134,6 +135,66 @@ fn extract_mnemonic_feature(mnemonic: zydis::Mnemonic) -> MnemonicDescriptor {
     }
 }
 
+/// Is this an instruction that compilers often emit,
+/// though it's not in the classes of `extract_mnemonic_feature`?
+/// Such as zero and sign extension, `setcc`, `sbb`, alignment `nop`s,
+/// inline `memset` and `memcpy` (`rep stos`, `rep movs`), and vector and x87 instructions.
+///
+/// These are rare at the start of data decoded as code,
+/// unlike `adc`, `xchg`, `in`/`out`, `pushad`, flag operations, `loop`, and `lods`.
+/// In tests on capa-testfiles, each of these was at least five times more common
+/// in the first basic block of real functions than of data.
+fn is_common_instruction(mnemonic: zydis::Mnemonic, category: zydis::InstructionCategory) -> bool {
+    use zydis::{InstructionCategory as C, Mnemonic as M};
+
+    match category {
+        C::NOP
+        | C::WIDENOP
+        | C::SETCC
+        | C::CONVERT
+        | C::SEMAPHORE
+        | C::BITBYTE
+        | C::SHIFT
+        | C::BMI1
+        | C::BMI2
+        | C::PREFETCH => true,
+
+        // vector instructions.
+        C::SSE
+        | C::AVX
+        | C::AVX2
+        | C::AVX2GATHER
+        | C::AVX512
+        | C::LOGICAL
+        | C::LOGICAL_FP
+        | C::BLEND
+        | C::BROADCAST
+        | C::STTNI
+        | C::VFMA
+        | C::AES
+        | C::VAES
+        | C::PCLMULQDQ
+        | C::VPCLMULQDQ
+        | C::SHA => true,
+
+        C::X87_ALU => true,
+
+        // like movzx, movsx, movsxd, and vector moves, but not xchg.
+        C::DATAXFER => mnemonic != M::XCHG,
+
+        // inline memset and memcpy, but not lods, scas, and cmps.
+        C::STRINGOP => matches!(
+            mnemonic,
+            M::STOSB | M::STOSW | M::STOSD | M::STOSQ | M::MOVSB | M::MOVSW | M::MOVSD | M::MOVSQ
+        ),
+
+        // like `neg eax; sbb eax, eax`, but not adc.
+        C::BINARY => mnemonic == M::SBB,
+
+        _ => mnemonic == M::LEAVE,
+    }
+}
+
 fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
     assert!(buf.len() >= 256);
 
@@ -149,7 +210,7 @@ fn extract_code_features(decoder: &Decoder, buf: &[u8]) -> CodeFeatures {
         if let Ok(Some(insn)) = insn {
             let mnem = extract_mnemonic_feature(insn.mnemonic);
 
-            if matches!(mnem, MnemonicDescriptor::OTHER) {
+            if matches!(mnem, MnemonicDescriptor::OTHER) && !is_common_instruction(insn.mnemonic, insn.meta.category) {
                 has_uncommon_instruction = true;
             }
 
@@ -428,5 +489,44 @@ pub fn is_probably_code(module: &Module, decoder: &Decoder, va: VA) -> bool {
         // i think the scenario is: the region is right at the end of the section/file,
         // so there aren't 256 bytes to read.
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{analysis::dis, test::*};
+
+    fn is_probably_code64(code: &[u8]) -> bool {
+        // pad with int3, because the checks read 256 bytes.
+        let mut buf = code.to_vec();
+        buf.resize(0x200, 0xCC);
+        let module = load_shellcode64(&buf);
+        let decoder = dis::get_disassembler(&module).unwrap();
+        super::is_probably_code(&module, &decoder, 0x0)
+    }
+
+    #[test]
+    fn common_instruction() {
+        // like the start of kernel32.dll!0x18001096c (x64):
+        //
+        //   0:  48 89 5c 24 08          mov    QWORD PTR [rsp+0x8],rbx
+        //   5:  57                      push   rdi
+        //   6:  0f b7 da                movzx  ebx,dx
+        //   9:  85 db                   test   ebx,ebx
+        //   b:  0f 94 c0                sete   al
+        //   e:  5f                      pop    rdi
+        //   f:  c3                      ret
+        assert!(is_probably_code64(&[
+            0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x0F, 0xB7, 0xDA, 0x85, 0xDB, 0x0F, 0x94, 0xC0, 0x5F, 0xC3
+        ]));
+    }
+
+    #[test]
+    fn uncommon_instruction() {
+        //   0:  57                      push   rdi
+        //   1:  13 c1                   adc    eax,ecx
+        //   3:  5f                      pop    rdi
+        //   4:  c3                      ret
+        assert!(!is_probably_code64(&[0x57, 0x13, 0xC1, 0x5F, 0xC3]));
     }
 }
