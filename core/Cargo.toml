@@ -15,7 +15,7 @@ travis-ci = { repository = "https://github.com/williballenthin/lancelot", branch
 [dependencies]
 log = "0.4"
 goblin = { version = "0.10", features = ["std", "pe32"], default-features = false }
-object = "0.36"
+object = "0.40"
 zydis = { features = ["serialization", "nolibc"], optional = true, version = "4.1.1" }
 byteorder = "1"
 bitflags = "2"
