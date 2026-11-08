@@ -58,7 +58,8 @@ impl HeaderExtra {
     /// get the size of this structure in bytes.
     fn get_size(&self) -> usize {
         match self {
-            HeaderExtra::V5 | HeaderExtra::V6_7 { .. } => 4,
+            HeaderExtra::V5 => 0,
+            HeaderExtra::V6_7 { .. } => 4,
             HeaderExtra::V8_9 { .. } => 6,
             HeaderExtra::V10 { .. } => 8,
         }
@@ -104,10 +105,21 @@ impl Header {
     }
 }
 
+/// fail parsing at `input`, because its content is invalid or unsupported.
+/// the caller reports this as a corrupt .sig file.
+fn invalid<T>(input: &[u8]) -> IResult<&[u8], T> {
+    Err(nom::Err::Failure(nom::error::Error::new(
+        input,
+        nom::error::ErrorKind::Verify,
+    )))
+}
+
 fn utf8(input: &[u8], size: u16) -> IResult<&[u8], String> {
-    let (input, s) = take(size)(input)?;
-    let s = String::from_utf8(s.to_vec()).expect("invalid string");
-    Ok((input, s))
+    let (rest, s) = take(size)(input)?;
+    match String::from_utf8(s.to_vec()) {
+        Ok(s) => Ok((rest, s)),
+        Err(_) => invalid(input),
+    }
 }
 
 fn header(input: &[u8]) -> IResult<&[u8], Header> {
@@ -164,7 +176,11 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
                 },
             )
         }
-        _ => unimplemented!(),
+        _ => return invalid(input),
+    };
+
+    let Some(features) = Features::from_bits(features) else {
+        return invalid(input);
     };
 
     let (input, library_name) = utf8(input, library_name_length as u16)?;
@@ -177,7 +193,7 @@ fn header(input: &[u8]) -> IResult<&[u8], Header> {
             file_types,
             os_types,
             app_types,
-            features: Features::from_bits(features).expect("invalid features"),
+            features,
             crc16,
             ctypes_crc16,
             extra,
@@ -288,7 +304,7 @@ fn wildcard_mask(input: &[u8], length: u16) -> IResult<&[u8], u64> {
         (input, (high << 32) | low)
     } else {
         // dumpsig does support this, but we don't, yet.
-        panic!("mask size too large");
+        return invalid(input);
     })
 }
 
@@ -315,8 +331,11 @@ bitflags! {
 }
 
 fn parsing_flags(input: &[u8]) -> IResult<&[u8], ParsingFlags> {
-    let (input, b) = be_u8(input)?;
-    Ok((input, ParsingFlags::from_bits(b).expect("invalid parsing flags")))
+    let (rest, b) = be_u8(input)?;
+    match ParsingFlags::from_bits(b) {
+        Some(flags) => Ok((rest, flags)),
+        None => invalid(input),
+    }
 }
 
 /// parse a tail byte definition.
@@ -336,7 +355,8 @@ fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<Tai
     // seems like a bug in clippy to warn on this
     #[allow(clippy::same_item_push)]
     for _ in 0..count {
-        // this offset is relative to the start of the function.
+        // this offset is relative to the end of the CRC16 block,
+        // that is, from `pattern_size + crc_len` bytes into the function.
         // it is *not* relative to the prior offset.
         let (input_, offset) = vword(input, header)?;
         let (input_, value) = be_u8(input_)?;
@@ -423,7 +443,9 @@ fn name<'a>(input: &'a [u8], header: &Header, base_offset: i64) -> IResult<&'a [
     } else {
         (input, 0u8)
     };
-    let name_flags = NameFlags::from_bits(name_flags).expect("invalid name flags");
+    let Some(name_flags) = NameFlags::from_bits(name_flags) else {
+        return invalid(input);
+    };
 
     // offset was parsed before, but can be interpreted only after name_flags.
     let offset = if name_flags.intersects(NameFlags::NEGATIVE_OFFSET) {
@@ -432,8 +454,11 @@ fn name<'a>(input: &'a [u8], header: &Header, base_offset: i64) -> IResult<&'a [
         base_offset + (relative_offset as i64)
     };
 
-    let (input, s) = take_while(|b| b >= 0x20)(input)?;
-    let pname = String::from_utf8(s.to_vec()).expect("invalid name");
+    let (rest, s) = take_while(|b| b >= 0x20)(input)?;
+    let Ok(pname) = String::from_utf8(s.to_vec()) else {
+        return invalid(input);
+    };
+    let input = rest;
 
     let (input, pflags) = parsing_flags(input)?;
 
@@ -553,6 +578,10 @@ fn leaf<'a>(
     Ok((input, ()))
 }
 
+/// the longest pattern accepted. real files use 32 element patterns,
+/// and edges hold at most 64 elements.
+const MAX_PATTERN_LENGTH: usize = 0x400;
+
 /// parse a node and its subtree, appending their signatures to `ret`.
 ///
 /// prefix: the pattern elements covered by parent nodes.
@@ -581,10 +610,20 @@ fn node<'a>(
         input = input_;
         trace!("length: {:#x}", length);
 
+        // each edge must make progress, and patterns are short,
+        // so malformed input can't recurse without bound.
+        if length == 0 || prefix.len() + length as usize > MAX_PATTERN_LENGTH {
+            return invalid(input);
+        }
+
         let (input_, mask) = wildcard_mask(input, length)?;
         input = input_;
         trace!("wildcard_mask: {:#x}", mask);
 
+        // a wildcard bit beyond the edge would mean fewer literals than wildcards claim.
+        if length < 64 && mask >> length != 0 {
+            return invalid(input);
+        }
         let remaining_bytes = length - count_bits(mask);
         let (input_, byte_literals) = take(remaining_bytes)(input)?;
         input = input_;
