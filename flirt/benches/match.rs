@@ -30,7 +30,7 @@ fn benchmark(c: &mut Criterion) {
     });
 
     // match at each of the first 64k offsets of a binary.
-    // most fail within a few bytes, like when matching at function starts.
+    // most offsets fail after a few bytes, the same as most function starts.
     let set = FlirtSignatureSet::with_signatures(sigs);
     let code = resource("mimikatz.exe_");
     group.bench_function("match", |b| {

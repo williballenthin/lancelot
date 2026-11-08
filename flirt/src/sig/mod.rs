@@ -1,14 +1,15 @@
 //! parse IDA's compiled FLIRT signature files (.sig).
 //!
-//! a .sig file is a header, then a tree, which is usually zlib-compressed:
+//! a .sig file has a header, then a tree. the tree is usually zlib-compressed.
 //!
-//!   - an internal node has edges to its children. each edge holds a run of pattern elements: bytes or wildcards. the
-//!     pattern of a leaf is made from the edges on the path from the root to it.
-//!   - a leaf holds the modules (functions) with that pattern, grouped by the CRC16 of the bytes after the pattern.
-//!     each module has its size, names, and maybe tail bytes and references to other names.
+//!   - an internal node has edges to its children. each edge has a sequence of pattern elements: bytes or wildcards.
+//!     the pattern of a leaf is the elements of the edges from the root to the leaf.
+//!   - a leaf has the modules (functions) with that pattern. the modules are in groups by the CRC16 of the bytes after
+//!     the pattern. each module has a size, names, and optional tail bytes and references to other names.
 //!
-//! the header's numbers are little-endian. the tree's are big-endian, and most
-//! are variable-length (see `Reader::vint16` and `Reader::vint32`).
+//! the numbers in the header are little-endian. the numbers in the tree are
+//! big-endian, and most have a variable length (see `Reader::vint16` and
+//! `Reader::vint32`).
 
 use anyhow::Result;
 use log::trace;
@@ -31,8 +32,8 @@ fn corrupt() -> anyhow::Error {
     SigError::CorruptSigFile.into()
 }
 
-/// reads values from the front of a byte slice.
-/// a read past the end is an error: the file is corrupt.
+/// reads values from the start of a byte slice.
+/// a read past the end is an error, because the file is corrupt.
 struct Reader<'a> {
     buf: &'a [u8],
 }
@@ -51,8 +52,8 @@ impl<'a> Reader<'a> {
         Ok(bytes)
     }
 
-    /// read bytes up to (not including) the first one that isn't printable,
-    /// or the end.
+    /// read bytes until the first byte that isn't printable, or until the end.
+    /// the result doesn't include that byte.
     fn printable_bytes(&mut self) -> &'a [u8] {
         let count = self.buf.iter().take_while(|&&b| b >= 0x20).count();
         let (bytes, rest) = self.buf.split_at(count);
@@ -122,7 +123,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// a count or offset in the tree: a vint16 before version 9, and a vint32 since.
+    /// a count or an offset in the tree: a vint16 before version 9, and a vint32 from version 9.
     fn word(&mut self, header: &Header) -> Result<u64> {
         if header.version < 9 {
             Ok(self.vint16()? as u64)
@@ -144,15 +145,15 @@ bitflags! {
     }
 }
 
-/// the fields of the header that parsing the tree needs.
+/// the header fields that we need to parse the tree.
 struct Header {
     version:      u8,
     features:     Features,
-    /// the number of bytes in each pattern, after which the CRC16 block starts.
+    /// the number of bytes in each pattern. the CRC16 block starts after these bytes.
     pattern_size: u16,
 }
 
-/// read the header, leaving the reader at the start of the tree.
+/// read the header. after this, the reader is at the start of the tree.
 fn header(r: &mut Reader) -> Result<Header> {
     if r.bytes(6)? != b"IDASGN" {
         return Err(corrupt());
@@ -174,7 +175,7 @@ fn header(r: &mut Reader) -> Result<Header> {
     let library_name_length = r.u8()?;
     let _ctypes_crc16 = r.le_u16()?;
 
-    // later versions add fields.
+    // newer versions have more fields.
     if version >= 6 {
         let _number_of_patterns = r.le_u32()?;
     }
@@ -192,13 +193,13 @@ fn header(r: &mut Reader) -> Result<Header> {
     })
 }
 
-/// the longest pattern accepted. real files use 32 element patterns,
-/// and edges hold at most 64 elements.
+/// the maximum pattern length. real files use patterns of 32 elements,
+/// and an edge has 64 elements at most.
 const MAX_PATTERN_LENGTH: usize = 0x400;
 
-/// read a node and its subtree, appending their signatures to `sigs`.
+/// read a node and its subtree, and add their signatures to `sigs`.
 ///
-/// `prefix` is the pattern on the path from the root to this node.
+/// `prefix` is the pattern from the root to this node.
 fn node(r: &mut Reader, header: &Header, prefix: &[SigElement], sigs: &mut Vec<FlirtSignature>) -> Result<()> {
     let child_count = r.vint16()?;
     if child_count == 0 {
@@ -208,7 +209,8 @@ fn node(r: &mut Reader, header: &Header, prefix: &[SigElement], sigs: &mut Vec<F
     for _ in 0..child_count {
         let pattern = [prefix, &edge(r, header)?].concat();
 
-        // since each edge has elements, this bounds the recursion, even for malformed input.
+        // each edge has at least one element, so this also limits the recursion depth,
+        // even for malformed input.
         if pattern.len() > MAX_PATTERN_LENGTH {
             return Err(corrupt());
         }
@@ -219,14 +221,14 @@ fn node(r: &mut Reader, header: &Header, prefix: &[SigElement], sigs: &mut Vec<F
     Ok(())
 }
 
-/// read the pattern elements of an edge: the number of elements,
-/// a mask of which elements are wildcards, then the bytes of the others.
+/// read the pattern elements of an edge: the number of elements, then a mask
+/// that shows the wildcards, then the bytes of the other elements.
 ///
 /// for example, `1D........0F59` is:
 ///
 /// ```text
 ///   length:  07
-///   mask:    0b0111100 (the first element is the most significant bit)
+///   mask:    0b0111100 (the most significant bit is the first element)
 ///   bytes:   1D 0F 59
 /// ```
 fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
@@ -243,7 +245,7 @@ fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
             let high = r.vint32()? as u64;
             (high << 32) | r.vint32()? as u64
         }
-        // 0 has no elements, and dumpsig supports more than 64, but we don't, yet.
+        // an edge must have elements. dumpsig supports more than 64 elements, but we don't, yet.
         _ => return Err(corrupt()),
     };
 
@@ -267,7 +269,7 @@ fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
 }
 
 bitflags! {
-    /// what follows a name in a module.
+    /// what comes after a name in a module.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct ParsingFlags: u8 {
         const MORE_PUBLIC_NAMES          = 0b0000_0001;
@@ -289,12 +291,12 @@ bitflags! {
     }
 }
 
-/// read the modules at a leaf, whose pattern is `pattern`,
-/// appending their signatures to `sigs`.
+/// read the modules at a leaf with the pattern `pattern`,
+/// and add their signatures to `sigs`.
 ///
-/// modules are grouped by their CRC16. flags after each module's names say
-/// what follows: tail bytes, references, another module with the same CRC16,
-/// or another group.
+/// the modules are in groups by their CRC16. the flags after the names of a
+/// module tell what comes next: tail bytes, references, another module with
+/// the same CRC16, or another group.
 fn leaf(r: &mut Reader, header: &Header, pattern: &[SigElement], sigs: &mut Vec<FlirtSignature>) -> Result<()> {
     loop {
         let size_of_bytes_crc16 = r.u8()?;
@@ -338,17 +340,17 @@ fn leaf(r: &mut Reader, header: &Header, pattern: &[SigElement], sigs: &mut Vec<
     }
 }
 
-/// read the names a module defines, and the flags that follow the last one.
+/// read the names of a module, and the flags after the last name.
 fn names(r: &mut Reader, header: &Header) -> Result<(Vec<Symbol>, ParsingFlags)> {
     let mut names = vec![];
     let mut offset = 0i64;
 
     loop {
-        // the offset is relative to the previous name's.
+        // the offset is relative to the offset of the previous name.
         let delta = r.word(header)? as i64;
 
-        // the name flags are optional: they're present when the next byte
-        // isn't printable, since names are.
+        // the name flags are optional. names are printable,
+        // so a byte that isn't printable is the name flags.
         let name_flags = if r.peek_u8()? < 0x20 {
             NameFlags::from_bits(r.u8()?).ok_or_else(corrupt)?
         } else {
@@ -376,17 +378,17 @@ fn names(r: &mut Reader, header: &Header) -> Result<(Vec<Symbol>, ParsingFlags)>
     }
 }
 
-/// read the tail bytes of a module: bytes that differ between modules with
-/// otherwise identical signatures.
+/// read the tail bytes of a module. these bytes tell apart modules that
+/// otherwise have the same signature.
 fn tail_bytes(r: &mut Reader, header: &Header) -> Result<Vec<TailByte>> {
-    // before version 8, there's always one.
+    // before version 8, there is always one tail byte.
     let count = if header.version < 8 { 1 } else { r.word(header)? };
 
     let mut tail_bytes = vec![];
     for _ in 0..count {
         tail_bytes.push(TailByte {
-            // relative to the end of the CRC16 block,
-            // that is, from `pattern_size + crc_len` bytes into the function.
+            // relative to the end of the CRC16 block:
+            // `pattern_size + crc_len` bytes into the function.
             offset: r.word(header)?,
             value:  r.u8()?,
         });
@@ -395,17 +397,17 @@ fn tail_bytes(r: &mut Reader, header: &Header) -> Result<Vec<TailByte>> {
     Ok(tail_bytes)
 }
 
-/// read the references of a module: the names of what the module points to,
-/// at offsets from its start.
+/// read the references of a module. each reference is an offset from the
+/// start of the module, and the name of what the module points to there.
 fn references(r: &mut Reader, header: &Header) -> Result<Vec<Symbol>> {
-    // before version 8, there's always one.
+    // before version 8, there is always one reference.
     let count = if header.version < 8 { 1 } else { r.word(header)? };
 
     let mut references = vec![];
     for _ in 0..count {
         let offset = r.word(header)? as i64;
 
-        // the name's length, or 0 then a longer length.
+        // the length of the name. if it is 0, a vint16 with the length comes next.
         let length = match r.u8()? {
             0 => r.vint16()? as usize,
             length => length as usize,
@@ -421,7 +423,7 @@ fn references(r: &mut Reader, header: &Header) -> Result<Vec<Symbol>> {
 /// inflate the zlib-compressed tree of a compressed .sig file.
 fn inflate(compressed: &[u8]) -> Result<Vec<u8>> {
     miniz_oxide::inflate::decompress_to_vec_zlib(compressed).map_err(|e| {
-        // I've see possible CMF values:
+        // I've seen these CMF values:
         //  0xC4 - IDA Pro 7.4/sig/pc/bc31cls.sig
         //  0x0C - IDA Pro 7.4/sig/pc/bc15owl
         //  0x05 - IDA Pro 7.4/sig/pc/bc15c2.sig
@@ -429,8 +431,8 @@ fn inflate(compressed: &[u8]) -> Result<Vec<u8>> {
     })
 }
 
-/// decompress a .sig file, if it's compressed,
-/// returning the header followed by the uncompressed tree.
+/// decompress a .sig file, if it is compressed.
+/// returns the header, then the uncompressed tree.
 pub fn unpack_sig(buf: &[u8]) -> Result<Vec<u8>> {
     let mut r = Reader::new(buf);
     let header = header(&mut r)?;

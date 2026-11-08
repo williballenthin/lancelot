@@ -234,8 +234,8 @@ impl PEWorkspace {
         for &function in flirt_candidates.iter() {
             let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, &imports, function)?;
 
-            // name the function when every matching signature agrees on the name,
-            // such as when identical signatures come from several libraries.
+            // name the function only if all the matching signatures give the same name.
+            // for example, identical signatures can come from different libraries.
             let mut names_found = matches.iter().map(|sig| sig.get_name());
             match names_found.next() {
                 None => {
