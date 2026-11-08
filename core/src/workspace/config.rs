@@ -85,8 +85,8 @@ impl Configuration for DynamicConfiguration {
     fn get_sigs(&self) -> Result<FlirtSignatureSet> {
         let mut sigs: Vec<FlirtSignature> = Default::default();
 
-        // these paths were given explicitly, so each must be a signature file,
-        // whatever its name.
+        // the caller gave these paths, so each one must be a signature file,
+        // whatever its file extension.
         for sig_path in self.sig_paths.iter() {
             let buf = std::fs::read(sig_path)?;
             let parsed = lancelot_flirt::parse(&buf)
@@ -129,7 +129,7 @@ mod tests {
         let config = DynamicConfiguration::default().with_sig_path(&resource("cfg/sigs/flare_msvc_rtf_32_64.sig"));
         assert!(!config.get_sigs()?.is_empty());
 
-        // a path that isn't a signature file is an error, rather than being ignored.
+        // a path to a file that isn't a signature file is an error. it isn't ignored.
         let config = DynamicConfiguration::default().with_sig_path(&resource("nop.exe"));
         assert!(config.get_sigs().is_err());
 
