@@ -75,6 +75,9 @@ enum Offset {
     Reference(u64),
 }
 
+/// the name sigmake gives to modules that it couldn't tell apart.
+pub const UNRESOLVED_COLLISION: &str = "?";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name {
     pub offset: i64,
@@ -283,16 +286,31 @@ impl FlirtSignature {
         FlirtSignatureMatcher::new(self)
     }
 
+    /// get the name of the function that this signature recognizes:
+    /// the public name at offset 0, or else the local (static) one.
+    ///
+    /// sigmake names the modules that it couldn't tell apart `?`,
+    /// which is not a name to apply, so it's skipped.
     pub fn get_name(&self) -> Option<&str> {
-        for name in self.names.iter() {
-            if let Symbol::Public(name) = name {
-                if name.offset == 0x0 {
-                    return Some(&name.name);
-                }
-            }
-        }
+        let at_start = |name: &&Name| name.offset == 0x0 && name.name != UNRESOLVED_COLLISION;
 
-        None
+        self.names
+            .iter()
+            .filter_map(|name| match name {
+                Symbol::Public(name) => Some(name),
+                _ => None,
+            })
+            .find(at_start)
+            .or_else(|| {
+                self.names
+                    .iter()
+                    .filter_map(|name| match name {
+                        Symbol::Local(name) => Some(name),
+                        _ => None,
+                    })
+                    .find(at_start)
+            })
+            .map(|name| name.name.as_str())
     }
 
     /// compute the IDA-specific CRC16 checksum for the given bytes.
@@ -980,6 +998,27 @@ mod tests {
             assert_eq!(from_set, from_one);
             assert_eq!(from_set.len(), if tail == 0x0F { 0 } else { 1 });
         }
+    }
+
+    #[test]
+    fn test_get_name() {
+        let name = |pat: &str| {
+            pat::parse(&format!("AABB 00 0000 0002 {pat}\n---"))
+                .unwrap()
+                .remove(0)
+                .get_name()
+                .map(String::from)
+        };
+        assert_eq!(name(":0000 foo"), Some("foo".into()));
+        // a local (static) function.
+        assert_eq!(name(":0000@ foo"), Some("foo".into()));
+        // public preferred.
+        assert_eq!(name(":0000@ foo :0000 bar"), Some("bar".into()));
+        // only names at the start of the function.
+        assert_eq!(name(":0010 foo"), None);
+        // sigmake's placeholder for modules it couldn't tell apart.
+        assert_eq!(name(":0000 ?"), None);
+        assert_eq!(name(":0000 ? :0000@ foo"), Some("foo".into()));
     }
 
     #[test]

@@ -208,7 +208,10 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                                             name: target_name,
                                             offset,
                                         }) => {
-                                            if *offset == 0 && target_name == wanted_name {
+                                            if *offset == 0
+                                                && target_name == wanted_name
+                                                && target_name != UNRESOLVED_COLLISION
+                                            {
                                                 does_name_match = true;
                                                 break 'sigs;
                                             }

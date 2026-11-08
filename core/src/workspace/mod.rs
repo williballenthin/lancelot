@@ -234,26 +234,27 @@ impl PEWorkspace {
         for &function in flirt_candidates.iter() {
             let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, function)?;
 
-            match matches.len().cmp(&1) {
-                std::cmp::Ordering::Less => {
+            // name the function when every matching signature agrees on the name,
+            // such as when identical signatures come from several libraries.
+            let mut names_found = matches.iter().map(|sig| sig.get_name());
+            match names_found.next() {
+                None => {
                     // no matches
                     continue;
                 }
-                std::cmp::Ordering::Equal => {
-                    // exactly one match: perfect.
-                    if let Some(name) = matches[0].get_name() {
+                Some(first) => {
+                    if !names_found.all(|name| name == first) {
+                        log::info!("FLIRT match: {:#x}: {} collisions", function, matches.len());
+                        continue;
+                    }
+
+                    if let Some(name) = first {
                         log::info!("FLIRT match: {:#x}: {}", function, name);
                         names.insert(function, name.to_string());
                     } else {
                         // no associated name, just know its a library function
                         continue;
                     }
-                }
-                std::cmp::Ordering::Greater => {
-                    // colliding matches, can't determine the name.
-                    // TODO: maybe check for special case that all names are the same?
-                    log::info!("FLIRT match: {:#x}: {} collisions", function, matches.len());
-                    continue;
                 }
             }
         }
