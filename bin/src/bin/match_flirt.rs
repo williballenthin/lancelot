@@ -69,9 +69,10 @@ fn _main() -> Result<()> {
     }
 
     let mut names: BTreeMap<VA, BTreeSet<Name>> = Default::default();
+    let imports = lancelot::analysis::pe::get_imports(&pe)?;
 
     for &va in functions.iter() {
-        for sig in lancelot::analysis::flirt::match_flirt(&pe.module, &sigs, va)
+        for sig in lancelot::analysis::flirt::match_flirt(&pe.module, &sigs, &imports, va)
             .unwrap_or_default()
             .iter()
         {
