@@ -25,7 +25,7 @@ fn _main() -> Result<()> {
                 .required(true)
                 .index(2)
                 .num_args(1..)
-                .help("path to file to analyze"),
+                .help("paths to FLIRT signature files (.sig or .pat)"),
         )
         .get_matches();
 
@@ -33,13 +33,7 @@ fn _main() -> Result<()> {
 
     let mut sigs = vec![];
     for sigpath in matches.get_many::<String>("sig").unwrap() {
-        if sigpath.ends_with(".pat") {
-            sigs.extend(pat::parse(&String::from_utf8(util::read_file(sigpath)?)?)?);
-        } else if sigpath.ends_with(".sig") {
-            sigs.extend(sig::parse(&util::read_file(sigpath)?)?);
-        } else {
-            return Err(anyhow::anyhow!("--sig must end with .pat or .sig"));
-        };
+        sigs.extend(lancelot_flirt::parse(&util::read_file(sigpath)?)?);
     }
     let sigs = FlirtSignatureSet::with_signatures(sigs);
 
