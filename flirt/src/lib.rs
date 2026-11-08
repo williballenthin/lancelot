@@ -37,6 +37,16 @@ use log::trace;
 pub mod pat;
 pub mod sig;
 
+/// parse the contents of a signature file: either a compiled .sig file,
+/// recognized by its `IDASGN` magic, or else a textual .pat file.
+pub fn parse(buf: &[u8]) -> anyhow::Result<Vec<FlirtSignature>> {
+    if buf.starts_with(b"IDASGN") {
+        sig::parse(buf)
+    } else {
+        pat::parse(std::str::from_utf8(buf)?)
+    }
+}
+
 /// one position of a byte signature.
 ///
 /// the derived ordering, `Byte(0x00) < ... < Byte(0xFF) < Wildcard`,
@@ -674,6 +684,34 @@ mod tests {
         // pat references __security_cookie
         // sig does not have any references
         // assert_eq!(pat.names, sig.names);
+    }
+
+    #[test]
+    fn test_parse_either_format() {
+        let from_sig: Vec<String> = parse(&SIG).unwrap().iter().map(|s| format!("{s:?}")).collect();
+        let from_pat: Vec<String> = parse(PAT.as_bytes())
+            .unwrap()
+            .iter()
+            .map(|s| format!("{s:?}"))
+            .collect();
+        assert_eq!(
+            from_sig,
+            sig::parse(&SIG)
+                .unwrap()
+                .iter()
+                .map(|s| format!("{s:?}"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            from_pat,
+            pat::parse(PAT)
+                .unwrap()
+                .iter()
+                .map(|s| format!("{s:?}"))
+                .collect::<Vec<_>>()
+        );
+        // neither.
+        assert!(parse(b"MZ\x90\x00").is_err());
     }
 
     /// malformed .sig files are errors, not panics.

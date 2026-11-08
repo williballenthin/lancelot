@@ -38,17 +38,6 @@ impl Configuration for StaticConfiguration {
     }
 }
 
-/// parse the contents of a FLIRT signature file,
-/// which is either a compiled .sig file (recognized by its IDASGN magic)
-/// or a textual .pat file.
-fn parse_sig_buf(buf: &[u8]) -> Result<Vec<FlirtSignature>> {
-    if buf.starts_with(b"IDASGN") {
-        lancelot_flirt::sig::parse(buf)
-    } else {
-        lancelot_flirt::pat::parse(&String::from_utf8(buf.to_vec())?)
-    }
-}
-
 fn to_js_error(e: anyhow::Error) -> JsError {
     JsError::new(&format!("{e}"))
 }
@@ -77,7 +66,7 @@ pub fn binexport2_from_bytes(
     for sig_buf in sigs.unwrap_or_default() {
         config
             .sigs
-            .extend(parse_sig_buf(&sig_buf.to_vec()).map_err(to_js_error)?);
+            .extend(lancelot_flirt::parse(&sig_buf.to_vec()).map_err(to_js_error)?);
     }
 
     let ws = workspace_from_bytes(Box::new(config), buf).map_err(to_js_error)?;
