@@ -52,17 +52,15 @@ impl<'a> Reader<'a> {
         Ok(bytes)
     }
 
-    /// read bytes until the first byte that isn't printable, or until the end.
-    /// the result doesn't include that byte.
-    fn printable_bytes(&mut self) -> &'a [u8] {
-        let count = self.buf.iter().take_while(|&&b| b >= 0x20).count();
-        let (bytes, rest) = self.buf.split_at(count);
-        self.buf = rest;
-        bytes
-    }
-
     fn string(&mut self, length: usize) -> Result<String> {
         String::from_utf8(self.bytes(length)?.to_vec()).map_err(|_| corrupt())
+    }
+
+    /// read a string until the first byte that isn't printable, or until the end.
+    /// the result doesn't include that byte.
+    fn printable_string(&mut self) -> Result<String> {
+        let length = self.buf.iter().take_while(|&&b| b >= 0x20).count();
+        self.string(length)
     }
 
     fn peek_u8(&self) -> Result<u8> {
@@ -249,6 +247,8 @@ fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
         _ => return Err(corrupt()),
     };
 
+    // the mask has one bit for each element. any other bit means the file is corrupt,
+    // and would make the count of bytes below wrong.
     if length < 64 && mask >> length != 0 {
         return Err(corrupt());
     }
@@ -363,8 +363,10 @@ fn names(r: &mut Reader, header: &Header) -> Result<(Vec<Symbol>, ParsingFlags)>
             offset += delta;
         }
 
-        let name = String::from_utf8(r.printable_bytes().to_vec()).map_err(|_| corrupt())?;
-        let name = Name { offset, name };
+        let name = Name {
+            offset,
+            name: r.printable_string()?,
+        };
         if name_flags.contains(NameFlags::LOCAL) {
             names.push(Symbol::Local(name));
         } else {
@@ -389,6 +391,7 @@ fn tail_bytes(r: &mut Reader, header: &Header) -> Result<Vec<TailByte>> {
         tail_bytes.push(TailByte {
             // relative to the end of the CRC16 block:
             // `pattern_size + crc_len` bytes into the function.
+            // it is *not* relative to the prior offset.
             offset: r.word(header)?,
             value:  r.u8()?,
         });
@@ -405,6 +408,8 @@ fn references(r: &mut Reader, header: &Header) -> Result<Vec<Symbol>> {
 
     let mut references = vec![];
     for _ in 0..count {
+        // relative to the start of the function.
+        // it is *not* relative to the prior offset.
         let offset = r.word(header)? as i64;
 
         // the length of the name. if it is 0, a vint16 with the length comes next.

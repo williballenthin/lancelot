@@ -237,25 +237,23 @@ impl PEWorkspace {
             // name the function only if all the matching signatures give the same name.
             // for example, identical signatures can come from different libraries.
             let mut names_found = matches.iter().map(|sig| sig.get_name());
-            match names_found.next() {
-                None => {
-                    // no matches
-                    continue;
-                }
-                Some(first) => {
-                    if !names_found.all(|name| name == first) {
-                        log::info!("FLIRT match: {:#x}: {} collisions", function, matches.len());
-                        continue;
-                    }
+            let Some(first) = names_found.next() else {
+                // no matches
+                continue;
+            };
 
-                    if let Some(name) = first {
-                        log::info!("FLIRT match: {:#x}: {}", function, name);
-                        names.insert(function, name.to_string());
-                    } else {
-                        // no associated name, just know its a library function
-                        continue;
-                    }
-                }
+            if !names_found.all(|name| name == first) {
+                // colliding matches, can't determine the name.
+                log::info!("FLIRT match: {:#x}: {} collisions", function, matches.len());
+                continue;
+            }
+
+            if let Some(name) = first {
+                log::info!("FLIRT match: {:#x}: {}", function, name);
+                names.insert(function, name.to_string());
+            } else {
+                // no associated name, just know its a library function
+                continue;
             }
         }
 

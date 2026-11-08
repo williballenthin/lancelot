@@ -68,7 +68,7 @@ fn to_py_err(e: Error) -> PyErr {
 /// Args:
 ///   buf (bytes): the raw bytes of a supported file (e.g., PE or COFF)
 ///   executable_id (Optional[str]): name of the file, if known
-///   sig_paths (Optional[list[str]]): paths to FLIRT signature files
+///   sig_paths (Optional[list[str]]): paths to FLIRT signature files (.sig or .pat, sniffed by magic)
 ///   function_hints (Optional[list[int]]): known function virtual addresses
 ///
 /// Returns: bytes
