@@ -1,17 +1,20 @@
-#![allow(clippy::nonstandard_macro_braces)] // clippy bug, see https://github.com/rust-lang/rust-clippy/issues/7434
+//! parse IDA's compiled FLIRT signature files (.sig).
+//!
+//! a .sig file is a header, then a tree, which is usually zlib-compressed:
+//!
+//!   - an internal node has edges to its children. each edge holds a run of pattern elements: bytes or wildcards. the
+//!     pattern of a leaf is made from the edges on the path from the root to it.
+//!   - a leaf holds the modules (functions) with that pattern, grouped by the CRC16 of the bytes after the pattern.
+//!     each module has its size, names, and maybe tail bytes and references to other names.
+//!
+//! the header's numbers are little-endian. the tree's are big-endian, and most
+//! are variable-length (see `Reader::vint16` and `Reader::vint32`).
 
 use anyhow::Result;
 use log::trace;
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take, take_while},
-    combinator::peek,
-    number::complete::{be_u16, be_u8, le_u16, le_u32, le_u8},
-    IResult,
-};
 use thiserror::Error;
 
-use super::{FlirtSignature, TailByte};
+use super::{FlirtSignature, Name, Symbol, TailByte};
 use crate::{ByteSignature, SigElement};
 
 #[derive(Debug, Error)]
@@ -22,6 +25,111 @@ pub enum SigError {
     CompressionNotSupported(String),
     #[error("The .sig file is corrupt (or unsupported)")]
     CorruptSigFile,
+}
+
+fn corrupt() -> anyhow::Error {
+    SigError::CorruptSigFile.into()
+}
+
+/// reads values from the front of a byte slice.
+/// a read past the end is an error: the file is corrupt.
+struct Reader<'a> {
+    buf: &'a [u8],
+}
+
+impl<'a> Reader<'a> {
+    fn new(buf: &'a [u8]) -> Reader<'a> {
+        Reader { buf }
+    }
+
+    fn bytes(&mut self, count: usize) -> Result<&'a [u8]> {
+        if count > self.buf.len() {
+            return Err(corrupt());
+        }
+        let (bytes, rest) = self.buf.split_at(count);
+        self.buf = rest;
+        Ok(bytes)
+    }
+
+    /// read bytes up to (not including) the first one that isn't printable,
+    /// or the end.
+    fn printable_bytes(&mut self) -> &'a [u8] {
+        let count = self.buf.iter().take_while(|&&b| b >= 0x20).count();
+        let (bytes, rest) = self.buf.split_at(count);
+        self.buf = rest;
+        bytes
+    }
+
+    fn string(&mut self, length: usize) -> Result<String> {
+        String::from_utf8(self.bytes(length)?.to_vec()).map_err(|_| corrupt())
+    }
+
+    fn peek_u8(&self) -> Result<u8> {
+        self.buf.first().copied().ok_or_else(corrupt)
+    }
+
+    fn u8(&mut self) -> Result<u8> {
+        Ok(self.bytes(1)?[0])
+    }
+
+    fn be_u16(&mut self) -> Result<u16> {
+        Ok(u16::from_be_bytes(self.bytes(2)?.try_into()?))
+    }
+
+    fn le_u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.bytes(2)?.try_into()?))
+    }
+
+    fn le_u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.bytes(4)?.try_into()?))
+    }
+
+    /// a variable-length number of up to 15 bits, in one or two bytes:
+    ///
+    /// ```text
+    ///   0xxxxxxx           -> 7 bits
+    ///   1xxxxxxx xxxxxxxx  -> 15 bits
+    /// ```
+    fn vint16(&mut self) -> Result<u16> {
+        let first = self.u8()? as u16;
+        if first & 0x80 == 0 {
+            Ok(first)
+        } else {
+            Ok(((first & 0x7F) << 8) | self.u8()? as u16)
+        }
+    }
+
+    /// a variable-length number of up to 32 bits, in one to five bytes:
+    ///
+    /// ```text
+    ///   0xxxxxxx                    -> 7 bits
+    ///   10xxxxxx xxxxxxxx           -> 14 bits
+    ///   110xxxxx xxxxxxxx [2 bytes] -> 29 bits
+    ///   111xxxxx [4 bytes]          -> 32 bits
+    /// ```
+    fn vint32(&mut self) -> Result<u32> {
+        let first = self.u8()? as u32;
+        if first & 0x80 == 0 {
+            Ok(first)
+        } else if first & 0xC0 == 0x80 {
+            Ok(((first & 0x7F) << 8) | self.u8()? as u32)
+        } else if first & 0xE0 == 0xC0 {
+            let high = ((first & 0x3F) << 8) | self.u8()? as u32;
+            Ok((high << 16) | self.be_u16()? as u32)
+        } else {
+            let high = self.be_u16()? as u32;
+            Ok((high << 16) | self.be_u16()? as u32)
+        }
+    }
+
+    /// a count or offset in the tree: a vint16 before version 9, and a vint32 since.
+    fn word(&mut self, header: &Header) -> Result<u64> {
+        if header.version < 9 {
+            Ok(self.vint16()? as u64)
+        } else {
+            Ok(self.vint32()? as u64)
+        }
+    }
 }
 
 bitflags! {
@@ -36,691 +144,321 @@ bitflags! {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
-enum HeaderExtra {
-    V5,
-    V6_7 {
-        functions_count: u32,
-    },
-    V8_9 {
-        functions_count: u32,
-        pattern_size:    u16,
-    },
-    V10 {
-        functions_count: u32,
-        pattern_size:    u16,
-        unknown:         u16,
-    },
-}
-
-impl HeaderExtra {
-    /// get the size of this structure in bytes.
-    fn get_size(&self) -> usize {
-        match self {
-            HeaderExtra::V5 => 0,
-            HeaderExtra::V6_7 { .. } => 4,
-            HeaderExtra::V8_9 { .. } => 6,
-            HeaderExtra::V10 { .. } => 8,
-        }
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
+/// the fields of the header that parsing the tree needs.
 struct Header {
-    // offset 6
     version:      u8,
-    // offset 7
-    arch:         u8,
-    // offset 8
-    file_types:   u32,
-    // offset 0xC
-    os_types:     u16,
-    // offset 0xE
-    app_types:    u16,
-    // offset: 0x10
     features:     Features,
-    // offset: 0x14
-    crc16:        u16,
-    // offset: 0x23
-    ctypes_crc16: u16,
-    // offset 0x25
-    extra:        HeaderExtra,
-    library_name: String,
+    /// the number of bytes in each pattern, after which the CRC16 block starts.
+    pattern_size: u16,
 }
 
-impl Header {
-    fn get_size(&self) -> usize {
-        0x25 + self.extra.get_size() + self.library_name.len()
+/// read the header, leaving the reader at the start of the tree.
+fn header(r: &mut Reader) -> Result<Header> {
+    if r.bytes(6)? != b"IDASGN" {
+        return Err(corrupt());
     }
 
-    fn get_pattern_size(&self) -> u16 {
-        match self.extra {
-            HeaderExtra::V5 => 32,
-            HeaderExtra::V6_7 { .. } => 32,
-            HeaderExtra::V8_9 { pattern_size, .. } => pattern_size,
-            HeaderExtra::V10 { pattern_size, .. } => pattern_size,
-        }
-    }
-}
-
-/// fail parsing at `input`, because its content is invalid or unsupported.
-/// the caller reports this as a corrupt .sig file.
-fn invalid<T>(input: &[u8]) -> IResult<&[u8], T> {
-    Err(nom::Err::Failure(nom::error::Error::new(
-        input,
-        nom::error::ErrorKind::Verify,
-    )))
-}
-
-fn utf8(input: &[u8], size: u16) -> IResult<&[u8], String> {
-    let (rest, s) = take(size)(input)?;
-    match String::from_utf8(s.to_vec()) {
-        Ok(s) => Ok((rest, s)),
-        Err(_) => invalid(input),
-    }
-}
-
-fn header(input: &[u8]) -> IResult<&[u8], Header> {
-    let (input, _) = tag(b"IDASGN")(input)?;
-
-    let (input, version) = alt((
-        tag(b"\x0A"),
-        tag(b"\x09"),
-        tag(b"\x08"),
-        tag(b"\x07"),
-        tag(b"\x06"),
-        tag(b"\x05"),
-    ))(input)?;
-    let version = version[0];
-
-    let (input, arch) = le_u8(input)?;
-    let (input, file_types) = le_u32(input)?;
-    let (input, os_types) = le_u16(input)?;
-    let (input, app_types) = le_u16(input)?;
-    let (input, features) = le_u16(input)?;
-    let (input, _) = le_u16(input)?;
-    let (input, crc16) = le_u16(input)?;
-    let (input, _) = take(12u8)(input)?;
-    let (input, library_name_length) = le_u8(input)?;
-    let (input, ctypes_crc16) = le_u16(input)?;
-
-    let (input, extra) = match version {
-        5 => (input, HeaderExtra::V5),
-        6 | 7 => {
-            let (input, functions_count) = le_u32(input)?;
-            (input, HeaderExtra::V6_7 { functions_count })
-        }
-        8 | 9 => {
-            let (input, functions_count) = le_u32(input)?;
-            let (input, pattern_size) = le_u16(input)?;
-            (
-                input,
-                HeaderExtra::V8_9 {
-                    functions_count,
-                    pattern_size,
-                },
-            )
-        }
-        10 => {
-            let (input, functions_count) = le_u32(input)?;
-            let (input, pattern_size) = le_u16(input)?;
-            let (input, unknown) = le_u16(input)?;
-            (
-                input,
-                HeaderExtra::V10 {
-                    functions_count,
-                    pattern_size,
-                    unknown,
-                },
-            )
-        }
-        _ => return invalid(input),
-    };
-
-    let Some(features) = Features::from_bits(features) else {
-        return invalid(input);
-    };
-
-    let (input, library_name) = utf8(input, library_name_length as u16)?;
-
-    Ok((
-        input,
-        Header {
-            version,
-            arch,
-            file_types,
-            os_types,
-            app_types,
-            features,
-            crc16,
-            ctypes_crc16,
-            extra,
-            library_name,
-        },
-    ))
-}
-
-/// unpack a variable-length integer with max range 16 bits.
-fn vint16(input: &[u8]) -> IResult<&[u8], u16> {
-    let (input, high) = be_u8(input)?;
-    let high: u16 = high as u16;
-
-    if (high & 0x80) != 0x80 {
-        Ok((input, high))
-    } else {
-        let (input, low) = be_u8(input)?;
-        let low: u16 = low as u16;
-        Ok((input, low + ((high & 0x7F) << 8)))
-    }
-}
-
-/// unpack a variable-length integer with max range 32 bits.
-fn vint32(input: &[u8]) -> IResult<&[u8], u32> {
-    let (input, b) = be_u8(input)?;
-
-    if (b & 0x80) != 0x80 {
-        return Ok((input, b as u32));
+    let version = r.u8()?;
+    if !(5..=10).contains(&version) {
+        return Err(corrupt());
     }
 
-    if (b & 0xC0) != 0xC0 {
-        let (input, low) = be_u8(input)?;
-        let (high, low) = (b as u32, low as u32);
-        return Ok((input, ((high & 0x7F) << 8) + low));
+    let _arch = r.u8()?;
+    let _file_types = r.le_u32()?;
+    let _os_types = r.le_u16()?;
+    let _app_types = r.le_u16()?;
+    let features = Features::from_bits(r.le_u16()?).ok_or_else(corrupt)?;
+    let _old_number_of_modules = r.le_u16()?;
+    let _crc16 = r.le_u16()?;
+    let _ctype = r.bytes(12)?;
+    let library_name_length = r.u8()?;
+    let _ctypes_crc16 = r.le_u16()?;
+
+    // later versions add fields.
+    if version >= 6 {
+        let _number_of_patterns = r.le_u32()?;
+    }
+    let pattern_size = if version >= 8 { r.le_u16()? } else { 32 };
+    if version >= 10 {
+        let _unknown = r.le_u16()?;
     }
 
-    if (b & 0xE0) != 0xE0 {
-        let (input, mid) = be_u8(input)?;
-        let (input, low) = be_u16(input)?;
-        let (high, mid, low) = (b as u32, mid as u32, low as u32);
+    let _library_name = r.string(library_name_length as usize)?;
 
-        Ok((input, ((((high & 0x3F) << 8) + mid) << 16) + low))
-    } else {
-        let (input, high) = be_u16(input)?;
-        let (input, low) = be_u16(input)?;
-        let (high, low) = (high as u32, low as u32);
-
-        Ok((input, (high << 16) + low))
-    }
-}
-
-/// unpack a variable-length integer with max range 16 bits into a 64 bit
-/// number. this is a utility routine for code that must parse into a common
-/// number type.
-fn vint16_64(input: &[u8]) -> IResult<&[u8], u64> {
-    let (input, v) = vint16(input)?;
-    let v = v as u64;
-    Ok((input, v))
-}
-
-/// unpack a variable-length integer with max range 16 bits into a 64 bit
-/// number. this is a utility routine for code that must parse into a common
-/// number type.
-fn vint32_64(input: &[u8]) -> IResult<&[u8], u64> {
-    let (input, v) = vint32(input)?;
-    let v = v as u64;
-    Ok((input, v))
-}
-
-/// as of version 10, many fields are now v32 instead of v16.
-/// this is a utility method for picking the appropriate unpacker.
-fn vword<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], u64> {
-    if header.version < 9 {
-        vint16_64(input)
-    } else {
-        vint32_64(input)
-    }
-}
-
-/// return the number of bits set in the given u64.
-///
-/// note: only supports up to 64 bits.
-/// returns u16 to match `.length` field.
-fn count_bits(v: u64) -> u16 {
-    let mut count = 0u8;
-    for i in 0..64 {
-        if ((1u64 << i) & v) != 0 {
-            count += 1;
-        }
-    }
-    count as u16
-}
-
-/// read a wildcard mask for a subpattern with the given length.
-///
-/// when a bit is set in the mask, then its considered a wildcard.
-/// otherwise, a byte literal is used.
-fn wildcard_mask(input: &[u8], length: u16) -> IResult<&[u8], u64> {
-    Ok(if length == 0 {
-        (input, 0u64)
-    } else if length < 0x10 {
-        vint16_64(input)?
-    } else if length <= 0x20 {
-        vint32_64(input)?
-    } else if length <= 0x40 {
-        let (input, high) = vint32_64(input)?;
-        let (input, low) = vint32_64(input)?;
-        (input, (high << 32) | low)
-    } else {
-        // dumpsig does support this, but we don't, yet.
-        return invalid(input);
+    Ok(Header {
+        version,
+        features,
+        pattern_size,
     })
-}
-
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct ParsingFlags: u8 {
-        const MORE_PUBLIC_NAMES = 0b0000_0001;
-        const TAIL_BYTES = 0b0000_0010;
-        const REFERENCED_FUNCTIONS = 0b0000_0100;
-        const MORE_MODULES_WITH_SAME_CRC = 0b0000_1000;
-        const MORE_MODULES = 0b0001_0000;
-    }
-}
-
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct NameFlags: u8 {
-        const UNK1  = 0b0000_0001;
-        const LOCAL = 0b0000_0010;
-        const UNK2  = 0b0000_0100;
-        const UNRESOLVED_COLLISION = 0b0000_1000;
-        const NEGATIVE_OFFSET = 0b0001_0000;
-    }
-}
-
-fn parsing_flags(input: &[u8]) -> IResult<&[u8], ParsingFlags> {
-    let (rest, b) = be_u8(input)?;
-    match ParsingFlags::from_bits(b) {
-        Some(flags) => Ok((rest, flags)),
-        None => invalid(input),
-    }
-}
-
-/// parse a tail byte definition.
-///
-/// a tail byte differentiates two (or more) otherwise identical functions
-/// by specifying the first byte that differs.
-fn tail_bytes<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<TailByte>> {
-    let (input, count) = if header.version < 8 {
-        (input, 1)
-    } else {
-        vword(input, header)?
-    };
-
-    let mut ret = vec![];
-    let mut input = input;
-
-    // seems like a bug in clippy to warn on this
-    #[allow(clippy::same_item_push)]
-    for _ in 0..count {
-        // this offset is relative to the end of the CRC16 block,
-        // that is, from `pattern_size + crc_len` bytes into the function.
-        // it is *not* relative to the prior offset.
-        let (input_, offset) = vword(input, header)?;
-        let (input_, value) = be_u8(input_)?;
-
-        ret.push(TailByte { offset, value });
-        input = input_;
-    }
-
-    Ok((input, ret))
-}
-
-#[derive(Debug)]
-struct ReferencedName {
-    offset: u64,
-    name:   String,
-}
-
-/// parse a referenced name definition.
-///
-/// a referenced name is a pointer within the function body to another named
-/// function. i'm not yet sure if this is used to match the current function, to
-/// differentiate it, or propagate the referenced name to the other function.
-/// i think its probably the former.
-///
-/// note: i'm not yet sure how the pointer itself will be encoded. is it always
-/// a global offset?
-fn referenced_names<'a>(input: &'a [u8], header: &Header) -> IResult<&'a [u8], Vec<ReferencedName>> {
-    let (input, count) = if header.version < 8 {
-        (input, 1)
-    } else {
-        vword(input, header)?
-    };
-
-    let mut ret = vec![];
-    let mut input = input;
-    // seems like a bug in clippy to warn on this
-    #[allow(clippy::same_item_push)]
-    for _ in 0..count {
-        // this offset is relative to the start of the function.
-        // it is *not* relative to the prior offset.
-        let (input_, offset) = vword(input, header)?;
-
-        let (input_, size) = be_u8(input_)?;
-
-        // when size is zero, then read a vint16 with the true size.
-        let (input_, size) = if size == 0x0 {
-            let (input_, size) = vint16(input_)?;
-            (input_, size)
-        } else {
-            (input_, size as u16)
-        };
-
-        let (input_, name) = utf8(input_, size)?;
-
-        ret.push(ReferencedName { offset, name });
-        input = input_;
-    }
-
-    Ok((input, ret))
-}
-
-#[derive(Debug)]
-struct Name {
-    offset: i64,
-    flags:  NameFlags,
-    name:   String,
-}
-
-/// parse a name definition.
-///
-/// this is a name that can be set for functions that match the current rule.
-/// usually, they are found at relative offset 0x0 from the rule match,
-/// but its possible for this offset to be non-zero.
-/// apparently its possible to specify a negative offset, but that's not
-/// supported here.
-fn name<'a>(input: &'a [u8], header: &Header, base_offset: i64) -> IResult<&'a [u8], (Name, ParsingFlags)> {
-    let (input, relative_offset) = vword(input, header)?;
-
-    // note: this field is only optionally present.
-    // it is present if the value of the byte is less than 0x20.
-    // otherwise, expect to parse the name as ASCII.
-    let (input, name_flags) = if peek(be_u8)(input)?.1 < 0x20 {
-        be_u8(input)?
-    } else {
-        (input, 0u8)
-    };
-    let Some(name_flags) = NameFlags::from_bits(name_flags) else {
-        return invalid(input);
-    };
-
-    // offset was parsed before, but can be interpreted only after name_flags.
-    let offset = if name_flags.intersects(NameFlags::NEGATIVE_OFFSET) {
-        base_offset - (relative_offset as i64)
-    } else {
-        base_offset + (relative_offset as i64)
-    };
-
-    let (rest, s) = take_while(|b| b >= 0x20)(input)?;
-    let Ok(pname) = String::from_utf8(s.to_vec()) else {
-        return invalid(input);
-    };
-    let input = rest;
-
-    let (input, pflags) = parsing_flags(input)?;
-
-    Ok((
-        input,
-        (
-            Name {
-                offset,
-                flags: name_flags,
-                name: pname,
-            },
-            pflags,
-        ),
-    ))
-}
-
-/// parse the modules of a leaf, appending their signatures to `ret`.
-fn leaf<'a>(
-    input: &'a [u8],
-    header: &Header,
-    prefix: &[SigElement],
-    ret: &mut Vec<FlirtSignature>,
-) -> IResult<&'a [u8], ()> {
-    let mut flags: ParsingFlags;
-    let mut input = input;
-
-    loop {
-        // module
-
-        let (input_, crc_len) = be_u8(input)?;
-        input = input_;
-        let (input_, crc) = be_u16(input)?;
-        input = input_;
-        trace!("crc: {:02x} {:04x}", crc_len, crc);
-
-        loop {
-            // module with crc
-            let mut offset = 0i64;
-
-            let (input_, function_size) = vword(input, header)?;
-            input = input_;
-            trace!("size: {:04x}", function_size);
-
-            let mut names = vec![];
-
-            loop {
-                // name
-
-                let (input_, (name, flags_)) = name(input, header, offset)?;
-                input = input_;
-                offset = name.offset;
-                flags = flags_;
-                trace!("name: {:x?}", name);
-                trace!("flags: {:?}", flags);
-
-                if name.flags.intersects(NameFlags::LOCAL) {
-                    names.push(super::Symbol::Local(super::Name {
-                        offset: name.offset,
-                        name:   name.name,
-                    }));
-                } else {
-                    names.push(super::Symbol::Public(super::Name {
-                        offset: name.offset,
-                        name:   name.name,
-                    }));
-                }
-
-                if !flags.intersects(ParsingFlags::MORE_PUBLIC_NAMES) {
-                    break;
-                };
-            }
-
-            let (input_, tbytes) = if flags.intersects(ParsingFlags::TAIL_BYTES) {
-                tail_bytes(input, header)?
-            } else {
-                (input, vec![])
-            };
-            if !tbytes.is_empty() {
-                trace!("tail bytes: {:x?}", tbytes);
-            }
-            input = input_;
-
-            if flags.intersects(ParsingFlags::REFERENCED_FUNCTIONS) {
-                let (input_, ref_names) = referenced_names(input, header)?;
-                input = input_;
-                trace!("references: {:x?}", ref_names);
-
-                for ref_name in ref_names.into_iter() {
-                    names.push(super::Symbol::Reference(super::Name {
-                        offset: ref_name.offset as i64,
-                        name:   ref_name.name,
-                    }));
-                }
-            }
-
-            ret.push(FlirtSignature {
-                byte_sig_size: header.get_pattern_size(),
-                byte_sig: ByteSignature(prefix.to_vec()),
-                size_of_bytes_crc16: crc_len,
-                crc16: crc,
-                size_of_function: function_size,
-                names,
-                footer: None,
-                tail_bytes: tbytes,
-            });
-
-            if !flags.intersects(ParsingFlags::MORE_MODULES_WITH_SAME_CRC) {
-                break;
-            };
-        }
-
-        if !flags.intersects(ParsingFlags::MORE_MODULES) {
-            break;
-        };
-    }
-
-    Ok((input, ()))
 }
 
 /// the longest pattern accepted. real files use 32 element patterns,
 /// and edges hold at most 64 elements.
 const MAX_PATTERN_LENGTH: usize = 0x400;
 
-/// parse a node and its subtree, appending their signatures to `ret`.
+/// read a node and its subtree, appending their signatures to `sigs`.
 ///
-/// prefix: the pattern elements covered by parent nodes.
-fn node<'a>(
-    input: &'a [u8],
-    header: &Header,
-    prefix: &[SigElement],
-    ret: &mut Vec<FlirtSignature>,
-) -> IResult<&'a [u8], ()> {
-    let (input, child_count) = vint16(input)?;
-    let mut input = input;
-
-    trace!("child count: {:#x}", child_count);
-
+/// `prefix` is the pattern on the path from the root to this node.
+fn node(r: &mut Reader, header: &Header, prefix: &[SigElement], sigs: &mut Vec<FlirtSignature>) -> Result<()> {
+    let child_count = r.vint16()?;
     if child_count == 0 {
-        return leaf(input, header, prefix, ret);
+        return leaf(r, header, prefix, sigs);
     }
 
     for _ in 0..child_count {
-        let (input_, length) = if header.version < 10 {
-            let (input, length) = be_u8(input)?;
-            (input, length as u16)
-        } else {
-            vint16(input)?
-        };
-        input = input_;
-        trace!("length: {:#x}", length);
+        let pattern = [prefix, &edge(r, header)?].concat();
 
-        // each edge must make progress, and patterns are short,
-        // so malformed input can't recurse without bound.
-        if length == 0 || prefix.len() + length as usize > MAX_PATTERN_LENGTH {
-            return invalid(input);
+        // since each edge has elements, this bounds the recursion, even for malformed input.
+        if pattern.len() > MAX_PATTERN_LENGTH {
+            return Err(corrupt());
         }
 
-        let (input_, mask) = wildcard_mask(input, length)?;
-        input = input_;
-        trace!("wildcard_mask: {:#x}", mask);
-
-        // a wildcard bit beyond the edge would mean fewer literals than wildcards claim.
-        if length < 64 && mask >> length != 0 {
-            return invalid(input);
-        }
-        let remaining_bytes = length - count_bits(mask);
-        let (input_, byte_literals) = take(remaining_bytes)(input)?;
-        input = input_;
-        trace!("byte_literals: {:02x?}", byte_literals);
-
-        // expected pattern:
-        //  literals:  1D........0F59D80F2825........0F280D........660F5BD30F283D
-        //  mask:       0 1 1 1 1 0 0 0 0 0 0 1 1 1 1 0 0 0 1 1 1 1 0 0 0 0 0 0 0
-        //              01111000000111100011110000000 == 0xf03c780
-        //  bits set:  0xC
-        //  remaining: (0x1D - 0xC) = 0x11 = number of literals
-        //
-        // got bytes:
-        //   1D CF 03 C7 80 1D 0F 59 D8 0F 28 25 0F 28 0D 66 0F 5B D3 0F 28 3D
-        //   -- ----------- --------------------------------------------------
-        //      0xf03c780
-
-        let mut pattern = Vec::with_capacity(prefix.len() + length as usize);
-        pattern.extend(prefix.iter());
-
-        let mut j: usize = remaining_bytes as usize;
-        for i in 0..length as u64 {
-            if (mask & (1 << i)) > 0 {
-                pattern.push(SigElement::Wildcard)
-            } else {
-                pattern.push(SigElement::Byte(byte_literals[j - 1]));
-                j -= 1;
-            }
-        }
-
-        // we have:
-        //  [ prefix1 prefix2   C B A ]
-        // and we need to reverse the current pattern to end up like:
-        //  [ prefix1 prefix2   A B C ]
-        pattern[prefix.len()..].reverse();
-
-        let (input_, ()) = node(input, header, &pattern, ret)?;
-        input = input_;
+        node(r, header, &pattern, sigs)?;
     }
 
-    Ok((input, ()))
+    Ok(())
 }
 
-/// parse an (unpacked) .sig file into FLIRT signatures.
+/// read the pattern elements of an edge: the number of elements,
+/// a mask of which elements are wildcards, then the bytes of the others.
 ///
-/// see `unpack_sig`.
-fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>> {
-    //nom::util::dbg_dmp(...);
-    let (input, header) = match header(input) {
-        Err(_) => return Err(SigError::CorruptSigFile.into()),
-        Ok((input, header)) => (input, header),
+/// for example, `1D........0F59` is:
+///
+/// ```text
+///   length:  07
+///   mask:    0b0111100 (the first element is the most significant bit)
+///   bytes:   1D 0F 59
+/// ```
+fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
+    let length = if header.version < 10 {
+        r.u8()? as u32
+    } else {
+        r.vint16()? as u32
     };
 
-    trace!("header: {:#?}", header);
+    let mask: u64 = match length {
+        1..=0xF => r.vint16()? as u64,
+        0x10..=0x20 => r.vint32()? as u64,
+        0x21..=0x40 => {
+            let high = r.vint32()? as u64;
+            (high << 32) | r.vint32()? as u64
+        }
+        // 0 has no elements, and dumpsig supports more than 64, but we don't, yet.
+        _ => return Err(corrupt()),
+    };
+
+    if length < 64 && mask >> length != 0 {
+        return Err(corrupt());
+    }
+
+    let mut bytes = r.bytes((length - mask.count_ones()) as usize)?.iter();
+    let elements = (0..length)
+        .map(|i| {
+            if mask & (1 << (length - 1 - i)) != 0 {
+                SigElement::Wildcard
+            } else {
+                // there's one byte for each element that isn't a wildcard.
+                SigElement::Byte(*bytes.next().expect("one byte per literal"))
+            }
+        })
+        .collect();
+
+    Ok(elements)
+}
+
+bitflags! {
+    /// what follows a name in a module.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct ParsingFlags: u8 {
+        const MORE_PUBLIC_NAMES          = 0b0000_0001;
+        const TAIL_BYTES                 = 0b0000_0010;
+        const REFERENCED_FUNCTIONS       = 0b0000_0100;
+        const MORE_MODULES_WITH_SAME_CRC = 0b0000_1000;
+        const MORE_MODULES               = 0b0001_0000;
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct NameFlags: u8 {
+        const UNK1                 = 0b0000_0001;
+        const LOCAL                = 0b0000_0010;
+        const UNK2                 = 0b0000_0100;
+        const UNRESOLVED_COLLISION = 0b0000_1000;
+        const NEGATIVE_OFFSET      = 0b0001_0000;
+    }
+}
+
+/// read the modules at a leaf, whose pattern is `pattern`,
+/// appending their signatures to `sigs`.
+///
+/// modules are grouped by their CRC16. flags after each module's names say
+/// what follows: tail bytes, references, another module with the same CRC16,
+/// or another group.
+fn leaf(r: &mut Reader, header: &Header, pattern: &[SigElement], sigs: &mut Vec<FlirtSignature>) -> Result<()> {
+    loop {
+        let size_of_bytes_crc16 = r.u8()?;
+        let crc16 = r.be_u16()?;
+
+        let flags = loop {
+            let size_of_function = r.word(header)?;
+            let (mut names, flags) = names(r, header)?;
+
+            let tail_bytes = if flags.contains(ParsingFlags::TAIL_BYTES) {
+                tail_bytes(r, header)?
+            } else {
+                vec![]
+            };
+
+            if flags.contains(ParsingFlags::REFERENCED_FUNCTIONS) {
+                names.extend(references(r, header)?);
+            }
+
+            let sig = FlirtSignature {
+                byte_sig_size: header.pattern_size,
+                byte_sig: ByteSignature(pattern.to_vec()),
+                size_of_bytes_crc16,
+                crc16,
+                size_of_function,
+                names,
+                footer: None,
+                tail_bytes,
+            };
+            trace!("{sig:?}");
+            sigs.push(sig);
+
+            if !flags.contains(ParsingFlags::MORE_MODULES_WITH_SAME_CRC) {
+                break flags;
+            }
+        };
+
+        if !flags.contains(ParsingFlags::MORE_MODULES) {
+            return Ok(());
+        }
+    }
+}
+
+/// read the names a module defines, and the flags that follow the last one.
+fn names(r: &mut Reader, header: &Header) -> Result<(Vec<Symbol>, ParsingFlags)> {
+    let mut names = vec![];
+    let mut offset = 0i64;
+
+    loop {
+        // the offset is relative to the previous name's.
+        let delta = r.word(header)? as i64;
+
+        // the name flags are optional: they're present when the next byte
+        // isn't printable, since names are.
+        let name_flags = if r.peek_u8()? < 0x20 {
+            NameFlags::from_bits(r.u8()?).ok_or_else(corrupt)?
+        } else {
+            NameFlags::empty()
+        };
+
+        if name_flags.contains(NameFlags::NEGATIVE_OFFSET) {
+            offset -= delta;
+        } else {
+            offset += delta;
+        }
+
+        let name = String::from_utf8(r.printable_bytes().to_vec()).map_err(|_| corrupt())?;
+        let name = Name { offset, name };
+        if name_flags.contains(NameFlags::LOCAL) {
+            names.push(Symbol::Local(name));
+        } else {
+            names.push(Symbol::Public(name));
+        }
+
+        let flags = ParsingFlags::from_bits(r.u8()?).ok_or_else(corrupt)?;
+        if !flags.contains(ParsingFlags::MORE_PUBLIC_NAMES) {
+            return Ok((names, flags));
+        }
+    }
+}
+
+/// read the tail bytes of a module: bytes that differ between modules with
+/// otherwise identical signatures.
+fn tail_bytes(r: &mut Reader, header: &Header) -> Result<Vec<TailByte>> {
+    // before version 8, there's always one.
+    let count = if header.version < 8 { 1 } else { r.word(header)? };
+
+    let mut tail_bytes = vec![];
+    for _ in 0..count {
+        tail_bytes.push(TailByte {
+            // relative to the end of the CRC16 block,
+            // that is, from `pattern_size + crc_len` bytes into the function.
+            offset: r.word(header)?,
+            value:  r.u8()?,
+        });
+    }
+
+    Ok(tail_bytes)
+}
+
+/// read the references of a module: the names of what the module points to,
+/// at offsets from its start.
+fn references(r: &mut Reader, header: &Header) -> Result<Vec<Symbol>> {
+    // before version 8, there's always one.
+    let count = if header.version < 8 { 1 } else { r.word(header)? };
+
+    let mut references = vec![];
+    for _ in 0..count {
+        let offset = r.word(header)? as i64;
+
+        // the name's length, or 0 then a longer length.
+        let length = match r.u8()? {
+            0 => r.vint16()? as usize,
+            length => length as usize,
+        };
+        let name = r.string(length)?;
+
+        references.push(Symbol::Reference(Name { offset, name }));
+    }
+
+    Ok(references)
+}
+
+/// inflate the zlib-compressed tree of a compressed .sig file.
+fn inflate(compressed: &[u8]) -> Result<Vec<u8>> {
+    miniz_oxide::inflate::decompress_to_vec_zlib(compressed).map_err(|e| {
+        // I've see possible CMF values:
+        //  0xC4 - IDA Pro 7.4/sig/pc/bc31cls.sig
+        //  0x0C - IDA Pro 7.4/sig/pc/bc15owl
+        //  0x05 - IDA Pro 7.4/sig/pc/bc15c2.sig
+        SigError::CompressionNotSupported(e.to_string()).into()
+    })
+}
+
+/// decompress a .sig file, if it's compressed,
+/// returning the header followed by the uncompressed tree.
+pub fn unpack_sig(buf: &[u8]) -> Result<Vec<u8>> {
+    let mut r = Reader::new(buf);
+    let header = header(&mut r)?;
+
+    if header.features.contains(Features::COMPRESSED) {
+        let header_size = buf.len() - r.buf.len();
+        let mut unpacked = buf[..header_size].to_vec();
+        unpacked.extend(inflate(r.buf)?);
+        Ok(unpacked)
+    } else {
+        Ok(buf.to_vec())
+    }
+}
+
+/// parse a .sig file into FLIRT signatures.
+pub fn parse(buf: &[u8]) -> Result<Vec<FlirtSignature>> {
+    let mut r = Reader::new(buf);
+    let header = header(&mut r)?;
+
+    let inflated;
+    let tree = if header.features.contains(Features::COMPRESSED) {
+        inflated = inflate(r.buf)?;
+        &inflated[..]
+    } else {
+        r.buf
+    };
 
     let mut sigs = vec![];
-    if node(input, &header, &[], &mut sigs).is_err() {
-        return Err(SigError::CorruptSigFile.into());
-    }
-
+    node(&mut Reader::new(tree), &header, &[], &mut sigs)?;
     Ok(sigs)
-}
-
-pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>> {
-    match header(input) {
-        Ok((compressed, header)) => {
-            /*
-            println!("{:02x?}", &input[..0x50]);
-            println!("{:02x?}", &compressed[..0x50]);
-            */
-
-            if header.features.intersects(Features::COMPRESSED) {
-                let header_buf = &input[..header.get_size()];
-                match miniz_oxide::inflate::decompress_to_vec_zlib(compressed) {
-                    Ok(decompressed) => {
-                        // stitch together the header with the decompressed payload
-                        let mut buf = vec![];
-                        buf.extend(header_buf);
-                        buf.extend(decompressed);
-                        Ok(buf)
-                    }
-                    Err(e) => {
-                        // I've see possible CMF values:
-                        //  0xC4 - IDA Pro 7.4/sig/pc/bc31cls.sig
-                        //  0x0C - IDA Pro 7.4/sig/pc/bc15owl
-                        //  0x05 - IDA Pro 7.4/sig/pc/bc15c2.sig
-                        Err(SigError::CompressionNotSupported(e.to_string()).into())
-                    }
-                }
-            } else {
-                Ok(input.to_vec())
-            }
-        }
-        Err(_) => Err(SigError::CorruptSigFile.into()),
-    }
-}
-
-pub fn parse(buf: &[u8]) -> Result<Vec<FlirtSignature>> {
-    sig(&unpack_sig(buf)?)
 }
