@@ -650,6 +650,35 @@ mod tests {
         // assert_eq!(pat.names, sig.names);
     }
 
+    /// malformed .sig files are errors, not panics.
+    #[test]
+    fn test_sig_corrupt() {
+        // every truncation.
+        for len in 0..SIG.len() {
+            let _ = sig::parse(&SIG[..len]);
+        }
+
+        // every single byte replaced by every value.
+        let mut buf = SIG;
+        for i in 0..SIG.len() {
+            for v in 0..=255u8 {
+                buf[i] = v;
+                let _ = sig::parse(&buf);
+            }
+            buf[i] = SIG[i];
+        }
+
+        // and specifically: an invalid UTF-8 name, unknown feature bits.
+        let name = SIG.windows(5).position(|w| w == b"__EH_").unwrap();
+        let mut buf = SIG;
+        buf[name] = 0xFF;
+        assert!(sig::parse(&buf).is_err());
+
+        let mut buf = SIG;
+        buf[0x11] = 0x80;
+        assert!(sig::parse(&buf).is_err());
+    }
+
     #[test]
     fn test_one_pat_match() {
         let sigs = pat::parse(PAT).unwrap();
