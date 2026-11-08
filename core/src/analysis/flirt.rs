@@ -101,8 +101,8 @@ fn guess_reference_target(
 ///
 /// a FLIRT signature only checks the start of a function: the 32-byte
 /// pattern, up to 255 CRC16 bytes, then the tail bytes and footer.
-/// in the FLARE MSVC runtime signatures, tail bytes go up to about 7k bytes
-/// into the function. this limit is larger than all of these.
+/// tail bytes can be thousands of bytes into the function.
+/// this limit is larger than all of these.
 ///
 /// without a cap, each candidate function reads from its start to the end
 /// of its section, which is O(functions × section size) bytes of copying
@@ -184,8 +184,8 @@ pub fn match_flirt(
 
         debug!("flirt: matching: {:#x}", va);
 
-        // many candidates have references at the same offset. for example,
-        // ~1.5k signatures share the 2-byte pattern of a `jmp [import]` thunk.
+        // candidates often have references at the same offset, for example all
+        // the signatures with the 2-byte pattern of a `jmp [import]` thunk.
         // so, find each reference target only once.
         let mut targets: BTreeMap<(u64, u8), Option<VA>> = Default::default();
         let mut guess_reference_target = |offset: u64, perms: Permissions| {

@@ -245,7 +245,7 @@ fn edge(r: &mut Reader, header: &Header) -> Result<Vec<SigElement>> {
             let high = r.vint32()? as u64;
             (high << 32) | r.vint32()? as u64
         }
-        // an edge must have elements. dumpsig supports more than 64 elements, but we don't, yet.
+        // an edge must have elements. dumpsig supports more than 64 elements, but this parser doesn't.
         _ => return Err(corrupt()),
     };
 
