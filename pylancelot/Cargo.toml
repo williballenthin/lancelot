@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lancelot = { path = "../core", version = "0.10.2" }
-pyo3 = { version = "0.27", features = ["generate-import-lib"] }
+pyo3 = { version = "0.30", features = ["generate-import-lib"] }
 pyo3-log = "0.13"
 anyhow = "1"
 sha256 = "1"
