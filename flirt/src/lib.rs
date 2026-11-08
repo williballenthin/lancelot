@@ -328,6 +328,27 @@ impl FlirtSignature {
         (h1 << 8) | h2
     }
 
+    /// return true if the byte signature matches the start of the buffer.
+    ///
+    /// a wildcard matches any byte, and also the end of the buffer: elements
+    /// past the end of the function are wildcards (.sig files version 10 store
+    /// one, .pat files pad to 32), and the function may end at the end of the
+    /// buffer, such as at the end of a section.
+    pub fn match_pattern(&self, buf: &[u8]) -> bool {
+        self.byte_sig.0.iter().enumerate().all(|(i, element)| match element {
+            SigElement::Byte(wanted) => buf.get(i) == Some(wanted),
+            SigElement::Wildcard => true,
+        })
+    }
+
+    /// return true if every part of the signature matches the start of the buffer:
+    /// the byte signature, CRC16, tail bytes, and footer.
+    ///
+    /// references are not checked: the caller must resolve them.
+    pub fn is_match(&self, buf: &[u8]) -> bool {
+        self.match_pattern(buf) && self.match_crc16(buf) && self.match_tail_bytes(buf) && self.match_footer(buf)
+    }
+
     pub fn match_crc16(&self, buf: &[u8]) -> bool {
         if self.size_of_bytes_crc16 > 0 {
             let start = self.byte_sig_size as usize;
@@ -365,8 +386,10 @@ impl FlirtSignature {
     }
 
     /// return true if all the footer bytes match (if there are any).
+    ///
+    /// like the tail bytes, the footer starts at the end of the CRC16 block.
     pub fn match_footer(&self, buf: &[u8]) -> bool {
-        let footer_offset = self.byte_sig.0.len() + self.size_of_bytes_crc16 as usize;
+        let footer_offset = self.byte_sig_size as usize + self.size_of_bytes_crc16 as usize;
         if let Some(sig) = &self.footer {
             !sig.0
                 .iter()
@@ -425,20 +448,6 @@ impl<'a> FlirtSignatureMatcher<'a> {
         FlirtSignatureMatcher { sig }
     }
 
-    /// does the byte signature match the start of the buffer?
-    fn match_pattern(&self, buf: &[u8]) -> bool {
-        // the function may be shorter than the byte signature,
-        // if so, only match as many elements as the function has bytes.
-        let len = usize::min(self.sig.byte_sig.0.len(), self.sig.size_of_function as usize);
-        let elements = &self.sig.byte_sig.0[..len];
-
-        buf.len() >= elements.len()
-            && elements.iter().zip(buf).all(|(element, &b)| match element {
-                SigElement::Byte(wanted) => *wanted == b,
-                SigElement::Wildcard => true,
-            })
-    }
-
     /// ```
     /// use lancelot_flirt;
     /// use lancelot_flirt::pat;
@@ -454,40 +463,36 @@ impl<'a> FlirtSignatureMatcher<'a> {
     /// #[allow(non_snake_case)]
     /// let __EH_prolog3_catch_align = &sigs[3];
     /// let m = __EH_prolog3_catch_align.create_matcher();
-    /// assert!(m.r#match(&[
-    ///     // apds.dll / 4FD932C41DF96D019DC265E26E94B81B
-    ///     // __EH_prolog3_catch_align
-    ///
+    /// // utcutil.dll / abc9ea116498feb8f1de45f60d595af6
+    /// // __EH_prolog3_catch_align
+    /// let mut buf = vec![
     ///     // first 0x20
-    ///     0x51, 0x8B, 0x4C, 0x24, 0x0C, 0x89, 0x5C, 0x24,
-    ///     0x0C, 0x8D, 0x5C, 0x24, 0x0C, 0x50, 0x8D, 0x44,
-    ///     0x24, 0x08, 0xF7, 0xD9, 0x23, 0xC1, 0x8D, 0x60,
-    ///     0xF8, 0x8B, 0x43, 0xF0, 0x89, 0x04, 0x24, 0x8B,
+    ///     0x51, 0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x5c, 0x24,
+    ///     0x0c, 0x8d, 0x5c, 0x24, 0x0c, 0x50, 0x8d, 0x44,
+    ///     0x24, 0x08, 0xf7, 0xd9, 0x23, 0xc1, 0x8d, 0x60,
+    ///     0xf8, 0x8b, 0x43, 0xf0, 0x89, 0x04, 0x24, 0x8b,
     ///     // crc16 start
-    ///     0x43, 0xF8, 0x50, 0x8B, 0x43, 0xFC, 0x8B, 0x4B,
-    ///     0xF4, 0x89, 0x6C, 0x24, 0x0C, 0x8D, 0x6C, 0x24,
-    ///     0x0C, 0xC7, 0x44, 0x24, 0x08, 0xFF, 0xFF, 0xFF,
-    ///     0xFF, 0x51, 0x53, 0x2B, 0xE0, 0x56, 0x57, 0xA1,
-    ///     // crc end
-    ///     0xD4, 0xAD, 0x19, 0x01, 0x33, 0xC5, 0x50, 0x89,
-    ///     0x65, 0xF0, 0x8B, 0x43, 0x04, 0x89, 0x45, 0x04,
-    ///     0xFF, 0x75, 0xF4, 0x64, 0xA1, 0x00, 0x00, 0x00,
-    ///     0x00, 0x89, 0x45, 0xF4, 0x8D, 0x45, 0xF4, 0x64,
-    ///     0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3]));
+    ///     0x43, 0xf8, 0x50, 0x8b, 0x43, 0xfc, 0x8b, 0x4b,
+    ///     0xf4, 0x89, 0x6c, 0x24, 0x0c, 0x8d, 0x6c, 0x24,
+    ///     0x0c, 0xc7, 0x44, 0x24, 0x08, 0xff, 0xff, 0xff,
+    ///     0xff, 0x51, 0x53, 0x2b, 0xe0, 0x56, 0x57, 0xa1,
+    ///     // crc end, footer start
+    ///     0x70, 0x14, 0x01, 0x10, 0x33, 0xc5, 0x50, 0x89,
+    ///     0x65, 0xf0, 0x8b, 0x43, 0x04, 0x89, 0x45, 0x04,
+    ///     0xff, 0x75, 0xf4, 0x64, 0xa1, 0x00, 0x00, 0x00,
+    ///     0x00, 0x89, 0x45, 0xf4, 0x8d, 0x45, 0xf4, 0x64,
+    ///     0xa3, 0x00, 0x00, 0x00, 0x00, 0xf2, 0xc3,
+    /// ];
+    /// assert!(m.r#match(&buf));
+    ///
+    /// // apds.dll has the same routine, except it ends with `ret` rather than `bnd ret`,
+    /// // so the footer from the .pat file doesn't match.
+    /// buf.truncate(buf.len() - 2);
+    /// buf.push(0xc3);
+    /// assert!(!m.r#match(&buf));
     /// ```
     pub fn r#match(&self, buf: &[u8]) -> bool {
-        if !self.match_pattern(buf) {
-            trace!("flirt signature: pattern fails");
-            return false;
-        }
-
-        if !self.sig.match_crc16(buf) {
-            trace!("flirt signature: crc16 fails");
-            return false;
-        }
-
-        trace!("flirt signature: match");
-        true
+        self.sig.is_match(buf)
     }
 }
 
@@ -504,7 +509,8 @@ impl<'a> FlirtSignatureMatcher<'a> {
 /// a wildcard is just one more element value, so a range splits into at most
 /// two subranges: the patterns with the buffer's byte at that position and
 /// those with a wildcard there. the patterns that end at a position sort first
-/// in their range and have matched. in principle the number of live ranges
+/// in their range and have matched. past the end of the buffer, only the
+/// wildcards continue (see `FlirtSignature::match_pattern`). in principle the number of live ranges
 /// could double at each position, but wildcards mask relocations, which line
 /// up across related functions, so there are only a handful live at once.
 ///
@@ -546,7 +552,13 @@ impl FlirtSignatureSet {
                 let ended = sigs.partition_point(|sig| element_at_depth(sig).is_none());
                 matches.extend(&sigs[..ended]);
 
-                // a longer pattern can't match a shorter buffer.
+                // the wildcards sort last.
+                // they match any byte, and the end of the buffer.
+                let wildcard_start = sigs.partition_point(|sig| element_at_depth(sig) < Some(SigElement::Wildcard));
+                if wildcard_start < sigs.len() {
+                    next.push(range.start + wildcard_start..range.end);
+                }
+
                 let Some(&b) = buf.get(depth) else {
                     continue;
                 };
@@ -557,12 +569,6 @@ impl FlirtSignatureSet {
                 if byte_start < byte_end {
                     next.push(range.start + byte_start..range.start + byte_end);
                 }
-
-                // the wildcards sort last.
-                let wildcard_start = sigs.partition_point(|sig| element_at_depth(sig) < Some(SigElement::Wildcard));
-                if wildcard_start < sigs.len() {
-                    next.push(range.start + wildcard_start..range.end);
-                }
             }
 
             std::mem::swap(&mut live, &mut next);
@@ -572,6 +578,8 @@ impl FlirtSignatureSet {
         matches
     }
 
+    /// find the signatures that match the start of the buffer.
+    /// see `FlirtSignature::is_match`.
     pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
         self.match_patterns(buf)
             .into_iter()
@@ -886,9 +894,13 @@ mod tests {
         for b in 0..=255u8 {
             assert_eq!(matching(&set, &[0xAA, b, 0xBB]), vec![0]);
         }
-        // but not a missing byte.
-        let set = set_from_patterns(&["AABB.."]);
-        assert_eq!(matching(&set, b"\xAA\xBB"), Vec::<usize>::new());
+        // and the end of the buffer, such as when a short function ends a section.
+        let set = set_from_patterns(&["AABB....", "AA..CC"]);
+        assert_eq!(matching(&set, b"\xAA\xBB"), vec![0]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC"), vec![0, 1]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCD"), vec![0]);
+        // but a literal needs its byte.
+        assert_eq!(matching(&set, b"\xAA"), Vec::<usize>::new());
     }
 
     #[test]
@@ -931,7 +943,57 @@ mod tests {
         ]);
         assert_eq!(matching(&set, &[0xAA; 32]), vec![0, 1]);
         assert_eq!(matching(&set, &[0xAB; 32]), vec![1]);
-        assert_eq!(matching(&set, &[0xAA; 31]), Vec::<usize>::new());
+        assert_eq!(matching(&set, &[0xAA; 31]), vec![1]);
+    }
+
+    #[test]
+    fn test_one_matcher_same_as_set() {
+        // the single matcher used to ignore tail bytes (and footers).
+        let pat = "\
+568b742408578b460ca883746f8b7c241485ff740a83ff01740583ff02755d24 0b 2ec8 008c :0000 _fseek (0050: 0D)
+568b742408578b460ca883746f8b7c241485ff740a83ff01740583ff02755d24 0b 2ec8 008d :0000 __fseek_lk (0050: 0E)
+---
+";
+        let sigs = pat::parse(pat).unwrap();
+        let set = FlirtSignatureSet::with_signatures(sigs.clone());
+
+        // a buffer with the shared pattern and CRC16, then each tail byte.
+        let mut buf = vec![0u8; 0x100];
+        for (i, b) in [
+            0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8b, 0x46, 0x0c, 0xa8, 0x83, 0x74, 0x6f, 0x8b, 0x7c, 0x24, 0x14, 0x85,
+            0xff, 0x74, 0x0a, 0x83, 0xff, 0x01, 0x74, 0x05, 0x83, 0xff, 0x02, 0x75, 0x5d, 0x24, 0xef, 0x83, 0xff, 0x01,
+            0x89, 0x46, 0x0c, 0x75, 0x0d, 0x56, 0xe8,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            buf[i] = b;
+        }
+        for tail in [0x0D, 0x0E, 0x0F] {
+            buf[32 + 0x0b + 0x50] = tail;
+            let from_set: Vec<&str> = set.r#match(&buf).iter().map(|s| s.get_name().unwrap()).collect();
+            let from_one: Vec<&str> = sigs
+                .iter()
+                .filter(|s| s.create_matcher().r#match(&buf))
+                .map(|s| s.get_name().unwrap())
+                .collect();
+            assert_eq!(from_set, from_one);
+            assert_eq!(from_set.len(), if tail == 0x0F { 0 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn test_footer() {
+        // the footer starts at the end of the CRC16 block, even for a short pattern.
+        let sigs = pat::parse("AABB 00 0000 0030 :0000 foo ....CCDD\n---").unwrap();
+        let mut buf = vec![0u8; 0x30];
+        buf[0] = 0xAA;
+        buf[1] = 0xBB;
+        assert!(!sigs[0].is_match(&buf));
+        buf[34] = 0xCC;
+        buf[35] = 0xDD;
+        assert!(sigs[0].is_match(&buf));
+        assert_eq!(FlirtSignatureSet::with_signatures(sigs).r#match(&buf).len(), 1);
     }
 
     #[test]
@@ -948,9 +1010,11 @@ mod tests {
 
     #[test]
     fn test_one_matcher_function_shorter_than_pattern() {
-        // only the first `size_of_function` bytes are matched.
-        let sigs = pat::parse("AABBCCDD 00 0000 0002 :0000 foo\n---").unwrap();
+        // the pattern is padded with wildcards past the end of the function,
+        // which may be the end of the buffer.
+        let sigs = pat::parse("AABB.... 00 0000 0002 :0000 foo\n---").unwrap();
         assert!(sigs[0].create_matcher().r#match(&[0xAA, 0xBB]));
+        assert!(sigs[0].create_matcher().r#match(&[0xAA, 0xBB, 0xCC, 0xDD, 0xEE]));
         assert!(!sigs[0].create_matcher().r#match(&[0xAA]));
 
         // the function claims to be longer than the pattern, but shorter than 32 bytes.
