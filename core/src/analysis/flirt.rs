@@ -136,6 +136,16 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
 
         debug!("flirt: matching: {:#x}", va);
 
+        // candidates often have references at the same offsets, like the
+        // ~1.5k signatures that share the 2-byte pattern of a `jmp [import]` thunk,
+        // so recover each reference target once.
+        let mut targets: BTreeMap<(u64, u8), Option<VA>> = Default::default();
+        let mut guess_reference_target = |offset: u64, perms: Permissions| {
+            *targets
+                .entry((offset, perms.bits()))
+                .or_insert_with(|| guess_reference_target(module, decoder, va, offset, perms))
+        };
+
         Ok(sigs
             .r#match(&buf)
             .iter()
@@ -157,7 +167,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                             // special case: name "." matches any data?
                             // not exactly sure if this should only match special data `ctype`?
                             // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
-                            if guess_reference_target(module, decoder, va, *offset as u64, Permissions::R).is_some() {
+                            if guess_reference_target(*offset as u64, Permissions::R).is_some() {
                                 continue;
                             } else {
                                 does_match_references = false;
@@ -171,9 +181,7 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
                         // we use the cache to record whether a negative match was encountered.
                         // this drastically when we have many nested references (like CALL wrappers).
                         // see: https://github.com/fireeye/capa/issues/448
-                        if let Some(target) =
-                            guess_reference_target(module, decoder, va, *offset as u64, Permissions::X)
-                        {
+                        if let Some(target) = guess_reference_target(*offset as u64, Permissions::X) {
                             // this is just:
                             //   target_sigs = cached(match_flirt_inner(...target...))
                             //
