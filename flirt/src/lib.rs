@@ -498,9 +498,9 @@ impl FlirtSignature {
 /// to match, `walk` goes down this tree with the bytes of the buffer.
 /// a wildcard is an element too, so at each position the walk follows at
 /// most two branches: the buffer's byte, and the wildcard. in theory, the
-/// work can double at each position. but with the FLARE MSVC runtime
-/// signatures, the walk follows at most 3 branches at a time. wildcards mask
-/// relocations, and related functions have relocations at the same positions.
+/// work can double at each position. but in practice, the walk follows only
+/// a few branches at a time: wildcards mask relocations, and related
+/// functions have relocations at the same positions.
 ///
 /// so, to build the index, we only sort the signatures. a .sig file stores
 /// its patterns as a tree, and the depth-first order of that tree is already
@@ -949,8 +949,8 @@ mod tests {
 
     #[test]
     fn test_is_match_same_as_set() {
-        // matching one signature gives the same result as matching the set.
-        // before, matching one signature ignored the tail bytes (and the footer).
+        // matching one signature gives the same result as matching the set,
+        // including the tail bytes.
         let pat = "\
 568b742408578b460ca883746f8b7c241485ff740a83ff01740583ff02755d24 0b 2ec8 008c :0000 _fseek (0050: 0D)
 568b742408578b460ca883746f8b7c241485ff740a83ff01740583ff02755d24 0b 2ec8 008d :0000 __fseek_lk (0050: 0E)
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn test_is_match_wildcard_newline() {
-        // the old regex matcher's wildcard didn't match a newline (0x0A).
+        // a wildcard also matches a newline (0x0A).
         let sigs = pat::parse("AA..BB 00 0000 0003 :0000 foo\n---").unwrap();
         let m = &sigs[0];
         for b in 0..=255u8 {
@@ -1042,7 +1042,6 @@ mod tests {
         assert!(!sigs[0].is_match(&[0xAA]));
 
         // the function size is larger than the pattern, but less than 32 bytes.
-        // this caused a panic before.
         let sigs = pat::parse("AABB 00 0000 0010 :0000 foo\n---").unwrap();
         assert!(sigs[0].is_match(&[0xAA, 0xBB]));
         assert!(!sigs[0].is_match(&[0xAA, 0xCC]));

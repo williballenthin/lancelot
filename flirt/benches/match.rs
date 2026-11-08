@@ -1,5 +1,5 @@
 //! benchmark building a signature set and matching it, using the
-//! FLARE MSVC runtime signatures (~210k signatures) and some real code.
+//! FLARE MSVC runtime signatures and some real code.
 use std::path::PathBuf;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
