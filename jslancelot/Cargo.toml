@@ -19,7 +19,7 @@ sha2 = "0.10"
 
 # keep this version in sync with the wasm-bindgen-cli invoked by build.sh,
 # since the CLI refuses to process wasm built against a different version.
-wasm-bindgen = "=0.2.100"
+wasm-bindgen = "=0.2.129"
 js-sys = "0.3"
 
 # the core library stamps the export with chrono::Utc::now(), which panics on
