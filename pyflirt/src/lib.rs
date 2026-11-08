@@ -78,11 +78,10 @@ impl FlirtSignature {
     }
 
     fn __str__(&self) -> PyResult<String> {
-        use lancelot_flirt::Symbol;
-        if let Some(Symbol::Public(name)) = self.inner.names.iter().find(|name| matches!(name, Symbol::Public(_))) {
-            Ok(format!("FlirtSignature(\"{}\")", name.name))
+        if let Some(name) = self.inner.get_name() {
+            Ok(format!("FlirtSignature(\"{name}\")"))
         } else {
-            Ok(String::from("FlirtSignature(<unknown public name>)"))
+            Ok(String::from("FlirtSignature(<unknown name>)"))
         }
     }
 

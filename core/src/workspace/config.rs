@@ -16,7 +16,7 @@ pub trait Configuration: Send {
 }
 
 /// Directory that contains:
-///   - sigs/  FLIRT signatures, ending with .sig, .pat, .sig.gz, .pat.gz
+///   - sigs/  FLIRT signatures, ending with .sig or .pat (other files are ignored)
 pub struct FileSystemConfiguration {
     path: PathBuf,
 }
@@ -38,12 +38,8 @@ impl Configuration for FileSystemConfiguration {
 
         for entry in path.read_dir()?.flatten() {
             if let Ok(filename) = entry.file_name().into_string() {
-                if filename.ends_with(".sig") {
-                    let buf = std::fs::read(entry.path())?;
-                    sigs.extend(lancelot_flirt::sig::parse(&buf)?);
-                } else if filename.ends_with(".pat") {
-                    let buf = String::from_utf8(std::fs::read(entry.path())?)?;
-                    sigs.extend(lancelot_flirt::pat::parse(&buf)?);
+                if filename.ends_with(".sig") || filename.ends_with(".pat") {
+                    sigs.extend(lancelot_flirt::parse(&std::fs::read(entry.path())?)?);
                 }
             }
         }
@@ -89,16 +85,13 @@ impl Configuration for DynamicConfiguration {
     fn get_sigs(&self) -> Result<FlirtSignatureSet> {
         let mut sigs: Vec<FlirtSignature> = Default::default();
 
+        // these paths were given explicitly, so each must be a signature file,
+        // whatever its name.
         for sig_path in self.sig_paths.iter() {
-            if let Some(filename) = sig_path.file_name() {
-                if filename.to_string_lossy().ends_with(".sig") {
-                    let buf = std::fs::read(sig_path.as_path())?;
-                    sigs.extend(lancelot_flirt::sig::parse(&buf)?);
-                } else if filename.to_string_lossy().ends_with(".pat") {
-                    let buf = String::from_utf8(std::fs::read(sig_path.as_path())?)?;
-                    sigs.extend(lancelot_flirt::pat::parse(&buf)?);
-                }
-            }
+            let buf = std::fs::read(sig_path)?;
+            let parsed = lancelot_flirt::parse(&buf)
+                .map_err(|e| anyhow::anyhow!("failed to parse FLIRT signatures {}: {e}", sig_path.display()))?;
+            sigs.extend(parsed);
         }
 
         Ok(FlirtSignatureSet::with_signatures(sigs))
@@ -118,4 +111,28 @@ impl Configuration for DynamicConfiguration {
 
 pub fn empty() -> Box<dyn Configuration> {
     Box::new(DynamicConfiguration::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resource(name: &str) -> PathBuf {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("resources/test");
+        path.push(name);
+        path
+    }
+
+    #[test]
+    fn dynamic_configuration_sigs() -> Result<()> {
+        let config = DynamicConfiguration::default().with_sig_path(&resource("cfg/sigs/flare_msvc_rtf_32_64.sig"));
+        assert!(!config.get_sigs()?.is_empty());
+
+        // a path that isn't a signature file is an error, rather than being ignored.
+        let config = DynamicConfiguration::default().with_sig_path(&resource("nop.exe"));
+        assert!(config.get_sigs().is_err());
+
+        Ok(())
+    }
 }
