@@ -78,6 +78,13 @@ fn _main() -> Result<()> {
             for name in sig.names.iter() {
                 match name {
                     Symbol::Reference(_) => continue,
+                    // sigmake couldn't tell these modules apart.
+                    Symbol::Local(lancelot_flirt::Name { name, .. })
+                    | Symbol::Public(lancelot_flirt::Name { name, .. })
+                        if name == lancelot_flirt::UNRESOLVED_COLLISION =>
+                    {
+                        continue
+                    }
                     Symbol::Local(lancelot_flirt::Name { name, offset }) => {
                         names
                             .entry((va as i64 + *offset) as u64)
