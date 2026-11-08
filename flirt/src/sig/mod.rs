@@ -450,10 +450,15 @@ fn name<'a>(input: &'a [u8], header: &Header, base_offset: i64) -> IResult<&'a [
     ))
 }
 
-fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+/// parse the modules of a leaf, appending their signatures to `ret`.
+fn leaf<'a>(
+    input: &'a [u8],
+    header: &Header,
+    prefix: &[SigElement],
+    ret: &mut Vec<FlirtSignature>,
+) -> IResult<&'a [u8], ()> {
     let mut flags: ParsingFlags;
     let mut input = input;
-    let mut ret = vec![];
 
     loop {
         // module
@@ -526,7 +531,7 @@ fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
 
             ret.push(FlirtSignature {
                 byte_sig_size: header.get_pattern_size(),
-                byte_sig: ByteSignature(prefix.clone()),
+                byte_sig: ByteSignature(prefix.to_vec()),
                 size_of_bytes_crc16: crc_len,
                 crc16: crc,
                 size_of_function: function_size,
@@ -545,19 +550,25 @@ fn leaf<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
         };
     }
 
-    Ok((input, ret))
+    Ok((input, ()))
 }
 
-/// prefix_length: number of pattern bytes covered by parent nodes.
-fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResult<&'a [u8], Vec<FlirtSignature>> {
+/// parse a node and its subtree, appending their signatures to `ret`.
+///
+/// prefix: the pattern elements covered by parent nodes.
+fn node<'a>(
+    input: &'a [u8],
+    header: &Header,
+    prefix: &[SigElement],
+    ret: &mut Vec<FlirtSignature>,
+) -> IResult<&'a [u8], ()> {
     let (input, child_count) = vint16(input)?;
     let mut input = input;
-    let mut ret = vec![];
 
     trace!("child count: {:#x}", child_count);
 
     if child_count == 0 {
-        return leaf(input, header, prefix);
+        return leaf(input, header, prefix, ret);
     }
 
     for _ in 0..child_count {
@@ -610,12 +621,11 @@ fn node<'a>(input: &'a [u8], header: &Header, prefix: Vec<SigElement>) -> IResul
         //  [ prefix1 prefix2   A B C ]
         pattern[prefix.len()..].reverse();
 
-        let (input_, sigs) = node(input, header, pattern)?;
+        let (input_, ()) = node(input, header, &pattern, ret)?;
         input = input_;
-        ret.extend(sigs);
     }
 
-    Ok((input, ret))
+    Ok((input, ()))
 }
 
 /// parse an (unpacked) .sig file into FLIRT signatures.
@@ -630,10 +640,10 @@ fn sig(input: &[u8]) -> Result<Vec<FlirtSignature>> {
 
     trace!("header: {:#?}", header);
 
-    let (_input, sigs) = match node(input, &header, vec![]) {
-        Err(_) => return Err(SigError::CorruptSigFile.into()),
-        Ok((input, sigs)) => (input, sigs),
-    };
+    let mut sigs = vec![];
+    if node(input, &header, &[], &mut sigs).is_err() {
+        return Err(SigError::CorruptSigFile.into());
+    }
 
     Ok(sigs)
 }
@@ -648,7 +658,7 @@ pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>> {
 
             if header.features.intersects(Features::COMPRESSED) {
                 let header_buf = &input[..header.get_size()];
-                match inflate::inflate_bytes_zlib(compressed) {
+                match miniz_oxide::inflate::decompress_to_vec_zlib(compressed) {
                     Ok(decompressed) => {
                         // stitch together the header with the decompressed payload
                         let mut buf = vec![];
@@ -661,7 +671,7 @@ pub fn unpack_sig(input: &[u8]) -> Result<Vec<u8>> {
                         //  0xC4 - IDA Pro 7.4/sig/pc/bc31cls.sig
                         //  0x0C - IDA Pro 7.4/sig/pc/bc15owl
                         //  0x05 - IDA Pro 7.4/sig/pc/bc15c2.sig
-                        Err(SigError::CompressionNotSupported(e).into())
+                        Err(SigError::CompressionNotSupported(e.to_string()).into())
                     }
                 }
             } else {
