@@ -33,15 +33,15 @@ extern crate thiserror;
 #[macro_use]
 extern crate bitflags;
 use log::trace;
-use regex::bytes::Regex;
-use std::collections::HashMap;
 
-pub mod decision_tree;
 pub mod pat;
-pub mod pattern_set;
 pub mod sig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// one position of a byte signature.
+///
+/// the derived ordering, `Byte(0x00) < ... < Byte(0xFF) < Wildcard`,
+/// is the order that `FlirtSignatureSet` sorts patterns by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SigElement {
     Byte(u8),
     Wildcard,
@@ -417,51 +417,26 @@ impl FlirtSignature {
 }
 
 pub struct FlirtSignatureMatcher<'a> {
-    re:  Regex,
     sig: &'a FlirtSignature,
-}
-
-/// create a binary regular expression pattern for matching the given FLIRT byte
-/// signature. using this pattern still requires creating a Regex object with
-/// the appropriate options.
-fn create_pattern(sig: &FlirtSignature) -> String {
-    // the function may be shorter than the 0x20 byte pattern,
-    // if so, only generate a pattern long enough to match the function.
-    let elements = if sig.size_of_function < 32 {
-        &sig.byte_sig.0[..sig.size_of_function as usize]
-    } else {
-        &sig.byte_sig.0
-    };
-
-    elements
-        .iter()
-        .map(|b| match b {
-            // lots of allocations here.
-            // could create a static translation table to the &str formats.
-            SigElement::Byte(v) => format!("\\x{v:02x}"),
-            SigElement::Wildcard => ".".to_string(),
-        })
-        .collect::<Vec<String>>()
-        .join("")
 }
 
 impl<'a> FlirtSignatureMatcher<'a> {
     pub fn new(sig: &'a FlirtSignature) -> FlirtSignatureMatcher<'a> {
-        FlirtSignatureMatcher {
-            re: FlirtSignatureMatcher::create_match_re(sig),
-            sig,
-        }
+        FlirtSignatureMatcher { sig }
     }
 
-    /// translate the given FLIRT byte signature into a binary regex.
-    ///
-    /// it matches from the start of the input string, so its best for the
-    /// `is_match` operation.
-    fn create_match_re(sig: &'a FlirtSignature) -> Regex {
-        // the `(?-u)` disables unicode mode, which lets us match raw byte values.
-        let pattern = format!("(?-u)(^{})", create_pattern(sig));
+    /// does the byte signature match the start of the buffer?
+    fn match_pattern(&self, buf: &[u8]) -> bool {
+        // the function may be shorter than the byte signature,
+        // if so, only match as many elements as the function has bytes.
+        let len = usize::min(self.sig.byte_sig.0.len(), self.sig.size_of_function as usize);
+        let elements = &self.sig.byte_sig.0[..len];
 
-        Regex::new(&pattern).expect("failed to compile regex")
+        buf.len() >= elements.len()
+            && elements.iter().zip(buf).all(|(element, &b)| match element {
+                SigElement::Byte(wanted) => *wanted == b,
+                SigElement::Wildcard => true,
+            })
     }
 
     /// ```
@@ -501,7 +476,7 @@ impl<'a> FlirtSignatureMatcher<'a> {
     ///     0xA3, 0x00, 0x00, 0x00, 0x00, 0xC3]));
     /// ```
     pub fn r#match(&self, buf: &[u8]) -> bool {
-        if !self.re.is_match(buf) {
+        if !self.match_pattern(buf) {
             trace!("flirt signature: pattern fails");
             return false;
         }
@@ -516,54 +491,90 @@ impl<'a> FlirtSignatureMatcher<'a> {
     }
 }
 
+/// a collection of signatures, indexed to match many of them at once.
+///
+/// the index is the signatures sorted by their byte signature, compared
+/// element by element (see `SigElement`), where a pattern sorts before the
+/// longer patterns that extend it. in this order, the patterns that share a
+/// prefix are contiguous, so the sorted list is a prefix tree (trie) without
+/// any nodes: the children of a range are its subranges that agree on the next
+/// element, and binary search finds them.
+///
+/// matching walks this tree with the buffer, one byte at a time.
+/// a wildcard is just one more element value, so a range splits into at most
+/// two subranges: the patterns with the buffer's byte at that position and
+/// those with a wildcard there. the patterns that end at a position sort first
+/// in their range and have matched. in principle the number of live ranges
+/// could double at each position, but wildcards mask relocations, which line
+/// up across related functions, so there are only a handful live at once.
+///
+/// so, building the index is a sort. `.sig` files store their patterns as a
+/// tree whose depth-first order is already this order, so the sort is
+/// little more than a check.
 pub struct FlirtSignatureSet {
-    sigs_by_pattern: HashMap<pattern_set::Pattern, Vec<FlirtSignature>>,
-    matcher:         pattern_set::PatternSet,
-}
-
-impl std::convert::From<&FlirtSignature> for pattern_set::Pattern {
-    fn from(sig: &FlirtSignature) -> pattern_set::Pattern {
-        pattern_set::Pattern(
-            sig.byte_sig
-                .0
-                .iter()
-                .map(|s| match s {
-                    SigElement::Wildcard => pattern_set::WILDCARD,
-                    SigElement::Byte(v) => pattern_set::Symbol(*v as u16),
-                })
-                .collect(),
-        )
-    }
+    /// sorted by `byte_sig`.
+    sigs: Vec<FlirtSignature>,
 }
 
 impl FlirtSignatureSet {
-    pub fn with_signatures(sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
-        let mut sigs_by_pattern: HashMap<pattern_set::Pattern, Vec<FlirtSignature>> = Default::default();
-
-        for sig in sigs.into_iter() {
-            sigs_by_pattern
-                .entry(pattern_set::Pattern::from(&sig))
-                .or_default()
-                .push(sig);
-        }
-
-        let patterns = sigs_by_pattern.keys().cloned().collect();
-
-        FlirtSignatureSet {
-            sigs_by_pattern,
-            matcher: pattern_set::PatternSet::from_patterns(patterns),
-        }
+    pub fn with_signatures(mut sigs: Vec<FlirtSignature>) -> FlirtSignatureSet {
+        sigs.sort_by(|a, b| a.byte_sig.0.cmp(&b.byte_sig.0));
+        FlirtSignatureSet { sigs }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.sigs_by_pattern.is_empty()
+        self.sigs.is_empty()
+    }
+
+    /// find the signatures whose byte signature matches the start of the
+    /// buffer. the remaining parts of the signature are not checked.
+    fn match_patterns(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
+        let mut matches = vec![];
+
+        // ranges of signatures whose first `depth` elements match the buffer.
+        let mut live = Vec::with_capacity(4);
+        let mut next = Vec::with_capacity(4);
+        live.push(0..self.sigs.len());
+        let mut depth = 0;
+
+        while !live.is_empty() {
+            for range in live.drain(..) {
+                let sigs = &self.sigs[range.clone()];
+                let element_at_depth = |sig: &FlirtSignature| sig.byte_sig.0.get(depth).copied();
+
+                // `None` sorts first: these patterns end here, so they've matched.
+                let ended = sigs.partition_point(|sig| element_at_depth(sig).is_none());
+                matches.extend(&sigs[..ended]);
+
+                // a longer pattern can't match a shorter buffer.
+                let Some(&b) = buf.get(depth) else {
+                    continue;
+                };
+
+                let byte = Some(SigElement::Byte(b));
+                let byte_start = sigs.partition_point(|sig| element_at_depth(sig) < byte);
+                let byte_end = sigs.partition_point(|sig| element_at_depth(sig) <= byte);
+                if byte_start < byte_end {
+                    next.push(range.start + byte_start..range.start + byte_end);
+                }
+
+                // the wildcards sort last.
+                let wildcard_start = sigs.partition_point(|sig| element_at_depth(sig) < Some(SigElement::Wildcard));
+                if wildcard_start < sigs.len() {
+                    next.push(range.start + wildcard_start..range.end);
+                }
+            }
+
+            std::mem::swap(&mut live, &mut next);
+            depth += 1;
+        }
+
+        matches
     }
 
     pub fn r#match(&self, buf: &[u8]) -> Vec<&FlirtSignature> {
-        self.matcher
-            .r#match(buf)
-            .iter()
-            .flat_map(|&pattern| self.sigs_by_pattern.get(pattern).unwrap())
+        self.match_patterns(buf)
+            .into_iter()
             .filter(|&sig| sig.match_crc16(buf))
             .filter(|&sig| sig.match_tail_bytes(buf))
             .filter(|&sig| sig.match_footer(buf))
@@ -782,5 +793,141 @@ mod tests {
     #[test]
     fn test_empty_signature_set() {
         assert!(FlirtSignatureSet::with_signatures(vec![]).is_empty());
+        assert!(FlirtSignatureSet::with_signatures(vec![])
+            .r#match(b"\xAA\xBB\xCC\xDD")
+            .is_empty());
+    }
+
+    /// build a signature set from bare byte patterns, like `AABB..DD`,
+    /// named by their index. only the byte patterns can affect matching.
+    fn set_from_patterns(patterns: &[&str]) -> FlirtSignatureSet {
+        let pat: String = patterns
+            .iter()
+            .enumerate()
+            .map(|(i, p)| format!("{p} 00 0000 0100 :0000 p{i}\n"))
+            .collect();
+        FlirtSignatureSet::with_signatures(pat::parse(&format!("{pat}---\n")).unwrap())
+    }
+
+    /// match and return the indices of the matching patterns, sorted.
+    fn matching(set: &FlirtSignatureSet, buf: &[u8]) -> Vec<usize> {
+        let mut ids: Vec<usize> = set
+            .r#match(buf)
+            .iter()
+            .map(|sig| sig.get_name().unwrap()[1..].parse().unwrap())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn test_set_match() {
+        let set = set_from_patterns(&["AABBCCDD"]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD"), vec![0]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xEE"), Vec::<usize>::new());
+
+        // trailing bytes don't matter.
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD\x00"), vec![0]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD\x11"), vec![0]);
+
+        // the buffer must be at least as long as the pattern.
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC"), Vec::<usize>::new());
+        assert_eq!(matching(&set, b""), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn test_set_match_wildcards() {
+        // and the order of the patterns doesn't matter.
+        for patterns in [["AABBCC..", "AABBCCDD"], ["AABBCCDD", "AABBCC.."]] {
+            let set = set_from_patterns(&patterns);
+            assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD").len(), 2);
+            assert_eq!(matching(&set, b"\xAA\xBB\xCC\xEE").len(), 1);
+            assert_eq!(matching(&set, b"\xAA\xBB\x00\x00").len(), 0);
+        }
+
+        for patterns in [["AABB..DD", "AABBCCDD"], ["AABBCCDD", "AABB..DD"]] {
+            let set = set_from_patterns(&patterns);
+            assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD").len(), 2);
+            assert_eq!(matching(&set, b"\xAA\xBB\xEE\xDD").len(), 1);
+            assert_eq!(matching(&set, b"\xAA\xBB\x00\x00").len(), 0);
+        }
+
+        // a wildcard matches any byte, including newline.
+        let set = set_from_patterns(&["AA..BB"]);
+        for b in 0..=255u8 {
+            assert_eq!(matching(&set, &[0xAA, b, 0xBB]), vec![0]);
+        }
+        // but not a missing byte.
+        let set = set_from_patterns(&["AABB.."]);
+        assert_eq!(matching(&set, b"\xAA\xBB"), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn test_set_match_many() {
+        let set = set_from_patterns(&["AABB..DD", "AABBCCDD", "........", "....CCDD"]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD"), vec![0, 1, 2, 3]);
+        assert_eq!(matching(&set, b"\xAA\xBB\x00\xDD"), vec![0, 2]);
+        assert_eq!(matching(&set, b"\xAA\xBB\x00\x00"), vec![2]);
+        assert_eq!(matching(&set, b"\x00\x00\xCC\xDD"), vec![2, 3]);
+        assert_eq!(matching(&set, b"\x00\x00\x00\x00"), vec![2]);
+    }
+
+    #[test]
+    fn test_set_match_lengths() {
+        // patterns of different lengths, some prefixes of others.
+        let set = set_from_patterns(&["AA", "AABB", "AABBCC", "AA..CC", "..BB", "AABBCCDDEE"]);
+        assert_eq!(matching(&set, b""), Vec::<usize>::new());
+        assert_eq!(matching(&set, b"\xAA"), vec![0]);
+        assert_eq!(matching(&set, b"\xAA\xBB"), vec![0, 1, 4]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC"), vec![0, 1, 2, 3, 4]);
+        assert_eq!(matching(&set, b"\xAA\x00\xCC"), vec![0, 3]);
+        assert_eq!(matching(&set, b"\x00\xBB\xCC"), vec![4]);
+        assert_eq!(matching(&set, b"\xAA\xBB\xCC\xDD\xEE"), vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_set_match_duplicate_patterns() {
+        // signatures with the same byte pattern all match.
+        let set = set_from_patterns(&["AABB", "AA..", "AABB", "AA..", "AABB"]);
+        assert_eq!(matching(&set, b"\xAA\xBB"), vec![0, 1, 2, 3, 4]);
+        assert_eq!(matching(&set, b"\xAA\x00"), vec![1, 3]);
+    }
+
+    #[test]
+    fn test_set_match_pathological() {
+        // longer than the usual 32 bytes, too.
+        let set = set_from_patterns(&[
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "................................................................",
+        ]);
+        assert_eq!(matching(&set, &[0xAA; 32]), vec![0, 1]);
+        assert_eq!(matching(&set, &[0xAB; 32]), vec![1]);
+        assert_eq!(matching(&set, &[0xAA; 31]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn test_one_matcher_wildcard_newline() {
+        // the regex-based matcher's wildcard didn't match newline (0x0A).
+        let sigs = pat::parse("AA..BB 00 0000 0003 :0000 foo\n---").unwrap();
+        let m = sigs[0].create_matcher();
+        for b in 0..=255u8 {
+            assert!(m.r#match(&[0xAA, b, 0xBB]));
+        }
+        assert!(!m.r#match(&[0xAA, 0x00, 0xCC]));
+        assert!(!m.r#match(&[0xAA, 0x00]));
+    }
+
+    #[test]
+    fn test_one_matcher_function_shorter_than_pattern() {
+        // only the first `size_of_function` bytes are matched.
+        let sigs = pat::parse("AABBCCDD 00 0000 0002 :0000 foo\n---").unwrap();
+        assert!(sigs[0].create_matcher().r#match(&[0xAA, 0xBB]));
+        assert!(!sigs[0].create_matcher().r#match(&[0xAA]));
+
+        // the function claims to be longer than the pattern, but shorter than 32 bytes.
+        // this used to panic.
+        let sigs = pat::parse("AABB 00 0000 0010 :0000 foo\n---").unwrap();
+        assert!(sigs[0].create_matcher().r#match(&[0xAA, 0xBB]));
+        assert!(!sigs[0].create_matcher().r#match(&[0xAA, 0xCC]));
     }
 }
