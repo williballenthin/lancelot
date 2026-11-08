@@ -115,6 +115,26 @@ pub struct FlirtMatcher {
 
 #[pymethods]
 impl FlirtMatcher {
+    /// Match the signatures against the start of `buf`.
+    ///
+    /// Returns the signatures whose byte pattern, CRC16, tail bytes, and footer
+    /// match. This doesn't check references: the entries in `names` with the
+    /// type "reference", like `("_free", "reference", 0x1)`. A signature
+    /// matches only if all its references match. To check a reference, a
+    /// caller should probably:
+    ///
+    ///   1. Find the pointer at `function start + offset`. This is usually an operand of the instruction that contains
+    ///      the offset, like the target of `call _free` or the address in `jmp [__imp__free]`.
+    ///   2. If the pointer is to code, match the signatures there, and check that a match has the referenced name as a
+    ///      public or local name at offset 0. This is recursive, so cache the matches at each target, and add an empty
+    ///      entry before matching there, so that references in a cycle stop.
+    ///   3. If the pointer is to an import address table entry, compare the name of the import with the referenced
+    ///      name. A reference can use the name of the entry, like `__imp_CloseHandle`, or the name of the function,
+    ///      like `CloseHandle`. 32-bit names can also be decorated, like `_malloc` (cdecl), `_CloseHandle@4` (stdcall),
+    ///      or `@Foo@4` (fastcall).
+    ///
+    /// The name `?` means that sigmake couldn't tell the modules apart.
+    /// It isn't a real name.
     pub fn r#match(&self, buf: &Bound<'_, PyBytes>) -> Vec<FlirtSignature> {
         self.inner
             .r#match(buf.as_bytes())
