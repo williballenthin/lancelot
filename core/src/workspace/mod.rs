@@ -232,7 +232,7 @@ impl PEWorkspace {
             &function_starts
         };
         for &function in flirt_candidates.iter() {
-            let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, function)?;
+            let matches = crate::analysis::flirt::match_flirt(&pe.module, &sigs, &imports, function)?;
 
             // name the function when every matching signature agrees on the name,
             // such as when identical signatures come from several libraries.

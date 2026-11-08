@@ -4,7 +4,10 @@ use anyhow::Result;
 use log::debug;
 
 use crate::{
-    analysis::dis,
+    analysis::{
+        dis,
+        pe::{Import, ImportedSymbol},
+    },
     aspace::AddressSpace,
     module::{Module, Permissions},
     VA,
@@ -97,20 +100,64 @@ fn guess_reference_target(
 /// matching.
 ///
 /// a FLIRT signature only ever examines a bounded prefix of a function:
-/// the 32-byte pattern, up to 255 CRC16 bytes, and tail bytes/footer at
-/// small offsets beyond that. this cap is far beyond any of those.
+/// the 32-byte pattern, up to 255 CRC16 bytes, and tail bytes/footer after
+/// that (tail bytes reach about 7k bytes into the function, in the FLARE
+/// MSVC runtime signatures). this cap is beyond those.
 ///
 /// without a cap, each candidate function reads from its start to the end
 /// of its section, which is O(functions × section size) bytes of copying
 /// per FLIRT pass (and again for each recursive reference match).
 const MATCH_WINDOW_SIZE: u64 = 0x8000;
 
+/// does the signature name the function it recognizes `wanted`?
+fn has_name_at_start(sig: &FlirtSignature, wanted: &str) -> bool {
+    sig.names.iter().any(|name| match name {
+        Symbol::Reference(_) => false,
+        Symbol::Local(Name { name, offset }) | Symbol::Public(Name { name, offset }) => {
+            *offset == 0 && name == wanted && name != UNRESOLVED_COLLISION
+        }
+    })
+}
+
+/// could a signature refer to this import by the name `wanted`?
+///
+/// signatures name the import's address table entry, like `__imp_CloseHandle`,
+/// or the function, like `CloseHandle`; and 32-bit names may be decorated,
+/// like `_malloc` (cdecl), `_CloseHandle@4` (stdcall), or `@Foo@4` (fastcall).
+fn is_import_named(import: &Import, wanted: &str) -> bool {
+    let ImportedSymbol::Name(name) = &import.symbol else {
+        return false;
+    };
+
+    let wanted = wanted.strip_prefix("__imp_").unwrap_or(wanted);
+    if wanted == name {
+        return true;
+    }
+
+    let undecorated = match wanted.rsplit_once('@') {
+        Some((head, n)) if !head.is_empty() && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => head,
+        _ => wanted,
+    };
+    let undecorated = undecorated.strip_prefix(['_', '@']).unwrap_or(undecorated);
+    undecorated == name
+}
+
 /// match the given flirt signatures at the given address.
 /// returns a list of the signatures that match.
-pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<Vec<FlirtSignature>> {
+///
+/// a signature's references must name what they point to:
+/// either code that a signature recognizes, recursively,
+/// or an entry of the import address table, using `imports`.
+pub fn match_flirt(
+    module: &Module,
+    sigs: &FlirtSignatureSet,
+    imports: &BTreeMap<VA, Import>,
+    va: VA,
+) -> Result<Vec<FlirtSignature>> {
     fn match_flirt_inner(
         module: &Module,
         sigs: &FlirtSignatureSet,
+        imports: &BTreeMap<VA, Import>,
         decoder: &zydis::Decoder,
         va: VA,
         cache: &mut BTreeMap<VA, Vec<FlirtSignature>>,
@@ -148,99 +195,77 @@ pub fn match_flirt(module: &Module, sigs: &FlirtSignatureSet, va: VA) -> Result<
 
         Ok(sigs
             .r#match(&buf)
-            .iter()
+            .into_iter()
             .filter(|sig| {
-                let mut does_match_references = true;
-
                 debug!("flirt: {:#x}: candidate: {:?}", va, sig);
 
-                'names: for name in sig.names.iter() {
-                    if let Symbol::Reference(Name {
-                        offset,
-                        name: wanted_name,
-                    }) = name
-                    {
-                        // i dont know what this means.
-                        assert!(*offset >= 0, "negative offset");
+                sig.names.iter().all(|name| {
+                    let Symbol::Reference(Name { offset, name: wanted }) = name else {
+                        return true;
+                    };
 
-                        if wanted_name == "." {
-                            // special case: name "." matches any data?
-                            // not exactly sure if this should only match special data `ctype`?
-                            // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
-                            if guess_reference_target(*offset as u64, Permissions::R).is_some() {
-                                continue;
-                            } else {
-                                does_match_references = false;
-                                break;
-                            }
+                    // offsets are from the function start. we don't know what a negative one means.
+                    let Ok(offset) = u64::try_from(*offset) else {
+                        return false;
+                    };
+
+                    if wanted == "." {
+                        // special case: name "." matches any data?
+                        // not exactly sure if this should only match special data `ctype`?
+                        // see: https://github.com/williballenthin/lancelot/issues/112#issuecomment-802379966
+                        return guess_reference_target(offset, Permissions::R).is_some();
+                    }
+
+                    // code: match flirt signatures there, and look for the wanted name.
+                    //
+                    // we use the cache to record whether a negative match was encountered.
+                    // this drastically when we have many nested references (like CALL wrappers).
+                    // see: https://github.com/fireeye/capa/issues/448
+                    if let Some(target) = guess_reference_target(offset, Permissions::X) {
+                        // a reference to this function itself, like a recursive call,
+                        // is named by this signature.
+                        if target == va && has_name_at_start(sig, wanted) {
+                            return true;
                         }
 
-                        // guess the reference target, then match flirt signatures there,
-                        // and see if the wanted name matches a name recovered by flirt.
-                        //
-                        // we use the cache to record whether a negative match was encountered.
-                        // this drastically when we have many nested references (like CALL wrappers).
-                        // see: https://github.com/fireeye/capa/issues/448
-                        if let Some(target) = guess_reference_target(*offset as u64, Permissions::X) {
-                            // this is just:
-                            //   target_sigs = cached(match_flirt_inner(...target...))
-                            //
-                            // can't use entry API because of mutable cache used to create cache entry.
-                            #[allow(clippy::map_entry)]
-                            if !cache.contains_key(&target) {
-                                let target_sigs = match_flirt_inner(module, sigs, decoder, target, cache)
-                                    .unwrap_or_else(|_| Default::default());
-                                cache.insert(target, target_sigs);
-                            }
-                            let target_sigs = cache.get(&target).unwrap();
+                        if !cache.contains_key(&target) {
+                            // while matching there, a reference back to here (or to there)
+                            // finds no names, rather than recursing without end.
+                            cache.insert(target, Default::default());
+                            let target_sigs =
+                                match_flirt_inner(module, sigs, imports, decoder, target, cache).unwrap_or_default();
+                            cache.insert(target, target_sigs);
+                        }
 
-                            let mut does_name_match = false;
-                            'sigs: for target_sig in target_sigs.iter() {
-                                debug!("flirt: {:#x}: found reference: {:?} @ {:#x}", va, target_sig, offset);
-                                for name in target_sig.names.iter() {
-                                    match name {
-                                        Symbol::Reference(_) => continue,
-                                        Symbol::Local(Name {
-                                            name: target_name,
-                                            offset,
-                                        })
-                                        | Symbol::Public(Name {
-                                            name: target_name,
-                                            offset,
-                                        }) => {
-                                            if *offset == 0
-                                                && target_name == wanted_name
-                                                && target_name != UNRESOLVED_COLLISION
-                                            {
-                                                does_name_match = true;
-                                                break 'sigs;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if !does_name_match {
-                                does_match_references = false;
-                                break 'names;
-                            }
-                        } else {
-                            does_match_references = false;
-                            break;
+                        if cache[&target]
+                            .iter()
+                            .any(|target_sig| has_name_at_start(target_sig, wanted))
+                        {
+                            debug!("flirt: {:#x}: found reference: {} @ {:#x}", va, wanted, offset);
+                            return true;
                         }
                     }
-                }
 
-                does_match_references
+                    // an import: its address table entry has no code to match, but it has a name.
+                    if let Some(import) =
+                        guess_reference_target(offset, Permissions::R).and_then(|target| imports.get(&target))
+                    {
+                        if is_import_named(import, wanted) {
+                            debug!("flirt: {:#x}: found import reference: {} @ {:#x}", va, wanted, offset);
+                            return true;
+                        }
+                    }
+
+                    false
+                })
             })
-            .cloned()
             .cloned()
             .collect::<Vec<_>>())
     }
 
     let decoder = dis::get_disassembler(module)?;
     let mut cache = Default::default();
-    match_flirt_inner(module, sigs, &decoder, va, &mut cache)
+    match_flirt_inner(module, sigs, imports, &decoder, va, &mut cache)
 }
 
 #[cfg(test)]
@@ -263,12 +288,91 @@ mod tests {
         // must not panic, even if a function start (like the entrypoint)
         // falls outside of all mapped sections.
         for va in crate::analysis::pe::find_function_starts(&pe)? {
-            super::match_flirt(&pe.module, &sigs, va)?;
+            super::match_flirt(&pe.module, &sigs, &Default::default(), va)?;
         }
 
         // must not panic for addresses outside of all mapped sections,
         // such as when a malformed PE has an entrypoint in unmapped memory.
-        assert!(super::match_flirt(&pe.module, &sigs, 0x999_9000)?.is_empty());
+        assert!(super::match_flirt(&pe.module, &sigs, &Default::default(), 0x999_9000)?.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn import_names() {
+        use crate::analysis::pe::{Import, ImportedSymbol};
+        let import = |name: &str| Import {
+            address: 0x1000,
+            dll:     "kernel32.dll".into(),
+            symbol:  ImportedSymbol::Name(name.into()),
+        };
+
+        assert!(super::is_import_named(&import("CloseHandle"), "CloseHandle"));
+        assert!(super::is_import_named(&import("CloseHandle"), "__imp_CloseHandle"));
+        assert!(super::is_import_named(&import("CloseHandle"), "__imp__CloseHandle@4"));
+        assert!(super::is_import_named(&import("CloseHandle"), "_CloseHandle@4"));
+        assert!(super::is_import_named(
+            &import("ExReleaseResourceLite"),
+            "__imp_@ExReleaseResourceLite@4"
+        ));
+        assert!(super::is_import_named(&import("malloc"), "__imp__malloc"));
+        assert!(super::is_import_named(
+            &import("_aligned_malloc"),
+            "__imp__aligned_malloc"
+        ));
+        assert!(super::is_import_named(
+            &import("?terminate@@YAXXZ"),
+            "__imp_?terminate@@YAXXZ"
+        ));
+
+        assert!(!super::is_import_named(&import("CloseHandle"), "OpenHandle"));
+        assert!(!super::is_import_named(&import("CloseHandle"), "CloseHandleEx"));
+        let ordinal = Import {
+            address: 0x1000,
+            dll:     "kernel32.dll".into(),
+            symbol:  ImportedSymbol::Ordinal(1),
+        };
+        assert!(!super::is_import_named(&ordinal, "CloseHandle"));
+    }
+
+    /// signatures whose references name an import can match.
+    #[test]
+    fn match_flirt_import_reference() -> Result<()> {
+        // `jmp [SysAllocStringLen]`, recognized by the signature
+        // `ff25 00 0000 0006 :0000 _SysAllocStringLen@8 ^0002 SysAllocStringLen`.
+        let buf = get_buf(Rsrc::I236B);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        let sigs = get_config().get_sigs()?;
+        let imports = crate::analysis::pe::get_imports(&pe)?;
+
+        let matches = super::match_flirt(&pe.module, &sigs, &imports, 0x4037C8)?;
+        let names: Vec<_> = matches.iter().filter_map(|m| m.get_name()).collect();
+        assert_eq!(names, vec!["_SysAllocStringLen@8"]);
+
+        // without the imports, the reference can't be resolved.
+        assert!(super::match_flirt(&pe.module, &sigs, &Default::default(), 0x4037C8)?.is_empty());
+
+        Ok(())
+    }
+
+    /// a reference back to the function itself must not recurse without end.
+    #[test]
+    fn match_flirt_self_reference() -> Result<()> {
+        // nop.exe 0x40130c + 0x45 is the operand of a call back to 0x40130c.
+        let buf = get_buf(Rsrc::NOP);
+        let pe = crate::loader::pe::PE::from_bytes(&buf)?;
+        const PAT: &str = "\
+f6410c407406837908007424ff4904780b8b118802ff010fb6c0eb0c0fbec051 00 0000 0050 :0000 recurse ^0045 recurse
+f6410c407406837908007424ff4904780b8b118802ff010fb6c0eb0c0fbec051 00 0000 0050 :0000 other ^0045 missing
+---
+";
+        let sigs = lancelot_flirt::FlirtSignatureSet::with_signatures(lancelot_flirt::pat::parse(PAT)?);
+
+        let matches = super::match_flirt(&pe.module, &sigs, &Default::default(), 0x40130C)?;
+        let names: Vec<_> = matches.iter().filter_map(|m| m.get_name()).collect();
+        // the first signature names the function itself, as its reference requires.
+        // nothing names it `missing`.
+        assert_eq!(names, vec!["recurse"]);
 
         Ok(())
     }
@@ -281,7 +385,8 @@ mod tests {
         let pe = crate::loader::pe::PE::from_bytes(&buf)?;
         let sigs = get_config().get_sigs()?;
 
-        let matches = super::match_flirt(&pe.module, &sigs, 0x401DA9)?;
+        let imports = crate::analysis::pe::get_imports(&pe)?;
+        let matches = super::match_flirt(&pe.module, &sigs, &imports, 0x401DA9)?;
         assert!(
             matches.iter().any(|m| m.get_name() == Some("_exit")),
             "expected _exit at 0x401DA9, got: {matches:?}"
