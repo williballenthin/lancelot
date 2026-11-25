@@ -1156,6 +1156,54 @@ mod tests {
     }
 
     #[test]
+    fn test_ud2_insn() -> Result<()> {
+        // ud2 raises #UD, so it doesn't fall through into the padding
+        // and on into the next function.
+        //
+        // 0x0:  e8 0b 00 00 00   call 0x10  | BB1
+        // 0x5:  0f 0b            ud2        | BB1
+        // 0x7:  90 (x9)          nop        | padding, not reached
+        // 0x10: 31 c0            xor eax, eax | BB2
+        // 0x12: c3               ret          | BB2
+        let module = load_shellcode32(b"\xE8\x0B\x00\x00\x00\x0F\x0B\x90\x90\x90\x90\x90\x90\x90\x90\x90\x31\xC0\xC3");
+        let mut insns: InstructionIndex = Default::default();
+
+        insns.build_index(&module, 0x0)?;
+
+        let cfg = CFG::from_instructions(&module, insns)?;
+
+        assert_eq!(cfg.insns.insns_by_address.len(), 4);
+        assert!(cfg.insns.insns_by_address.contains_key(&0x7).not());
+        assert!(empty(edges(&cfg.flows.flows_by_src[&0x5])));
+        assert!(cfg.basic_blocks.blocks_by_address.contains_key(&0x0));
+        assert!(cfg.basic_blocks.blocks_by_address.contains_key(&0x10));
+        assert_eq!(cfg.basic_blocks.blocks_by_address[&0x0].address_of_last_insn, 0x5);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ud0_ud1_insn() -> Result<()> {
+        // 0x0:  0f b9 c0         ud1 eax, eax | BB1
+        // 0x3:  c3               ret          | not reached
+        let module = load_shellcode32(b"\x0F\xB9\xC0\xC3");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
+        assert_eq!(cfg.insns.insns_by_address.len(), 1);
+
+        // 0x0:  0f ff c0         ud0 eax, eax | BB1
+        // 0x3:  c3               ret          | not reached
+        let module = load_shellcode32(b"\x0F\xFF\xC0\xC3");
+        let mut insns: InstructionIndex = Default::default();
+        insns.build_index(&module, 0x0)?;
+        let cfg = CFG::from_instructions(&module, insns)?;
+        assert_eq!(cfg.insns.insns_by_address.len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_two_entry_points() -> Result<()> {
         // 0:  c3                      ret  | BB1
         // 1:  00

@@ -141,6 +141,10 @@ pub fn does_insn_fallthrough(insn: &DecodedInstruction) -> bool {
         //
         // see aadtb.dll:0x180001940 for an example.
         zydis::Mnemonic::INT3 => false,
+        // an undefined instruction raises #UD (Intel SDM vol. 2B, "UD").
+        // compilers end a path that can't go on with `ud2`,
+        // such as `__builtin_trap` and after a Rust panic.
+        zydis::Mnemonic::UD0 | zydis::Mnemonic::UD1 | zydis::Mnemonic::UD2 => false,
         zydis::Mnemonic::INT => {
             match &insn.operands()[0].kind {
                 DecodedOperandKind::Imm(imm) => match imm.value {

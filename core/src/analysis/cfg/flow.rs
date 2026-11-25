@@ -195,6 +195,9 @@ pub fn needs_operands(mnemonic: zydis::Mnemonic) -> bool {
             | IRETQ
             | INT
             | INT3
+            | UD0
+            | UD1
+            | UD2
             | JB
             | JBE
             | JCXZ

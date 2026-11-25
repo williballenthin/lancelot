@@ -120,8 +120,9 @@ fn dead_end(va: VA, at: VA, what: &str) {
 ///
 ///   - a RET: the function returns.
 ///   - a known dead end: a call or tail jump to a function in `noret` (so its fallthrough was already pruned), `int
-///     0x29`/`int 0x2c`, or an `int3` directly after a call, which is what MSVC and clang emit after a call to a
-///     function declared `noreturn`.
+///     0x29`/`int 0x2c`, an `int3` directly after a call, which is what MSVC and clang emit after a call to a function
+///     declared `noreturn`, or an undefined instruction like `ud2`, which compilers emit for a trap or unreachable
+///     code, such as after a Rust panic.
 ///   - something we can't see through: an indirect jump (a tail call through the import table or a register, or an
 ///     unrecovered switch table), a jump whose target was dropped while building the CFG, a flow to bytes that didn't
 ///     decode, or an `int3` reached some other way than from a call.
@@ -142,7 +143,8 @@ fn dead_end(va: VA, at: VA, what: &str) {
 /// control back to its caller without a RET, such as Go's `runtime.morestack`
 /// through a stack switch. it takes an `int3` after a call to a function that
 /// does return, with an exception handler that continues past it, as a dead
-/// end.
+/// end, and likewise a `ud2` that a #UD handler continues past, such as
+/// `WARN()` in the Linux kernel.
 pub fn is_provably_noret(module: &Module, cfg: &CFG, decoder: &zydis::Decoder, va: VA, noret: &BTreeSet<VA>) -> bool {
     if !cfg.basic_blocks.blocks_by_address.contains_key(&va) {
         return unknown(va, va, "not a basic block");
@@ -209,11 +211,23 @@ pub fn is_provably_noret(module: &Module, cfg: &CFG, decoder: &zydis::Decoder, v
         use zydis::InstructionCategory::*;
         match insn.meta.category {
             RET => return false,
-            // only `int 0x29`, `int 0x2c` and `int3` don't fall through (see
-            // does_insn_fallthrough). the first two are fatal; an `int3` is a
-            // dead end only directly after a call, otherwise it may be a
-            // debug break that execution continues past, or padding we
-            // flowed into by mistake.
+            // an undefined instruction raises #UD: a trap, or code the
+            // compiler knows is unreachable. it doesn't fall through (see
+            // does_insn_fallthrough).
+            _ if targets.is_empty()
+                && matches!(
+                    insn.mnemonic,
+                    zydis::Mnemonic::UD0 | zydis::Mnemonic::UD1 | zydis::Mnemonic::UD2
+                ) =>
+            {
+                dead_end(va, last, "undefined instruction");
+                continue;
+            }
+            // of the interrupts, only `int 0x29`, `int 0x2c` and `int3` don't
+            // fall through (see does_insn_fallthrough). the first two are
+            // fatal; an `int3` is a dead end only directly after a call,
+            // otherwise it may be a debug break that execution continues
+            // past, or padding we flowed into by mistake.
             INTERRUPT if targets.is_empty() => {
                 if insn.mnemonic == zydis::Mnemonic::INT3 && !after_call {
                     return unknown(va, last, "int3 not after a call");
@@ -662,6 +676,37 @@ mod tests {
         assert!(noret.contains(&0xB));
         assert!(noret.contains(&0x0));
         assert!(noret.contains(&0x16).not());
+        assert!(cfg.insns.insns_by_address.contains_key(&0x5).not());
+
+        Ok(())
+    }
+
+    #[test]
+    fn noret_by_cfg_ud2_after_call() -> Result<()> {
+        // H calls a function we know nothing about (it even returns), then
+        // runs into a `ud2`, as rustc emits after a call to a panic. `ud2`
+        // doesn't fall through, so H is noret, and then so is A.
+        //
+        // A:
+        // 0x0:  E8 06 00 00 00    call 0xB (H)
+        // 0x5:  90                nop      (dead: must be pruned)
+        // 0x6:  C3                ret      (dead: must be pruned)
+        // 0x7:  CC CC CC CC       padding
+        // H:
+        // 0xB:  E8 08 00 00 00    call 0x18
+        // 0x10: 0F 0B             ud2
+        // 0x12: 90 x6             padding
+        // 0x18: C3                ret
+        let module = load_shellcode32(
+            b"\xE8\x06\x00\x00\x00\x90\xC3\xCC\xCC\xCC\xCC\xE8\x08\x00\x00\x00\x0F\x0B\x90\x90\x90\x90\x90\x90\xC3",
+        );
+        let mut cfg = build_cfg(&module)?;
+
+        let noret = prune_functions(&module, &mut cfg, &[0x0, 0xB, 0x18])?;
+
+        assert!(noret.contains(&0xB));
+        assert!(noret.contains(&0x0));
+        assert!(noret.contains(&0x18).not());
         assert!(cfg.insns.insns_by_address.contains_key(&0x5).not());
 
         Ok(())
