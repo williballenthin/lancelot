@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 lancelot = { path = "../core", version = "0.10.2" }
 lancelot-flirt = { path = "../flirt", version = "0.10.2" }
 anyhow = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # keep this version in sync with the wasm-bindgen-cli invoked by build.sh,
 # since the CLI refuses to process wasm built against a different version.
