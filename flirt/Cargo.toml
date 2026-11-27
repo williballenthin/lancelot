@@ -12,7 +12,7 @@ repository = "https://github.com/williballenthin/lancelot"
 
 [dependencies]
 log = "0.4"
-nom = "7"
+nom = "8"
 miniz_oxide = "0.8"
 anyhow = "1"
 thiserror = "2"
